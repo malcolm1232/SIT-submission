@@ -112,6 +112,21 @@ def latest_checkpoint(run_dir: RunDir) -> Checkpoint | None:
     return max(ckpts, key=lambda c: c.ordinal or 0) if ckpts else None
 
 
+def checkpoint_file_order(path: Path) -> int:
+    """Sort key that orders checkpoint files as written: the file's ``ordinal``, else its ``seq`` (a
+    file written before 2026-10-03), else 0 (unreadable, so it sorts first). For readers that take
+    the raw JSON of the latest file without validating it (``report/coverage.py``, ``replay.py``):
+    ``sorted(files, key=checkpoint_file_order)[-1]`` is the latest, never the last file name."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    value = data.get("ordinal") if data.get("ordinal") is not None else data.get("seq")
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def check_drift(ckpt: Checkpoint, current: PinnedHashes, *, accept_drift: bool = False) -> list[str]:
     """Differences between the pinned and current hashes. Raises :class:`ResumeDriftError` if any
     and ``accept_drift`` is false; otherwise returns them (to record as manifest deviations)."""

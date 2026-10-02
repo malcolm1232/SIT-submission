@@ -15,8 +15,9 @@ call log) and validates against the full spec. Differences from the canonical ob
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -30,6 +31,7 @@ from sit_review_agent.models import (
     Severity,
     SourceType,
     VerdictLabel,
+    finding_rule_violations,
 )
 
 
@@ -246,10 +248,12 @@ class FindingRevisionDraft(Draft):
       longer makes); ``added_evidence`` is appended to the draft's evidence (research results);
       ``merge_into`` is null.
     * ``merge``: the finding is folded into ``merge_into``, which must be a kept finding; every other
-      field is null or empty.
+      field is null or empty. It leaves the review; its criteria count for the kept finding; nothing
+      else moves (evidence the kept finding should gain goes in that finding's ``added_evidence``).
     * ``withdraw``: the finding is dropped; every other field is null or empty.
 
-    :func:`revision_problems` lists what breaks these rules; the refine phase decides what to do.
+    :func:`revision_problems` lists what breaks these rules; :func:`apply_revisions` applies a set
+    that has none. The refine phase decides what to do with a set that has problems.
     """
 
     finding_id: str
@@ -269,11 +273,20 @@ class RefineRevisionsOutput(Draft):
     revisions: list[FindingRevisionDraft]
 
 
-def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str]) -> list[str]:
+def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
+                      drafts: Mapping[str, FindingDraft] | None = None) -> list[str]:
     """Every rule of :class:`FindingRevisionDraft` that ``out`` breaks against the merged draft
     findings ``finding_ids``; empty when code can apply it exactly. Checks: one revision per known
     finding, per-action field rules, merges only into a known kept finding (which also rules out a
-    merge into itself, chains and cycles), and kept ranks forming 1..n."""
+    merge into itself, chains and cycles), kept ranks forming 1..n, and no evidence ID added twice.
+
+    With ``drafts`` (the merged drafts by ID; the refine phase always passes them) each kept finding
+    is also checked as it will be after the revision: evidence it already cites is not added again,
+    and the finding rules of the spec (``models.finding_rule_violations``) hold, so a null severity on
+    a finding that needs one, a disposition the draft's recommendation, rationale or next step cannot
+    support, or a ``challenges`` link with fewer than two evidence items is a problem here, not a
+    finding dropped later in verify. Registry IDs are not checked here: verify drops a link to an
+    unknown registry entry and records the change (``phases/verify.py``), as before."""
     problems: list[str] = []
     known = set(finding_ids)
     by_id: dict[str, list[FindingRevisionDraft]] = {}
@@ -303,6 +316,17 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str]) -> lis
                 ranks.append(r.rank)
             if r.disposition is None:
                 problems.append(f"{r.finding_id} is keep without disposition")
+            added = [e.evidence_id for e in r.added_evidence]
+            twice = sorted({e for e in added if added.count(e) > 1})
+            if twice:
+                problems.append(f"{r.finding_id} adds evidence {', '.join(twice)} more than once")
+            draft = drafts.get(r.finding_id) if drafts is not None else None
+            if draft is not None and r.disposition is not None:
+                cited = sorted({e.evidence_id for e in draft.evidence} & set(added))
+                if cited:
+                    problems.append(f"{r.finding_id} adds evidence {', '.join(cited)} it already cites")
+                problems += [f"{r.finding_id} after keep: {p}"
+                             for p in finding_rule_violations(cast(Any, _kept_draft(draft, r)))]
             continue
         for field in ("rank", "severity", "disposition"):
             if getattr(r, field) is not None:
@@ -324,6 +348,39 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str]) -> lis
     if sorted(ranks) != list(range(1, len(kept) + 1)):
         problems.append(f"ranks of kept findings must be 1..{len(kept)} with no gaps or repeats, got {sorted(ranks)}")
     return problems
+
+
+def _kept_draft(draft: FindingDraft, r: FindingRevisionDraft) -> FindingDraft:
+    """``draft`` after the ``keep`` revision ``r``: rank, severity, disposition and the decision links
+    replaced, the added evidence appended, every other field as the draft had it."""
+    return draft.model_copy(deep=True, update={
+        "rank": r.rank, "severity": r.severity, "disposition": r.disposition,
+        "affected_decisions": [a.model_copy() for a in r.affected_decisions],
+        "evidence": [*draft.evidence, *(e.model_copy() for e in r.added_evidence)],
+    })
+
+
+def apply_revisions(drafts: Sequence[FindingDraft], out: RefineRevisionsOutput) -> list[FindingDraft]:
+    """The kept findings after ``out``, in rank order: the one exact meaning of a revision set.
+
+    ``keep`` replaces rank, severity, disposition and ``affected_decisions`` with the revision's
+    values and appends ``added_evidence`` to the draft's evidence; ``merge`` removes the finding and
+    appends its ``criterion_ids`` (those the target lacks, in draft order) to the target's, so coverage
+    still credits its criterion; ``withdraw`` removes the finding. ``drafts`` are not changed. Raises
+    ``ValueError`` listing :func:`revision_problems` (with ``drafts``) when there are any."""
+    by_id = {d.id: d for d in drafts}
+    problems = revision_problems(out, [d.id for d in drafts], drafts=by_id)
+    if problems:
+        raise ValueError("refine revisions cannot be applied: " + "; ".join(problems))
+    revs = {r.finding_id: r for r in out.revisions}
+    kept = {fid: _kept_draft(by_id[fid], r) for fid, r in revs.items() if r.action is RevisionAction.KEEP}
+    for d in drafts:
+        r = revs[d.id]
+        if r.action is RevisionAction.MERGE and r.merge_into is not None:
+            target = kept[r.merge_into]
+            gained = [c for c in d.criterion_ids if c not in target.criterion_ids]
+            target.criterion_ids = [*target.criterion_ids, *gained]
+    return sorted(kept.values(), key=lambda f: f.rank)
 
 
 # --------------------------------------------------------------------------- verify

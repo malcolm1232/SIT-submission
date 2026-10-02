@@ -303,6 +303,9 @@ def test_the_committed_demo_measurement_run_is_refused_by_name_since_the_config_
     assert res.exit_code == 2, res.output
     assert "effective_config.json: not a valid effective config" in res.output
     assert "assess_reserve_seconds was renamed refine_reserve_seconds" in res.output
+    assert "demo_profile_measure_1" in res.output                      # the record, by name
+    assert "made at commit 2d84f59" in res.output and "check out 2d84f59" in res.output
+    assert "Traceback" not in res.output
 
 
 # ------------------------------------------------------------------ request-hash recipes per backend

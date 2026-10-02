@@ -268,6 +268,19 @@ def recover_catalogue(config: EffectiveConfig, calls: Sequence[RecordedCall]) ->
                   "to the model is not recorded in the run directory")
 
 
+def _replay_at_commit_hint(rd: RunDir) -> str:
+    """Message tail for a record the current config schema refuses: the commit it was recorded at
+    (``manifest.json`` ``git_commit``), where it replays. Empty when the manifest does not say."""
+    try:
+        commit = json.loads(rd.manifest.read_text(encoding="utf-8")).get("git_commit")
+    except (OSError, ValueError, AttributeError):
+        return ""
+    if not isinstance(commit, str) or not commit:
+        return ""
+    return (f". The record was made at commit {commit[:7]} and replays only under the config schema and "
+            f"phase graph of that commit: check out {commit[:7]} to replay it")
+
+
 def recorded_config(rd: RunDir) -> tuple[EffectiveConfig, str]:
     """The run's exact effective config. ``effective_config.json`` is written with sorted keys, so
     the order of its mappings (``tools.capabilities``, which the plan prompt lists in order) is
@@ -281,7 +294,8 @@ def recorded_config(rd: RunDir) -> tuple[EffectiveConfig, str]:
     try:
         recorded = EffectiveConfig.model_validate(data)
     except ValueError as exc:
-        raise ReplayDataError(f"{rd.effective_config}: not a valid effective config ({exc})") from None
+        raise ReplayDataError(f"{rd.effective_config}: not a valid effective config ({exc})"
+                              f"{_replay_at_commit_hint(rd)}") from None
     want = recorded.sha256()
     for root in dict.fromkeys([Path(str(data.get("config_root") or "")), config_dir()]):
         if not (root / "agent.yaml").is_file():

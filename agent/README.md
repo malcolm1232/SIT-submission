@@ -153,6 +153,11 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     `revision_problems` (one revision per finding: keep with final rank, severity, disposition,
     decision links and appended research evidence; merge into a kept finding; withdraw).
     Writers: none yet (W2: `phases/refine.py`, `prompts/refine.md`). Readers: none yet (W2).
+    Verifier addition (same day, additive): `revision_problems(..., drafts=)` also checks each kept
+    finding as it will be after the revision (evidence not added twice, the spec's finding rules via
+    `models.finding_rule_violations`), and `apply_revisions(drafts, out)` is the one exact application
+    (keep patches, merge moves the merged finding's criteria to its target, withdraw drops). Readers:
+    none yet (W2: `phases/refine.py` calls both); tests `tests/test_interfaces_w0.py`.
   - `llm/outputs.py`: new `VerdictOutput` (the verdict only). Writers and readers: none yet
     (W2: `phases/report.py`, `prompts/report.md`).
   - Deprecated, removed by W2: `RefineOutput` and `RevisionNote` (writers: `phases/refine.py` via
@@ -163,6 +168,8 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     `tests/test_ingest_verify_report.py`, `tests/test_e2e_synthetic.py`, `tests/test_not_assessed_verdict.py`,
     `selftest.py`; readers: `phases/report.py` `settle_report_output`, `PHASE_OUTPUT_TYPES`,
     `tests/test_not_assessed_verdict.py`). `PHASE_OUTPUT_TYPES` still maps the old types until W2 switches.
+    The old names are also in text that W2 updates with them: the headers of `prompts/refine.md` and
+    `prompts/report.md`, and the table in `prompts/README.md`.
   - `errors.LLMDeadlineError` gained the keywords `partial` (the finished items of a cut stream) and
     `estimated_usage` (marked estimated by being apart from `usage`, which stays measured only), and the
     property `salvaged_items`. Writers today, unchanged: `llm/runtime.RunDeadline` (`no_time`, `cut`),
@@ -172,21 +179,31 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     `llm/gateway.py` (`unrecorded_usage`), `llm/claude_code.py`, `manifest.py` (by class name), and
     `tests/test_runtime_policies.py`, `test_unrecorded_usage.py`, `test_budget_counts_failed_calls.py`,
     `test_cli_replay.py`; the new fields get their readers in W2 (phases) and W3 (`manifest.py`).
+    Also affected when W1 logs a cut call's estimate in `llm.jsonl`: `replay.recorded_error` passes any entry
+    key named like a constructor keyword, so an entry key `partial` or `estimated_usage` would reach the
+    error raw (W3: map them, or W1: log under other keys); `harness/sit_eval/usage.py` mirrors the
+    manifest's unrecorded-usage rule and must keep reading `usage` only.
   - `states.py`: new `Stage`, `STAGE_ORDER`, `STAGE_MEMBERS`, `STAGE_TRANSITIONS`, `STAGE_ON_CAP`,
     `STAGE_1_DEPENDS`, `MemberOutcome`, `stage_of`, `stage1_ready`, `stage1_close`. Readers: none yet
     (W2: `orchestrator.py`). Deprecated, removed by W2: `TRANSITIONS` and `ON_CAP` (readers:
-    `orchestrator.py`, `states.mermaid`, `tests/robustness/test_robustness_scenarios.py`, the text of
-    `tests/robustness/robustness_coverage.py`).
+    `orchestrator.py`, `states.mermaid` and through it the `cli.py` `states` command,
+    `tests/robustness/test_robustness_scenarios.py`, the text of `tests/robustness/robustness_coverage.py`
+    and of `tests/robustness/README.md`).
   - `state/checkpoint.Checkpoint` gained `ordinal` (default `None`: `write_checkpoint` assigns one more
     than the highest on disk; a legacy file reads as `seq`), and `latest_checkpoint` picks the highest
     ordinal, not the last file name. Writers: `write_checkpoint` (called by `orchestrator.py`); constructors
     `orchestrator.py`, `tests/test_state_and_gateways.py`. Readers of `latest_checkpoint`:
     `orchestrator.resume_run`, `tests/test_run_and_resume.py`, `test_orchestrator.py`, `test_llm_phases.py`.
-    Still picks by file name, to be moved by its owner: `report/coverage.py` (latest checkpoint state).
+    Verifier addition (additive): `checkpoint_file_order(path)`, the sort key for readers of the raw
+    checkpoint JSON (ordinal, else `seq`, else 0). Readers: `report/coverage.py` (moved to it by the
+    verifier). Still picks the last file name, to be moved by W3: `replay._final_state` (a record with
+    no `state.json`).
   - `state/run_state.Budget` gained `elapsed_s` and `elapsed_for_resume()` (falls back to the sum of
     `phase_seconds` for a state written before). Writers: none yet (W2: `orchestrator.py` sets it at every
     checkpoint). Readers: none yet (W2: `orchestrator.resume_run`, which today sums `phase_seconds`;
-    W3: `manifest.py` timing and `replay.py`, which read `phase_seconds`).
+    W3: `manifest.py` timing and `replay.py`, which read `phase_seconds`). Downstream of the manifest,
+    `harness/sit_eval/metrics.py` reads `timing.per_stage_s`, whose overlapping stage 1 values no longer
+    sum to `wall_clock_s`.
   - Config keys (second W0 commit, same day; tests `tests/test_config.py`, the "latency redesign W0" block):
     - `agent.yaml` `assess.shards` (`config.AssessSettings`, `AssessShard`): the four criterion groups of
       design section 4, each shipped criterion in exactly one; a criterion in two groups, an unknown id, a

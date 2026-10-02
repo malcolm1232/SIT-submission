@@ -12,21 +12,28 @@ from typing import Any
 
 import pytest
 
+from sit_eval.usage import from_call_log
 from sit_review_agent.errors import LLMDeadlineError, LLMError, LLMTimeoutError
-from sit_review_agent.llm.gateway import Usage
+from sit_review_agent.llm.gateway import Usage, unrecorded_usage
 from sit_review_agent.llm.outputs import (
+    FindingDraft,
     FindingRevisionDraft,
     RefineRevisionsOutput,
     RevisionAction,
     VerdictOutput,
+    apply_revisions,
     llm_facing_schema,
     revision_problems,
 )
-from sit_review_agent.rundir import RunDir
+from sit_review_agent.llm.usage_budget import add_usage
+from sit_review_agent.manifest import journal_usage
+from sit_review_agent.report.coverage import _state
+from sit_review_agent.rundir import JsonlWriter, RunDir
 from sit_review_agent.state.checkpoint import (
     Checkpoint,
     JournalOffsets,
     PinnedHashes,
+    checkpoint_file_order,
     latest_checkpoint,
     load_checkpoint,
     write_checkpoint,
@@ -304,3 +311,189 @@ def test_budget_elapsed_seconds_restore_the_clock_not_the_phase_sum() -> None:
     assert Budget().elapsed_for_resume() == 0.0
     with pytest.raises(ValueError):
         Budget(elapsed_s=-1.0)
+
+
+# --------------------------------------------------------------------------- verifier additions (W0 verifier)
+#
+# The adversarial revision inputs the builder's tests did not cover, the patched-finding checks of
+# ``revision_problems(..., drafts=)`` and the one exact application, ``apply_revisions``.
+
+
+def _draft(fid: str, *, kind: str = "risk", severity: str | None = "high", disposition: str = "refinement_now",
+           evidence: tuple[str, ...] = (), criteria: tuple[str, ...] = ("internal_consistency",),
+           next_step: bool = False) -> FindingDraft:
+    rec = None if disposition == "no_change" else {
+        "issue": "i", "rationale": "r", "expected_benefit": "b", "change_summary": "c", "objective_refs": [],
+        "supporting_evidence_ids": [], "verification": None}
+    return FindingDraft.model_validate({
+        "id": fid, "rank": int(fid[-3:]), "kind": kind, "category": None if kind == "strength" else "other",
+        "severity": severity, "confidence": 0.8, "disposition": disposition, "secondary_dispositions": [],
+        "title": f"title {fid}", "statement": f"statement {fid}",
+        "doc_anchors": [{"doc_id": "D1", "section_ref": "2.1", "requirement_ids": [], "quote": "q", "page": 1}],
+        "evidence": [{"evidence_id": e, "source_type": "doc", "quote": "q", "supports_claim": True,
+                      "derived_from": []} for e in evidence],
+        "recommendation": rec, "no_change_rationale": "sound as written" if disposition == "no_change" else None,
+        "next_step": {"owner": "o", "action": "a"} if next_step else None, "affected_decisions": [],
+        "acknowledged_in_doc": False, "tags": [], "reassessment": None, "criterion_ids": list(criteria)})
+
+
+def _ev(eid: str) -> dict[str, Any]:
+    return {"evidence_id": eid, "source_type": "external", "quote": "x", "supports_claim": True, "derived_from": []}
+
+
+DRAFTS = [_draft("FND-001", evidence=("EV-001",)), _draft("FND-002", criteria=("verifiability",)),
+          _draft("FND-003", kind="strength", severity=None, disposition="no_change")]
+BY_ID = {d.id: d for d in DRAFTS}
+
+
+def _strength_keep(rank: int) -> dict[str, Any]:
+    return _keep("FND-003", rank, severity=None, disposition="no_change")
+
+
+@pytest.mark.parametrize(("revs", "needle"), [
+    # the merge target is itself withdrawn
+    ((_keep("FND-001", 1), _gone("FND-002", "merge", "FND-003"), _gone("FND-003", "withdraw")),
+     "FND-002: merge into FND-003, which is not kept"),
+    # two findings merging into each other
+    ((_keep("FND-001", 1), _gone("FND-002", "merge", "FND-003"), _gone("FND-003", "merge", "FND-002")),
+     "FND-003: merge into FND-002, which is not kept"),
+    # a rank sequence with a gap
+    ((_keep("FND-001", 1), _keep("FND-002", 3), _strength_keep(4)), "ranks of kept findings must be 1..3"),
+    # a rank of zero
+    ((_keep("FND-001", 0), _keep("FND-002", 1), _strength_keep(2)), "ranks of kept findings must be 1..3"),
+    # the same evidence added twice in one revision
+    ((_keep("FND-001", 1), _keep("FND-002", 2, added_evidence=[_ev("EV-009"), _ev("EV-009")]), _strength_keep(3)),
+     "FND-002 adds evidence EV-009 more than once"),
+])
+def test_revision_problems_adversarial_verifier(revs: tuple[dict[str, Any], ...], needle: str) -> None:
+    problems = revision_problems(_out(*revs), IDS)
+    assert any(needle in p for p in problems), problems
+
+
+@pytest.mark.parametrize(("rev2", "needle"), [
+    # severity null on keep is a final value: legal for a strength, a problem for a risk
+    (_keep("FND-002", 2, severity=None), "FND-002 after keep: risk needs a category and a severity"),
+    # a disposition the draft cannot support: no rationale for no_change, no next step for investigation
+    (_keep("FND-002", 2, disposition="no_change"), "FND-002 after keep: no_change forbids a recommendation"),
+    (_keep("FND-002", 2, disposition="needs_investigation"),
+     "FND-002 after keep: disposition needs_investigation requires next_step"),
+    # a challenge needs two evidence items after the append
+    (_keep("FND-002", 2, affected_decisions=[{"registry_id": "AD-001", "relation": "challenges",
+                                              "justification": "j"}], added_evidence=[_ev("EV-005")]),
+     "FND-002 after keep: challenging an approved decision needs >= 2 evidence items"),
+])
+def test_revision_problems_check_the_kept_finding_against_the_spec_rules(rev2: dict[str, Any], needle: str) -> None:
+    out = _out(_keep("FND-001", 1), rev2, _strength_keep(3))
+    assert revision_problems(out, IDS) == []                 # without the drafts only the revision rules apply
+    problems = revision_problems(out, IDS, drafts=BY_ID)
+    assert any(needle in p for p in problems), problems
+
+
+def test_revision_problems_refuse_evidence_the_draft_already_cites() -> None:
+    out = _out(_keep("FND-001", 1, added_evidence=[_ev("EV-001")]), _keep("FND-002", 2), _strength_keep(3))
+    assert revision_problems(out, IDS, drafts=BY_ID) == ["FND-001 adds evidence EV-001 it already cites"]
+
+
+def test_a_strength_kept_with_null_severity_and_a_keep_that_changes_nothing_are_clean() -> None:
+    out = _out(_keep("FND-001", 1), _keep("FND-002", 2), _strength_keep(3))
+    assert revision_problems(out, IDS, drafts=BY_ID) == []
+    kept = apply_revisions(DRAFTS, out)
+    assert [k.model_dump() for k in kept] == [d.model_dump() for d in DRAFTS]   # same values, empty append
+
+
+def test_an_unknown_registry_link_is_left_to_verify() -> None:
+    """Defined meaning: refine may name a registry entry that does not exist; ``revision_problems`` does
+    not know the registry, and verify drops the link and records the change (``phases/verify.py``)."""
+    out = _out(_keep("FND-001", 1, affected_decisions=[{"registry_id": "AD-999", "relation": "preserves",
+                                                        "justification": "j"}]), _keep("FND-002", 2),
+               _strength_keep(3))
+    assert revision_problems(out, IDS, drafts=BY_ID) == []
+
+
+def test_apply_revisions_is_exact_and_leaves_the_drafts_alone() -> None:
+    before = [d.model_dump() for d in DRAFTS]
+    out = _out(_keep("FND-002", 1, severity="critical", added_evidence=[_ev("EV-007")],
+                     affected_decisions=[{"registry_id": "AD-002", "relation": "refines", "justification": "j"}]),
+               _gone("FND-001", "merge", "FND-002"), _gone("FND-003", "withdraw"))
+    kept = apply_revisions(DRAFTS, out)
+    assert [k.id for k in kept] == ["FND-002"]
+    k = kept[0]
+    assert (k.rank, k.severity, k.disposition) == (1, "critical", "refinement_now")
+    assert [e.evidence_id for e in k.evidence] == ["EV-007"]
+    assert [a.registry_id for a in k.affected_decisions] == ["AD-002"]
+    assert k.criterion_ids == ["verifiability", "internal_consistency"]   # the merged finding's criterion
+    assert k.title == DRAFTS[1].title and k.doc_anchors == DRAFTS[1].doc_anchors
+    assert [d.model_dump() for d in DRAFTS] == before
+
+
+def test_apply_revisions_orders_by_rank_and_refuses_a_set_with_problems() -> None:
+    kept = apply_revisions(DRAFTS, _out(_keep("FND-001", 3), _keep("FND-002", 1), _strength_keep(2)))
+    assert [(k.id, k.rank) for k in kept] == [("FND-002", 1), ("FND-003", 2), ("FND-001", 3)]
+    with pytest.raises(ValueError, match="cannot be applied: no revision for FND-003"):
+        apply_revisions(DRAFTS, _out(_keep("FND-001", 1), _keep("FND-002", 2)))
+
+
+def test_estimated_usage_of_a_cut_call_never_reaches_measured_totals(tmp_path) -> None:
+    """A cut call logged as the gateways log one today (``usage: null`` with ``usage_unrecorded``), even
+    with its estimate written beside it under the literal key ``estimated_usage``: the manifest totals,
+    the harness completeness read and the run's token budget count measured usage only, and the cut
+    call is listed as unrecorded (the accounting commit's semantics)."""
+    err = LLMDeadlineError("cut at 265 s", call_id="llm-0002", phase="assess",
+                           partial={"findings": [{"id": "FND-001"}]},
+                           estimated_usage=Usage(input_tokens=30_000, output_tokens=12_000))
+    rd = RunDir(tmp_path / "run").create()
+    log = JsonlWriter(rd.llm_log)
+    log.append({"call_id": "llm-0001", "phase": "understand", "purpose": "understand", "attempt": 1,
+                "outcome": "ok", "model": "claude-opus-5-5", "elapsed_s": 130.0,
+                "usage": {"input_tokens": 100, "output_tokens": 50, "cache_creation_input_tokens": 0,
+                          "cache_read_input_tokens": 0}, "call_cost_usd": 0.0014})
+    log.append({"call_id": err.call_id, "phase": err.phase, "purpose": "assess", "attempt": 1,
+                "outcome": type(err).__name__, "error": str(err), "elapsed_s": 265.0,
+                **unrecorded_usage("deadline_cut"), "estimated_usage": vars(err.estimated_usage)})
+    tot = journal_usage(rd)
+    assert (tot["input_tokens"], tot["output_tokens"]) == (100, 50)
+    assert tot["cost_usd"] == 0.0014
+    assert [c["reason"] for c in tot["calls_with_unrecorded_usage"]] == ["deadline_cut"]
+    assert from_call_log(rd.llm_log).status == "unrecorded"
+    budget = Budget()
+    add_usage(budget, err.usage)
+    assert (budget.input_tokens, budget.output_tokens) == (0, 0)
+
+
+def test_resume_clock_from_overlapping_members_is_the_last_checkpoint_elapsed(tmp_path) -> None:
+    """Stage 1 members overlap (design section 4 table): each member's checkpoint stores the run clock
+    when it ended. The latest by ordinal (research, file 04-) carries the clock to restore; the last
+    file name (05-assess) and the sum of the overlapping phase times are both wrong."""
+    rd = RunDir(tmp_path / "run").create()
+    phase_seconds: dict[str, float] = {}
+    for phase, start, end in ((PhaseName.PLAN, 3.5, 106.0), (PhaseName.UNDERSTAND, 3.5, 140.0),
+                              (PhaseName.ASSESS, 3.5, 208.0), (PhaseName.RESEARCH, 140.0, 265.0)):
+        phase_seconds[phase.value] = end - start
+        ck = _ckpt(phase)
+        ck.state.budget = Budget(phase_seconds=dict(phase_seconds), elapsed_s=end)
+        write_checkpoint(rd, ck)
+    latest = latest_checkpoint(rd)
+    assert latest is not None and latest.phase is PhaseName.RESEARCH
+    assert latest.state.budget.elapsed_for_resume() == 265.0
+    assert sum(latest.state.budget.phase_seconds.values()) > 265.0          # 102.5 + 136.5 + 204.5 + 125
+    assert sorted(rd.checkpoints.glob("*.json"))[-1].name == "05-assess.json"
+
+
+def test_coverage_and_raw_readers_take_the_latest_checkpoint_by_ordinal(tmp_path) -> None:
+    rd = RunDir(tmp_path / "run").create()
+    for phase in (PhaseName.ASSESS, PhaseName.UNDERSTAND):                  # assess ends first
+        ck = _ckpt(phase)
+        ck.state.run_id = phase.value
+        write_checkpoint(rd, ck)
+    files = sorted(rd.checkpoints.glob("*.json"), key=checkpoint_file_order)
+    assert [f.name for f in files] == ["05-assess.json", "02-understand.json"]
+    rd.state.unlink()                                       # a run directory without state.json
+    state, source = _state(rd.root)
+    assert (state["run_id"], source) == ("understand", "checkpoints/02-understand.json")
+    # a legacy file (no ordinal) orders by seq; an unreadable one sorts first
+    legacy = rd.checkpoints / "05-assess.json"
+    data = json.loads(legacy.read_text(encoding="utf-8"))
+    data.pop("ordinal")
+    legacy.write_text(json.dumps(data), encoding="utf-8")
+    (rd.checkpoints / "09-junk.json").write_text("{not json", encoding="utf-8")
+    assert [checkpoint_file_order(f) for f in sorted(rd.checkpoints.glob("*.json"))] == [2, 5, 0]

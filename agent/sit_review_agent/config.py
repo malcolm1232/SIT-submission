@@ -5,7 +5,7 @@ max_tokens, allow_fallback, persona) are followed by free-layout keys (LLM retry
 ``claude_code`` block, the ``assess.shards`` criterion groups, phase flags, transport, fault
 schedule, report options) and a ``files:`` block naming the other files:
 ``stop_rules.yaml`` (stop rules, budgets, reserves and ``stage_limits_s``), ``tools.yaml`` (servers
-and tool allowlists),``criteria.yaml``, ``endpoints.yaml``, ``url_policy.yaml`` and ``persona.yaml``. Paths in
+and tool allowlists), ``criteria.yaml``, ``endpoints.yaml``, ``url_policy.yaml`` and ``persona.yaml``. Paths in
 ``files:`` and ``tools.yaml url_policy`` are relative to the directory of ``agent.yaml``.
 
 :func:`load_config` returns a frozen :class:`EffectiveConfig` (all files merged, CLI overrides

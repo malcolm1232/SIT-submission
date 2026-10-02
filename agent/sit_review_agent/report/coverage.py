@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from sit_review_agent.state.checkpoint import checkpoint_file_order
+
 SEVERITY_ORDER = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 SEVERITY_LETTER = {"critical": "C", "high": "H", "medium": "M", "low": "L"}
 CHECKED = ("findings", "no_issue")
@@ -86,6 +88,7 @@ def _state(root: Path) -> tuple[dict[str, Any], str]:
     if isinstance(st, dict):
         return st, "state.json"
     files = sorted((root / "checkpoints").glob("[0-9][0-9]-*.json")) if (root / "checkpoints").is_dir() else []
+    files.sort(key=checkpoint_file_order)            # latest by ordinal, not by file name (stage 1 ends in any order)
     if files:
         ck = _read_json(files[-1])
         if isinstance(ck, dict) and isinstance(ck.get("state"), dict):
