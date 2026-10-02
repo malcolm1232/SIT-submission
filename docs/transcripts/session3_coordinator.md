@@ -458,3 +458,19 @@ All three keys are drafted and validate, and all stay at `scored_run_ready: fals
 
 ---
 
+## Report: key-draft verifier
+
+**1. Checks.** Converter check with anchor verification passes (45 flaws, 3 keys, 0 failures); `validate_examples.py` passes in a scratch copy without `eval/blind`; ruff clean; full `pytest -q` 983 passed. (Commit 22e3e71 and later WIP snapshots carried these edits.)
+
+**2. Integrity.** Legacy key fields unchanged (each key minus `authoring_drafts` identical to `27d2ec5^`); canonical keys regenerate byte-identically; `--tier synthetic` recorded 0 opens, listings or globs of `eval/blind` before and after; schema rejects `scored_run_ready: true` with drafts or pending fields; pre-W3 canonical keys still validate; a trial sign-off with the sheet's one-liner made all three keys ready; partial sign-offs (no `canary_guid`, no `key_second_review`, no `signed_on`), an accepted flaw without a core insight, all refused; step 4a works. **Gap 1 fixed:** a signed key with a wrong anchor page became ready unless `--verify-anchors` was passed; anchors are now always checked when a key becomes ready. **Gap 2 fixed:** `--check` now fails if a canonical key on disk says ready but differs from the converter's output (a hand-set true). The converter records a key-only canary acceptance in the key's note.
+
+**3. Anchors.** All 45 flaw quotes checked by hand in context: all at the flaw's primary location (payments F12 stops before "2%" at a page break; acceptable). All 57 decision statements match the design tables. The two `verify_anchor` section failures W3 reported (clinical F09, lakehouse F03) no longer occur after W1's ingest fix.
+
+**4. Core insights.** All 45 read against the legacy credit items; a stratified sample of 25 also against the design passages. Edited 3: payments F03 (dropped a DynamoDB/MSK/Redis clause no credit item requires), payments F12 (key says "and/or"), clinical F12 (both halves of an "or" item were required). Flagged 9 for the owner: payments F04, F11; clinical F03, F05, F09; lakehouse F01, F04, F05, F06. Clinical F05 drops a legacy must-mention item (no latency guarantee for push notifications); clinical F09 omits why the postal code matters (rewrite proposed in the sheet). No draft leaks surface wording.
+
+**5. Dispositions and decisions.** All in the closed set and plausible; approved decisions match the "Confirmed Decisions" tables (19, 20, 18); links right; the three deliberate non-links defensible; optional owner link payments F15 to AD-004 ("Disaster recovery"). v2 changed sections match an independent diff.
+
+**6. Owner decisions before signing.** The 9 flagged core insights (in `substance` mode delete any clause that is only supporting detail); canary embedded vs key-only; external facts checked personally vs accepting the eval-data audit; the optional F15/AD-004 link; sign last (the sign-off is not tied to the draft text, so an edit after signing needs a new sign-off).
+
+---
+
