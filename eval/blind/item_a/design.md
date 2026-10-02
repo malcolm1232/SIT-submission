@@ -464,3 +464,212 @@ Agents create goodwill refunds in CRM, which calls `POST /v1/refunds/goodwill` w
 ### 7.8 Exchanges
 
 An exchange is created as a return with a linked replacement order. The replacement order is placed through the normal placement flow with a zero-value payment and a reference to the return. The replacement is reserved immediately but released to fulfilment only on `ReturnReceived` for the exchanged line, to avoid shipping replacements for items never returned. If the replacement variant is out of stock, the customer is offered a refund instead.
+
+---
+
+## 8. Security, Privacy and Governance
+
+### 8.1 Threat model summary
+
+A STRIDE-based threat model was run with Information Security in August 2026. The principal threats considered were: account takeover leading to fraudulent returns or redirection of refunds; insider abuse of goodwill refunds; tampering with order totals between basket and placement; enumeration of orders or returns; injection through free-text return reasons; and denial of service against the order placement endpoint at peak. Mitigations are referenced below.
+
+### 8.2 Authentication and authorisation
+
+- **Customers** authenticate with the H&R Customer Identity platform (OIDC). BFFs call Meridian with the customer's access token; Meridian validates the token and enforces that the `customerId` in the token owns the order or return being accessed.
+- **Trade Portal users** authenticate with the same platform; their tokens carry a B2B account claim and a role (`BUYER`, `APPROVER`, `VIEWER`).
+- **Agents** authenticate through corporate SSO (Entra ID). CRM passes the agent's token; Meridian authorises by role (`AGENT`, `TEAM_LEADER`, `RETURNS_SUPERVISOR`, `FINANCE_OPS`).
+- **Service-to-service** calls within AWS use IAM-authenticated requests (SigV4) via VPC endpoints. Calls to the Payments Gateway and IAS use mutual TLS with certificates from the H&R private CA.
+- **Refund redirection** is prevented by design: refunds can only go to the original payment method or to store credit on the ordering customer's account. There is no API to refund to an alternative card or bank account.
+- **Basket tampering** is mitigated by verifying the signatures on the tax quote and authorisation token and checking that the authorised amount equals the order total (section 7.1 step 3).
+
+### 8.3 API surface
+
+| Endpoint | Callers | Authentication | Notes |
+|---|---|---|---|
+| `POST /v1/orders` | BFFs, Trade Portal | Customer token | Idempotent; WAF rate limiting per customer and per IP |
+| `GET /v1/orders/{orderId}` | BFFs, CRM | Customer or agent token | Ownership check for customers |
+| `POST /v1/orders/{orderId}/cancellations` | BFFs, CRM | Customer or agent token | Ownership check for customers |
+| `POST /v1/returns` | BFFs, CRM | Customer or agent token | Ownership check for customers |
+| `GET /v1/returns/{returnId}` | BFFs, CRM | Customer or agent token | Ownership check for customers |
+| `GET /public/returns/{returnId}` | QR code on labels and collection emails; carrier drivers; store staff | None | Returns status, items being returned, customer name, collection address and collection time slot. Used by drivers to confirm the collection and by store staff on shared tablets. WAF rate limit 100 requests per 5 minutes per IP. |
+| `POST /v1/refunds/goodwill` | CRM | Agent token | Approval rules per section 7.7 |
+| `POST /v1/returns/{returnId}/inspections` | Returns-centre app | Agent token, `RETURNS_OPERATIVE` role | |
+| `POST /internal/carrier-events` | Carrier Hub | mTLS | Webhook relay |
+
+All endpoints validate input against OpenAPI schemas. Free-text fields (return reason notes, inspection notes) are length-limited, stored as plain text and HTML-encoded on output.
+
+### 8.4 Encryption and secrets
+
+- Data at rest is encrypted with customer-managed KMS keys per store (DynamoDB tables, Aurora clusters, S3 buckets, SQS queues, SNS topics).
+- TLS 1.2 or higher is enforced on all endpoints; API Gateway uses the `TLS_1_2` security policy.
+- Secrets (FraudShield API key, signing-key references) are held in AWS Secrets Manager with automatic rotation where the counterparty supports it.
+
+### 8.5 Data protection
+
+**Lawful basis.** Order and return processing is necessary for the performance of the contract with the customer. Retention of financial records is necessary for compliance with legal obligations (CMP-03). Fraud screening relies on legitimate interests, documented in the existing FraudShield legitimate interests assessment.
+
+**Retention schedule.**
+
+| Data | Retention | Mechanism |
+|---|---|---|
+| Order aggregate (`meridian-orders`) | 24 months after last activity, then customer snapshot anonymised; financial fields retained per CMP-03 | Scheduled anonymisation job |
+| Read model (`meridian-status`) | 24 months after last activity | DynamoDB TTL |
+| Returns and refunds (Aurora) | Per CMP-03 for the market | Scheduled purge job |
+| Inspection photos | 12 months | S3 lifecycle rule |
+| Event archive | 10 years | S3 Object Lock (section 6.6) |
+| Application logs | 90 days | CloudWatch Logs retention; logs must not contain personal data beyond IDs |
+
+**Erasure requests.** Erasure requests are received by the Data Protection Office and executed through the Customer Identity platform, which publishes a `CustomerErasureRequested` event. Meridian's erasure handler anonymises the `customer` snapshot in all of the customer's order items (except where an order is within an open return or dispute), deletes the read-model items, and replaces names and contact details in the `returns` schema with a tombstone value. The event archive is excluded from erasure: it is immutable by design and its retention is justified by CMP-03.
+
+**DPIA.** A Data Protection Impact Assessment has been drafted and will be finalised with the Data Protection Office before phase 1 (see OI-04).
+
+### 8.6 Audit
+
+All agent actions (cancellations, returns on behalf of customers, goodwill refunds, approvals, inspection outcomes, deduction decisions) are recorded with the agent ID, timestamp, correlation ID and before/after values, and are emitted as domain events and therefore archived. A monthly report of goodwill refunds by agent is produced for Customer Operations management.
+
+### 8.7 PCI DSS scope
+
+Meridian receives only a signed authorisation token reference and PSP references. It never receives, stores or transmits card numbers, CVV or track data, and it does not redirect or embed payment pages. Meridian is therefore outside the cardholder data environment; the Payments Gateway team has confirmed this scoping with H&R's QSA.
+
+---
+
+## 9. Operational Concerns
+
+### 9.1 Observability and SLOs
+
+| SLO | Target | Burn-rate alerting |
+|---|---|---|
+| Order placement availability | 99.95% monthly (NFR-01) | 2% budget in 1 hour (page), 5% in 6 hours (ticket) |
+| Order placement latency | p95 ≤ 400 ms (NFR-02) | p95 > 400 ms for 10 minutes (page) |
+| Event propagation | p99 ≤ 60 s (NFR-04) | Age of oldest message > 30 s on any order-events queue (page) |
+| Refund SLA | 100% within FR-REF-02 | See section 7.6 step 5 |
+
+Dashboards per service show RED metrics, queue depth and age, DynamoDB throttles, Aurora replica lag, and dependency latency and error rate for FraudShield and IAS.
+
+### 9.2 Capacity
+
+- **Order placement.** 1,200 orders per minute at peak is 20 orders per second. With 30% headroom (NFR-03), the Order API is sized for 26 orders per second. Each Fargate task (2 vCPU, 4 GB) handled 15 orders per second in the prototype at p95 210 ms; the service runs a minimum of 6 tasks and autoscales on CPU to 24 tasks.
+- **Order event stream.** An order generates on average 9 events over its lifecycle on the stream (placement, shipment creation, release, pick, pack, dispatch, delivery, plus returns and refunds averaged across orders). At peak this is 20 × 9 = 180 events per second on `order-events.fifo`. Amazon SNS and SQS FIFO support 300 messages per second per API action without batching, so the stream runs with 40% headroom. Publishing uses batching where possible, which raises the ceiling further.
+- **Consumers.** Each consumer service autoscales between 2 and 40 tasks based on `ApproximateNumberOfMessagesVisible` on its queue. The Orchestrator's average processing time per event is 35 ms (one DynamoDB conditional write and one publish).
+- **DynamoDB.** On-demand capacity, pre-warmed before peak by temporarily switching to provisioned capacity at peak-forecast levels and back, as recommended by AWS for predictable step changes.
+- **Aurora.** Writer `db.r7g.2xlarge`, readers `db.r7g.xlarge`. Returns and refunds write load at the post-Christmas returns peak is estimated at 120 writes per second, well within capacity.
+
+### 9.3 Failure handling and dead-letter queues
+
+- Every SQS queue has a redrive policy with `maxReceiveCount = 5` to a dedicated dead-letter queue.
+- Dead-letter queues are configured with a **30-day** message retention period so that messages that fail during the peak-trading change freeze or over long holiday weekends can be investigated and redriven without data loss.
+- A DLQ depth greater than zero raises a ticket to the owning team; a depth greater than 100 pages on-call.
+- Redrive is performed with the standard SQS redrive-to-source feature after the root cause is fixed. Consumers are idempotent, so a redrive of already-applied events is harmless.
+- Downstream outages (Finance ERP, CRM) are absorbed by queue backlog. The main queues use a message retention period of 4 days (the SQS default).
+
+### 9.4 Disaster recovery
+
+| Scenario | Response | RPO | RTO |
+|---|---|---|---|
+| Loss of one AZ | Automatic (multi-AZ ECS, DynamoDB, Aurora) | 0 | Minutes |
+| Loss of primary region | Runbook-driven failover: promote Aurora secondary, switch DynamoDB writes, scale ECS in eu-central-1, enable standby SNS/SQS, flip Route 53 | DynamoDB ≈ 1 s; Aurora ≈ 1 s | ≤ 60 min (NFR-06) |
+| Data corruption by defect | DynamoDB point-in-time recovery (35 days); Aurora backtrack (24 h) and snapshots; replay from event archive | Point in time | Hours |
+
+Regional failover is rehearsed twice a year, once before peak.
+
+### 9.5 Runbooks
+
+Runbooks will be written for: regional failover; FraudShield outage; IAS outage; DLQ investigation and redrive; refund stuck in `MANUAL_REVIEW`; PSP outage; peak pre-warm; erasure request failure; and event replay into a new consumer.
+
+### 9.6 Cost
+
+The estimated steady-state monthly cost is 41,000 GBP (compute 14,000; DynamoDB 9,500; Aurora 7,800; messaging 2,100; S3, Firehose and data transfer 3,600; observability 4,000). The Atlas comparable run cost is 68,000 GBP per month, so Meridian is at 60% of Atlas and meets NFR-12.
+
+---
+
+## 10. Decisions
+
+| ID | Decision | Rationale | Alternatives considered |
+|---|---|---|---|
+| DEC-01 | Build a new OMS rather than buy a packaged OMS | Packaged OMS products evaluated in 2025 did not support H&R's B2B order sizes and returns policy engine without heavy customisation; licence cost exceeded budget | Two commercial OMS products; extending Atlas |
+| DEC-02 | DynamoDB for the order aggregate | Predictable single-digit-millisecond access by key; on-demand scaling for peak; no schema migration on the hot path | Aurora PostgreSQL for everything |
+| DEC-03 | Aurora PostgreSQL for returns and refunds | Relational reporting and reconciliation needs; moderate volume | DynamoDB with export to analytics |
+| DEC-04 | SNS/SQS for messaging | Managed, team familiarity, native FIFO; Kafka (MSK) judged excessive for volumes | Amazon MSK; EventBridge |
+| DEC-05 | Firehose to S3 with Object Lock for event archive | Low cost, tamper-proof audit trail | MSK tiered storage |
+| DEC-06 | Policy module as embedded Kotlin DSL | Fast, testable, versioned with code; Legal reviews generated scenario tables | External rules engine |
+| DEC-07 | FraudShield screening is synchronous and fail-closed at placement | Finance Risk will not accept unscreened orders; post-placement screening would require holding orders and complicate customer messaging | Async screening with hold; local rules fallback |
+| DEC-08 | Refunds only to original method or store credit | Prevents refund redirection fraud; aligns with statutory requirement | Refund to any card on file |
+| DEC-09 | Human-readable return IDs | Reduces contact-centre handling time; customers quote them | Opaque UUIDs |
+| DEC-10 | Warm standby rather than active-active | Active-active would require multi-writer conflict resolution for the order aggregate; RTO of 60 minutes is acceptable to the business | Active-active global tables; pilot light |
+
+---
+
+## 11. Open Items
+
+| ID | Item | Owner | Due |
+|---|---|---|---|
+| OI-01 | Confirm the Finance ERP connector's tolerance for duplicate events after redrive | Finance Systems | 2026-10-31 |
+| OI-02 | Select the store credit ledger: build within Refund Service or use the gift-card platform | Commerce Platform | 2026-11-15 |
+| OI-03 | Agree the inspection photo standard with the returns centres | Customer Operations | 2026-11-15 |
+| OI-04 | Finalise the DPIA with the Data Protection Office | Commerce Platform / DPO | 2026-12-01 |
+| OI-05 | Confirm Carrier Hub can supply return labels for FR collection points | Fulfilment Integration | 2026-11-30 |
+| OI-06 | Define the faulty-goods workflow (out of scope of this document) | Customer Operations | 2027-01-31 |
+| OI-07 | Agree with Legal (Consumer) the wording of the returns policy pages per market | Legal | 2026-12-15 |
+
+---
+
+## 12. Acceptance Criteria
+
+| ID | Criterion | Verifies |
+|---|---|---|
+| AC-01 | A placement retried with the same `Idempotency-Key` up to 24 hours later returns the original response and creates no second order (automated test). | FR-ORD-02 |
+| AC-02 | A 500-line Trade Portal order is placed, released, partially cancelled, partially returned and refunded end-to-end in staging. | FR-ORD-03 |
+| AC-03 | All return eligibility scenarios in the Legal-approved scenario catalogue pass for every market. | FR-RET-01, FR-RET-03, CMP-02 |
+| AC-04 | A status change is visible on "My orders" within 60 seconds at p99 during the peak load test. | FR-ORD-07, NFR-04 |
+| AC-05 | Load test in the performance environment at 600 orders per minute (50% of 2027 forecast peak) for 30 minutes achieves p95 ≤ 400 ms and p99 ≤ 900 ms with no errors. | NFR-02, NFR-03 |
+| AC-06 | Chaos test: forced PSP timeouts on 20% of refund calls produce no duplicate refunds at the PSP sandbox and all refunds eventually reach `SUBMITTED`. | FR-REF-07 |
+| AC-07 | In the refund SLA test, 100% of refunds are issued within 14 days of inspection pass. | FR-REF-02 |
+| AC-08 | A regional failover rehearsal completes within 60 minutes with no lost orders. | NFR-05, NFR-06 |
+| AC-09 | Independent WCAG 2.2 AA audit of the return journey with no open critical or serious findings. | NFR-08, CMP-05 |
+| AC-10 | Penetration test of internet-facing endpoints with no open high or critical findings. | NFR-10 |
+| AC-11 | An erasure request is executed end-to-end and verified against all stores listed in section 8.5 within 30 days. | CMP-01 |
+| AC-12 | A goodwill refund above 50 GBP cannot be approved by the requesting agent. | FR-REF-06 |
+| AC-13 | Daily refund totals reconcile to the PSP settlement report to the penny for 30 consecutive days of parallel running. | FR-REF-03 |
+
+---
+
+## 13. Rollout Plan
+
+### 13.1 Phases
+
+| Phase | Scope | Dates | Exit criteria |
+|---|---|---|---|
+| 0. Shadow | Meridian receives a copy of all IE and UK orders and returns, processes them with side-effects disabled (no WMS release, no PSP calls, no customer notifications) and its decisions are compared to Atlas | 2027-01-11 to 2027-02-19 | Eligibility and refund amount match rate ≥ 99.5%, every mismatch explained |
+| 1. Ireland | All new IE orders placed in Meridian; IE returns for Meridian orders handled by Meridian | 2027-03-01 | 4 weeks stable; AC-01 to AC-13 met |
+| 2. Netherlands and France | As phase 1 | 2027-04-12 | 4 weeks stable |
+| 3. Germany | As phase 1 | 2027-05-24 | 4 weeks stable |
+| 4. United Kingdom and Trade Portal | As phase 1 | 2027-07-05 | 8 weeks stable, peak readiness review passed |
+| 5. Atlas decommission | Atlas read-only, then switched off | 2027-11-30 | All Atlas-originated returns windows closed; data archived |
+
+Peak trading change freeze runs from 2027-11-15 to 2028-01-08; no phase transitions are permitted during the freeze.
+
+### 13.2 Coexistence
+
+During each phase, orders placed before the market's cutover remain in Atlas and are cancelled, returned and refunded through Atlas until their return window has closed. Orders placed after cutover are handled entirely by Meridian. Customer-facing "My orders" pages merge both sources via the BFF during the coexistence period. Finance ERP receives events from both systems, distinguished by a source system code.
+
+### 13.3 Rollback
+
+Each market cutover is controlled by a per-market routing flag in the BFFs. If go/no-go criteria are breached in the first four weeks of a phase (placement error rate above 0.5% for 15 minutes, any duplicate refund, or a severity-1 incident attributable to Meridian), the flag is switched and new orders for that market are routed back to Atlas within five minutes. Because Atlas remains fully operational throughout the coexistence period and its data is untouched by Meridian, no data migration is required for rollback.
+
+### 13.4 Communications and training
+
+Contact-centre agents receive training two weeks before each market cutover. Returns-centre operatives are trained on the inspection app during phase 0. The returns policy pages and pre-contractual information for each market are updated, with Legal approval (OI-07), before that market's cutover.
+
+---
+
+## Appendix A. Glossary
+
+| Term | Meaning |
+|---|---|
+| Atlas | Legacy on-premise OMS being replaced |
+| BFF | Back end for front end; channel-specific API layer |
+| IAS | Inventory Availability Service |
+| PSP | Payment service provider |
+| Withdrawal | The consumer's statutory right to cancel a distance contract without giving a reason |
+| WISMR | "Where is my refund?" contact reason |
+| ULID | Universally unique lexicographically sortable identifier |

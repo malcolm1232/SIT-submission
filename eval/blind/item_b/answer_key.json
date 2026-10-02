@@ -1,0 +1,411 @@
+{
+  "item_id": "item_b",
+  "document": "design.md",
+  "document_id": "FDC-SEMS-DD-001 Rev C",
+  "domain": "Industrial energy management: site energy management system (SEMS) and battery energy storage (BESS) controls for a cold-chain distribution centre with rooftop PV, utility demand response and critical-load backup (US interconnection context: IEEE 1547-2018, UL 9540, NFPA 855, IEEE 2030.5)",
+  "severity_scale": {
+    "critical": "Credible path to injury or loss of life, or a design that cannot be lawfully energised; must be fixed before build",
+    "high": "Requirement or regulatory/contractual obligation will not be met as designed, or significant safety/security exposure; must be fixed before build",
+    "medium": "Requirement unmet or unverifiable, or claim incorrect, with bounded consequence; fix before acceptance",
+    "low": "Minor inaccuracy or clarity issue"
+  },
+  "defect_count": 14,
+  "defects": [
+    {
+      "id": "DEF-01",
+      "category": "safety / safety-function architecture",
+      "severity": "critical",
+      "location": {
+        "sections": [
+          "8.2",
+          "4 (P-01)",
+          "14 (AC-15)",
+          "7.1"
+        ],
+        "requirement_ids": [
+          "NFR-SAF-03",
+          "NFR-SAF-05",
+          "AC-15"
+        ]
+      },
+      "description": "The emergency stop is implemented in software: E-stop contacts go only to site-controller inputs, and the controller then sends Modbus shutdown commands to the PCS and EBMS and a GOOSE open to 52-B. There is no hardwired path from the E-stop to the PCS shutdown inputs or to the DC contactor or breaker trip circuits.",
+      "why_it_matters": "An emergency stop has to work when the control system has failed, is hung, has been mis-programmed or has been compromised. A wedged controller, a bad logic download, a network fault or a cyber intrusion would all defeat this E-stop, and these are the same common-cause failures that affect both redundant controllers. The design contradicts its own principle P-01 (safety independent of software, hardwired interlocks). It falls short of accepted E-stop practice (ISO 13850 / IEC 60204-1 stop category 0, a direct hardwired de-energise-to-trip circuit). It also falls short of what an AHJ would expect of an ESS emergency shutdown under NFPA 855 / NEC 706. FACP-B already uses a hardwired trip path (6.7), which makes the inconsistency obvious. The 'same redundancy as the control function' argument confuses availability with safety integrity.",
+      "credit_requires": [
+        "Identifies that the E-stop acts through site-controller software and network commands (Modbus/GOOSE) rather than a hardwired circuit",
+        "States that this is a safety defect: the E-stop must not depend on the controller, network or software (common-cause failure, cyber), and/or notes the contradiction with P-01 or the hardwired FACP-B approach"
+      ],
+      "acceptable_fix": "Hardwire the E-stop stations in a fail-safe (normally closed, de-energise-to-trip) safety relay loop. The loop acts directly on the PCS hardwired shutdown/enable inputs, the EBMS/enclosure trip inputs (opening DC contactors) and a shunt-trip or undervoltage release on 52-B, independent of the SEMS. The SEMS only monitors E-stop state. Specify the required safety integrity (e.g. a PL/SIL target from the hazard log) and test the hardwired path in AC-15 with the controllers powered down."
+    },
+    {
+      "id": "DEF-02",
+      "category": "safety / failure-mode behaviour",
+      "severity": "high",
+      "location": {
+        "sections": [
+          "6.2 (Communication loss behaviour)",
+          "7.9",
+          "12 (D-10)",
+          "4 (P-02)"
+        ],
+        "requirement_ids": [
+          "FR-EXP-01",
+          "FR-EXP-02",
+          "FR-EXP-03",
+          "FR-BK-02",
+          "NFR-AV-02"
+        ]
+      },
+      "description": "The PCS communication watchdog is set to 'hold last setpoint' with no timeout. If the site controllers or the network fail for longer than a switchover, each PCS keeps charging or discharging at its last setpoint indefinitely.",
+      "why_it_matters": "With site load or PV changing, a held discharge can drive the site into net export: it breaches the 500 kW export limit, the 2 s limit and the 'BESS shall not be a net exporter' condition of the interconnection agreement. A held discharge also drains the battery through the 35% backup reserve down to the BMS cut-off, defeating the backup function. A held charge can draw unbounded import during on-peak. The PCS/BMS internal protections stop cell damage but do nothing for interconnection or reserve limits. This contradicts P-02 (fail to a known conservative state that keeps the site within interconnection limits). Holding the setpoint is reasonable only for a bounded switchover interval (≤ ~1-2 s).",
+      "credit_requires": [
+        "Identifies the unbounded 'hold last setpoint' behaviour on PCS communication loss",
+        "Explains at least one concrete consequence (export-limit / BESS-export violation, reserve depletion, or uncontrolled import) and/or the contradiction with P-02"
+      ],
+      "acceptable_fix": "Set a watchdog timeout slightly longer than the worst-case controller switchover (e.g. 2-5 s) after which the PCS ramps to zero (or to a safe default such as charge-only/no-export). Optionally keep hold during the timeout window. Add a FAT/SAT test for sustained communication loss, and update D-10."
+    },
+    {
+      "id": "DEF-03",
+      "category": "external standard / grid safety",
+      "severity": "high",
+      "external_fact": "IEEE 1547-2018 clause 8.1 (unintentional islanding) requires DER to detect the island, cease to energize and trip within 2 seconds of island formation (not 5 s). UL 1741 SB / IEEE 1547.1 test to the 2 s limit.",
+      "location": {
+        "sections": [
+          "3.1",
+          "7.5 (step 2)",
+          "14 (AC-05)"
+        ],
+        "requirement_ids": [
+          "FR-GRID-04",
+          "AC-05",
+          "FR-BK-01"
+        ]
+      },
+      "description": "FR-GRID-04 says DER shall cease to energize and trip within 5 s of unintentional island formation 'consistent with IEEE 1547-2018 clause 8.1'. The 7.5 sequence and AC-05 (R-PCC opens within 5 s) carry the same 5 s value through.",
+      "why_it_matters": "The 5 s value misstates the standard. A design and acceptance test built on 5 s would accept an anti-islanding/MID scheme that leaves the site energizing a de-energised utility section for up to 5 s. That is a line-worker safety hazard, it risks out-of-phase reclosing damage, and it would fail the utility's interconnection review. It also flows into the site-level MID (R-PCC) settings and the backup-restoration timing.",
+      "credit_requires": [
+        "States that IEEE 1547-2018 requires cease-to-energize/trip within 2 s for unintentional islanding, so the 5 s value in FR-GRID-04 (and AC-05 / 7.5) is wrong",
+        "Notes the safety or interconnection-compliance consequence"
+      ],
+      "acceptable_fix": "Change FR-GRID-04 to 2 s (or the utility's stricter value). Set R-PCC island-detection/MID trip so that the site as a whole separates within 2 s while still respecting ride-through, and update AC-05 and the 7.5 timeline (which then improves the FR-BK-01 margin)."
+    },
+    {
+      "id": "DEF-04",
+      "category": "external protocol limit / interface feasibility",
+      "severity": "medium",
+      "external_fact": "Modbus Application Protocol Specification V1.1b3: function code 0x03 (Read Holding Registers) can read at most 125 registers (0x7D) per request; the PDU is limited to 253 bytes.",
+      "location": {
+        "sections": [
+          "6.3",
+          "6.1 (IF-BMS-02)"
+        ],
+        "requirement_ids": [
+          "IF-BMS-02",
+          "NFR-PERF-03",
+          "AC-12"
+        ]
+      },
+      "description": "IF-BMS-02 reads each 200-register rack status block 'in a single function code 0x03 request of 200 registers'. The polling and EBMS loading budget (40 transactions/s, ≤250 ms busy per EBMS per second) is built on that single-transaction assumption.",
+      "why_it_matters": "The request as specified is not valid Modbus; a compliant EBMS will return an exception (illegal data value). At least two requests per rack are needed (80+ transactions/s), which doubles the EBMS load to up to ~500 ms per second per EBMS plus the summary reads. The 'ample margin' claim and the NFR-PERF-03 1 s refresh therefore need re-validation. Splitting the block also means the two halves are not read atomically.",
+      "credit_requires": [
+        "Identifies that a single FC03 read is limited to 125 registers, so a 200-register read is not possible",
+        "Notes that the transaction count/timing budget for NFR-PERF-03 must be recalculated"
+      ],
+      "acceptable_fix": "Split each rack block into two reads (e.g. 125 + 75 or 100 + 100), or ask the supplier for a compact summary block. Recompute the per-EBMS polling budget including summary reads and retries, consider reading low-priority fields at a slower rate, and confirm NFR-PERF-03 in AC-12."
+    },
+    {
+      "id": "DEF-05",
+      "category": "external standard / compliance",
+      "severity": "medium",
+      "external_fact": "UL 9540A is a test method (Test Method for Evaluating Thermal Runaway Fire Propagation in BESS) that produces a test report; products are not 'certified to UL 9540A'. The safety listing for an ESS is UL 9540 (with cells/modules to UL 1973 and PCS to UL 1741). NFPA 855 requires UL 9540 listing and uses UL 9540A test data to justify spacing, size and suppression design.",
+      "location": {
+        "sections": [
+          "3.2",
+          "14 (AC-14)"
+        ],
+        "requirement_ids": [
+          "NFR-SAF-01",
+          "AC-14",
+          "NFR-SAF-02"
+        ]
+      },
+      "description": "NFR-SAF-01 requires racks and enclosures to be 'certified to UL 9540A', and AC-14 asks for a 'UL 9540A certificate'. Nothing requires the system to be listed to UL 9540, even though UL 9540 appears in the reference list (R4).",
+      "why_it_matters": "The procurement and acceptance requirement asks for something that does not exist and omits the listing the AHJ will actually require under NFPA 855. A supplier could satisfy the letter of the requirement with a 9540A report alone, leaving the system without a UL 9540 listing, which can block AHJ approval (OI-01) and energisation.",
+      "credit_requires": [
+        "States that UL 9540A is a test method/report, not a certification or listing",
+        "States that the requirement should be UL 9540 listing for the ESS, with UL 9540A test reports (cell/module/unit, and installation level where needed) supporting the NFPA 855 design"
+      ],
+      "acceptable_fix": "Reword NFR-SAF-01: 'The BESS shall be listed to UL 9540; cells/modules to UL 1973; PCS to UL 1741 SB. The supplier shall provide UL 9540A cell-, module- and unit-level test reports (and installation-level if required by the AHJ) supporting the spacing, explosion control and suppression design.' Update AC-14 accordingly."
+    },
+    {
+      "id": "DEF-06",
+      "category": "security / external standard",
+      "severity": "high",
+      "external_fact": "IEEE 2030.5-2018 mandates HTTPS using TLS 1.2 with the TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 cipher suite and device certificates (mutual authentication via the 2030.5 PKI) for secured resources; utility CSIP implementations require it. HTTP without TLS is non-conformant for DER control.",
+      "location": {
+        "sections": [
+          "6.6",
+          "6.1 (IF-UTL-01)",
+          "9.1 (CD-5)"
+        ],
+        "requirement_ids": [
+          "FR-DR-01",
+          "NFR-SEC-02",
+          "IF-UTL-01"
+        ]
+      },
+      "description": "The IEEE 2030.5 client is configured for plain HTTP on port 80 with TLS disabled. The justification is that the cellular private APN is 'closed', and the aim is to avoid client certificate provisioning.",
+      "why_it_matters": "This is non-conformant with IEEE 2030.5/CSIP (FR-DR-01), so the utility will likely refuse onboarding. It directly contradicts NFR-SEC-02 (all communications leaving the OT DMZ encrypted and mutually authenticated). A private APN is shared by all programme participants and the carrier, so it is not a trust boundary. Without TLS and mutual authentication, DER control commands (import/export limits, fixed power) can be spoofed or altered, and the device identity, which in 2030.5 is derived from the certificate (LFDI/SFDI), is not established.",
+      "credit_requires": [
+        "Identifies that IEEE 2030.5 is run over HTTP without TLS",
+        "States that IEEE 2030.5/CSIP requires TLS with certificate-based mutual authentication, and/or that it violates NFR-SEC-02, and that a private APN is not an adequate substitute"
+      ],
+      "acceptable_fix": "Use HTTPS/TLS 1.2 with the 2030.5-mandated cipher suite and a utility-PKI device certificate on UCG-1. Track certificate provisioning as an open item with the utility. Keep the APN allow-list as defence in depth."
+    },
+    {
+      "id": "DEF-07",
+      "category": "internal inconsistency / timing infeasibility",
+      "severity": "high",
+      "location": {
+        "sections": [
+          "6.4",
+          "6.1 (IF-MTR-01)",
+          "7.3",
+          "12 (D-08)"
+        ],
+        "requirement_ids": [
+          "FR-EXP-02",
+          "FR-EXP-01",
+          "IF-MTR-01",
+          "AC-02"
+        ]
+      },
+      "description": "FR-EXP-02 requires any export exceedance to be corrected within 2 s. The export control loop gets its only PCC measurement from M-1 through gateway G-1, which refreshes every 5 s (shared RS-485 segment). Section 7.3 argues compliance from the 100 ms loop cycle and 200 ms PCS response alone, ignoring the measurement latency. The R-PCC 32 backstop (600 kW for 5 s) does not meet the 2 s limit either.",
+      "why_it_matters": "The control loop cannot see an exceedance for up to 5 s (plus G-1 and Modbus latency), so it cannot guarantee correction within 2 s. A sudden load drop at high PV will breach the interconnection condition. AC-02, with its 10 samples/s analyser, would likely fail at SAT, forcing late redesign or a fixed PV curtailment that loses value.",
+      "credit_requires": [
+        "Identifies the mismatch between the 5 s PCC meter refresh used by the export loop and the 2 s export-exceedance requirement",
+        "States that the 7.3 compliance argument is invalid because it ignores measurement latency (mentioning that the backstop is also too slow earns extra credit, not required)"
+      ],
+      "acceptable_fix": "Give the fast loop a dedicated fast PCC measurement: a separate power transducer/meter on Modbus TCP or IEC 61850 at ≥10 Hz, or R-PCC analog values via GOOSE/sampled reporting. Keep M-1 for M&V. Alternatively use a UL 1741 PCS-certified export-limiting controller with a verified ≤2 s open-loop response, and set the relay backstop to meet the 2 s limit."
+    },
+    {
+      "id": "DEF-08",
+      "category": "arithmetic / capacity sizing",
+      "severity": "high",
+      "location": {
+        "sections": [
+          "7.2 (Energy check)",
+          "5.2",
+          "7.8"
+        ],
+        "requirement_ids": [
+          "FR-PS-01",
+          "FR-BK-02",
+          "FR-OPT-02",
+          "AC-01"
+        ]
+      },
+      "description": "The energy check compares the design-day discharge need (3,150 kWh at PCC, ~3,350 kWh DC) with the full 3,600 kWh usable energy (5-95% SoC) and claims a 7% margin. FR-BK-02 and the optimiser (7.8) hold SoC at or above 35% while grid-connected, so only 95%→35% = 60% × 4,000 = 2,400 kWh is available for peak shaving.",
+      "why_it_matters": "Available energy (~2,400 kWh DC, ~2,250 kWh at PCC) is roughly 900-950 kWh short of the design-day need (more once the 2,150 kW tracking target is accounted for). FR-PS-01 cannot be met on the design day, which is the core economic objective. Either the reserve, the peak target or the BESS size must change, and the investment case rests on this number.",
+      "credit_requires": [
+        "Identifies that the peak-shaving energy check ignores the 35% SoC backup reserve (FR-BK-02)",
+        "Shows or states that the energy available for shaving (~2,400 kWh) is less than the ~3,150-3,350 kWh required, so FR-PS-01 is not met on the design day"
+      ],
+      "acceptable_fix": "Redo the energy budget with the reserve. Options: increase energy capacity (e.g. ~5.5 MWh nameplate), relax the import cap target, allow the reserve to be partially used during on-peak with a documented resilience trade-off, or use a weather/outage-risk-based dynamic reserve. Then update FR-PS-01/FR-BK-02 consistently and make AC-01 FAT start from the realistic SoC with the reserve enforced."
+    },
+    {
+      "id": "DEF-09",
+      "category": "arithmetic / requirement not met",
+      "severity": "medium",
+      "location": {
+        "sections": [
+          "11.2",
+          "3.2"
+        ],
+        "requirement_ids": [
+          "NFR-AV-01",
+          "AC-19"
+        ]
+      },
+      "description": "NFR-AV-01 requires ≥99.95% control-function availability including planned maintenance, and defines unavailability as the controller not issuing dispatch setpoints. Section 11.2 schedules 12 × 4 h = 48 h/year of maintenance mode (no setpoints), plus 2 h unplanned, then claims the target is met.",
+      "why_it_matters": "99.95% allows only ~4.4 h/year of downtime. 50 h/year gives ~99.43%. The claim is arithmetically false, and AC-19 will fail by design, or the metric will be quietly redefined after the fact.",
+      "credit_requires": [
+        "Computes or states that 48+ h/year of planned downtime is incompatible with 99.95% (~4.4 h/year allowed), so the claim in 11.2 is false"
+      ],
+      "acceptable_fix": "Either exclude planned windows from the metric (and say so in NFR-AV-01), reduce the target to a realistic value (e.g. 99.4%), or use the redundant controller pair to patch one controller at a time so the control function stays available during maintenance."
+    },
+    {
+      "id": "DEF-10",
+      "category": "internal inconsistency / contractual constraint",
+      "severity": "medium",
+      "location": {
+        "sections": [
+          "2.5 (A-06)",
+          "7.8",
+          "12 (D-09)"
+        ],
+        "requirement_ids": [
+          "A-06",
+          "FR-OPT-02"
+        ]
+      },
+      "description": "A-06 states that the warranty caps throughput at 365 EFC in any warranty year and voids the capacity retention guarantee if exceeded. Section 7.8 plans ~459 EFC/year and tracks only the 4,000 EFC lifetime limit pro-rata, and D-09 accepts this on the basis of year-8 augmentation.",
+      "why_it_matters": "The planned dispatch breaks the annual cap in year 1, voiding the capacity-retention guarantee from then on. That is a material commercial risk the financial model does not reflect. It also violates FR-OPT-02, which requires the optimiser to respect A-06 throughput limits. The analysis addresses the wrong constraint.",
+      "credit_requires": [
+        "Identifies that ~459-460 EFC/year exceeds the 365 EFC annual warranty cap in A-06",
+        "Notes that the design/D-09 only considers the lifetime 4,000 EFC limit and/or that FR-OPT-02 is violated"
+      ],
+      "acceptable_fix": "Add an annual (and rolling) throughput constraint ≤365 EFC (with margin) to the optimiser, cut the lower-value morning part-peak cycling, or negotiate a warranty amendment for higher annual throughput. Re-run the financial case."
+    },
+    {
+      "id": "DEF-11",
+      "category": "security architecture",
+      "severity": "high",
+      "location": {
+        "sections": [
+          "9.3",
+          "9.1",
+          "4 (P-04)"
+        ],
+        "requirement_ids": [
+          "NFR-SEC-01",
+          "NFR-SEC-02",
+          "NFR-SEC-03",
+          "NFR-SEC-04"
+        ]
+      },
+      "description": "The PCS supplier's router VR-1 sits in the yard cabinet on Zone 1 and Zone 2 VLANs, has its own broadband connection, and keeps a persistent IPsec tunnel (supplier-managed pre-shared key) to the supplier NOC. Supplier staff reach PCS and EBMS management interfaces directly, under the supplier's own access controls.",
+      "why_it_matters": "This bypasses the OT DMZ, FW-0/1/2, the jump host, MFA, per-session approval and session recording. It directly violates P-04 (no connection from outside the DMZ may reach Zones 1/2) and NFR-SEC-03, and weakens NFR-SEC-01 (SL-T 3 for remote access) and NFR-SEC-04 (logging). The conduit does not appear in the 9.1 conduit table. The tunnel gives a third party, and anyone who compromises its NOC, a standing path to devices that control 2 MW and whose protection settings are safety-relevant.",
+      "credit_requires": [
+        "Identifies the persistent supplier VPN/router into Zones 1/2 as bypassing the DMZ/jump-host remote access path",
+        "Cites the conflict with P-04 and/or NFR-SEC-03 (MFA, per-session approval, recording) or the missing conduit in 9.1"
+      ],
+      "acceptable_fix": "Terminate supplier connectivity in the OT DMZ. Fleet telemetry goes outbound-only through the historian replica or a supplier data collector in the DMZ. Interactive support goes through the jump host with individual supplier accounts, MFA, per-session approval and recording. Document it as a conduit with an SL-T 3 assessment, and amend the service agreement if needed."
+    },
+    {
+      "id": "DEF-12",
+      "category": "time synchronisation / requirement not achievable",
+      "severity": "medium",
+      "location": {
+        "sections": [
+          "6.10",
+          "6.1 (IF-TIME-01)"
+        ],
+        "requirement_ids": [
+          "NFR-OBS-02",
+          "AC-18"
+        ]
+      },
+      "description": "NFR-OBS-02 requires ±1 ms SoE alignment across relays, PCS, EBMS and controllers. Section 6.10 takes time for every device from corporate NTP servers in a remote enterprise data centre (referenced to public pool.ntp.org) through a DMZ relay, and claims ±1 ms.",
+      "why_it_matters": "NTP across a WAN and firewalls typically achieves only a few to tens of milliseconds of accuracy, with asymmetry and jitter. Public pool servers are not a traceable or dependable reference. The ±1 ms claim is unsupported, AC-18 will likely fail, and post-event analysis (e.g. islanding and protection sequences) will be unreliable. It also makes OT protection timestamps depend on enterprise and internet services.",
+      "credit_requires": [
+        "States that NTP from corporate/internet servers cannot reliably deliver ±1 ms alignment",
+        "Recommends a local precision time source (GNSS clock with PTP/IEEE 1588 power profile and/or IRIG-B for relays)"
+      ],
+      "acceptable_fix": "Install a local GNSS-disciplined grandmaster clock in Zone 1/2. Distribute time via IEEE 1588 PTP (IEC/IEEE 61850-9-3 power profile) over the PRP network and/or IRIG-B to relays, with NTP from the local clock for devices that only support NTP (and relax NFR-OBS-02 for those). Monitor sync status."
+    },
+    {
+      "id": "DEF-13",
+      "category": "verification gap",
+      "severity": "medium",
+      "location": {
+        "sections": [
+          "14 (AC-08)",
+          "7.5",
+          "15 (Phase 2)"
+        ],
+        "requirement_ids": [
+          "FR-BK-01",
+          "AC-08"
+        ]
+      },
+      "description": "FR-BK-01 (unplanned loss of utility supply: isolate, shed, restore F-3 within 10 s) is traced only to AC-08. AC-08 tests an operator-commanded planned island from the HMI, which is the FR-BK-03 path. No test exercises an unplanned loss of supply.",
+      "why_it_matters": "The unplanned path is the main resilience use case. It differs materially from the planned transfer: relay-based loss-of-mains detection, PCS anti-islanding trip, black-start/soft-energisation of the bus and transformer from a dead state, feeder shedding by GOOSE, restoration timing and FCS restart. A planned transfer that passes says nothing about whether the 10 s restore works, so a key requirement goes unverified.",
+      "credit_requires": [
+        "Notes that FR-BK-01 (unplanned grid loss) is not actually tested, since AC-08 only covers a planned/commanded island",
+        "Explains that the unplanned sequence (detection, dead-bus black start, timing) is different and must be verified"
+      ],
+      "acceptable_fix": "Add an acceptance test that simulates unplanned loss of supply (e.g. opening the upstream breaker in coordination with the utility, or opening 52-PCC by relay trip simulation with the site loaded). Measure time to F-3 restoration against 10 s, check correct feeder shedding and PCS-A black start, and include FAT simulation of the same sequence."
+    },
+    {
+      "id": "DEF-14",
+      "category": "planning / dependency sequencing",
+      "severity": "high",
+      "location": {
+        "sections": [
+          "13 (OI-02)",
+          "15",
+          "14 (AC-04, AC-05)",
+          "2.4 (C-02)"
+        ],
+        "requirement_ids": [
+          "OI-02",
+          "FR-GRID-01",
+          "FR-GRID-04",
+          "AC-04",
+          "AC-05"
+        ]
+      },
+      "description": "OI-02 (utility DER settings file and final R-PCC protection settings) is 'needed by Phase 3', and Phase 3 depends on it. Yet Phase 1 energises the BESS in grid-parallel operation and puts peak shaving into service, and AC-04 (settings match the utility file) is a Phase 1 exit criterion. Anti-islanding verification (AC-05) is deferred to Phase 2, after grid-parallel operation has started.",
+      "why_it_matters": "The BESS cannot lawfully or safely operate in parallel with the grid before the utility has approved the settings and protection and granted permission to operate (C-02 acknowledges utility authority). AC-04 cannot be passed in Phase 1 without the file. Operating months 3-10 without verified anti-islanding and final R-PCC settings is a grid-safety exposure. The schedule as written is infeasible, or forces non-compliant interim operation.",
+      "credit_requires": [
+        "Identifies that the utility settings file / R-PCC settings (OI-02) are scheduled for Phase 3 but are prerequisites for Phase 1 grid-parallel energisation (and for AC-04)",
+        "Notes the safety/compliance consequence, or that AC-05 anti-islanding verification comes after grid-parallel operation starts"
+      ],
+      "acceptable_fix": "Make OI-02 (and utility permission to operate) a gate before Phase 1 energisation. Move AC-04 and AC-05 (plus R-PCC secondary injection with final settings) into the Phase 1 pre-energisation checklist, and re-baseline the schedule around the utility study timeline."
+    }
+  ],
+  "deliberately_sound_sections": [
+    {
+      "section": "6.3 (last paragraphs), 9.4 and D-03: plain Modbus TCP / GOOSE / BACnet inside Zones 1 and 2",
+      "likely_false_positive": "Flagging 'unencrypted Modbus' as a defect requiring TLS everywhere.",
+      "why_sound": "The selected devices do not support Modbus/TCP Security. IEC 62443 SL-T 2 can be met with zone segmentation, port security, ACLs, passive monitoring of write function codes and physical security, all of which are specified. Traffic leaving the OT DMZ is separately required to be encrypted (NFR-SEC-02). The defect in 6.3 is the 125-register limit (DEF-04), not the lack of encryption."
+    },
+    {
+      "section": "8.3 and D-04: water-based sprinkler suppression with explosion control exhaust, no clean agent",
+      "likely_false_positive": "Claiming water must not be used on lithium-ion batteries or electrical equipment and that a clean-agent system is required.",
+      "why_sound": "Current NFPA 855 practice and UL 9540A large-scale test evidence support water-based suppression for cooling and limiting propagation. Clean agents can knock down flame but do not stop thermal runaway and can let flammable gas accumulate. Explosion control per NFPA 69 is provided separately and is activated by hardwired gas detection."
+    },
+    {
+      "section": "5.2 ratings table and FR-BK-02 reserve arithmetic",
+      "likely_false_positive": "Flagging 3,600 kWh usable or the 1,200 kWh / 3 h reserve as miscalculated.",
+      "why_sound": "4,000 kWh × (95% − 5%) = 3,600 kWh; 4,000 × (35% − 5%) = 1,200 kWh; 1,200 / 380 kW ≈ 3.2 h ≥ 3 h. These figures are correct. The defect is that 7.2 then ignores the reserve (DEF-08)."
+    },
+    {
+      "section": "5.5, 7.9 and D-02: hot-standby controller pair, 50 ms heartbeat × 3, <300 ms measured vs 500 ms target vs 2 s NFR-AV-02; PRP networks; dual UPS from different feeders",
+      "likely_false_positive": "Calling the failover too slow or too aggressive, calling holding setpoints during switchover unsafe, or calling the controllers a single point of failure.",
+      "why_sound": "The timing chain is consistent with NFR-AV-02. PRP gives zero-recovery-time network redundancy, and UPS-2 on F-3 keeps control power in island mode. Holding setpoints for the sub-second switchover is fine; DEF-02 concerns the unbounded hold after a longer outage."
+    },
+    {
+      "section": "FR-GRID-01, FR-GRID-03 and 7.4: IEEE 1547 normal performance Category B, abnormal performance Category III, utility settings authority",
+      "likely_false_positive": "Asserting that inverter-based DER should be Category A, or that Category III is excessive or wrong.",
+      "why_sound": "Category B is the normal-performance category commonly required for inverter-based DER, and Category III is the common abnormal-performance requirement for inverter-based DER. Delegating the settings to the utility file, with read-back verification and no SEMS write access, is correct practice."
+    },
+    {
+      "section": "FR-GRID-05: enter-service delay default 300 s with sync-check",
+      "likely_false_positive": "Calling a 300 s reconnection delay arbitrary or too long.",
+      "why_sound": "300 s is the IEEE 1547-2018 default enter-service delay (adjustable by the utility), and sync-check supervision of 52-PCC closing is appropriate."
+    },
+    {
+      "section": "D-05 and 1.3: life-safety loads remain on the diesel generator/ATS, not on the BESS",
+      "likely_false_positive": "Arguing that the BESS should back up life-safety loads, or that leaving them off is a resilience gap.",
+      "why_sound": "Keeping the listed emergency (NEC Article 700) system unchanged avoids subjecting the BESS and SEMS to emergency-system requirements. Resilience for life safety is already provided."
+    },
+    {
+      "section": "6.7 and 7.10: hardwired FACP-B trips and gas-detection-driven exhaust at 10% LFL, designed to stay below 25% LFL",
+      "likely_false_positive": "Flagging the 10%/25% LFL thresholds as wrong, or saying the SEMS should control ventilation.",
+      "why_sound": "NFPA 69 explosion prevention targets ≤25% LFL, and an earlier 10% LFL activation is conservative. The interlocks are hardwired and independent of the SEMS, consistent with P-01. This is the contrast case that makes DEF-01 detectable."
+    },
+    {
+      "section": "7.5 unplanned-loss timeline arithmetic",
+      "likely_false_positive": "Claiming the step times do not add up to ≤ 9 s.",
+      "why_sound": "Given the (incorrect) 5 s separation bound, 5 + 1.0 + 2.0 s ramp = 8.0 s to F-3 energised, with PCS-B synced by 8.5 s, which is consistent with 'at most 9 s'. The defects are the 5 s value itself (DEF-03) and the lack of a test for this path (DEF-13)."
+    }
+  ],
+  "non_keyed_observations_acceptable_but_not_required": [
+    "Fast-loop import target of 2,150 kW (50 kW below the 2,200 kW requirement) increases the on-peak energy need by up to ~250 kWh, worsening DEF-08.",
+    "Hourly design-day data understates 15-minute peaks; sizing on 15-minute data would be more rigorous.",
+    "AC-01 FAT starts at 95% SoC with no mention of enforcing the 35% floor, which could mask DEF-08 at FAT.",
+    "NTP relay in the DMZ serving Zones 1/2 is an additional cross-zone flow not listed in the conduit table."
+  ],
+  "scoring_guidance": "Award credit for a defect only when the review meets every item in its credit_requires list (paraphrase acceptable). Severity disagreement of one level is acceptable. Findings that match a deliberately_sound_sections false positive should be counted as false positives. Unkeyed findings that are technically valid (see non_keyed_observations) should be neither rewarded nor penalised."
+}

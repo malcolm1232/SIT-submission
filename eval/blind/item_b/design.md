@@ -597,7 +597,7 @@ All configuration items are held in the OT configuration repository in Zone 3 wi
 
 ### 11.1 Monitoring and response
 
-The facilities control room monitors the HMI in business hours; out of hours, priority-1 and priority-2 alarms go to the on-call technician by SMS and voice. Priority-1 alarms are acknowledged within 15 minutes with attendance within 60 minutes. The integrator supports remotely during the 2-year defects period and the BESS supplier provides 24/7 support.
+The facilities control room monitors the HMI in business hours; out of hours, priority-1 and priority-2 alarms go to the on-call technician by SMS and voice. Priority-1 alarms are acknowledged within 15 minutes with attendance within 60 minutes. The integrator supports remotely during its 2-year warranty period and the BESS supplier provides 24/7 support.
 
 ### 11.2 Maintenance windows
 

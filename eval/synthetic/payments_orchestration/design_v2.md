@@ -17,7 +17,7 @@
 | Version | Date | Changes |
 |---|---|---|
 | 1.0 | 2026-09-21 | First consolidated detailed design. |
-| 1.1 | 2026-10-12 | Revisions after design review: FR-8 wording; NFR-4, NFR-6 and NFR-8 restated; idempotency store key design and cross-region replication (Sections 9, 20, 24); CVC handling (Sections 11.2, 12.4); reconciliation scheduling (Section 16.2); merchant user authentication and payout account changes (Section 18); corresponding acceptance criteria (Section 26). |
+| 1.1 | 2026-10-12 | Post-review revisions: FR-8; NFR-4, NFR-6, NFR-8; idempotency store and cross-region replication (9, 20, 24); CVC handling (11.2, 12.4); reconciliation scheduling (16.2); merchant authentication and payout account changes (18); matching acceptance criteria (26). |
 
 ---
 
@@ -328,7 +328,7 @@ A lock left IN_PROGRESS by a crashed API pod is recovered by the Orchestrator's 
 
 ### 9.3 Capacity
 
-The table uses on-demand capacity mode. DynamoDB limits each partition to 1,000 write capacity units (WCU) and 3,000 read capacity units per second, so the partition key is the high-cardinality composite of merchant and key: our largest merchant (marketplace M-0001, about 900 TPS at peak) is spread across many partitions rather than concentrated on one. A write consumes 1 WCU per KB, so each request costs up to 5 WCU — 1 for the lock (item under 1 KB) and up to 4 for the completion update carrying the response body. At 2,000 TPS that is up to 10,000 WCU table-wide; the table's warm throughput is pre-set to 12,000 WCU ahead of known campaign events so that on-demand scaling does not throttle the first minutes of a spike.
+The table uses on-demand capacity mode. DynamoDB limits each partition to 1,000 write capacity units (WCU) and 3,000 read capacity units per second, so the partition key is the high-cardinality composite of merchant and key: our largest merchant (marketplace M-0001, about 900 TPS at peak) is spread across many partitions rather than concentrated on one. A write consumes 1 WCU per KB of item size, so each request costs up to 6 WCU — 1 for the lock (item under 1 KB) and up to 5 for the completion update, whose item carries the response body. At 2,000 TPS that is up to 12,000 WCU table-wide; the table's warm throughput is pre-set to 15,000 WCU ahead of known campaign events so that on-demand scaling does not throttle the first minutes of a spike.
 
 ### 9.4 Cross-region
 
@@ -406,7 +406,7 @@ E-wallet and bank-transfer payments are never cascaded: the customer has already
 - **Tokenise.** Hosted fields, the mobile SDK, and the server-to-server card endpoint post PAN, expiry and CVC directly to the Vault Edge. The Vault returns a `card_token` (format-independent, random 24 characters, prefixed `ctk_`) plus non-sensitive metadata: BIN (first 8), last 4, scheme, funding type, issuer country.
 - **Storage.** Card records are encrypted with envelope encryption: each record has its own data encryption key (DEK, AES-256-GCM), wrapped by a key-encryption key (KEK) held in AWS CloudHSM.
 - **Detokenise.** Only the Card Adapter's service identity may call detokenise. Each call unwraps the record's DEK inside the HSM; DEKs are not cached, so plaintext key material never persists in application memory.
-- **PAN fingerprint.** A keyed HMAC-SHA-256 of the PAN, with the key held in the HSM, is stored alongside each record to support duplicate-card detection and the reattempt counters in Section 11.3 without exposing PAN.
+- **PAN fingerprint.** A keyed HMAC-SHA-256 of the PAN (key in the HSM) supports duplicate-card detection and the counters in Section 11.3.
 
 ### 12.2 CDE scope
 
@@ -421,7 +421,7 @@ E-wallet and bank-transfer payments are never cascaded: the customer has already
 | Ledger, Reconciliation, Payout, Webhooks, Admin Plane | Out of scope | No card data |
 | Analytics | Out of scope | Token, BIN, last 4 only |
 
-Segmentation between the CDE account and the core account is enforced by a dedicated VPC, security groups that allow only the private endpoint, and IAM boundaries; segmentation is tested by penetration test every six months as required of service providers.
+Segmentation is enforced by a dedicated VPC, security groups allowing only the private endpoint, and IAM boundaries, and is penetration-tested every six months.
 
 ### 12.3 HSM topology
 
@@ -459,7 +459,7 @@ FRV-1's consortium velocity graph is keyed on the full card number, which allows
 
 - Hard timeout 150 ms. On timeout or vendor error: LOW and MEDIUM risk-tier merchants receive ACCEPT; HIGH risk-tier merchants receive REVIEW.
 - Thresholds (score → decision) are configured per merchant account in the admin plane by Serindit Pay's risk team, not by the merchant.
-- Every decision, score and the model version returned by FRV-1 are stored on the payment for dispute evidence and model monitoring.
+- Every decision, score and FRV-1 model version is stored on the payment.
 
 ---
 
@@ -497,7 +497,7 @@ Payout:      Dr merchant_payable[M-1234,SGD]           9720
 
 ### 14.3 Rules
 
-- Postings are never updated or deleted. A correction is a new journal that references the journal it corrects (`reverses_journal_id` or `adjusts_journal_id`) and carries a reason code and the identity that approved it.
+- Postings are never updated or deleted. A correction is a new journal referencing the one it corrects, with a reason code and approver.
 - Journals are written in the same PostgreSQL transaction as the payment state transition that causes them, together with an outbox row. There is no dual write between the payment store and the ledger.
 - Balances are a projection maintained asynchronously by the Balance Projector, which consumes posting events from the outbox and applies them in per-account micro-batches (at most one balance update per account per second). No payment-path transaction updates a balance row, which avoids hot-row contention on high-volume accounts such as `fee_revenue` or a large marketplace's `merchant_payable`. Projection lag is exported as a metric, and the Payout Service reads a balance only after the projector has passed the payout cut-off.
 - The nightly recomputation from postings must equal the projection exactly; any difference pages the on-call engineer and freezes payouts for the affected merchant accounts.
@@ -509,9 +509,9 @@ Payout:      Dr merchant_payable[M-1234,SGD]           9720
 ## 15. Amounts, Currencies and FX
 
 - Every amount is a signed 64-bit integer of minor units, paired with an ISO 4217 alphabetic currency code. The exponent for each currency comes from a versioned ISO 4217 reference table (SGD, MYR, IDR, THB, PHP, USD: 2; VND, JPY, KRW: 0).
-- Adapters convert between MPOP's representation and the provider's. Where a provider expects a different exponent than ISO 4217 (for example, an acquirer that expects IDR as whole rupiah), the adapter converts explicitly and rejects any amount that would require rounding, rather than rounding silently.
+- Where a provider expects a different exponent than ISO 4217 (for example, IDR as whole rupiah), the adapter converts explicitly and rejects any amount that would need rounding.
 - A payment has a presentment currency (what the customer pays) and a settlement currency (what the merchant receives). Where they differ, the FX rate is quoted and locked at authorization, the quote ID is stored on the payment, and the FX conversion is booked as a separate journal through `fx_position` accounts at capture.
-- Fee calculations produce fractional minor units only inside the fee engine, which uses arbitrary-precision decimals and rounds once, half-to-even, at the point the fee journal is created. The rounding residue is tracked in a dedicated account and reviewed monthly.
+- Fee calculations use arbitrary-precision decimals inside the fee engine and round once, half-to-even, when the fee journal is created; the residue is tracked in a dedicated account.
 - No floating-point type is used for amounts in any service, schema, or API payload. JSON amounts are integers; the API rejects decimals.
 
 ---
@@ -541,7 +541,7 @@ Files land in an S3 intake bucket; a parser per format normalises lines into `se
 
 Matched payments transition to SETTLED and a settlement journal is posted. Unmatched and mismatched lines become reconciliation exceptions with a reason code and are routed to the Finance Operations queue.
 
-The last file to arrive is ACQ-TH1's, at 06:30 ICT (07:30 SGT). At 2025 volume its per-file match takes about 7 minutes, and netting plus report generation take 15 minutes, so reports publish at about 07:52 SGT. At the 2027 design volume these scale to about 14 and 25 minutes, giving about 08:09 SGT — 51 minutes inside the 09:00 SGT target in NFR-8, which Finance has confirmed matches merchant contract terms.
+The last file, ACQ-TH1's, arrives at 06:30 ICT (07:30 SGT). Its match takes about 7 minutes at 2025 volume and netting plus reports 15 minutes (publication ≈ 07:52 SGT); at 2027 volume, about 14 and 25 minutes (≈ 08:09 SGT), inside the 09:00 SGT target in NFR-8, which Finance has confirmed against merchant contracts.
 
 ### 16.3 Payouts
 
@@ -554,9 +554,9 @@ The Payout Service computes each merchant account's payable balance after settle
 - **Events.** One event per state change, with a globally unique `event_id`, `type` (for example `payment.captured`), `created_at`, and a snapshot of the object including its `version`. Merchants deduplicate on `event_id` and order by object `version`; delivery order is not guaranteed.
 - **Signing.** Each endpoint has its own signing secret, distinct from API keys and shown once at creation. The signature header carries a timestamp and `HMAC-SHA256(secret, timestamp + "." + raw_body)`. Merchant libraries reject signatures older than five minutes. Secrets can be rolled with a 24-hour overlap during which both are valid.
 - **Delivery.** At-least-once. A delivery succeeds on any 2xx within 10 seconds. Failures are retried with jittered exponential backoff at approximately 1 min, 5 min, 15 min, 1 h, 3 h, 6 h, then every 12 h, up to 72 hours from first attempt (12 attempts including the first). After that the event is moved to a per-merchant dead-letter store, visible in the admin plane and replayable by API.
-- **Isolation.** Each endpoint has a concurrency cap of 20 in-flight deliveries and its own circuit breaker; a slow or failing merchant endpoint cannot consume dispatcher capacity needed by other merchants.
+- **Isolation.** Each endpoint has a cap of 20 in-flight deliveries and its own circuit breaker, so a failing endpoint cannot starve other merchants.
 - **Endpoint safety.** Endpoints must be HTTPS on port 443. The dispatcher resolves the hostname once at send time, refuses private, loopback, link-local and cloud-metadata addresses, and connects to the validated address for that delivery, which prevents server-side request forgery and DNS-rebinding against internal services.
-- **Recovery.** Merchants can list and replay events for the past 30 days, so a merchant that misses webhooks can always reconstruct state through the API.
+- **Recovery.** Merchants can list and replay events for the past 30 days.
 
 ---
 
@@ -582,12 +582,11 @@ The admin plane consists of the Merchant Portal (web) and the Admin API (same ca
 - Passwords: minimum 12 characters, checked against a breached-password list, bcrypt (cost 12).
 - Multi-factor authentication (TOTP or WebAuthn) is mandatory for every merchant user; a user without an enrolled second factor cannot complete login.
 - Actions that move money or change where it goes — refunds above the Support limit, payout bank account changes, and API key creation — require step-up re-authentication with the second factor within the previous five minutes.
-- Sessions: 12-hour absolute, 30-minute idle timeout; re-login required on password change.
-- Login rate limiting: 10 failures per account per 15 minutes, then a 15-minute lockout.
+- Sessions: 12-hour absolute, 30-minute idle timeout; login lockout after 10 failures in 15 minutes.
 
 ### 18.4 Payout bank account changes
 
-A payout bank account change is requested by a Finance or Owner user and must be approved by a different Owner (two-person rule), both with step-up MFA. The account name is checked against the merchant's legal name through the sponsor bank's account-validation service where the market offers one. The new account takes effect only after a 48-hour cooling-off period, during which every Owner and Admin is notified by email and in-portal alert and any of them can cancel the change; payouts in that period continue to the previous account. Every step is audit-logged.
+A payout bank account change is requested by a Finance or Owner user and must be approved by a different Owner (two-person rule), both with step-up MFA. The account name is checked against the merchant's legal name via bank account validation where available. The new account takes effect after a 48-hour cooling-off period in which every Owner and Admin is notified and can cancel; payouts meanwhile go to the previous account. Every step is audit-logged.
 
 ### 18.5 Back-office console
 
@@ -686,8 +685,8 @@ All primary data stores (Aurora, DynamoDB, ElastiCache, MSK, S3 intake and archi
 
 ### 20.2 Cross-region
 
-- Aurora Global Database replicates the payments and ledger cluster to ap-southeast-3. Replication is storage-level and asynchronous, with typical lag under one second; replication lag is alarmed at 2 seconds and paged at 4 seconds so that the 5-second regional RPO in NFR-4 is monitored continuously. Within the region, commits are durable across three AZs before acknowledgement, which gives the zero RPO for AZ and component loss.
-- Payments whose final writes fall inside the replication-lag window on regional loss are recovered after failover: the Orchestrator queries each acquirer's and provider's status API for attempts submitted in the last 60 seconds before the failure, and reconciliation on T+1 matches any remaining settlement lines to recreated payment records.
+- Aurora Global Database replicates the payments and ledger cluster to ap-southeast-3. Replication is storage-level and asynchronous, typically under one second; lag pages at 4 seconds against the 5-second regional RPO. In-region commits are durable across three AZs before acknowledgement.
+- Payments whose final writes fall in the lag window are recovered after failover by querying provider status APIs for attempts submitted in the last 60 seconds, and by T+1 reconciliation against settlement lines.
 - The DynamoDB idempotency table is a global table (Section 9.4). MSK and ElastiCache are not replicated cross-region; on regional failover they are recreated empty in ap-southeast-3 from infrastructure-as-code.
 - The API tier runs a warm standby cell in ap-southeast-3. Route 53 health-checked failover routing shifts merchant traffic to it when the Singapore health checks fail; before Aurora promotion, the Jakarta cell forwards payment writes to the Singapore writer using Aurora Global Database write forwarding.
 - Regional failover is a runbook-driven managed operation (promote the Aurora secondary, scale up the standby EKS cluster, switch Route 53 records), rehearsed twice a year. Target duration: 30 minutes.
@@ -713,7 +712,7 @@ Every 60 seconds, the Orchestrator's sweeper finds payments in AUTHORISING for m
 
 | Step | p99 (ms) | Basis |
 |---|---|---|
-| Edge, TLS, API key authentication | 25 | Load-test spike, Aug 2026 |
+| Edge, TLS, API key authentication | 25 | Load-test spike |
 | Rate limit + validation | 3 | In-process |
 | Idempotency (Redis miss + DynamoDB conditional put) | 12 | DynamoDB single-digit-ms writes |
 | Fraud Hook | 150 | Hard timeout |
@@ -730,15 +729,15 @@ Summing component p99s gives a conservative 1,338 ms against the 1,500 ms target
 
 - **Payments API and Orchestrator.** Stateless; pre-scaled for 2,500 TPS before known campaign events.
 - **Aurora.** Each card payment produces roughly nine row writes (payment, attempt, two state updates, journal, two to three postings, outbox). At 2,000 TPS that is about 18,000 row writes per second. A spike on `db.r7g.8xlarge` sustained 2,600 TPS of the full write mix for two hours at 58% writer CPU with commit latency p99 of 11 ms. Production uses `db.r7g.12xlarge` for headroom.
-- **MSK.** Average event size 1.8 KB, roughly six events per payment; 2,000 TPS ≈ 21.6 MB/s ingress, well within three `kafka.m7g.xlarge` brokers.
+- **MSK.** About six 1.8 KB events per payment; 2,000 TPS ≈ 21.6 MB/s ingress across three `kafka.m7g.xlarge` brokers.
 
 ---
 
 ## 22. Observability and Audit
 
 - **Tracing.** OpenTelemetry with `payment_id` and `merchant_id` as span attributes; all payment events are also written to the event bus, which is the basis for NFR-11.
-- **Logging.** Structured JSON logs. A logging library shared by all services drops any field on a deny-list (card_number, cvc, password, secret, authorization header) and applies a Luhn-pattern scrubber to free-text fields; the CDE has its own log pipeline that never leaves the CDE account.
-- **Audit.** Audit records (actor, actor type, action, target, before/after for configuration, request ID, source IP, timestamp) are written to an append-only table and streamed to an S3 bucket with Object Lock in compliance mode for five years (NFR-12).
+- **Logging.** A shared logging library drops deny-listed fields (card_number, cvc, password, secret, authorization header) and Luhn-scrubs free text; CDE logs never leave the CDE account.
+- **Audit.** Audit records (actor, action, target, before/after, request ID, source IP, timestamp) go to an append-only table and to S3 with compliance-mode Object Lock for five years (NFR-12).
 
 ---
 
@@ -748,11 +747,11 @@ MPOP is deliberately conventional in its core and borrows from published practic
 
 | Reference | What it does | What we take | Why not adopt wholesale |
 |---|---|---|---|
-| Juspay Hyperswitch (open source) | Full payment orchestrator: connectors, routing, retries, vault | Connector interface shape; outcome classification taxonomy; routing rule DSL concepts | Connector coverage for SEA wallets and bank rails is thinner than our existing integrations; our ledger and reconciliation requirements exceed its scope; operating it inside our PCI boundary would still require us to own its security posture. |
+| Juspay Hyperswitch (open source) | Full orchestrator: connectors, routing, retries, vault | Connector interface shape; outcome taxonomy; routing rule concepts | Thinner coverage of SEA wallets and rails than our integrations; ledger and reconciliation needs exceed its scope; we would still own its PCI posture. |
 | Commercial orchestrators (Spreedly, Primer, Gr4vy) | Hosted vault and routing | Vault-first PCI scoping pattern | Per-transaction pricing compared unfavourably with build cost in the Conceptual Design's five-year cost model; acquirer and local-rail coverage gaps in ID, TH and PH. |
 | Stripe API documentation; IETF HTTPAPI draft "The Idempotency-Key HTTP Header Field" | Idempotency keys, webhook signing, object versioning | Idempotency-Key semantics (24-hour retention; 409 on an in-flight duplicate and 422 on payload mismatch, per the IETF draft); timestamped HMAC webhook signatures | — (design pattern, not a product) |
 | Modern Treasury / Formance ledger designs | Double-entry ledgers for payments companies | Journal/posting model; append-only with reversing entries; balance projections verified against postings | We need the ledger in the same transaction as payment state, which rules out an external ledger service. |
-| Transactional outbox (Richardson, Microservices Patterns) | Atomic state change plus event publication | Outbox table relayed to Kafka | — |
+| Transactional outbox (Richardson, *Microservices Patterns*) | Atomic state change plus event | Outbox relayed to Kafka | — |
 
 ---
 
@@ -811,15 +810,15 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | FR-5 | Idempotency replay test | Send a create-payment request; after its response is received, resend the identical request with the same `Idempotency-Key`. The second response is byte-identical to the first and the acquirer simulator records exactly one authorization. Resending with a modified body returns 422. |
 | FR-6 | Routing eligibility test | For a matrix of eligibility inputs, the eligible set equals the expected set. |
 | FR-7 | Cascade simulation | With the acquirer simulator injecting each retryable and final outcome, cascades occur only on retryable outcomes, never exceed two additional attempts, and stop at scheme reattempt limits. |
-| FR-8 | Routing decision test | For synthetic transactions whose cheapest acquirer's prior is 1.9, 2.0 and 2.1 pp below the best, the cheapest acquirer is selected in the first two cases only; a replayed 28-day merchant history with a 1.1 pp gap to control triggers the weekly revert and a 0.9 pp gap does not. |
-| FR-9 | Fraud hook integration test | ACCEPT, REVIEW, REJECT and timeout each produce the documented payment outcome. |
+| FR-8 | Routing decision test | Cheapest acquirer priors 1.9, 2.0 and 2.1 pp below the best: cheapest selected in the first two cases only. Replayed 28-day histories: a 1.1 pp gap to control triggers the revert; 0.9 pp does not. |
+| FR-9 | Fraud hook test | ACCEPT, REVIEW, REJECT and timeout each produce the documented outcome. |
 | FR-10 | Ledger invariant test | After a 1-million-payment simulation including captures, refunds, settlements and payouts, every journal balances per currency and the projection equals the recomputation. |
 | FR-11 | Reconciliation golden-file test | For each provider's sample file with seeded mismatches, every seeded mismatch becomes an exception with the correct reason code and every other line matches. |
 | FR-12 | Webhook delivery test | Every state change emits exactly one event; signatures verify with the reference library; a failing endpoint receives the documented retry schedule and the event lands in the DLQ after 72 hours. |
 | FR-13 | Admin plane role matrix test | Each role can perform exactly the actions in Section 18.2; login without a second factor fails for every role; a payout account change without second-Owner approval, or cancelled during cooling-off, never affects a payout. |
 | FR-14 | Stored-credential test | A card-on-file payment uses a network token and cryptogram for a network-token-enabled test card, and correct MIT/CIT indicators. |
 | FR-15 | Refund test per method | Full and partial refunds succeed per method; payout-based refunds produce a payout instruction. |
-| FR-16 | Audit completeness test | A scripted sequence of API mutations and admin actions produces exactly one audit record per action with all fields populated. |
+| FR-16 | Audit completeness test | Scripted mutations and admin actions each produce exactly one complete audit record. |
 | FR-17 | Payout schedule test | Each schedule produces payout instructions on the correct dates over a simulated month. |
 
 ### 26.2 Non-functional requirements
@@ -832,23 +831,23 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | NFR-4 | AZ and regional DR game days | AZ: forced writer loss under load loses no acknowledged posting. Region: unplanned failover to ap-southeast-3 under load; measured loss window ≤ 5 s; every payment in the window is restored by provider-status recovery or T+1 reconciliation; service restored within 30 minutes. |
 | NFR-5 | PCI DSS assessment | Report on Compliance by a QSA with CDE as defined in Section 12.2; segmentation test passes. |
 | NFR-6 | Vault SAD test | CVC records are encrypted while held; each is absent within one second of the payment's final authorization outcome, and after 15 minutes for payments with no final outcome; an incremental authorization succeeds against the acquirer simulator without a CVC. |
-| NFR-7 | Privacy review | DPO sign-off per market; data inventory maps every personal data field to a purpose and a retention period. |
+| NFR-7 | Privacy review | DPO sign-off per market; every personal data field is mapped to a purpose and retention period. |
 | NFR-8 | Reconciliation SLA test | On a 2027-volume replay using the real file arrival schedule, auto-match ≥ 99.9% and reports published by 09:00 SGT. |
 | NFR-9 | Noisy-neighbour test | One merchant at 3× its rate limit does not move other merchants' p99 by more than 5%. |
-| NFR-10 | Connector onboarding dry run | A new sandbox acquirer is onboarded with changes only in its adapter package and configuration. |
+| NFR-10 | Connector onboarding dry run | A sandbox acquirer is onboarded with changes only to its adapter and configuration. |
 | NFR-11 | Trace completeness test | For 1,000 sampled payments, every step is retrievable by `payment_id` within 5 s. |
-| NFR-12 | Audit immutability test | An attempt to modify or delete an audit object in S3 fails under the compliance-mode Object Lock. |
+| NFR-12 | Audit immutability test | Modifying or deleting an audit object in S3 fails under Object Lock. |
 
 ---
 
 ## 27. Implementation Readiness Assessment
 
-This section answers a direct question: could an engineering team build each component from this document without further design decisions? The answer is component by component.
+Could an engineering team build each component from this document without further design decisions?
 
 | Component | Ready? | What remains to decide |
 |---|---|---|
-| Payment state machine and data model | Ready | States, transitions, DDL and concurrency control specified (Sections 7, 19). |
-| Payments API (merchant-facing) | Ready | Operations and idempotency contract specified; OpenAPI document derived from Section 7 and 9. |
+| Payment state machine and data model | Ready | Sections 7 and 19. |
+| Payments API (merchant-facing) | Ready | Operations and idempotency contract specified (Sections 7, 9). |
 | Idempotency Layer | Ready | Two-tier design, key schema and capacity specified (Section 9). |
 | Routing Engine | Mostly ready | Eligibility and ranking specified; approval priors static until the model in Backlog item 3. |
 | Retry Engine | Ready | Outcome classes, cascade limits and scheme rules specified (Section 11). |
