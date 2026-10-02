@@ -10,9 +10,11 @@ Checked on 2026-10-02. The verified facts, with sources, are in [`comparison.md`
 2. **Own the tool loop for the research step (about 40 lines). Do not lean on `tool_runner`.** The tool runner is **beta** (`client.beta.messages.tool_runner`). Anthropic's own docs say to use the manual loop "when you need ... custom logging, or conditional execution". Our stopping rule, budget, per-tool timeouts and evidence logging are exactly that. The runner stays an acceptable shortcut for a self-contained sub-step. *(Correction to "tool runner for tool loops".)*
 
    > **Superseded (reconciliation 2026-10-02):** the research loop is model-driven only within fixed action *types*: queries and follow-up questions adapt, but the URL policy does not (fetch only URLs from search results or doc references), so tool content cannot add new kinds of action. See `docs/DECISIONS.md` ADR-001 (audit C18).
+
 3. **The SDK does have hidden retries.** `DEFAULT_MAX_RETRIES = 2` and `DEFAULT_TIMEOUT = 600 s`. Set both explicitly in one place and log every retry. *(Correction to "no hidden retries".)*
 
    > **Superseded (reconciliation 2026-10-02):** the SDK runs with `max_retries=0`; one `LLMGateway` and one `ToolGateway` own retries, backoff, timeouts, breakers and budgets. See `docs/DECISIONS.md` ADR-001 (audit §1.2 item 1).
+
 4. **There is no temperature knob.** SDK 1.x removed `temperature/top_p/top_k` ("Current models do not use these sampling parameters"). Reproducibility therefore has to come from pinned model IDs, frozen prompts, structured outputs and recorded tool responses (see level 6). *(This applies to every framework, not only ours.)*
 
 Structured outputs are **GA** (`client.messages.parse(output_format=Finding)` / `output_config.format`), so typed findings need no beta. The "one-file provider adapter" is real but **not free**: tool schemas and structured outputs are Anthropic-shaped, so a non-Claude adapter is an estimated 150-250 LOC (UNVERIFIED). Treat model swap *within Claude* as one line, and model swap *across vendors* as a prepared fallback, not a live-demo trick.
@@ -100,6 +102,7 @@ Frameworks with hidden prompts (CrewAI, the Claude Agent SDK preset, smolagents)
 - **Use a dated model snapshot ID** from config. Never use an alias.
 
   > **Superseded (reconciliation 2026-10-02):** `claude-opus-5-5` has no dated snapshot ID; the bare ID is the most specific pin available. Log `response.model` for every call and reject an eval run whose `served_models` is not `{"claude-opus-5-5"}`. See `docs/DECISIONS.md` ADR-002 and `docs/REPRODUCIBILITY.md` §2 (audit C28, U5).
+
 - **No sampling knobs exist**, so determinism comes from structured outputs (schema-constrained), frozen prompts, and a **record/replay mode**: every MCP call and response is written to `runs/<id>/tools.jsonl` and can be replayed offline. That also protects a live demo against cold starts.
 - **Log every model request and response, with usage and `request_id`,** to `runs/<id>/llm.jsonl`.
 
@@ -141,7 +144,7 @@ Build on the **official Anthropic Python SDK 1.11.0 with mcp 2.2.0**, using:
 | If... | Switch to |
 |---|---|
 | The model must be swappable *across vendors* live, or we cannot keep using Claude | **PydanticAI 2.x** (raise `init_timeout` to ≥150 s, set `retries` explicitly) |
-| We need **durable human-in-the-loop interrupts**, or the team is already fluent in LangGraph. *(Reconciled 2026-10-02: the earlier trigger "pause/resume across processes" is removed. Resume is a P0 robustness requirement (OPS-04, NET-01, BEH-25) and is met inside the custom loop by a JSON checkpoint after every stage plus `resume <run_id>` and distinct exit codes, about 60 LOC. See `docs/DECISIONS.md` ADR-001 and ADR-009 (the ADR on checkpointing: durable resume, and what would still justify a switch), audit C17.)* | **LangGraph 1.2.x** (pin `mcp<2`, wrap MCP transport errors, set `handle_tool_errors`) |
+| (a) We need **durable human-in-the-loop interrupts** (pausing for a person's input across processes), or (b) the resume tests (OPS-04, NET-01, BEH-25, LLM-02) cannot be made to pass with the checkpoint-and-journal design within about 200 LOC. *(Reconciled 2026-10-02 per `docs/DECISIONS.md` ADR-009, the ADR on checkpointing, which replaces this row; see also ADR-001 and audit C17. The earlier triggers "pause/resume across processes" and "the team is already fluent in LangGraph" are removed: resume is a P0 robustness requirement and is met inside the custom loop by atomic per-stage JSON checkpoints, the append-only `tools.jsonl`/`llm.jsonl`/ledger as a write-ahead journal with replay-from-self for completed tool calls, `resume <run_id>` and distinct exit codes, about 60 + 40 LOC. Any switch must also outweigh LangGraph's `mcp<2` pin.)* | **LangGraph 1.2.x** (pin `mcp<2`, wrap MCP transport errors, set `handle_tool_errors`) |
 | Build time collapses to under 2 days, Claude-only is acceptable, and explainability can be argued at the level of hooks | **Claude Agent SDK** (custom `system_prompt`, `setting_sources=[]`, `MCP_TIMEOUT≥150000`, explicit `allowed_tools`) |
 | The SIT servers turn out to use `Authorization: Bearer`, stay warm, and we want fewer moving parts | Use the **MCP connector** for search and scholarly tools only, keeping the direct client as fallback |
 | Anthropic ships a breaking change to `messages.parse` or structured outputs before the demo | Stay on the pinned version. Do not upgrade after a code freeze one week before the demo. |

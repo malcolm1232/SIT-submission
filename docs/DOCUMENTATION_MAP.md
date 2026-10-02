@@ -13,7 +13,7 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 | Context management approach | `docs/CONTEXT_MANAGEMENT.md`: what each stage sees; the cached prefix (tools, system prompt, native PDF block, canonical page-marked text); how document content and external research are kept apart (`source: doc \| external \| inference`, ledger IDs, spotlighting of untrusted text); context size per call; why compaction is not needed for one document | Not yet | ADR-006, ADR-007; `research/models/README.md` §3; lab §4.2 |
 | Planning and execution approach | `docs/PLANNING_EXECUTION.md`: stage-by-stage flow; plan schema; fixed action types with adaptive queries (audit C18); stop rules and the stop-reason enum; deadline-aware planner; refine loop and when conclusions are revised | Not yet | `research/frameworks/README.md`; `research/robustness/scenarios.md` BEH-01, BEH-24; lab §4.3, §4.5 |
 | Tool orchestration approach | `docs/TOOL_ORCHESTRATION.md`: ToolGateway (timeouts, retries, breakers, budgets, URL policy); parallel warm-up and `preflight`; per-server health; tool allowlist; how tool errors reach the model; record/replay cassettes | Not yet | `research/frameworks/README.md` §4; `research/robustness/README.md` §5, §6.2; `docs/DEMO_DAY_RUNBOOK.md` §4.1 (config spec) |
-| Memory and state management approach | `docs/MEMORY_STATE.md`: run state object; per-stage checkpoints and `resume`; the evidence ledger; the approved-decision registry (preserved across iterations; INV-10); previous-run memory for v2 re-review (`--previous`); deliberately no cross-run learning (overfitting control) | Not yet | `research/robustness/README.md` §10 items 3, 5, 6; audit C17 |
+| Memory and state management approach | `docs/MEMORY_STATE.md`: run state object; per-stage checkpoints and `resume`; the evidence ledger; the approved-decision registry (preserved across iterations; INV-10); previous-run memory for v2 re-review (`--previous`); deliberately no cross-run learning (overfitting control) | Not yet | `research/robustness/README.md` §10 items 3, 5, 6; audit C17; `docs/DECISIONS.md` ADR-009 (checkpoints, journal, resume) |
 | Validation and review approach | `docs/VALIDATION.md`: the agent's own verify stage (anchor checks, ledger checks, registry checks, completeness against lab §2.3); invariants INV-01 to INV-11; the evaluation design (tiers, metrics, baselines, k runs) and its results; grading; robustness results table. Supported by `docs/REPRODUCIBILITY.md` and `docs/SEALING.md` | Partial (`REPRODUCIBILITY.md`, `SEALING.md` exist) | `research/methodology/`; `research/grading/`; `research/robustness/`; ADR-003, ADR-004, ADR-007 |
 | Assumptions, limitations or known constraints | `docs/LIMITATIONS.md`: same-family instruments if ADR-003 resolves to branch B; small n and exploratory per-category results; template homogeneity of the synthetic set; one human rater; possible silent model updates behind `claude-opus-5-5`; unverified MCP behaviour until probed; no offline review of unseen documents; refusal handling; budget cuts actually taken (`docs/BUDGET.md` §5) | Not yet | audit §3, §4; `research/robustness/README.md` §11; `research/methodology/README.md` §11 |
 
@@ -40,7 +40,10 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 
 | Lab §5.2 requirement | Where | Status |
 |---|---|---|
-| GitHub repository; invite `SIT-calebying` and `Makienhui-sit` before the deadline; accessible through the evaluation period | `docs/DECISIONS.md` ADR-005 (privacy decision) and a checklist item in `README.md` | Partial (ADR awaiting user) |
+| Submission through a GitHub repository, with the designated SIT officer invited as a collaborator | `docs/DECISIONS.md` ADR-005 (privacy decision) and a submission checklist in `README.md` | Partial (ADR awaiting user) |
+| Grant access to the GitHub IDs `SIT-calebying` and `Makienhui-sit` **before the submission deadline** | `README.md` submission checklist: both invitations sent and **accepted** (check under Settings → Collaborators), with the date recorded; GitHub invitations expire if not accepted within 7 days, so send them early and re-send if needed | Not yet |
+| The repository **remains accessible throughout the evaluation period** | `README.md` submission checklist: do not delete, archive, rename or transfer the repo, revoke the invitations, or rewrite history (SEALING §4 purge only before access is granted) until SIT confirms the evaluation is over; the optional public mirror of ADR-005 option 3 never replaces the private repo | Not yet |
+| The repository contains **all materials needed to review, deploy and execute** the agent | `README.md` § Install / Configure / Run; `docs/REPRODUCIBILITY.md` §7 (R0-R3); the fresh-clone check (`docs/BUDGET.md` line 9, robustness OPS-08: `uv sync --frozen` on a clean clone, then `make smoke`) | Not yet |
 | Clearly organised; installation, configuration and execution instructions | `README.md` | Partial |
 | Identify dependencies, datasets, configuration settings, model requirements, third-party services | `README.md` § Requirements: Python version, `uv`, Anthropic API key and model `claude-opus-5-5`, SIT MCP servers and key, judge provider per ADR-003, datasets under `eval/` (with sealed parts named) | Not yet |
 | No secrets committed; instructions to configure the environment | `.env.example` (names only: `ANTHROPIC_API_KEY`, `SIT_MCP_API_KEY`), `README.md` § Configure, `gitleaks` pre-commit hook | Not yet |
@@ -50,10 +53,11 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 
 | Lab §5.4 item | Where | Status |
 |---|---|---|
+| Session format: design walkthrough, live execution on an SIT artefact, on-the-spot modification | `docs/DEMO_DAY_RUNBOOK.md` intro and §3 timeline | Exists |
 | (a) Explain the design, choices and reasons; optional short deck | `docs/DEMO_DAY_RUNBOOK.md` §8 (talking points); `docs/ARCHITECTURE.md`; optional `docs/slides/` | Partial |
-| (b) Laptop that runs the agent and can be modified | `docs/DEMO_DAY_RUNBOOK.md` §1-3 | Exists |
-| (c) Run on a new artefact and show the output | `docs/DEMO_DAY_RUNBOOK.md` §5-7 | Exists |
-| (d) Modify on request and show the new behaviour | `docs/DEMO_DAY_RUNBOOK.md` §4 | Exists |
+| (b) Laptop that runs the agent and can be modified | `docs/DEMO_DAY_RUNBOOK.md` §1-3 | Exists (procedure; every step depends on code listed in runbook §9) |
+| (c) Run on a new artefact provided by SIT during the interview and show the output | `docs/DEMO_DAY_RUNBOOK.md` §5-7 | Exists (procedure; depends on runbook §9) |
+| (d) Modify on request and show the new behaviour | `docs/DEMO_DAY_RUNBOOK.md` §4 | Exists (procedure; depends on runbook §9) |
 
 ## 5. Governance documents (this set)
 

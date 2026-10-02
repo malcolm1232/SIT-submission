@@ -14,7 +14,7 @@ The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across eig
 | `design_v2.md` / `design_v2.pdf` | Updated artefact, v1.1 (6 fixed, 1 regression, 8 unchanged) |
 | `answer_key.json` | Sealed key: flaws F01–F14 plus v2 regression F15 (all in `flaws[]`), sound sections, v2 change map |
 
-PDFs were generated with python-markdown → HTML → LibreOffice headless (`HTML (StarWriter)` import, `writer_pdf_Export`). Conversion succeeded for both versions.
+How to regenerate the PDFs: run `python3 eval/build_pdfs.py` from the repository root. It applies one pipeline to all six synthetic PDFs (python-markdown with the `tables`, `fenced_code` and `sane_lists` extensions → HTML with a fixed embedded stylesheet → LibreOffice headless, `HTML (StarWriter)` import and `writer_pdf_Export`) and then checks each PDF's extracted text against its Markdown; `--check` verifies without rebuilding. Last rebuilt 2026-10-02: `design_v1.pdf` 21 pages, `design_v2.pdf` 22 pages. LibreOffice Writer must be installed (`libreoffice-writer-nogui` on a core-only install).
 
 ## Checklist: no flaw is labelled in the documents
 

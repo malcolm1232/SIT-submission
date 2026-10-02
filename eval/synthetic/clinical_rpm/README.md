@@ -13,7 +13,7 @@ To use the item, give the reviewing agent only `design_v1.md` or `.pdf` (and lat
 
 The organisation, hospitals, and policy document IDs (e.g. HPHC-ISP-07) are fictional. Public references (Azure IoT Hub quotas, PDPA s26, IEC 60601-1-8, NEWS2, LOINC, IHE PCD) are used as real-world anchors for checkable claims.
 
-PDF conversion: the Markdown was converted to HTML with python-markdown and then to PDF with `soffice --headless --convert-to pdf:writer_web_pdf_Export`. The container shipped only `libreoffice-core`, so `libreoffice-writer-nogui` was installed via apt to make conversion possible.
+How to regenerate the PDFs: run `python3 eval/build_pdfs.py` from the repository root. It applies one pipeline to all six synthetic PDFs (python-markdown with the `tables`, `fenced_code` and `sane_lists` extensions → HTML with a fixed embedded stylesheet → LibreOffice headless, `HTML (StarWriter)` import and `writer_pdf_Export`) and then checks each PDF's extracted text against its Markdown; `--check` verifies without rebuilding. Last rebuilt 2026-10-02: `design_v1.pdf` 21 pages, `design_v2.pdf` 22 pages. LibreOffice Writer must be installed (`libreoffice-writer-nogui` on a core-only install).
 
 ## No-label checklist (verified for design_v1.md and design_v2.md)
 

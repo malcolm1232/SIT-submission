@@ -20,9 +20,9 @@ This document's author did not open the `eval/blind/` files while writing it.
 
 | | `age -p` | `gpg --symmetric` |
 |---|---|---|
-| Setup on a laptop | One static binary | Often preinstalled; agent and pinentry configuration can get in the way |
+| Setup on a laptop | One static binary: `brew install age` (macOS; or `port install age`), `apt install age` (Debian 12+, Ubuntu 22.04+), `pacman -S age`, `apk add age`; or a release binary from GitHub. Version ≥ 1.1 | Preinstalled on most Linux distributions, **not on macOS** (`brew install gnupg`). Symmetric mode still needs a working `gpg-agent` and pinentry; the agent failed to start in the cloud sandbox during verification, which is the friction this row warns about |
 | Defaults | Modern AEAD and a memory-hard passphrase KDF (scrypt) with no options to get wrong | Strong when `--cipher-algo AES256` is given; older defaults and S2K options exist |
-| Failure modes | Few flags; prompts for the passphrase on the terminal and has no command-line option for it, which keeps it out of shell history and process lists | Can be scripted with `--passphrase`, which is exactly the leak we want to avoid |
+| Failure modes | Few flags; reads the passphrase from the terminal (`/dev/tty`) and has no command-line option for it, which keeps it out of shell history and process lists. **An empty answer makes age autogenerate a passphrase and print it once**; `seal.py` tells the user to type their own or to store the printed one immediately | Can be scripted with `--passphrase` (GnuPG 2.1+ also needs `--pinentry-mode loopback`), which is exactly the leak we want to avoid |
 
 Rules:
 - **The passphrase is held by the user only**, in their password manager, with a second copy (if it is lost, the split is lost). It is never written to the repo, `.env`, a script argument, an environment variable, a CI secret or any LLM session, including coding-assistant sessions.
@@ -46,16 +46,16 @@ eval/blind/              # later: blind.tar.age, MANIFEST.yaml, ACCESS_LOG.md
 
 **`scripts/seal.py <split> <source_dir>`**
 1. Refuse if `<source_dir>` is inside a path the agent may read (section 5).
-2. Build a deterministic tar: files sorted by path, owner and group set to 0, mtime set to 0, so the same content gives the same bundle hash.
+2. Build a deterministic tar **with Python's `tarfile` module** (not the `tar` binary: GNU-only flags such as `--sort=name` and `--mtime` are missing from macOS's bsdtar): files sorted by path, uid/gid 0, empty user and group names, mtime 0, fixed mode bits, `format=tarfile.PAX_FORMAT`, so the same content gives the same bundle hash on macOS and Linux. The `.age` file's hash differs on every seal (age draws a fresh file key), which is expected; only the tar hash is a content identity.
 3. Record in `MANIFEST.yaml`, per file: path, SHA-256 of the plaintext, size, canary GUID (methodology §1.1 rule 5). For the bundle: SHA-256 of the tar and of the `.age` file, `sealed_at`, `sealed_by`, split, access budget (S-heldout 3, Blind 1, OOD 1).
-4. Run `age -p -o <split>.tar.age <bundle.tar>`; the user types the passphrase twice.
-5. Decrypt once to memory to verify the round trip, then shred the plaintext tar and remove the plaintext source files from the working tree (the user then commits the deletion).
+4. Stream the tar from memory into `age -p -o <split>.tar.age` on **stdin** (`subprocess` with `stdin=PIPE`, no `-` argument needed); age still reads the passphrase from the terminal, and the user types it twice. No plaintext tar ever touches the disk, so nothing needs shredding (`shred` does not exist on macOS and is unreliable on SSDs and copy-on-write file systems anyway).
+5. Verify the round trip with `age -d <split>.tar.age` to stdout, read into memory and compared by SHA-256 with the in-memory tar (the user types the passphrase a third time). Then remove the plaintext source files from the working tree with `git rm` (the user commits the deletion; history is handled in section 4).
 
 **`scripts/unseal.py <split> --reason "<text>" [--to <dir>]`**
 1. Refuse if the access count in `ACCESS_LOG.md` already equals the budget.
 2. Refuse if the git tree is dirty, or (for S-heldout and Blind) if `prereg.yaml` is missing or its hash differs from the frozen one recorded in `ACCESS_LOG.md`'s header.
 3. Append an entry to `ACCESS_LOG.md` **before** decrypting: UTC time, who, reason, git commit, `prereg_sha256`, access number n of budget.
-4. Decrypt with `age -d` into a fresh temporary directory **outside the repo** (default: a `mkdtemp` under the system temp directory) and verify every file's SHA-256 against `MANIFEST.yaml`.
+4. Decrypt with `age -d <split>.tar.age` (passphrase files are detected automatically; no `-i` needed) to stdout, and extract the stream with `tarfile` into a fresh temporary directory **outside the repo** (default: a `mkdtemp` under the system temp directory, mode 0700), rejecting absolute paths and `..` members; verify every file's SHA-256 against `MANIFEST.yaml`.
 5. Print the directory path for the eval runner, then wait; on exit (normal or Ctrl-C) delete the directory. Usable as a context manager from `eval/run_matrix.py` so the plaintext exists only while the runner needs it.
 6. Never writes plaintext into the repo, never prints file contents.
 
@@ -65,7 +65,7 @@ eval/blind/              # later: blind.tar.age, MANIFEST.yaml, ACCESS_LOG.md
 - Rejects edits to existing `ACCESS_LOG.md` lines (append only).
 - Runs `gitleaks` (secrets).
 
-**Tests** (L0, run in the sandbox with a throwaway passphrase supplied through a pseudo-terminal): round trip; deterministic bundle hash; refusal at the access budget; refusal on a dirty tree; access log appended before decryption; plaintext directory removed on exit.
+**Tests** (L0, run in the sandbox with a throwaway passphrase supplied through a pseudo-terminal; `age` 1.1.1 was driven this way successfully during verification, with input both as a file argument and on stdin): round trip; deterministic bundle hash; refusal at the access budget; refusal on a dirty tree; access log appended before decryption; plaintext directory removed on exit.
 
 ## 4. Git history
 

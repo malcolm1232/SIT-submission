@@ -1,0 +1,1388 @@
+{
+  "schema_version": "1.0",
+  "item": {
+    "item_id": "synthetic-clinical-rpm-001",
+    "split": "S-dev",
+    "domain": "Hospital Remote Patient Monitoring Platform (Singapore public healthcare cluster; Azure IoT Hub/MQTT ingestion, Stream Analytics rules, ML early warning, FHIR R4 EMR integration, PDPA/MOH governance, device lifecycle)",
+    "documents": {
+      "v1": {
+        "path": "design_v1.md",
+        "sha256": "0c5652ade4f374bced266d472bf6e24d0d8b9358ea4e4b14493b5a18109088bf"
+      },
+      "v2": {
+        "path": "design_v2.md",
+        "sha256": "ca6ba58dffcbf9f24cf1e255087598ea1f6f68b533b5f6f118a74ca68a238f1a"
+      }
+    },
+    "document_id": null,
+    "canary_guid": null,
+    "author_type": "unknown",
+    "author_model": null,
+    "generation_date": null,
+    "generator_session_ref": null,
+    "brief_sha256": null,
+    "key_reviewed_by": [],
+    "notes": "design_v1.md contains 14 planted flaws F01–F14 (4 critical: F04, F08, F10, F14; 6 major: F02, F03, F05, F09, F11, F12; 4 minor: F01, F06, F07, F13). design_v2.md is the 'updated artefact' for re-review. It fixes six flaws (F02, F04, F07, F08, F10, F12: three critical, two major, one minor). The F10 fix introduces a new regression flaw F15 (major, Section 10.3 delivery assurance). The remaining eight flaws (F01, F03, F05, F06, F09, F11, F13, F14) are unchanged. Section numbering is identical across versions. v2 adds a neutral revision-history table. v2's FR-7 acceptance criterion (d), which tests a device with a −10 min clock offset, would in practice expose F11, because such a device's events are dropped by ASA; credit a reviewer who notes this. Open flaws in v1: 14 (4 critical / 6 major / 4 minor). Open flaws in v2: F01, F03, F05, F06, F09, F11, F13, F14, F15 = 9 (1 critical: F14; 5 major: F03, F05, F09, F11, F15; 3 minor: F01, F06, F13). v2_changes convention (applied 2026-10-02): a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly six v2_changes entries have status 'fixed'.",
+    "source_key": {
+      "path": "eval/synthetic/clinical_rpm/answer_key.json",
+      "format": "synthetic_json_v0",
+      "sha256": "ab3c6e8c893f2349661c90506b3c53099cc83f6d02d7d40d816c0445a8178852"
+    }
+  },
+  "scoring": {
+    "matching_rule": "core_insight_plus_location_v1",
+    "default_credit_mode": "substance",
+    "severity_mapping": {
+      "source_scale": "synthetic3",
+      "variant": "primary"
+    },
+    "severity_tolerance": null,
+    "notes": "Superseded by matching_rule core_insight_plus_location_v1 (audit C5); credit.mode operationalises it. Legacy rule: Match a finding to a flaw when it identifies the location (section or requirement ID) and at least the core claims in what_a_correct_finding_must_mention; partial credit applies where distractor_notes say so. A recommendation in a sound section counts as a false positive. On v2, credit reviewers for recognising the fixed flaws as resolved (not re-raising them), for finding F15, and for re-raising the eight unchanged flaws."
+  },
+  "approved_decisions": [],
+  "flaws": [
+    {
+      "id": "F01",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "ambiguity",
+        "gap"
+      ],
+      "category": "internal_contradiction",
+      "tags": [],
+      "severity": "low",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "minor"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "2.2",
+          "13.1",
+          "20"
+        ],
+        "requirement_ids": [
+          "NFR-7"
+        ],
+        "decision_ids": [
+          "D-8"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "NFR-7 requires all PHI at rest to be encrypted with customer-managed keys in Managed HSM, but Confirmed Decision D-8 and the store table in Section 13.1 put Azure Data Explorer, the largest PHI store (every vital sign joined to patient_id and encounter_id), on Microsoft-managed keys. ADX-backed feature views are on 'platform default'.",
+      "rationale": "A confirmed decision breaks a stated NFR without a recorded waiver. The NFR's stated purpose is that the cluster can revoke the platform's access to data independently of the cloud provider (crypto-shredding), and that is not possible for the data that matters most. The NFR-7 acceptance criterion checks only the stores 'marked CMK', so it would pass despite the violation.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "NFR-7 requires CMK for all PHI at rest",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "D-8 / Section 13.1 uses Microsoft-managed keys for ADX",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "ADX holds patient-attributed vitals (PHI)",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "contradiction or unrecorded deviation/waiver",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "A confirmed decision breaks a stated NFR without a recorded waiver. The NFR's stated purpose is that the cluster can revoke the platform's access to data independently of the cloud provider (crypto-shredding), and that is not possible for the data that matters most. The NFR-7 acceptance criterion checks only the stores 'marked CMK', so it would pass despite the violation.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Either enable CMK on the ADX cluster (and feature views) using the Managed HSM key, or record a formal, time-bound risk acceptance and amend NFR-7. Change the NFR-7 acceptance criterion to enumerate every store holding PHI, not only those marked CMK.",
+      "distractor_notes": "Saying only that 'encryption should be stronger' or that ADX is unencrypted is wrong: ADX is encrypted at rest. The issue is key custody versus the NFR. Credit the observation that the NFR-7 AC is self-fulfilling as supporting detail, not as a separate flaw.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F02",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "ambiguity",
+        "gap"
+      ],
+      "category": "internal_contradiction",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": null,
+      "v2_note": "Section 12.2 and D-14 now post status=preliminary; the EMR sets final after nurse validation; the FR-11 AC is updated.",
+      "location": {
+        "sections": [
+          "3",
+          "12.2",
+          "20"
+        ],
+        "requirement_ids": [
+          "P4",
+          "P3",
+          "FR-11"
+        ],
+        "decision_ids": [
+          "D-14"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "Principle P4 says device-derived observations enter the EMR as preliminary and become part of the legal record only after nurse validation. Section 12.2 and D-14 post 15-minute medians with status=final, filed directly to the inpatient flowsheet next to nurse-entered observations.",
+      "rationale": "The design breaks its own governing principle ('where a later section conflicts with a principle, the principle wins'). Clinically, artefactual device values (motion, probe displacement, poor contact) become charted, final observations in the legal record. Downstream EMR logic such as EMR-side early-warning scores, flowsheet trends, and handover summaries would consume them as validated data. P3 (the EMR is the legal record) makes the contamination permanent.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "P4 requires preliminary status and nurse validation",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "Section 12.2 / D-14 posts status=final directly to the flowsheet",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "unvalidated device data (including artefact) enters the legal medical record",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "contradiction between principle and integration design",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Post Observations with status=preliminary to a separate pending-validation flowsheet row. The nurse accepts or rejects them in the EMR and the EMR sets final. RPM-P never sets final. Add an acceptance test that unvalidated values are not charted.",
+      "distractor_notes": "Recommending a different interval (5 min instead of 15 min) or questioning the LOINC codes misses the point; the LOINC codes and the vital-signs profile are correct. Saying 'device data should never go to the EMR' overshoots; the principle allows it as preliminary.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F03",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "ambiguity",
+        "gap"
+      ],
+      "category": "internal_contradiction",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "2.2",
+          "3",
+          "18.2",
+          "20",
+          "22.2"
+        ],
+        "requirement_ids": [
+          "NFR-4",
+          "NFR-9",
+          "P1"
+        ],
+        "decision_ids": [
+          "D-1"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "NFR-4 requires the alert pipeline to survive the loss of the entire cloud region with an RTO of ≤ 15 minutes. D-1 confirms a single-region deployment with no secondary region, and Section 18.2 states that recovery after a regional outage is a redeploy and restore once the region returns, estimated at 4–8 hours after the region is available. The residency requirement (NFR-9) combined with Azure having only one region in Singapore (Southeast Asia) means no onshore secondary Azure region exists to fail over to.",
+      "rationale": "The NFR cannot be met by the confirmed topology, and nothing in the document reconciles the two. The impact is concentrated on MIC@Home patients: P1 says RPM-P is their primary monitoring channel and they have no bedside alarm, so a regional outage leaves them on telephone checks for an unbounded period. The NFR-4 acceptance criterion tests only zone failure, so the region clause is never validated.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "NFR-4 region-loss RTO 15 min",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "D-1 / Section 18.2 single region, 4–8 h recovery after region returns",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "cannot be met / contradiction",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "impact on MIC@Home (no bedside alarm) or residency constraint prevents an offshore secondary",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "The NFR cannot be met by the confirmed topology, and nothing in the document reconciles the two. The impact is concentrated on MIC@Home patients: P1 says RPM-P is their primary monitoring channel and they have no bedside alarm, so a regional outage leaves them on telephone checks for an unbounded period. The NFR-4 acceptance criterion tests only zone failure, so the region clause is never validated.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Either relax NFR-4's region clause with explicit CSB acceptance and a defined MIC@Home downtime protocol, or design an onshore fallback alert path, for example a minimal on-premises or second-provider onshore alert service fed by home hubs over SMS or cellular. Add a region-loss drill or tabletop to the acceptance criteria.",
+      "distractor_notes": "Recommending a paired-region DR in East Asia (Hong Kong) without addressing residency is an incorrect recommendation, because it breaks NFR-9. Flagging zone redundancy as inadequate in general is too vague. Noting that the NFR-4 AC covers only zones is good supporting detail.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F04",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "unresolved_assumption",
+        "validation_need"
+      ],
+      "category": "unsupported_or_incorrect_claim",
+      "tags": [],
+      "severity": "critical",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "critical"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": null,
+      "v2_note": "Section 7.3 re-sized to 1 × S3 (300 M/day, 6,000 msg/s) with the correct S2 figures stated; D-2 updated.",
+      "location": {
+        "sections": [
+          "7.3",
+          "20",
+          "2.2"
+        ],
+        "requirement_ids": [
+          "NFR-1"
+        ],
+        "decision_ids": [
+          "D-2"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "Section 7.3 correctly computes ~138 M messages/day (8,000 devices × 17,280 messages/day; 1,600 msg/s, 2,000 msg/s at surge). It then claims that IoT Hub S2 provides 60 M messages/day per unit, so 3 units give 180 M/day with ~30% headroom, and that the device-to-cloud throttle is 'not a binding constraint'. Microsoft's published IoT Hub quotas give S2 as 6 M messages/day per unit and a device-to-cloud send throttle of 120 msg/s per unit. Three S2 units give 18 M/day and 360 msg/s.",
+      "rationale": "The provisioned capacity is about 7.7× short on daily quota and about 4.4× short on send rate (5.6× at surge). The daily quota would be exhausted about 3 hours into each day (18/138 × 24 h), after which IoT Hub rejects device-to-cloud messages. Throttling would occur continuously before that. The result is a cluster-wide monitoring blackout for most of every day, which makes this critical for patient safety. The error is checkable against public vendor documentation (Azure IoT Hub pricing and 'IoT Hub quotas and throttling').",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "S2 is 6 M messages/day per unit (not 60 M)",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "3 × S2 = 18 M/day versus ~138 M/day required",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "send throttle 120 msg/s per S2 unit (360 msg/s) versus 1,600–2,000 msg/s",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "claim that the throttle is not binding is false, with the consequence: messages rejected or throttled, so monitoring and alerting stop (one point)",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "The provisioned capacity is about 7.7× short on daily quota and about 4.4× short on send rate (5.6× at surge). The daily quota would be exhausted about 3 hours into each day (18/138 × 24 h), after which IoT Hub rejects device-to-cloud messages. Throttling would occur continuously before that. The result is a cluster-wide monitoring blackout for most of every day, which makes this critical for patient safety. The error is checkable against public vendor documentation (Azure IoT Hub pricing and 'IoT Hub quotas and throttling').",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Re-size against both the daily quota and the per-second throttle. Use S3 (300 M/day and 6,000 msg/s per unit), so one unit covers steady state and surge with headroom, or about 24+ S2 units, with a second S3 unit planned before ~17,000 devices. Confirm with the NFR-1 load test, and add quota and throttle alerting.",
+      "distractor_notes": "A reviewer who only says 'capacity numbers should be load-tested' without identifying the 10× quota error has not found the flaw. The 138 M/day arithmetic in the document is correct; the error is the vendor quota. Recommending batching more samples per message is a valid secondary mitigation but does not replace re-sizing.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F05",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "unresolved_assumption",
+        "validation_need"
+      ],
+      "category": "unsupported_or_incorrect_claim",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "10.4",
+          "6.1",
+          "8.3",
+          "4.3"
+        ],
+        "requirement_ids": [
+          "NFR-2"
+        ],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "The latency budget in Section 10.4 sums six network and processing segments to 5.0 s and concludes that NFR-2 (sensor measurement to clinician device ≤ 10 s at p95) is met with 50% headroom. It omits two structural delays that the design itself specifies. Devices publish batched messages every 5 s (Section 6.1), so a sample waits up to ~5 s before leaving the device. Threshold rules use 10-second tumbling windows (Section 8.3), which emit only at window close, adding up to 10 s. The 1.5 s p95 for APNs/FCM push delivery is asserted, but those services are best-effort with no delivery-time guarantee.",
+      "rationale": "The headroom claim does not follow from the design. Worst-case structural delay alone is up to ~15 s before any network or processing time, so the High-priority p95 target is very unlikely to be met. NFR-2 is the headline clinical-safety performance requirement, and the conclusion 'met with 50% headroom' would carry into the safety case.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "5 s batch/publish interval not in budget",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "10 s tumbling window emits at window end (persistence window not in budget)",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "budget total 5.0 s / 50% headroom is not justified",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "push notification (APNs/FCM) is best-effort with no latency SLA",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Re-baseline the budget to include batching and window alignment. Define the NFR start point explicitly (sample time versus alert-condition onset, consistent with IEC 60601-1-8 alarm-condition delay concepts). Consider publish-on-threshold-crossing at the device or gateway, sliding or hopping windows evaluated per sample, and paging as the primary channel for High priority. Measure end-to-end in a realistic test.",
+      "distractor_notes": "Arguing that the 10-s persistence window should be removed is clinically wrong; Section 4.3 justifies it as artefact suppression (a sound section). The flaw is that the budget ignores it. Pointing only at the 1.5 s push figure without the batching and window omissions is a partial finding.",
+      "overlapping_sound_section_ids": [
+        "S01"
+      ],
+      "disambiguation": "F05 cites 4.3 only for the 10-s persistence window in Table 4.3b, which the Section 10.4 latency budget omits. A finding that says the 10.4 budget or the NFR-2 headroom claim ignores the 4.3 persistence window (and the 5-s batching) matches F05 and is not a false positive against Section 4. Only a finding that says the persistence window itself is a defect, or should be removed, is the Section 4 trap. Likewise, F06 is the FR-8 mis-citation of IEC 60601-1-8 clause 6.11 for escalation intervals; the 4.3 use of IEC 60601-1-8 for priority semantics is sound."
+    },
+    {
+      "id": "F06",
+      "title": null,
+      "kind": "gap",
+      "acceptable_kinds": [
+        "gap",
+        "validation_need"
+      ],
+      "category": "missing_or_unverifiable_requirement",
+      "tags": [],
+      "severity": "low",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "minor"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "2.1",
+          "20"
+        ],
+        "requirement_ids": [
+          "FR-8"
+        ],
+        "decision_ids": [
+          "D-12"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "FR-8 states that the escalation intervals (High: 60 s to charge nurse, 120 s to doctor; Medium: 5 min) are 'mandated by IEC 60601-1-8, clause 6.11 (distributed alarm systems)'. IEC 60601-1-8 is the collateral standard for alarm systems in medical electrical equipment and systems. Its distributed-alarm-system clause addresses delivery of alarm conditions to remote equipment and detection or indication of communication failure. It does not prescribe staff escalation intervals such as 60/120 s or 5 min.",
+      "rationale": "The requirement's authority is mis-attributed, so it cannot be verified against its cited source. The real basis (local clinical policy or a CSB decision) is undocumented. Teams may treat the timings as non-negotiable regulatory values rather than clinical content governed under P2 and NFR-11. What clause 6.11 does expect, detection and indication of communication failure in a distributed alarm system, is not captured as a requirement.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "IEC 60601-1-8 does not specify these escalation intervals",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "citation to clause 6.11 is incorrect or unverifiable",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "The requirement's authority is mis-attributed, so it cannot be verified against its cited source. The real basis (local clinical policy or a CSB decision) is undocumented. Teams may treat the timings as non-negotiable regulatory values rather than clinical content governed under P2 and NFR-11. What clause 6.11 does expect, detection and indication of communication failure in a distributed alarm system, is not captured as a requirement.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Examples of acceptable recommendations (not required for credit; any valid remedy is acceptable): Re-source FR-8 to a CSB decision and record the rationale in the clinical safety case. If IEC 60601-1-8 is cited, cite it for what it covers (alarm priorities, distributed-alarm-system delivery and communication-failure indication) and add those as requirements.",
+      "distractor_notes": "Section 4.3's use of IEC 60601-1-8 for High/Medium/Low priority semantics is correct and should not be flagged. Arguing that 60 s is clinically too long or too short is a matter of clinical opinion, not this flaw. Saying that the timings must be sourced from clinical governance (CSB / clinical safety case) is a remedy, not part of detection: a finding that makes the two detection points with a different valid remedy, or none, earns full credit.",
+      "overlapping_sound_section_ids": [
+        "S01"
+      ],
+      "disambiguation": null
+    },
+    {
+      "id": "F07",
+      "title": null,
+      "kind": "gap",
+      "acceptable_kinds": [
+        "gap",
+        "validation_need"
+      ],
+      "category": "missing_or_unverifiable_requirement",
+      "tags": [],
+      "severity": "low",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "minor"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": null,
+      "v2_note": "NFR-9 re-sourced to the cluster Cloud Data Residency Standard; PDPA s26 correctly described as the Transfer Limitation Obligation.",
+      "location": {
+        "sections": [
+          "2.2",
+          "17.1",
+          "18.3",
+          "22.2"
+        ],
+        "requirement_ids": [
+          "NFR-9"
+        ],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "NFR-9 states that onshore-only storage and processing is 'required by Section 26 of the PDPA'. PDPA Section 26 is the Transfer Limitation Obligation. It permits transfers of personal data outside Singapore provided the organisation ensures a comparable standard of protection (detailed in the Personal Data Protection Regulations 2021). It does not mandate data localisation.",
+      "rationale": "The requirement is attributed to a clause that does not say it, so it cannot be verified or properly scoped. The real driver is likely public-healthcare or cluster cloud policy for sensitive data, and that driver may carry different conditions (logs, support access, backups) that the design does not capture. The misreading also hides the obligations that Section 26 does impose, for example offshore vendor support access or partner tenancies (see F09).",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "PDPA s26 is the Transfer Limitation Obligation",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "s26 allows overseas transfer with comparable protection; it is not a localisation mandate",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "the residency requirement needs its correct source (MOH/public-sector or cluster policy)",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "The requirement is attributed to a clause that does not say it, so it cannot be verified or properly scoped. The real driver is likely public-healthcare or cluster cloud policy for sensitive data, and that driver may carry different conditions (logs, support access, backups) that the design does not capture. The misreading also hides the obligations that Section 26 does impose, for example offshore vendor support access or partner tenancies (see F09).",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Re-source NFR-9 to the applicable cluster or public-healthcare cloud residency policy. Separately capture PDPA s26 obligations for any offshore access or transfer, such as contractual safeguards for vendor support and partner tenancies.",
+      "distractor_notes": "Recommending removal of the residency requirement is wrong. The onshore requirement is plausibly valid from policy; only its legal basis is wrong. The PDPA Part 6A 3-calendar-day breach notification statement in Section 17.1 is correct and should not be flagged.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F08",
+      "title": null,
+      "kind": "gap",
+      "acceptable_kinds": [
+        "gap",
+        "risk"
+      ],
+      "category": "security_privacy_gap",
+      "tags": [],
+      "severity": "critical",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "critical"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": null,
+      "v2_note": "Section 15.2 and D-4 use per-device X.509 identities with keys in a secure element and CA-based group enrollment.",
+      "location": {
+        "sections": [
+          "15.2",
+          "20"
+        ],
+        "requirement_ids": [
+          "NFR-6"
+        ],
+        "decision_ids": [
+          "D-4"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "Device credentials use a DPS symmetric-key group enrollment per device class, and the group enrollment key itself is embedded in the firmware image so devices can derive their own per-device key (HMAC over registration ID) at first boot.",
+      "rationale": "Anyone who obtains the firmware image, or extracts it from any single lost or stolen patch, holds the master secret for the whole device class. They can derive a valid key for any registration ID, impersonate any patch, and inject falsified vitals: normal values that mask deterioration, or spurious alarms. They can also register rogue devices. Revocation means re-keying the entire class. This defeats NFR-6 ('devices shall authenticate individually') and goes against Microsoft's DPS guidance that the group enrollment key must not be stored on devices. Signing the firmware image provides integrity, not confidentiality, so the key is exposed.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "group enrollment key embedded in firmware / on device",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "compromise of one device or the image allows deriving keys for all devices in the class",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "impersonation / injection of false vitals or suppression of alarms",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "violates individual device authentication (NFR-6)",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "Anyone who obtains the firmware image, or extracts it from any single lost or stolen patch, holds the master secret for the whole device class. They can derive a valid key for any registration ID, impersonate any patch, and inject falsified vitals: normal values that mask deterioration, or spurious alarms. They can also register rogue devices. Revocation means re-keying the entire class. This defeats NFR-6 ('devices shall authenticate individually') and goes against Microsoft's DPS guidance that the group enrollment key must not be stored on devices. Signing the firmware image provides integrity, not confidentiality, so the key is exposed.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Use per-device X.509 certificates (keys generated in a secure element or TPM, issued by a cluster-controlled CA) or, at minimum, compute derived per-device symmetric keys in an HSM at manufacture and inject only the derived key. Never place the group key on devices. Support per-device revocation and add a test that a device credential cannot be used to provision another registration ID.",
+      "distractor_notes": "Saying only 'use stronger encryption' or 'enable TLS 1.3' misses the point; transport is already TLS. Flagging that gateways use X.509 is wrong; that part is fine. The 'lost device exposes no patient identity' statement in Section 14.5 is correct for patient data and should not be flagged as a privacy flaw.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F09",
+      "title": null,
+      "kind": "gap",
+      "acceptable_kinds": [
+        "gap",
+        "risk"
+      ],
+      "category": "security_privacy_gap",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "17.4",
+          "17.2",
+          "20",
+          "22.1"
+        ],
+        "requirement_ids": [
+          "FR-15",
+          "P8"
+        ],
+        "decision_ids": [
+          "D-19"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "The 'anonymised' extracts remove direct identifiers but keep strong quasi-identifiers: timestamps to the second, ward and bed, age, sex, ethnicity, diagnosis codes, and the full 6-digit home postal code for MIC@Home patients. A Singapore 6-digit postal code typically identifies a single building, often a single landed house. The document then declares the extracts outside the PDPA and permits sharing into an ML partner's own tenancy without per-extract approval.",
+      "rationale": "Re-identification risk is high: postal code combined with age, sex, and ethnicity, or exact admission and event times combined with ward/bed, which staff and visitors can link. Under PDPC anonymisation guidance, data with a serious possibility of re-identification remains personal data. The claim that the extracts fall outside the PDPA is therefore unjustified, and the onward sharing breaks purpose limitation, P8 (minimum necessary), and possibly NFR-9 if the partner tenancy is offshore. The FR-15 acceptance criterion checks only direct identifiers, so it cannot catch this.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "quasi-identifiers retained (postal code / exact timestamps / ward-bed / demographics)",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "6-digit postal code is highly identifying in Singapore",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "removal of direct identifiers is not anonymisation; re-identification risk",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "claim of being outside PDPA and sharing to partner tenancy without approval is unjustified",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "Re-identification risk is high: postal code combined with age, sex, and ethnicity, or exact admission and event times combined with ward/bed, which staff and visitors can link. Under PDPC anonymisation guidance, data with a serious possibility of re-identification remains personal data. The claim that the extracts fall outside the PDPA is therefore unjustified, and the onward sharing breaks purpose limitation, P8 (minimum necessary), and possibly NFR-9 if the partner tenancy is offshore. The FR-15 acceptance criterion checks only direct identifiers, so it cannot catch this.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Compute the travel-time feature inside the platform and drop the postal code, or generalise it to the postal sector. Use relative or shifted times. Drop bed and generalise ward and age. Perform and document a re-identification risk assessment (e.g. k-anonymity). Keep extracts in an HPHC-controlled trusted research environment, require DPO or data-governance approval per extract, and put a data-sharing agreement in place that prohibits re-identification. Extend the FR-15 AC to quasi-identifiers.",
+      "distractor_notes": "Flagging the purpose-limitation table (Section 17.2) alone, or the breach-notification text, misses the issue. Recommending that the ML programme stop entirely overshoots. The subtle element is the quasi-identifier and postal-code combination plus the legal conclusion drawn from it.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F10",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "gap"
+      ],
+      "category": "scalability_or_failure_mode",
+      "tags": [],
+      "severity": "critical",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "critical"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": "F15",
+      "v2_note": "The original SPOF is resolved (active-active, externalised state, durable timers, per-ward heartbeat), but the added 'delivery assurance' introduces F15.",
+      "location": {
+        "sections": [
+          "10.3",
+          "18.1",
+          "20",
+          "2.2"
+        ],
+        "requirement_ids": [
+          "NFR-3",
+          "NFR-4",
+          "FR-8"
+        ],
+        "decision_ids": [
+          "D-10"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "The Alert Dispatcher, through which every alert notification and escalation passes, runs as a single Kubernetes replica with deduplication state and escalation timers held in process memory. Recovery relies on a liveness-probe restart. Nothing in the design provides end-to-end pipeline liveness monitoring: a dead or stalled Dispatcher produces an empty alert inbox, which looks the same as a quiet ward.",
+      "rationale": "It is a single point of failure on the safety-critical path. A pod restart loses every pending escalation timer, so unacknowledged High alerts never escalate. It also loses deduplication state, so clinicians get re-notification storms on restart. A node or zone loss requires rescheduling (minutes, not 30 s), and rolling deployments create gaps. A hung-but-live process is not caught by a liveness probe. Silent failure is especially dangerous for MIC@Home, where RPM-P is the primary channel (P1). NFR-3 (99.95%, about 22 min/month) and the 'no alert loss on zone failure' clause of NFR-4 are not credible with this topology, despite Section 18.1 presenting the stack as zone-redundant.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "single replica Dispatcher is a single point of failure",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "in-memory escalation timers / dedup state lost on restart",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "no end-to-end heartbeat / silent failure indistinguishable from no alerts",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "conflicts with availability targets (NFR-3/NFR-4)",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Run the Dispatcher active-active across zones, externalise deduplication state, and use durable timers (for example scheduled messages or a timer table) with idempotent dispatch. Add an end-to-end synthetic heartbeat per ward or cohort that raises a visible 'monitoring interrupted' state on dashboards and pages operations and the charge nurse when missing.",
+      "distractor_notes": "Flagging the Alert Service (three replicas, persist-before-dispatch) is wrong; that part is sound. A finding that mentions only 'add more replicas' without the state and timer loss or the silent-failure aspect is partial.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F11",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "gap"
+      ],
+      "category": "scalability_or_failure_mode",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "8.2",
+          "6.1",
+          "7.2",
+          "20"
+        ],
+        "requirement_ids": [
+          "FR-4",
+          "FR-9"
+        ],
+        "decision_ids": [
+          "D-6"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "Stream Analytics evaluates rules on event time (TIMESTAMP BY device_ts) with a 5-s late-arrival tolerance and Drop for events outside tolerance. Section 6.1 specifies store-and-forward of up to 30 minutes (patches) and 4 hours (home hubs), replayed on reconnection, and device clocks that drift up to 2 s/day between synchronisations.",
+      "rationale": "Every replayed reading after a connectivity gap arrives outside the 5-s tolerance and is silently dropped from rule evaluation. A desaturation that occurred during a BLE or cellular gap never raises an alert, even retrospectively. Because raw telemetry is routed separately to ADX (Section 7.2), the trend view shows the readings, so nothing looks missing. In ASA, lateness is the difference between event time and arrival time. A device whose clock falls more than ~5 s behind, through drift or a bad sync, has every message classed as late, so that patient silently receives no threshold or pNEWS2 alerts at all. The 'no data > 60 s' technical alert clears on reconnection, closing the only signal.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "event time = device_ts with 5 s late tolerance and Drop",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "buffered/replayed readings (30 min / 4 h) are dropped from evaluation",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "device clock skew causes all events from a device to be treated as late",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "(supporting, not required) silent: data still appears in ADX trends but is never evaluated",
+            "role": "supporting"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "Every replayed reading after a connectivity gap arrives outside the 5-s tolerance and is silently dropped from rule evaluation. A desaturation that occurred during a BLE or cellular gap never raises an alert, even retrospectively. Because raw telemetry is routed separately to ADX (Section 7.2), the trend view shows the readings, so nothing looks missing. In ASA, lateness is the difference between event time and arrival time. A device whose clock falls more than ~5 s behind, through drift or a bad sync, has every message classed as late, so that patient silently receives no threshold or pNEWS2 alerts at all. The 'no data > 60 s' technical alert clears on reconnection, closing the only signal.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Window on arrival or enqueue time (or use Adjust) for alerting. Route late or backfilled data to a backfill evaluation path that raises clearly labelled retrospective alerts. Monitor the device_ts versus hub_enq_ts skew per device and raise a technical alert or quarantine when it exceeds a bound. Test with skewed clocks and replayed buffers.",
+      "distractor_notes": "The message envelope (Section 6.2), with three timestamps and seq idempotency, is sound, and flagging it is a false positive. The flaw is the ASA configuration. A finding that says only 'clock skew could be an issue' without linking it to the Drop policy and the silent loss of alert evaluation is partial.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F12",
+      "title": null,
+      "kind": "ambiguity",
+      "acceptable_kinds": [
+        "ambiguity",
+        "validation_need"
+      ],
+      "category": "ambiguous_requirement",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "fixed",
+      "caused_regression_flaw_id": null,
+      "v2_note": "FR-7 defines the dedup key, the priority/rule breakthrough, the fixed window, and the clock; D-11 and the FR-7 AC are updated.",
+      "location": {
+        "sections": [
+          "2.1",
+          "10.3",
+          "20",
+          "22.1"
+        ],
+        "requirement_ids": [
+          "FR-7"
+        ],
+        "decision_ids": [
+          "D-11"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "FR-7: 'suppress duplicate alerts for the same patient within a 5-minute window'. The term 'duplicate' is undefined. Reading A is patient-level: any alert for the same patient within 5 minutes is a duplicate. Reading B is condition-level: only alerts with the same patient and the same parameter or rule (and priority) are duplicates. Under reading A, a new High-priority SpO2 alert 2 minutes after a Medium HR alert is suppressed. Under reading B, it is delivered. The requirement also leaves open whether the window is fixed or sliding (re-armed by each suppressed alert, which could suppress an ongoing condition indefinitely) and which clock it uses. Section 10.3 and D-11 restate the rule without resolving it, and the FR-7 acceptance criterion uses 'identical' alerts, so both implementations pass.",
+      "rationale": "The two readings lead to incompatible implementations with direct patient-safety consequences. Reading A can suppress a new or escalating deterioration signal; reading B behaves differently for alert fatigue. Nothing in the document lets an implementer or tester choose between them.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "'duplicate' undefined",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "patient-level vs same-parameter/rule interpretations",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "risk of suppressing a different or higher-priority alert",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "acceptance test does not disambiguate (or window semantics/clock unspecified)",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Define the deduplication key (patient_id plus rule_id), require that higher-priority or different-rule alerts always break through, specify a fixed window that is not extended by suppressed alerts, and state the clock (platform ingestion time). Add acceptance tests for cross-parameter and priority-escalation cases.",
+      "distractor_notes": "Arguing that 5 minutes is the wrong duration is a clinical-content opinion, not the ambiguity flaw.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F13",
+      "title": null,
+      "kind": "validation_need",
+      "acceptable_kinds": [
+        "validation_need",
+        "gap"
+      ],
+      "category": "acceptance_criterion_cannot_validate",
+      "tags": [],
+      "severity": "low",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "minor"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "22.2",
+          "2.2",
+          "10.4"
+        ],
+        "requirement_ids": [
+          "NFR-2"
+        ],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "The NFR-2 acceptance test publishes synthetic messages from an in-region harness directly to IoT Hub, and measures from the IoT Hub enqueue timestamp to the alert row being committed in PostgreSQL. NFR-2 is defined from sensor measurement to the alert being presented on the clinician's device.",
+      "rationale": "The test excludes the segments that dominate real latency and variance: on-device batching (5 s), BLE, gateway, WAN and 4G, Dispatcher routing, and APNs/FCM or paging delivery and display. Passing it says nothing about whether NFR-2 is met. It also cannot detect F05.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "measurement starts at IoT Hub, not at the sensor",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "measurement ends at the DB commit, not at the clinician device",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "excluded segments (batching/BLE/gateway/push) mean the AC cannot validate NFR-2",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Run end-to-end tests from a physiological simulator attached to real devices, through production-like gateways and cellular links, to instrumented clinician devices, timestamping display. Complement this with continuous production measurement using the canary heartbeat.",
+      "distractor_notes": "Criticising the 1,600 msg/s rate is a weak point; that rate matches steady state. The core issue is the measurement boundaries.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F14",
+      "title": null,
+      "kind": "unresolved_assumption",
+      "acceptable_kinds": [
+        "unresolved_assumption",
+        "risk"
+      ],
+      "category": "decision_depends_on_pending_item",
+      "tags": [],
+      "severity": "critical",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "critical"
+      },
+      "planted": true,
+      "introduced_in": "v1",
+      "introduced_by_fix_of": null,
+      "v2_status": "unchanged",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "20",
+          "21",
+          "9.1",
+          "9.4",
+          "23",
+          "24"
+        ],
+        "requirement_ids": [
+          "B-3",
+          "FR-5"
+        ],
+        "decision_ids": [
+          "D-15"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "D-15 is presented as confirmed: EWS-ML replaces pNEWS2 aggregate alerting as the primary deterioration alert for MIC@Home from Phase 4. It depends on Pending Backlog B-3, which is still open: HSA regulatory determination for EWS-ML as software as a medical device (classification, and whether registration or an exemption applies) and the prospective silent-mode validation protocol for the MIC@Home cohort. Phase 4 is nevertheless marked 'No — ready', and Section 23 says B-3 'runs in parallel'.",
+      "rationale": "Going live with an ML model as the primary deterioration alert before its regulatory status is determined risks deploying unregistered medical device software. It also replaces a validated scoring approach with a model that has no validation in the target cohort. Section 9.1 shows training and evaluation only on inpatients, and no operating threshold is defined for MIC@Home. The confirmed status and the readiness rating are not supported.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "D-15 depends on B-3",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "B-3 (HSA SaMD determination / prospective validation) is still pending",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "Phase 4 marked ready / readiness assessment inconsistent",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "model validated only on inpatients; no MIC@Home validation or threshold",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": false,
+      "external_fact": null,
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Downgrade D-15 to pending and gate Phase 4 MIC@Home ML go-live on B-3. Keep pNEWS2 and hard thresholds as primary for MIC@Home, and run EWS-ML in silent mode to collect prospective performance and calibrate a MIC@Home threshold.",
+      "distractor_notes": "Flagging EWS-ML for inpatients as complementary is not this flaw; that use is additive. Generic 'ML is risky' comments without the D-15 to B-3 dependency are partial. Model governance (Section 9.3) is reasonable.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    },
+    {
+      "id": "F15",
+      "title": null,
+      "kind": "risk",
+      "acceptable_kinds": [
+        "risk",
+        "gap"
+      ],
+      "category": "scalability_or_failure_mode",
+      "tags": [],
+      "severity": "high",
+      "severity_source": {
+        "scale": "synthetic3",
+        "label": "major"
+      },
+      "planted": true,
+      "introduced_in": "v2",
+      "introduced_by_fix_of": "F10",
+      "v2_status": "introduced",
+      "caused_regression_flaw_id": null,
+      "v2_note": null,
+      "location": {
+        "sections": [
+          "10.3"
+        ],
+        "requirement_ids": [
+          "NFR-2",
+          "NFR-3"
+        ],
+        "decision_ids": [
+          "D-10"
+        ],
+        "anchor_quote": null,
+        "page": null
+      },
+      "description": "v2 adds 'delivery assurance'. Undelivered notifications are re-enqueued to the Service Bus queue alert-delivery and retried every 15 s until acknowledged, with no time-to-live and dead-lettering disabled. Each ward's session is processed in strict FIFO order, and the worker does not advance past a message until its delivery is confirmed.",
+      "rationale": "Head-of-line blocking: if the paging gateway or push provider is down, or a single message is undeliverable, every later alert for that ward is blocked behind it. That includes new High alerts that could be delivered through the mobile app. With no TTL or dead-letter queue, the queue grows without bound during an outage until it hits the entity size limit, at which point new sends fail. On recovery, clinicians receive a burst of stale alerts, some for resolved conditions or discharged patients, with no staleness marking or priority ordering. This undermines NFR-2 and NFR-3 and creates alert fatigue.",
+      "core_insight": null,
+      "credit": {
+        "mode": "substance",
+        "items": [
+          {
+            "id": "c1",
+            "text": "strict FIFO per ward with no advance until delivery causes head-of-line blocking",
+            "role": "required"
+          },
+          {
+            "id": "c2",
+            "text": "no TTL / dead-lettering disabled: unbounded queue growth",
+            "role": "required"
+          },
+          {
+            "id": "c3",
+            "text": "stale alert burst after outage / no priority ordering",
+            "role": "required"
+          },
+          {
+            "id": "c4",
+            "text": "new High alerts delayed behind undeliverable messages",
+            "role": "required"
+          }
+        ],
+        "min_required": null
+      },
+      "needs_external_research": true,
+      "external_fact": {
+        "claim": "Head-of-line blocking: if the paging gateway or push provider is down, or a single message is undeliverable, every later alert for that ward is blocked behind it. That includes new High alerts that could be delivered through the mobile app. With no TTL or dead-letter queue, the queue grows without bound during an outage until it hits the entity size limit, at which point new sends fail. On recovery, clinicians receive a burst of stale alerts, some for resolved conditions or discharged patients, with no staleness marking or priority ordering. This undermines NFR-2 and NFR-3 and creates alert fatigue.",
+        "source": "unspecified in legacy key",
+        "verified": false,
+        "verified_source_url": null,
+        "verified_at": null,
+        "verification_note": "Not independently verified in this key; see research/audit/eval_data_audit.md Task 1. claim is a placeholder copied from why_it_is_a_flaw (spec/README.md §2.2); restate it as the external fact when verifying."
+      },
+      "expected_disposition": null,
+      "acceptable_dispositions": [],
+      "affected_decisions": [],
+      "acceptable_fix": "Deliver independently per alert and channel, not with a blocking FIFO. Prioritise by alert priority. Fail over between channels (app, paging, SMS). Bound retries with TTLs aligned to alert relevance, re-evaluating alert state before each retry. Dead-letter to an operations queue that pages on-call, and mark late deliveries as stale with their original raise time.",
+      "distractor_notes": "The rest of the v2 Dispatcher fix (active-active replicas, Redis dedup state, durable Service Bus scheduled timers, per-ward heartbeat) is sound and should not be flagged. A reviewer who only says 'retries need limits' without the head-of-line blocking or stale-burst consequences is partial.",
+      "overlapping_sound_section_ids": [],
+      "disambiguation": null
+    }
+  ],
+  "sound_sections": [
+    {
+      "id": "S01",
+      "location": {
+        "sections": [
+          "4 (Clinical Alerting Model, esp. 4.2 pNEWS2 and 4.3 priority mapping)"
+        ],
+        "requirement_ids": [],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "why_sound": "The section is honest about NEWS2's need for manually observed parameters. It computes an aggregate only when every manual input is within its freshness window, and otherwise shows 'incomplete' with an observations-due task instead of imputing zeros. It excludes skin temperature as a non-validated core-temperature surrogate, applies SpO2 Scale 2 only when prescribed and with an expiry (as NEWS2 requires), maps NEWS2 risk bands to IEC 60601-1-8 priority semantics correctly (aggregate ≥7 High, 5–6 Medium, single red 3 as low-medium mapped to Medium), justifies the persistence windows as artefact suppression, and is CSB-approved.",
+      "trap": "Flagging pNEWS2 as 'not real NEWS2' or 'unvalidated', demanding that missing parameters be imputed, flagging the 10-s persistence window as a latency defect (the defect is the budget's omission of it, F05), or conflating the correct IEC 60601-1-8 priority usage here with the FR-8 mis-citation (F06).",
+      "still_valid_observations": [],
+      "overlapping_flaw_ids": [
+        "F05",
+        "F06"
+      ],
+      "applies_to_versions": [
+        "v1",
+        "v2"
+      ],
+      "bait": false,
+      "disambiguation": "F05 cites 4.3 only for the 10-s persistence window in Table 4.3b, which the Section 10.4 latency budget omits. A finding that says the 10.4 budget or the NFR-2 headroom claim ignores the 4.3 persistence window (and the 5-s batching) matches F05 and is not a false positive against Section 4. Only a finding that says the persistence window itself is a defect, or should be removed, is the Section 4 trap. Likewise, F06 is the FR-8 mis-citation of IEC 60601-1-8 clause 6.11 for escalation intervals; the 4.3 use of IEC 60601-1-8 for priority semantics is sound."
+    },
+    {
+      "id": "S02",
+      "location": {
+        "sections": [
+          "6.2 (Message envelope)"
+        ],
+        "requirement_ids": [],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "why_sound": "It uses a per-device monotonic seq as the idempotency key (robust to replay and duplicate publishes regardless of clocks), keeps three timestamps (device, gateway receive, hub enqueue) so skew and buffering are observable, passes signal quality through, and keeps patient identity out of the envelope so attribution happens in the platform via binding. The schema is versioned with adapter-profile mapping.",
+      "trap": "Flagging 'device timestamps are unreliable' against the envelope, or recommending that the patient ID be added to the envelope for convenience. The clock-skew defect lives in the ASA configuration (F11), not here.",
+      "still_valid_observations": [
+        {
+          "id": "O01",
+          "text": "§6.2: `device_ts` semantics are ambiguous, and batching against the 5-s tolerance may drop live messages.",
+          "origin": "eval_audit",
+          "related_flaw_ids": []
+        }
+      ],
+      "overlapping_flaw_ids": [],
+      "applies_to_versions": [
+        "v1",
+        "v2"
+      ],
+      "bait": false,
+      "disambiguation": null
+    },
+    {
+      "id": "S03",
+      "location": {
+        "sections": [
+          "14 (Device Lifecycle Management)"
+        ],
+        "requirement_ids": [],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "why_sound": "Explicit states with streaming permitted only in BOUND. Two-identifier scan binding with no manual entry and a confirmation screen. Automatic unbind on ADT A03 and swap as a single transaction. A database exclusion constraint prevents overlapping bindings. Dual-signed firmware with staged rollout and an automatic halt, applied only to AVAILABLE devices. Decommissioning disables the identity and wipes the device. Lost devices carry no patient identity.",
+      "trap": "Recommending manual entry as a downtime fallback (it weakens positive patient identification), flagging that devices are not updated while bound (deliberate and correct), or attributing the F08 credential flaw to this section.",
+      "still_valid_observations": [],
+      "overlapping_flaw_ids": [],
+      "applies_to_versions": [
+        "v1",
+        "v2"
+      ],
+      "bait": false,
+      "disambiguation": null
+    },
+    {
+      "id": "S04",
+      "location": {
+        "sections": [
+          "16 (Identity, Access Control and Break-Glass)"
+        ],
+        "requirement_ids": [],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "why_sound": "Entra ID with MFA, managed devices, and individual attribution on shared workstations. Care-team scoping derived from ADT and the roster. Least-privilege roles (Biomedical Engineering and operations see no patient identifiers). Break-glass is reason-coded, time-boxed, bannered, queued to the Data Protection Office, retrospectively reviewed within 7 days, and cannot change rule content. Per-patient access reports come from the immutable audit.",
+      "trap": "Recommending pre-approval for break-glass (it would delay emergency care; retrospective review is standard practice) or calling the 12-hour maximum excessive when it is bounded by the shift.",
+      "still_valid_observations": [],
+      "overlapping_flaw_ids": [],
+      "applies_to_versions": [
+        "v1",
+        "v2"
+      ],
+      "bait": false,
+      "disambiguation": null
+    },
+    {
+      "id": "S05",
+      "location": {
+        "sections": [
+          "19 (Prior Art and Reference Architecture)"
+        ],
+        "requirement_ids": [],
+        "decision_ids": [],
+        "anchor_quote": null,
+        "page": null
+      },
+      "why_sound": "It cites relevant, real standards and profiles (IHE PCD DEC and ACM, IEEE 11073 SDC, FHIR R4 vital-signs, NEWS2, IEC 60601-1-8) with accurate concept matches and gaps, and states clearly what is borrowed and what is cluster-specific.",
+      "trap": "Demanding IEEE 11073 SDC for wearables (the section correctly notes that wearables do not implement it) or insisting on IHE PCD-01 HL7 v2 outbound instead of FHIR.",
+      "still_valid_observations": [],
+      "overlapping_flaw_ids": [],
+      "applies_to_versions": [
+        "v1",
+        "v2"
+      ],
+      "bait": false,
+      "disambiguation": null
+    }
+  ],
+  "still_valid_observations": [],
+  "v2": {
+    "changed_sections": [],
+    "expected_open_flaw_ids": [
+      "F01",
+      "F03",
+      "F05",
+      "F06",
+      "F09",
+      "F11",
+      "F13",
+      "F14",
+      "F15"
+    ],
+    "notes": "v2 revision history (verbatim): FR-7 deduplication rule specified in full. NFR-9 policy basis restated. Section 7.3 and D-2: IoT Hub re-sized. Section 10.3 and D-10: Alert Dispatcher made active-active with externalised state, delivery assurance, and a pipeline heartbeat. Section 12.2 and D-14: outbound Observations posted as preliminary pending nurse validation. Section 15.2 and D-4: per-device X.509 identities. Section 22 acceptance criteria updated to match."
+  },
+  "authoring_status": {
+    "pending": [
+      "author_model",
+      "generation_date",
+      "canary_guid",
+      "core_insight",
+      "anchor_quote",
+      "expected_disposition",
+      "approved_decisions",
+      "key_second_review",
+      "external_fact_verification",
+      "sound_overlap_annotations",
+      "v2_changed_sections",
+      "author_type"
+    ],
+    "scored_run_ready": false
+  }
+}

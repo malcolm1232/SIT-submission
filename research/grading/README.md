@@ -271,9 +271,9 @@ Suspected items do not trigger caps. They are sent to the verification step (§6
 with zero material hallucinations**, on both the sample artefact and held-out artefacts.
 
 > **Superseded (reconciliation 2026-10-02):** this target is checked on S-dev and the SIT sample during development. Held-out artefacts are not graded
-repeatedly: S-heldout (the current `eval/blind`, sealed, not blind) allows ≤ 3 logged evaluations in total and the
-commissioned Blind set exactly one, after `prereg.yaml` is frozen (`docs/DECISIONS.md` ADR-004; audit C19). Iterating
-prompts on grader scores risks Goodhart effects, so headline claims rest on judge-free metrics (audit G5).
+> repeatedly: S-heldout (the current `eval/blind`, sealed, not blind) allows ≤ 3 logged evaluations in total and the
+> commissioned Blind set exactly one, after `prereg.yaml` is frozen (`docs/DECISIONS.md` ADR-004; audit C19). Iterating
+> prompts on grader scores risks Goodhart effects, so headline claims rest on judge-free metrics (audit G5).
 
 ---
 
@@ -298,13 +298,13 @@ prompts on grader scores risks Goodhart effects, so headline claims rest on judg
 Always run key-blind first and key-aware second, in separate contexts, so the key cannot leak into the blind score.
 
 > **Superseded (reconciliation 2026-10-02):** (1) Key-aware mode is **diagnostic only**. Its key-item alignment (full / partial / none, `recall_high`,
-`recall_all`) is never reported as recall; recall, precision and SWR come only from the matcher in
-`research/methodology/metrics.md` §2 (`spec/README.md` §3 C4). (2) Any finding-to-flaw matching follows that one rule
-(core insight + compatible location, one-to-one), with the core insight checked by each flaw's `credit.mode`
-(`substance | all_of | any_of`, `spec/taxonomy.yaml` `credit_modes`; C5). (3) "Valid findings not in the key" are
-adjudicated as VALID_UNPLANTED and count as correct for adjudicated precision (`metrics.md` §2.3 step 4, §3; C26).
-(4) The answer key itself is `spec/answer_key.schema.json`; the YAML in `grader_prompt.md` §6 is a legacy format mapped
-by `spec/README.md` §2.3 (C32).
+> `recall_all`) is never reported as recall; recall, precision and SWR come only from the matcher in
+> `research/methodology/metrics.md` §2 (`spec/README.md` §3 C4). (2) Any finding-to-flaw matching follows that one rule
+> (core insight + compatible location, one-to-one), with the core insight checked by each flaw's `credit.mode`
+> (`substance | all_of | any_of`, `spec/taxonomy.yaml` `credit_modes`; C5). (3) "Valid findings not in the key" are
+> adjudicated as VALID_UNPLANTED and count as correct for adjudicated precision (`metrics.md` §2.3 step 4, §3; C26).
+> (4) The answer key itself is `spec/answer_key.schema.json`; the YAML in `grader_prompt.md` §6 is a legacy format mapped
+> by `spec/README.md` §2.3 (C32).
 
 ---
 
@@ -390,9 +390,9 @@ disagreement table, and (in key-aware mode) key alignment (diagnostic, not recal
    grader can reasonably reach.
 
 > **Superseded (reconciliation 2026-10-02):** these targets define only the **smoke** tier. Claims are tied to the tier reached: smoke (n = 5,
-the targets above), tentative (n ≥ 20 reviews, ordinal Krippendorff's α ≥ 0.667 with bootstrap CI), primary
-(methodology §8). Report ordinal α and QWK together. One person labels (audit §4.6), so human–human κ needs a peer
-grading a subset. Tiers are frozen in `prereg.yaml` (not yet written). Audit C2.
+> the targets above), tentative (n ≥ 20 reviews, ordinal Krippendorff's α ≥ 0.667 with bootstrap CI), primary
+> (methodology §8). Report ordinal α and QWK together. One person labels (audit §4.6), so human–human κ needs a peer
+> grading a subset. Tiers are frozen in `prereg.yaml` (not yet written). Audit C2.
 
 ---
 
@@ -484,9 +484,9 @@ Likely requests and what to show:
 - Marks come from: the change lands in under 5 minutes, the effect is visible in the next run, and nothing else breaks.
 
 > **Superseded (reconciliation 2026-10-02):** targets are **≤ 3 min for a config change and ≤ 5 min for a code change** (`docs/DEMO_DAY_RUNBOOK.md` §4;
-audit C23). "Swap the model" means a change within the Opus line or an effort change; a swap to another model is
-possible but a disclosed deviation from `docs/DECISIONS.md` ADR-002, and cross-vendor swap is not a live-demo feature
-(ADR-001; audit C24).
+> audit C23). "Swap the model" means a change within the Opus line or an effort change; a swap to another model is
+> possible but a disclosed deviation from `docs/DECISIONS.md` ADR-002, and cross-vendor swap is not a live-demo feature
+> (ADR-001; audit C24).
 
 ### Live scoring sheet (for our own rehearsal)
 | # | Item | Observed? |

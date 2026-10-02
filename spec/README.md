@@ -7,7 +7,8 @@ This folder resolves two P0 blockers from `research/audit/research_audit.md` §6
 | `spec/taxonomy.yaml` | The only enum registry. Definitions, inclusion/exclusion notes and invented examples for every label. Also holds the converter-only `legacy_mappings`. | Kinds, categories, severities, confidence bands, dispositions, verdicts, provenance, stop reasons, decision relations, phases, credit modes, v2 statuses, splits, matcher labels, anchor rules |
 | `spec/finding.schema.json` | JSON Schema 2020-12. Root = one hydrated **Finding**; `#/$defs/Review` = the **Review** envelope. | What the agent emits, what the matcher reads, what the grader and robustness oracles validate |
 | `spec/answer_key.schema.json` | JSON Schema 2020-12 for one sealed **answer key**. Reuses `Kind`, `Category`, `Severity`, `Disposition` from the finding schema by `$ref`. | What a gold flaw, sound section and still-valid observation look like |
-| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative tests, and checks that `legacy_mappings` covers every label in the five existing keys. | — |
+| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative and adversarial tests, runs the INV-04 anchor oracle, and checks that `legacy_mappings` covers every label in the five existing keys. | — |
+| `spec/convert_answer_keys.py` | Converts the five legacy keys to `eval/<tier>/<item>/answer_key.canonical.json`, validates each, and prints counts, notes and any field it could not map (§2.8). | — |
 
 **Handling.** `taxonomy.yaml` outside `legacy_mappings` is prompt-safe: its examples are invented and avoid every mechanism in the eval keys. This README and `legacy_mappings` name eval-key labels and some flaw details, and §2.6-2.7 cover the S-heldout (ex-blind) items. Never place either in an agent, matcher or grader prompt. When the S-heldout keys are sealed (audit P0 action 7), move §2.4 rows for item_a/item_b, §2.6 and §2.7 into the sealed archive.
 
@@ -24,8 +25,11 @@ This folder resolves two P0 blockers from `research/audit/research_audit.md` §6
   matcher: Finding.statement + doc_anchors  <-> Flaw.core_insight + credit + location   (metrics.md §2)
   adjudicator: unmatched findings -> DUPLICATE / VALID_UNPLANTED / ... ; still_valid_observations pre-adjudicate VALID_UNPLANTED
   grader: whole Review (Pass A uses kind, disposition, recommendation, evidence; Pass B uses verdict, intent_summary, unresolved)
-  oracles: Review validates (INV-03); anchors resolve (INV-04); evidence_id in ledger (INV-05); recommendation complete (INV-06);
-           limitations cover research_log.degradations (INV-07); manifest complete (INV-09); challenges_decision labelled (INV-10)
+  oracles: Review validates (INV-03); anchors resolve against documents[].text_path (INV-04); evidence_id in ledger, external
+           ledger entries resolve to an ok research_log.tool_calls[] entry, no free-text URL outside the ledger (INV-05);
+           recommendation complete (INV-06); every degradation id cited by a limitations[] entry, fallbacks and cap stops
+           recorded as degradations (INV-07); manifest complete incl. review_config and fault_schedule_id (INV-09);
+           registry hash constant across iterations, challenges labelled (INV-10)
 ```
 
 Key design choices:
@@ -37,8 +41,12 @@ Key design choices:
 - **Traceability**: 1-3 `doc_anchors` per finding (audit G1, G3), each with `doc_id`, `section_ref`, `requirement_ids`, a verbatim `quote` of ≥ 8 tokens (G2) and `page`.
 - **Evidence by ledger ID** (audit C11). The model writes `evidence_id`, `source_type`, `quote`, `supports_claim`; the renderer copies `url_or_citation` and `retrieved_at` from the ledger (these are `readOnly` in the schema). Every evidence item is tagged `doc | external | inference` (C10); inference must list `derived_from`.
 - **Approved decisions** live in `Review.decision_registry[]` (robustness §10 item 5). A finding lists `affected_decisions[]` with relation `preserves | refines | challenges`; `challenges` requires ≥ 2 evidence items and a non-`no_change` disposition (BEH-12, INV-10).
-- **Cross-field rules** that JSON Schema cannot express are enforced in code (`review_semantics` and `key_semantics` in `validate_examples.py`, to be reused by the verify stage and the key converter): every `evidence_id` and `derived_from` is in the ledger and hydrated from it; `supporting_evidence_ids` is a subset of the finding's evidence; anchor `doc_id`s exist in `metadata.documents`; every finding needing investigation, prototyping, testing or governance appears in `unresolved[]` (lab §2.4); `stop_reason.group` matches the taxonomy; key overlap and regression links are mirrored; `v2.expected_open_flaw_ids` equals the derived set; a `scored_run_ready` key has no null provenance, `core_insight`, `anchor_quote` or `expected_disposition`.
-- **Re-review** (lab §1.5): `metadata.review_mode = delta`, documents with `role: prior_version`, and per-finding `reassessment {prior_finding_id, status}`.
+- **Cross-field rules** that JSON Schema cannot express are enforced in code (`review_semantics`, `key_semantics` and `anchors_resolve` in `validate_examples.py`, reused by the verify stage and by `convert_answer_keys.py`): every `evidence_id` and `derived_from` is in the ledger and hydrated from it; `supporting_evidence_ids` is a subset of the finding's evidence and never cites contrary (`supports_claim: false`) evidence; doc and external evidence quotes occur in the ledger excerpt; anchor pages are within `page_count`; external ledger entries resolve to an `ok` tool call of the same server and tool; `tool_calls_by_tool` equals the counted `tool_calls`; no URL or DOI appears in report text unless it is a ledger `url_or_citation`; every degradation is cited by a limitation, each fallback event and each cap or tool-failure stop has a degradation; `registry_sha256_by_iteration` is constant and equals the sha256 of the canonical JSON (sorted keys, no whitespace, UTF-8) of `decision_registry`; anchor `doc_id`s exist in `metadata.documents`; every finding needing investigation, prototyping, testing or governance appears in `unresolved[]` (lab §2.4); `stop_reason.group` matches the taxonomy; key overlap and regression links are mirrored; `v2.expected_open_flaw_ids` equals the derived set; a `scored_run_ready` key has no null provenance, `core_insight`, `anchor_quote` or `expected_disposition`.
+- **Re-review** (lab §1.5): `metadata.review_mode = delta` requires a non-null `prior_review_id`, a document with `role: prior_version`, and a `reassessment {prior_finding_id, status}` on every finding; a `full` review has none of the three (schema-enforced).
+
+### Grader-facing projection
+
+`research/grading/grader_prompt.md` §1 forbids putting the agent's model name or tool traces into any grader input. The harness therefore renders grader inputs from a projection of the Review that drops `run_manifest`, `research_log`, every `provenance` block, and `evidence_ledger[].tool` / `snapshot_path`. `{{EVIDENCE_REGISTER}}` is the projected ledger, `{{SHUFFLED_FINDINGS_WITH_IDS}}` uses `Finding.id` (`FND-nnn`) verbatim (the segmenter is only for unstructured reviews), and the key-aware projection of an answer key maps `flaws[]` to `key_items` (`id` = `FlawId`, `title` = `title` or else `description`, since synthetic and item_b flaws have no title; `locations` from `location.sections` and `page`; `category` = `kind`, `materiality` per `legacy_mappings.severity.grading_materiality`, `expected_triage` = `expected_disposition`), `sound_sections[].trap` to `traps` with `trap_id` = the sound-section `id`, and `sound_sections` to `no_change_areas`.
 
 ### LLM-facing schema
 
@@ -63,19 +71,19 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `item.domain` | `domain` | `domain` | `domain` | `domain` | `domain` |
 | `item.documents.v1 / v2` | `design_v1.md` / `design_v2.md` (+ sha256) | same | same | `document` / `null` | `document` / `null` |
 | `item.document_id` | `null` | `null` | `null` | `null` | `document_id` |
-| `item.notes` | `version_notes` | `version_notes` | `version_notes` | `null` | `null` |
-| `item.canary_guid` | new uuid4 | new uuid4 | new uuid4 | new uuid4 | new uuid4 |
+| `item.notes` | `version_notes` | `version_notes` | `version_notes` | `readme_notes_moved_at_sealing` | `readme_notes_moved_at_sealing` |
+| `item.canary_guid` | `null` + pending (assigned per split when the canary is embedded in the documents) | same | same | same | same |
 | `item.author_type / author_model / generation_date` | `unknown` / `null` / `null` + pending (U11) | same | same | same | same |
 | `item.source_key` | `{path, format: synthetic_json_v0, sha256}` | same | same | `blind_a_json_v0` | `blind_b_json_v0` |
-| `scoring.default_credit_mode` | `substance` | `substance` | `substance` | `all_of` | `all_of` |
+| `scoring.default_credit_mode` | `substance` | `substance` | `all_of` (items 1-2 `required`, the legacy "first two" rule) | `all_of` | `all_of` |
 | `scoring.severity_mapping.source_scale` | `synthetic3` | `synthetic3` | `synthetic3` | `blind4_capitalised` | `blind4` |
 | `scoring.severity_tolerance` | `null` | `null` | `null` | `null` | `1` |
-| `scoring.notes` | README "by substance" rule (superseded) | `scoring_guidance` | README "first two" rule (superseded) | README rule | `scoring_guidance` |
-| `flaws[]` | `flaws` + `v2_new_flaws` | `flaws` (F15 already inside) | `flaws` + `v2_new_flaws` | `defects` | `defects` |
+| `scoring.notes` | README "by substance" rule (superseded) | `scoring_guidance` | `version_notes` "first two" rule (superseded) | "Scoring guidance" section of `readme_notes_moved_at_sealing` | `scoring_guidance` |
+| `flaws[]` | `flaws` (F15 inside since the eval fixes; legacy `v2_new_flaws` still accepted) | `flaws` | `flaws` (as payments) | `defects` | `defects` |
 | `sound_sections[]` | `sound_sections` | `sound_sections` | `sound_sections` | `deliberately_sound_sections` | `deliberately_sound_sections` |
-| `still_valid_observations[]` | eval-audit P2 #14 items | eval-audit P2 #14 | eval-audit P2 #14 | eval-audit P2 #14 | `non_keyed_observations_acceptable_but_not_required` (origin `key_author`) |
-| `v2.expected_open_flaw_ids` | `expected_v2_open_flaws` | computed | computed | `v2: null` | `v2: null` |
-| `v2.changed_sections` | from the v2 revision-history table, else pending | same | same | — | — |
+| `still_valid_observations[]` | eval-audit P2 #14 items (verbatim, origin `eval_audit`; section-specific ones go on that sound section) | same | same, plus sound §16 `still_valid_observations` | eval-audit P2 #14 | `non_keyed_observations_acceptable_but_not_required` (origin `key_author`) |
+| `v2.expected_open_flaw_ids` | computed; converter asserts it equals `expected_v2_open_flaws` | computed | computed | `v2: null` | `v2: null` |
+| `v2.changed_sections` | `[]` + pending `v2_changed_sections`; the verbatim revision-history text goes in `v2.notes` | same | same (from "Changes since version 1.0") | — | — |
 | `approved_decisions[]` | `[]` + pending | same | same | same | same |
 | dropped (recomputed; converter asserts equality) | `flaw_counts` | `category_counts_v1` | — | `defect_count`, `severity_scale`, `category_taxonomy` | `defect_count`, `severity_scale` |
 
@@ -92,8 +100,8 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `planted` | `true` | `true` | `true` |
 | `introduced_in` | `introduced_in` or `"v1"` | `"v1"` | `"v1"` |
 | `introduced_by_fix_of` | `introduced_by_fix_of`; for clinical F15, the `flaw_id` of the `v2_changes` entry whose `new_flaw_id` = F15 (→ F10) | `null` | `null` |
-| `v2_status` | `v2_changes[flaw_id].status` (`regressed` → `fixed`); v2-only flaws → `introduced` | `not_applicable` | `not_applicable` |
-| `caused_regression_flaw_id` | `v2_changes[].new_flaw_id` when status was `regressed` | `null` | `null` |
+| `v2_status` | `v2_changes[flaw_id].status` (legacy `regressed` → `fixed`); v2-only flaws → `introduced` | `not_applicable` | `not_applicable` |
+| `caused_regression_flaw_id` | `v2_changes[].introduced_new_flaw_id` (legacy `new_flaw_id`) | `null` | `null` |
 | `v2_note` | `v2_changes[].note` | `null` | `null` |
 | `location.sections` | `section_refs` (verbatim strings) | `location.sections` | `location.sections` |
 | `location.requirement_ids` | `requirement_ids` | `location.requirement_ids` | `location.requirement_ids` |
@@ -102,18 +110,19 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `description` | `description` | `description` | `description` |
 | `rationale` | `why_it_is_a_flaw` | `why_it_matters` | `why_it_matters` |
 | `core_insight` | pending (derive from required credit items; second reviewer, L12) | pending | pending |
-| `credit.mode` | `substance` | `all_of` | `all_of` |
-| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required` (overrides §2.6) | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` (overrides §2.6) |
+| `credit.mode` | payments, clinical `substance`; lakehouse `all_of` | `all_of` | `all_of` |
+| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required`, except text starting "(supporting" and lakehouse items 3+ → `supporting` | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` |
 | `credit.min_required` | `null` | `null` | `null` |
 | `needs_external_research` | `true` for the flaws eval_data_audit Task 1 checked as external facts (payments F01 F04 F06 F07 F11 F15; clinical F01 F03 F04 F06 F07 F08 F09 F11 F15; lakehouse F04 F05 F06 F10 F15), else `false` | `requires_external_fact` | `external_fact` not null/"None" |
-| `external_fact` | when needed: `claim` = `why_it_is_a_flaw`, `source` = public reference named in `distractor_notes` or "unspecified in legacy key", `verified: false`, pending `external_fact_verification` | split `external_fact` at the first ": " → `source`, `claim` (no colon: both = string); `verified: false` + pending | same as item_a |
+| `external_fact` | when needed: `claim` = `why_it_is_a_flaw` (placeholder: restate as the external fact during verification), `source` = URLs in `distractor_notes` or "unspecified in legacy key", `verified: false`, pending `external_fact_verification` | split `external_fact` at the first ": " → `source`, `claim` when the head is ≤ 150 characters; otherwise `claim` = whole string and `source` = "unspecified in legacy key (citation embedded in claim)"; `verified: false` + pending | same as item_a |
 | `expected_disposition`, `acceptable_dispositions` | pending / `[]` | pending / `[]` | pending / `[]` |
 | `affected_decisions` | `[]` (filled with `approved_decisions`) | `[]` | `[]` |
 | `acceptable_fix` | `acceptable_recommendation` | `acceptable_fix` | `acceptable_fix` |
 | `distractor_notes` | `distractor_notes` | `null` | `null` |
 | `overlapping_sound_section_ids` | §2.7 | §2.7 | §2.7 |
+| `disambiguation` | `disambiguation` (added by the eval fixes) | same | same |
 
-Sound sections: synthetic `{section_ref, why_sound, trap}`, item_a `{location, why_sound, careless_flag}`, item_b `{section, why_sound, likely_false_positive}` → `{id: S01.. in legacy order, location.sections: [verbatim string], why_sound, trap}`. Requirement and decision IDs are extracted from the string with `[A-Z]{1,4}(-[A-Z]+)*-\d+`. `applies_to_versions`: synthetic `["v1","v2"]` (lakehouse §9 WAP: `["v1"]`, eval-audit Task 6), blind `["v1"]`. `bait: false`. Splitting multi-section strings into separate entries is part of pending `sound_overlap_annotations`.
+Sound sections: synthetic `{section_ref, why_sound, trap}`, item_a `{location, why_sound, careless_flag}`, item_b `{section, why_sound, likely_false_positive}` (all may carry `disambiguation`; lakehouse §16 carries `still_valid_observations`) → `{id: S01.. in legacy order, location.sections: [verbatim string], why_sound, trap, disambiguation}`. Requirement and decision IDs are extracted from the string with `[A-Z]{1,4}(-[A-Z]+)*-\d+`. `applies_to_versions`: synthetic `["v1","v2"]` (lakehouse §9 WAP: `["v1"]`, eval-audit Task 6), blind `["v1"]`. `bait: false`. Splitting multi-section strings into separate entries is part of pending `sound_overlap_annotations`.
 
 ### 2.3 Research-note vocabularies
 
@@ -182,6 +191,8 @@ The key stores the **primary** value in `severity` and the verbatim label in `se
 
 ### 2.6 Credit-item role overrides (content fixes from eval_data_audit P0 #4)
 
+`research/audit/eval_fixes_applied.md` has since applied the four flaw-level rows below to the legacy keys themselves (clinical F06 remedy removed, F11 item 4 prefixed "(supporting, not required)", F04 merged, item_b DEF-12 remedy removed). The converter therefore applies only the lakehouse rule and the "(supporting" prefix rule; the rows are kept as history.
+
 | Item / flaw | Change |
 |---|---|
 | research_lakehouse, every flaw | items 1-2 `required`, items 3+ `supporting` (makes the README "first two" rule explicit instead of order-dependent) |
@@ -204,8 +215,13 @@ Other content fixes the eval audit requires are **not** mechanical and need a se
 | blind/item_a | 3.1.3 FR-RET-01 | D03 |
 | blind/item_b | 7.5 timeline arithmetic | DEF-03, DEF-13 |
 | blind/item_b | FR-GRID-01 / 7.4 | DEF-14 |
+| blind/item_b | 5.5, 7.9 and D-02 (hot-standby pair) | DEF-02 (disambiguation added to the key on 2026-10-02 after this table was first written) |
 
-The converter writes the reverse links into `flaws[].overlapping_sound_section_ids`.
+The converter writes the reverse links into `flaws[].overlapping_sound_section_ids`, and reports any `disambiguation` note that has no row here. Clinical F06 is listed because the §4 trap names it, not because it shares a location (F06 cites 2.1 and 20).
+
+### 2.8 Converter
+
+`python3 spec/convert_answer_keys.py` (add `--check` to validate without writing) reads each legacy key, applies §2.1-2.7, validates the result against `answer_key.schema.json` and `key_semantics`, writes `answer_key.canonical.json` next to the legacy key, and prints per-key counts, notes (count assertions, partial mappings) and every legacy field it could not map. It never edits `answer_key.json`. Every output has `scored_run_ready: false` until the pending fields are authored and second-reviewed.
 
 ## 3. Conflicts resolved (research_audit.md §1.1)
 
@@ -241,7 +257,19 @@ The converter writes the reverse links into `flaws[].overlapping_sound_section_i
 
 **§1.2 items 3, 5, 8 (ledger, registry, explain).** `Review.evidence_ledger[]` and `Review.decision_registry[]` are first-class. Stable `FND-`/`EV-`/`AD-` IDs make `explain <finding_id>` a join over the Review.
 
-The remaining conflicts are out of scope here: C1-C3, C14 (extractor choice), C17-C25, C27, C29-C31.
+The remaining conflicts are out of scope for a schema, but each now has a recorded disposition so none is silently dropped (added by `research/audit/verify_spec.md`):
+
+| Conflict | Owner | Hook in this spec |
+|---|---|---|
+| C1 rubric scale, C2 grader-validity tiers, C3 judge family, C27 pairwise debiasing | grading / `prereg.yaml` / ADR-003 | none needed; grader inputs come from the grader-facing projection (§1) |
+| C14 extractor | architecture | `documents[].sha256_text` + `text_path` and `run_manifest.extractor{name, version, page_marker}` fix *which* text every verifier reads; the extractor choice itself stays open |
+| C17 checkpoint/resume, C18 plan-then-execute, C23 demo timings | architecture / runbook | `research_log.tool_calls[].status: blocked` records URL-policy refusals (C18) |
+| C19 blind set use | methodology | `Split` has `Blind` (single use), `S-heldout` (ex-blind items) and `rehearsal` |
+| C20 overfitting gap, C21 sample sizes | `prereg.yaml` | `run_manifest.prereg_sha256`, `split`, `condition` |
+| C22 sound control docs | eval authoring | a key may have `flaws: []` with `sound_sections` only |
+| C24 cross-vendor swap, C29 reader sub-agents | config | `run_manifest.models_used[]` per `role`, with `requested_model` vs `served_models` (discloses within-family A4) |
+| C25 grader cost, C30 token workload | cost model | `run_manifest.usage{input_tokens, output_tokens, cached_tokens, cost_usd, price_table_date}` |
+| C31 matcher on the robustness critical path | methodology | `taxonomy.match_scores` and `adjudication_classes` give the matcher's labels; P_adj itself is defined in `metrics.md` |
 
 ## 4. Deviations from the audit's recommendations
 
@@ -316,7 +344,7 @@ A risk with a recommendation:
 }
 ```
 
-`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (a v1 flaw whose fix introduced a v2 regression, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 32 deliberately broken variants are rejected (26 by the schemas, 6 by the cross-field checks the schema cannot express: ledger membership, ID cross-references, stop-reason group, v2 derivations, readiness).
+`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (a v1 flaw whose fix introduced a v2 regression, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 32 deliberately broken variants are rejected (26 by the schemas, 6 by the cross-field checks the schema cannot express: ledger membership, ID cross-references, stop-reason group, v2 derivations, readiness). It also runs 28 adversarial cases from `research/audit/verify_spec.md` (25 must be rejected, 3 accepted: an 8-token quote, an accepted risk with `no_change`, a disclosed degradation) and the INV-04 anchor oracle on a page-marked text (one valid Review, one invented quote, one quote cited on the wrong page).
 
 ## 6. Running the checks
 

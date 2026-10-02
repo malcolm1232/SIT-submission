@@ -69,6 +69,8 @@ tool content cannot add actions [10]; a tool-argument sanitiser plus a URL polic
 Injection testing follows AgentDojo, InjecAgent and BIPIA [11][12][13]. Every attack uses a **twin
 pair** (clean versus injected doc), and **attack success rate (ASR)** is the metric.
 
+> **Superseded (reconciliation 2026-10-02):** "plan-then-execute" means the action **types** and the URL policy are fixed (fetch only URLs from search results or doc references, ADV-04); queries and follow-up questions may adapt as evidence arrives, as lab §4.3 requires. Doc and tool content can change *what* is searched, never *what kind* of action is taken. See `docs/DECISIONS.md` ADR-001 (audit C18).
+
 Evidence-integrity threats: fake or misattributed citations (LLMs and humans both fabricate
 references [17]); knowledge conflicts between doc, web and the model's own knowledge [15];
 adversarial SEO aimed at LLM search pipelines [14].
@@ -90,6 +92,8 @@ and symbolic perturbation (renaming, reordering, paraphrasing), in the spirit of
 They add a hard **prompt-leakage grep** (OVF-07) and a **held-out gap** test against `eval/blind`
 (OVF-12).
 
+> **Superseded (reconciliation 2026-10-02):** `eval/blind` is **not blind**; it is the sealed **S-heldout** set (≤ 3 logged evaluations). The true Blind set is to be commissioned and is evaluated once. OVF-12 runs once, at the final evaluation, and reports the gap, its CI and the DiD against B0 with no pass/fail threshold. See `docs/DECISIONS.md` ADR-004 (audit C19, C20).
+
 ---
 
 ## 2. Shared invariants (checked on every run)
@@ -102,14 +106,14 @@ each scenario test only asserts what is specific to it.
 |---|---|---|
 | INV-01 | **Terminates.** The process exits within the configured wall-clock budget plus 30 s. Nothing waits forever. | Watchdog in the harness. |
 | INV-02 | **Something useful comes out.** A full or partial report, *or* a structured failure record (`failure.json`) with a distinct exit code when input is unreadable or the LLM is unreachable. Never a fabricated report. | Files exist. Exit code is in the documented set. |
-| INV-03 | **Report is schema-valid** and has every section the brief requires (section 2.3): intent, fitness for purpose, strengths, risks, gaps, ambiguities, unresolved assumptions, validation needs, and recommendations or a "no refinement needed" justification. | Pydantic or JSON-Schema validation. |
-| INV-04 | **Every finding has a doc anchor that resolves:** the quote fuzzy-matches the extracted text (ratio ≥ 0.9) and the page is in range. | `oracles.anchors_resolve()` |
-| INV-05 | **Every external citation resolves** to an evidence-ledger entry from a real (or replayed) tool call in *this* run. There are no URLs or DOIs in the report that are not in the ledger. | Regex for URLs and DOIs in the report, compared with the ledger. |
-| INV-06 | **Every recommendation has** an issue, rationale, evidence (ledger IDs and/or anchors) and expected benefit. | Schema plus non-empty and minimum-length checks. |
-| INV-07 | **Degradations are disclosed.** Any fault event in the run log (tool down, breaker open, model fallback, OCR used, budget hit) appears in the report's "Evidence limitations / unresolved" section. | Join the fault events in the log against the report. |
+| INV-03 | **Report is schema-valid** and has every section the brief requires (section 2.3): intent, fitness for purpose, strengths, risks, gaps, ambiguities, unresolved assumptions, validation needs, and recommendations or a "no refinement needed" justification. | Validation against `spec/finding.schema.json#/$defs/Review` (`intent_summary`, `verdict.label` ∈ fit / fit_with_conditions / not_fit, `findings[].kind` covering the six spec kinds, `recommendation` or `no_change_rationale`, `unresolved[]`) plus the cross-field checks in `spec/validate_examples.py` (*reconciled 2026-10-02*). |
+| INV-04 | **Every finding has a doc anchor that resolves:** the quote fuzzy-matches the extracted text (ratio ≥ 0.9) and the page is in range. *(Reconciled 2026-10-02: 1-3 `doc_anchors[]` per finding, each `quote` ≥ 8 tokens, matched against the canonical `doc.pages.txt` on the cited page ±1 and within the cited section or an adjacent one; `spec/taxonomy.yaml` `anchor_rules`, `docs/DECISIONS.md` ADR-006, ADR-007.)* | `oracles.anchors_resolve()` (same function as the verify stage) |
+| INV-05 | **Every external citation resolves** to an evidence-ledger entry from a real (or replayed) tool call in *this* run. There are no URLs or DOIs in the report that are not in the ledger. *(Spec: every `evidence[].evidence_id` is in `Review.evidence_ledger[]`, `source_type` ∈ doc / external / inference, `read_before_cite` true.)* | Regex for URLs and DOIs in the report, compared with the ledger. |
+| INV-06 | **Every recommendation has** an issue, rationale, evidence (ledger IDs and/or anchors) and expected benefit. *(Spec: `recommendation.{issue, rationale, expected_benefit, objective_refs, supporting_evidence_ids}`; non-refinement dispositions also need `next_step`.)* | Schema plus non-empty and minimum-length checks. |
+| INV-07 | **Degradations are disclosed.** Any fault event in the run log (tool down, breaker open, model fallback, OCR used, budget hit) appears in the report's "Evidence limitations / unresolved" section. *(Spec: `Review.limitations` covers every `research_log.degradations` entry; a budget hit shows as `stop_reason.code` ∈ budget_tool_calls / budget_tokens / deadline.)* | Join the fault events in the log against the report. |
 | INV-08 | **No secrets leak.** No canary key value appears in any artefact (report, log, ledger, checkpoint, cassette) or in any outbound request. | Grep, plus the recording proxy's request log. |
-| INV-09 | **The run manifest is complete:** git SHA, config hash, criteria, stop rule, models actually used, tools enabled and disabled, fault-schedule ID, doc SHA-256. | Schema. |
-| INV-10 | **Approved decisions and constraints are preserved.** The registry hash is constant across iterations, and no recommendation conflicts with the registry unless it is labelled `challenges_decision`. | Registry diff, plus a judge check on L1. |
+| INV-09 | **The run manifest is complete:** git SHA, config hash, criteria, stop rule, models actually used, tools enabled and disabled, fault-schedule ID, doc SHA-256. *(Spec: `Review.run_manifest` = `#/$defs/RunManifest`, incl. `models_used`, `fallback_events`, `extractor`; field list in `docs/REPRODUCIBILITY.md` §8.)* | Schema. |
+| INV-10 | **Approved decisions and constraints are preserved.** The registry hash is constant across iterations, and no recommendation conflicts with the registry unless it is labelled `challenges_decision`. *(Reconciled 2026-10-02: the label is `affected_decisions[{registry_id, relation: challenges}]` against `Review.decision_registry[]`; `challenges` needs ≥ 2 evidence items and a disposition other than `no_change`; `spec/README.md` §1.)* | Registry diff, plus a judge check on L1. |
 | INV-11 | **No unhandled exception.** There is no Python traceback on stderr. | Grep stderr. |
 
 ---
@@ -119,7 +123,7 @@ each scenario test only asserts what is specific to it.
 | Level | LLM | Tools | Clock | Determinism | Runtime | Used for |
 |---|---|---|---|---|---|---|
 | **L0** deterministic | `FakeLLM`: responses scripted per stage, keyed by `(stage, attempt)` | `FakeMCP` or strict cassette replay | Virtual (`FakeClock`), so a 90 s cold start costs about 0 ms | Fully deterministic | Whole suite ≤ 60 s offline | Orchestration logic: retries, breakers, budgets, stop rules, state machine, checkpoint and resume, invariants, sanitiser, parsing |
-| **L1** replay | Real LLM (temperature 0 where supported) | Strict cassette replay, with the fault schedule applied on top | Real, scaled by `ROBUSTNESS_TIME_SCALE` | Tools deterministic; LLM varies | Minutes per scenario | Behaviour quality, adversarial ASR, input variations, overfitting |
+| **L1** replay | Real LLM (provider-default sampling; Opus 5.5 takes no `temperature` or seed; reconciled, `spec/README.md` §3 C15) | Strict cassette replay, with the fault schedule applied on top | Real, scaled by `ROBUSTNESS_TIME_SCALE` | Tools deterministic; LLM varies | Minutes per scenario | Behaviour quality, adversarial ASR, input variations, overfitting |
 | **L2** live | Real | Real MCP servers | Real | None | Time-boxed | Cold start, demo rehearsals, fresh-clone reproduction |
 
 **Scoring LLM-dependent scenarios.** A single passing run is weak evidence. L1 scenarios run k
@@ -167,6 +171,8 @@ If only 20 can be done, do these, in this order. Each one protects against a dem
 10. **INP-28** already-excellent doc gives few or no recommendations.
 11. **DEMO-01 to DEMO-06** live modifications and provenance.
 12. **OVF-07** leakage grep, and **OPS-02** no committed secrets.
+
+> **Superseded (reconciliation 2026-10-02):** item 10 (INP-28) and BEH-08's clean-doc half are **BLOCKED** until at least 2 fully sound control docs exist (`docs/DECISIONS.md` ADR-004; audit C22). The quality thresholds in items 9-10 and in BEH-08/09, INP-12/14 and OVF-01/03 need the validated methodology matcher, which is therefore on the critical path of this gate; "precision" means adjusted precision P_adj (`research/methodology/metrics.md` §3; audit C31).
 
 ### 4.3 Order of implementation
 
@@ -257,6 +263,8 @@ process:
 
 Match keys (all optional, combined with AND): `server` (glob), `tool` (glob), `call_index`
 (per-server, 0-based), `nth` (per-tool list), `stage`, `attempt`, `after_seconds`, `args_regex`.
+
+> **Superseded (reconciliation 2026-10-02):** the LLMGateway "fallback" in the section 5.1 diagram never switches model in eval, dev or rehearsal runs: after the retry budget it checkpoints and exits with the "LLM unavailable" code. Server-side `fallbacks` are demo-only (`--allow-fallback`) and recorded in `fallback_events`. See `docs/DECISIONS.md` ADR-002 and `docs/REPRODUCIBILITY.md` §3 (audit C16).
 
 ### 5.3 Fault types
 
@@ -395,9 +403,13 @@ expect:
   verdict: "fit_with_refinements"
 ```
 
+> **Superseded (reconciliation 2026-10-02):** sidecar keys follow `spec/answer_key.schema.json` (audit C32): `planted[]` → `flaws[]` with spec `kind` + `category` (e.g. `type: contradiction` → `category: internal_contradiction`) and `severity` on the spec enum (`critical | high | medium | low`); `verdict: fit_with_refinements` → `fit_with_conditions` (C9); `expect.must_flag` is scored by the methodology matcher, not by string match (C31).
+
 Planted-flaw docs and answer keys are shared with `eval/synthetic/`. The held-out docs in
 `eval/blind/` are **never** used for tuning prompts. They are used only for OVF-12 and DEMO-05
 rehearsals.
+
+> **Superseded (reconciliation 2026-10-02):** `eval/blind/` is the sealed S-heldout set, not a blind set, and it is **not** used for DEMO-05 rehearsals. Rehearsals use a separate rehearsal pool; OVF-12 runs once at the final evaluation; the commissioned Blind set is read by nobody until its single evaluation (`docs/DECISIONS.md` ADR-004; audit C19).
 
 ### 6.4 Canaries
 
@@ -422,7 +434,7 @@ the recording proxy's request log for `CANARY-` after each test (INV-08).
 ### 7.2 Before demo day (P1 gate and rehearsal)
 
 - All P1 scenarios run and recorded.
-- **DEMO-05 rehearsal protocol:** 5 runs on 3 unseen docs from `eval/blind`. Before each run, leave
+- **DEMO-05 rehearsal protocol:** 5 runs on 3 unseen docs from `eval/blind`. *(Superseded, reconciliation 2026-10-02: from the **rehearsal pool**, never S-heldout or Blind; `eval/blind` holds only 2 docs and is sealed. `docs/DECISIONS.md` ADR-004, `docs/DEMO_DAY_RUNBOOK.md` §1; audit C19.)* Before each run, leave
   the servers idle for at least 30 minutes so they are cold. Use a 10-minute stopwatch. During each
   run, an observer asks for one modification from DEMO-01 to DEMO-04 or DEMO-08 to DEMO-10, chosen
   at random, and one `explain` (DEMO-06). Record change time and outcome in the results table.
@@ -435,7 +447,9 @@ the recording proxy's request log for `CANARY-` after each test (INV-08).
 
 - Every commit: the L0 suite plus the static checks (≤ 2 min).
 - Nightly or before merging prompt changes: the L1 P0 suite at k=3. Any prompt or model change
-  re-runs BEH-15 (stability) and OVF-12 (held-out gap).
+  re-runs BEH-15 (stability) and OVF-12 (held-out gap). *(Superseded, reconciliation 2026-10-02: OVF-12
+  is **not** re-run on prompt changes; it runs once, at the final evaluation, because every run consumes held-out
+  access. `docs/DECISIONS.md` ADR-004; audit C19.)*
 - A regression in any P0 row blocks the merge.
 
 ---
@@ -510,6 +524,22 @@ Things the agent needs so that these scenarios *can* pass. They are consistent w
     the plan's action set.
 11. **Template-rendered report.** The model fills fields and never writes the document structure.
 
+**Cross-reference to the decisions and spec fields that satisfy each need (reconciliation 2026-10-02).**
+
+| # | Satisfied by | Notes |
+|---|---|---|
+| 1 | `docs/DECISIONS.md` ADR-001 (gateways; SDK `max_retries=0`) | Recorded per call in `llm.jsonl` / `tools.jsonl` (`docs/REPRODUCIBILITY.md` §6) |
+| 2 | ADR-001 (background parallel warm-up, `preflight`) | Warm only *enabled* servers; DI is off by default (ADR-006 item 4) |
+| 3 | `Review.evidence_ledger[]` (`LedgerEntry`: `evidence_id`, `url_or_citation`, `retrieved_at`, `read_before_cite`); `Finding.evidence[].evidence_id` | `url_or_citation` and `retrieved_at` are `readOnly` in the finding; the renderer fills them (spec C11) |
+| 4 | `Finding.doc_anchors[]` (`DocAnchor`: `doc_id`, `section_ref`, `requirement_ids`, `quote`, `page`); `spec/taxonomy.yaml` `anchor_rules`; ADR-007 | **Superseded detail:** 1-3 anchors, quote ≥ 8 tokens, matched in the cited section ±1 against the canonical text (C13, G1-G3) |
+| 5 | `Review.decision_registry[]` (`RegistryEntry`); `Finding.affected_decisions[]` (`relation: preserves \| refines \| challenges`) | Replaces the `challenges_decision` label (INV-10, BEH-12) |
+| 6 | ADR-001 and ADR-009 (per-stage JSON checkpoints, `resume <run_id>`, exit codes); `Review.stop_reason` (`code`, `group`) | Resolves audit C17 without a framework switch |
+| 7 | `RunManifest` (`config_sha256`, `prompts_bundle_sha256`, `models_used`, `tools`, `budgets`); `docs/REPRODUCIBILITY.md` §8; `docs/DEMO_DAY_RUNBOOK.md` §4.1 | Config layout is pinned by line number in the runbook |
+| 8 | Stable `FND-`, `EV-`, `AD-` IDs make `explain <finding_id>` a join over the Review (`spec/README.md` §3); coverage map from `research_log` and `sound_areas[]` | — |
+| 9 | ADR-006; `metadata.documents[].sha256_text`; `RunManifest.extractor` | **Superseded:** not "pdfplumber/PyMuPDF → OCR". One pinned extractor (**pdfplumber**; PyMuPDF rejected for its AGPL licence) writes `doc.pages.txt`, and the model also gets the native PDF block. OCR is a P1 add-on; image-only pages are flagged (INP-04) (audit C14) |
+| 10 | ADR-001 (spotlighting; fixed action types, adaptive queries); `evidence[].source_type` ∈ `doc \| external \| inference` | **Superseded:** "never alter the plan's action set" is narrowed to fixed action *types* and URL policy; queries adapt (audit C18) |
+| 11 | ADR-001 (Jinja-rendered report from the `Review` fields) | — |
+
 ---
 
 ## 11. Limitations
@@ -519,7 +549,7 @@ Things the agent needs so that these scenarios *can* pass. They are consistent w
 - Live MCP behaviour (exact cold-start error codes, DuckDuckGo throttling, the MCP protocol version
   in use) is inferred from the brief and the platform and protocol docs [33][34][35]. Confirm it
   during the first L2 recording session and update INF-02, INF-06 and INF-09 if needed.
-- Thresholds such as overlap ≥ 0.7 and recall ≥ 0.8 are initial engineering choices. Calibrate them
+- Thresholds such as overlap ≥ 0.7 and recall ≥ 0.8 are initial engineering choices. *(Reconciled 2026-10-02: recall and precision here are computed only by the validated methodology matcher, and precision means P_adj; audit C31.)* Calibrate them
   against the sample and synthetic baselines once the agent exists, then freeze them before tuning
   on anything else.
 - No local LLM is assumed, so a fully offline laptop (NET-02) can only fail cleanly or replay. It

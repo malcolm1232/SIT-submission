@@ -222,7 +222,7 @@ benchmark / eval data, (b) labelled data for an LLM-as-judge / rubric grader, (c
 - **URL:** https://www.kaggle.com/competitions/konwinski-prize
 - **Year:** Launched Dec 2024. First-round results in July 2025: the winner scored **7.5 %** using an off-the-shelf open model with prompt and pipeline engineering [S] ([TechCrunch](https://techcrunch.com/2025/07/23/a-new-ai-coding-challenge-just-published-its-first-results-and-they-arent-pretty/)).
 - **Task:** Offline agent resolves real GitHub issues. The test set is **collected after the submission deadline**, so it is contamination-free [S] ([strategy guide](https://github.com/raymyers/konwinski-prize-strategy-guide)).
-- **Fit:** Low as data. Its value is in evaluation design: freeze the agent, then evaluate on artefacts written afterwards. That is what our `eval/blind/` set and the SIT demo-day "new design artefact" do.
+- **Fit:** Low as data. Its value is in evaluation design: freeze the agent, then evaluate on artefacts written afterwards. That is what our `eval/blind/` set and the SIT demo-day "new design artefact" do. *(Superseded, reconciliation 2026-10-02: `eval/blind/` was briefed with knowledge of the eval design and is readable by developers, so it is not blind; it is now the sealed S-heldout set. The freeze-then-evaluate pattern applies to the Blind set still to be commissioned. `docs/DECISIONS.md` ADR-004.)*
 
 ### K18. Kaggle Community Benchmarks and the `kaggle-benchmarks` SDK
 - **URLs:** https://github.com/Kaggle/kaggle-benchmarks; task editor at https://www.kaggle.com/benchmarks/tasks/new [GH] (named in the SDK README)

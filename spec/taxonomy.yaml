@@ -551,6 +551,7 @@ legacy_mappings:
     governance: governance_decision
     needs_governance_decision: governance_decision
     none: no_change
+    not_applicable: no_change   # grader Pass A correct_label for strengths / no-change items
     mixed: "primary disposition + secondary_dispositions[] (no single value)"
   verdict:                    # keys quoted: unquoted yes/no parse as booleans in YAML 1.1 (verify_spec edit E1)
     "yes": fit

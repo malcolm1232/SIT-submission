@@ -70,6 +70,7 @@ Claude feature notes, all from the skill:
 - Citations (`citations: {enabled: true}` on the document block) return `page_location` page numbers for PDFs. That suits SIT's "traceable" requirement. Citations **cannot be combined with structured outputs** in the same call (400). Use citations in the analysis calls and structured output in the final assembly call.
 
   > **Superseded (reconciliation 2026-10-02):** scored findings carry `{page, section_ref, quote}` anchors **inside** the structured output, verified in code against the canonical page-marked text; native citations are never part of the scored output and may be used only in an unscored analysis call. See `docs/DECISIONS.md` ADR-006, ADR-007 and `spec/README.md` §3 C13.
+
 - Assistant-turn prefill is rejected on every 4.6+ model. Use `output_config.format` instead.
 - The SIT MCP servers are remote HTTPS endpoints that scale to zero, with a 1–2 minute cold start. Calling them from your own harness (client-side MCP) with retries and a warm-up ping is more controllable live than Anthropic's server-side MCP connector. That is a harness choice, but it drives tool-use reliability more than model choice does.
 
@@ -161,7 +162,7 @@ Log `response.usage`, `stop_reason`, `stop_details`, wall-clock time and tool-ca
 | E6: style-driven self-preference | Have model B rewrite model A's review sentence by sentence with the content unchanged, and the reverse (the "equal-quality pair" idea from Yang et al. 2026). Check by diff and human spot-check that content is preserved | Score change when only the authoring style changes |
 | Judge-free validity | `eval/synthetic/` planted flaws | Recall and precision of planted flaws. Correlate with judge scores (a judge that does not track planted-flaw recall is suspect) |
 
-**Sample size.** For a paired 0–3 criterion with SD ≈ 0.6, detecting a 0.3-point self-preference at α = 0.05 with 80% power needs n ≈ ((1.96 + 0.84) × 0.6 / 0.3)² ≈ **31 documents**. With the 10–20 documents we can realistically produce, E1 is a **sanity check, not proof**. Report CIs and do not claim "no bias" from a non-significant result. The SD of 0.6 is an assumption; replace it with the SD you observe after the first 10 items.
+**Sample size.** For a paired 0–3 criterion with SD ≈ 0.6, detecting a 0.3-point self-preference at α = 0.05 with 80% power needs n ≈ ((1.96 + 0.84) × 0.6 / 0.3)² ≈ **31 documents**. With the 10–20 documents we can realistically produce, E1 is a **sanity check, not proof**. *(Reconciled 2026-10-02: the achieved n is 3 S-dev + 2 S-heldout documents, with a Blind set still to be commissioned (`docs/BUDGET.md` assumes 4), and E1 needs a second provider's key (`docs/DECISIONS.md` ADR-003, Pending). Results at this n are exploratory; the achieved n and MDE go in `prereg.yaml`. Audit C21.)* Report CIs and do not claim "no bias" from a non-significant result. The SD of 0.6 is an assumption; replace it with the SD you observe after the first 10 items.
 
 ## 7. Implementation snippets (Claude, verified against the skill)
 

@@ -143,6 +143,12 @@ These are concrete, evidence-backed practices, each traceable to a source above.
    Add a separate **deficiency check** in the spirit of ReviewCritique: flag findings that misstate the document or
    are not constructive. Sources: [RevUtil](https://github.com/bodasadallah/RevUtil),
    [ReviewCritique](https://github.com/jiangshdd/ReviewCritique).
+
+   > **Superseded (reconciliation 2026-10-02):** do not add RevUtil's scale as a second rubric. The project grader scores 0-4 per dimension
+   > (`research/grading/README.md` §3.2); the four RevUtil aspects are already covered by the grader's Pass A per-finding
+   > booleans (`issue`, `rationale`, `evidence`, `expected_benefit`, `objective_link`), and the deficiency check by Pass A
+   > `validity` and the hallucination list (audit C1).
+
 2. **Judge everything in one pass, with the document.** Present all findings of a review together, each with an ID
    marker, alongside the design-document context. Do not grade findings in isolation. This lets the grader penalise
    duplicates and contradictions. Source: FP2 1st place [S]
@@ -153,6 +159,11 @@ These are concrete, evidence-backed practices, each traceable to a source above.
    - Allow "tie".
 
    Source: [4th place LMSYS / pairjudge](https://github.com/DaoyuanLi2816/Kaggle-4th-Place-Solution-LMSYS-Chatbot-Arena-Human-Preference-Predictions) [GH].
+
+   > **Superseded (reconciliation 2026-10-02):** in this project pairwise comparison is used **only** for A/B ablations, and a win
+   > counts only if both orders agree, otherwise a tie (not "average the two orders"). Headline grader scores stay
+   > absolute (`research/grading/README.md` §6.2; `research/models/README.md` §4 item 5; audit C27).
+
 4. **Control verbosity bias explicitly.** Human and LLM judges reward length: 58.4 % "longer wins" on 48k
    human-labelled pairs [GH] ([WSDM 5th place](https://github.com/datahubber/wsdm-cup-5th-place-llm-judge)). Two checks:
    - Regress grader preference on length difference, and report it.
@@ -169,10 +180,16 @@ These are concrete, evidence-backed practices, each traceable to a source above.
    - Report grader-vs-human agreement with **QWK** for ordinal rubric scores ([AES 2.0](https://www.kaggle.com/competitions/learning-agency-lab-automated-essay-scoring-2) [S]).
    - Compare it with **human-human** agreement on the same items. ICLR reviewer-pair correlation is only 0.40 [GH].
    - Check for systematic rubric differences between label sources (AES 2.0 1st place [S]).
+
+   > **Superseded (reconciliation 2026-10-02):** report ordinal Krippendorff's α **and** QWK together, and tie each grader claim to the
+   > validity tier reached (smoke n = 5, tentative n ≥ 20 with α ≥ 0.667, primary per methodology §8); with one human
+   > rater, human-human agreement needs a peer grading a subset (audit C2, §4.6).
+
 8. **Small-eval-set hygiene.**
    - Report mean ± spread over repeated runs or seeds. Single runs mislead (MAP 2025 1st place [S]).
    - Keep a hold-out of artefacts written after the agent is frozen (Konwinski Prize's post-deadline test
-     collection [S]).
+     collection [S]). *(Reconciled 2026-10-02: this is the commissioned Blind tier, evaluated once; the existing
+     `eval/blind` items are the sealed S-heldout set, not blind. `docs/DECISIONS.md` ADR-004.)*
 9. **Red-team the grader.** Before trusting grader scores, check that it is not moved by jargon, formatting tricks,
    fabricated citations or embedded instructions. Source:
    [LLMs - You Can't Please Them All](https://www.kaggle.com/competitions/llms-you-cant-please-them-all) [S], and the

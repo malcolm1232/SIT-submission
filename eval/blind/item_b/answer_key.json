@@ -61,7 +61,8 @@
         "Identifies the unbounded 'hold last setpoint' behaviour on PCS communication loss",
         "Explains at least one concrete consequence (export-limit / BESS-export violation, reserve depletion, or uncontrolled import) and/or the contradiction with P-02"
       ],
-      "acceptable_fix": "Set a watchdog timeout slightly longer than the worst-case controller switchover (e.g. 2-5 s) after which the PCS ramps to zero (or to a safe default such as charge-only/no-export). Optionally keep hold during the timeout window. Add a FAT/SAT test for sustained communication loss, and update D-10."
+      "acceptable_fix": "Set a watchdog timeout slightly longer than the worst-case controller switchover (e.g. 2-5 s) after which the PCS ramps to zero (or to a safe default such as charge-only/no-export). Optionally keep hold during the timeout window. Add a FAT/SAT test for sustained communication loss, and update D-10.",
+      "disambiguation": "DEF-02 cites 7.9 (step 3: 'the PCS continue at their last setpoints') and NFR-AV-02, which are also part of the sound entry '5.5, 7.9 and D-02'. The separating claim is duration: a finding that the PCS watchdog in 6.2 / D-10 holds the last setpoint with no timeout, so the BESS keeps charging or discharging indefinitely after a loss of control longer than a switchover (violating P-02 and potentially FR-EXP-01/03), matches DEF-02 and is not a false positive against the sound entry, even if it cites 7.9. A finding that holding setpoints during the sub-second (< 300 ms measured, 500 ms target) controller switchover is itself unsafe, or that the 50 ms x 3 heartbeat failover is too slow or too aggressive, is the sound-entry false positive."
     },
     {
       "id": "DEF-03",
@@ -375,7 +376,8 @@
     {
       "section": "5.5, 7.9 and D-02: hot-standby controller pair, 50 ms heartbeat × 3, <300 ms measured vs 500 ms target vs 2 s NFR-AV-02; PRP networks; dual UPS from different feeders",
       "likely_false_positive": "Calling the failover too slow or too aggressive, calling holding setpoints during switchover unsafe, or calling the controllers a single point of failure.",
-      "why_sound": "The timing chain is consistent with NFR-AV-02. PRP gives zero-recovery-time network redundancy, and UPS-2 on F-3 keeps control power in island mode. Holding setpoints for the sub-second switchover is fine; DEF-02 concerns the unbounded hold after a longer outage."
+      "why_sound": "The timing chain is consistent with NFR-AV-02. PRP gives zero-recovery-time network redundancy, and UPS-2 on F-3 keeps control power in island mode. Holding setpoints for the sub-second switchover is fine; DEF-02 concerns the unbounded hold after a longer outage.",
+      "disambiguation": "DEF-02 cites 7.9 (step 3: 'the PCS continue at their last setpoints') and NFR-AV-02, which are also part of the sound entry '5.5, 7.9 and D-02'. The separating claim is duration: a finding that the PCS watchdog in 6.2 / D-10 holds the last setpoint with no timeout, so the BESS keeps charging or discharging indefinitely after a loss of control longer than a switchover (violating P-02 and potentially FR-EXP-01/03), matches DEF-02 and is not a false positive against the sound entry, even if it cites 7.9. A finding that holding setpoints during the sub-second (< 300 ms measured, 500 ms target) controller switchover is itself unsafe, or that the 50 ms x 3 heartbeat failover is too slow or too aggressive, is the sound-entry false positive."
     },
     {
       "section": "FR-GRID-01, FR-GRID-03 and 7.4: IEEE 1547 normal performance Category B, abnormal performance Category III, utility settings authority",
