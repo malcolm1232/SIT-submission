@@ -207,3 +207,28 @@ already happened (none had for entries made before the freeze).
 - **Decided by:** SIT FABLE for the owner, 2026-10-02 (`docs/USER_DECISIONS.md` #17 and #19); applied 2026-10-03.
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`, and no lakehouse run has
   been matched).
+
+---
+
+## 9. 2026-10-03: note on runs with no assessment (no prereg field changed)
+
+- **Field:** none. `runs.population` is unchanged ("Intention-to-treat - every launched run counts").
+- **What changed outside the prereg:** the agent's output schema has a fourth verdict label, `not_assessed`,
+  set by code when a run produced no assessment (the deadline skipped or cut the assess stage, or the model
+  declined the assess call twice). Before, such a run reported `not_fit` at confidence 0. The model is never
+  offered the label: its verdict schema has `fit`, `fit_with_conditions` and `not_fit` only.
+- **Effect on scoring:** none on the primary metric. A not-assessed run has no findings, so it scores 0
+  recall against every key flaw and is counted (intention-to-treat). `sit-eval score` records
+  `inputs.verdict_label` and adds a warning that says to exclude such a run only in the per-protocol view;
+  `sit-eval aggregate` warns per run. No code computes the per-protocol view yet, so that exclusion is not
+  implemented.
+- **Effect on verdict agreement:** in the k-run group summary (`dra review --k`) a not-assessed run is never
+  the modal verdict but stays in the denominator, so it lowers the agreement. The harness computes no
+  verdict-agreement statistic.
+- **Effect on grading:** gate G4 (explicit verdict present) is false for such a run, so D2 is capped at 0,
+  and with a dimension at 0 gate G1 fails as well. Under the old placeholder G4 was true.
+- **Reason:** `not_fit` read as a judgement of a design that nobody had assessed.
+- **Decided by:** the session 3 coordinator (`docs/HANDOVER_FULL.md` §10), implemented in session 4 (`e8a6c12`);
+  confirmed by SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #25).
+- **Scored runs before the change:** none (`frozen: false`). The pilot scoring and grading of the first live
+  run are unaffected (its verdict is `fit_with_conditions`).

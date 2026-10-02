@@ -63,3 +63,13 @@ The owner's own decision, given in conversation on 2026-10-03.
 | # | Question | Decision | Consequence |
 |---|---|---|---|
 | 23 | Second-provider judge, now that OpenAI and Google keys exist on the Mac | Owner, verbatim: `"judge: no" - it stays Anthropic-only, disclosed as a limitation.` A few minutes later, verbatim: `btw, NO FOR NOW, later i might change my mind.` | #16 stands for now. The second-provider path in the harness and prereg stays in place and switchable; nothing is removed. Revisit on the owner's word. |
+
+## 2026-10-03 (SIT FABLE for the owner, integration)
+
+Two rulings by the SIT FABLE planner on the session 4 integration work, recorded by the session 4 integration verifier (`docs/transcripts/session4/integration_verifier.md`).
+Attributed: SIT FABLE for the owner, 2026-10-03.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 24 | Do the two accesses recorded in `eval/blind/ACCESS_LOG.md` (entry 1, the accidental validator run; entry 2, exposure through derived copies) count against the three-evaluation budget for the held-out set? | No. Entry 1 does not count, because no agent output was scored against the held-out items and only flaw counts were seen. The same holds for entry 2. | One line added to `eval/blind/ACCESS_LOG.md` that records this ruling. The held-out set still has its three evaluation accesses (`eval/EVAL_PLAN.md` A-4 is access 1). |
+| 25 | The `not_assessed` verdict (session 4, commit `e8a6c12`) | A `not_assessed` verdict is set by code when the agent could not assess the document: the run deadline skipped or cut the assess stage, or the model declined the assess call twice. It replaces the earlier placeholder, `not_fit` at confidence 0. It is never offered to the model: the model's verdict schema offers `fit`, `fit_with_conditions` and `not_fit` only, and a model answer that carries `not_assessed` fails schema validation, after which the verdict comes from the code rule over the findings. It is excluded from verdict-agreement statistics as implemented in the k-run group summary (`agent/sit_review_agent/kruns.py`): it is never the modal verdict, but its runs stay in the denominator (all completed runs), so they lower the agreement, intention-to-treat. The harness computes no verdict-agreement statistic. It fails the grader's gate G4 (no explicit fitness verdict), which caps D2 at 0, and a dimension at 0 also fails gate G1. | Logged in `eval/prereg_deviations.md` entry 9 (no prereg field changed). `sit-eval score` records `inputs.verdict_label` and warns; `sit-eval aggregate` warns per run; recall is 0 against every key flaw (intention-to-treat). |

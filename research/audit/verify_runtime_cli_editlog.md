@@ -245,3 +245,38 @@ The leakage gate also caught one of my own edits while I worked: the first wordi
 - `docs/HANDOVER_FULL.md` §10 lists these six items as in flight.
 - The runbook's §5 walk-through of one finding now has 30 s of the 10-minute slot in the worst case; the rehearsal should set the reserves from measured times.
 - `docs/BUDGET.md` and the cost lines of `eval/EVAL_PLAN.md` (see item 5).
+
+## Session 4 verifier
+
+Fresh-context Opus verifier, 2026-10-03.
+Merged `origin/claude/happy-darwin-d0bl94` (2c7fba3) into `s4/integration` with a merge commit (3ba6786); no conflict.
+Every check below ran on the merged tree.
+Full report: `docs/transcripts/session4/integration_verifier.md`.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `tests/robustness/test_robustness_regressions.py` | New `test_a_stage_that_truncates_twice_never_ends_in_a_silent_success` (understand, assess, refine): exactly two calls, no third at the same cap, no traceback, and either a typed resumable exit 3 with no report or a report that discloses the truncation (an unassessed one being `not_assessed`) | itself; mutation "a second retry at the same cap" (`if widened and k >= 2`) fails all three cases |
+| `agent/README.md` (Output cap) | "a second truncation ends the stage (exit 4)" was wrong: the run ends with a typed, resumable exit 3, `failure.json` names the stage, and no report or partial report is written (measured offline for understand, assess and refine). Added the known limitation the planner asked for: a second truncation is not recovered by splitting the stage, and `sit-review resume` repeats the same call at the same cap | the test above |
+| `tests/test_runtime_policies.py` | New `test_deadline_warning_boundary_is_one_model_attempt`: mutation V4 (`before_verify - a < min_attempt_s` weakened to `< 0`) survived every existing test | itself; V4 now caught |
+| `docs/DEMO_DAY_RUNBOOK.md` §4.1, §4.2, §8, §9 | Source paths that do not exist: `agent/stop_rules.py`, `agent/states.py`, `agent/templates/report.md.j2` now point under `agent/sit_review_agent/`; the stop-rule signature is `(state, config, elapsed_s) -> StopDecision(stop, code, detail)`, not `(stop: bool, reason: str)`; the §8 talking point cited `docs/ARCHITECTURE.md`, which does not exist, and now cites the `agent/README.md` sections that cover the same ground | `tests/test_config_layout.py::test_runbook_source_paths_exist` (fails with the old path restored) |
+| `eval/EVAL_PLAN.md` E1 row | The row the builder rewrote kept two em dash cells; they read `none`, as in rows B6 and E4 | none (text) |
+| `docs/USER_DECISIONS.md` | Rows #24 and #25, "SIT FABLE for the owner, 2026-10-03" | none (record) |
+| `eval/blind/ACCESS_LOG.md` | One appended line recording ruling #24 (nothing else in `eval/blind/` was listed or opened) | none (record) |
+| `eval/prereg_deviations.md` | Entry 9 (the builder's proposed entry "8", renumbered), corrected: the per-protocol exclusion is only a warning (no code computes that view); G4 false caps D2 at 0 and so also fails G1; the k-run agreement keeps not-assessed runs in the denominator; decided by the session 3 coordinator and confirmed by #25 | none (record) |
+
+### Corrections to the builder's records
+
+- The builder's §2 D4 and §5 item 2 say a truncation without the retry "ended the stage with exit 4". A truncation that escapes the phase ends the run with exit 3 (resumable), as measured above.
+- Builder's report "1011 passed" was before the merge; on the merged tree the suite gave 1018 passed before my tests and 1023 after.
+
+### Hosts kept, with the planner's test (`git log -S`)
+
+All four kept hosts and the two removed vendor hosts entered the authority list in the same commit, `7885679` (2026-10-02 11:01 UTC, "WIP: workstreams B/C in progress", in `agent/sit_review_agent/tools/sources.py`), about four hours after the first synthetic items were committed (`35656ac`, 06:57 UTC).
+So the date alone does not separate them, and each host was judged by the planner's principle.
+
+- `databricks.com`: kept. It is one of about 45 hosts in a general `vendor_docs` list (official vendor and project documentation), next to a peer of the same kind, `snowflake.com`, that no evaluation item mentions. One synthetic item names Databricks Unity Catalog once, as a row of an alternatives table (`research_lakehouse/design_v1.md`, `design_v2.md`); no answer key mentions it. The leakage gate does not flag it, and nothing in the evidence shows it was added because of that item, so it is kept.
+- `pdpc.gov.sg`: kept. A national regulator qualifies on its own; it sits in `standards` with other regulators (`ico.org.uk`, `cnil.fr`). The clinical item and its key do mention it, so the leakage reviewer should know it is there.
+- `opentelemetry.io`: kept. A standards project, listed with `cloudevents.io` and `spec.openapis.org`; the payments item names OpenTelemetry once.
+- `apache.org`: kept. A major open-source foundation; the lakehouse item names Apache projects, not the host.

@@ -26,3 +26,4 @@ What was seen: section labels and flaw identifiers of the held-out items in the 
 Nothing under `eval/blind/` was listed, opened, printed, copied or archived; this file was created after checking only whether this one path existed.
 Runs launched: none.
 Kind: exposure to derived copies outside `eval/blind/` (`eval/prereg.yaml`, `access_log_policy.exposure_entries`), not a read of a held-out file.
+Ruling, 2026-10-03 (SIT FABLE for the owner, `docs/USER_DECISIONS.md` #24): entries 1 and 2 do not count against the three-evaluation budget for the held-out set, because no agent output was scored against these items and only flaw counts were seen in entry 1; the same holds for entry 2.
