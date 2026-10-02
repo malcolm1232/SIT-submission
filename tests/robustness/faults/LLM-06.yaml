@@ -1,0 +1,9 @@
+# LLM-06 (S1, P0, L0 + L1): refusal with empty content. Checked before parsing; one reframed
+# retry; if it persists the section is marked "model declined" and the other stages complete.
+# The suite also runs a once-only variant (match nth: [0]): the reframed retry succeeds.
+id: LLM-06
+description: Every assess call ends with stop_reason refusal (category not given).
+seed: 42
+llm:
+  - match: {stage: assess}
+    fault: {type: stop_reason, value: refusal, category: null}

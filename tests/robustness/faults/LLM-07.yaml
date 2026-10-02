@@ -1,0 +1,9 @@
+# LLM-07 (S1, P0, L0): max_tokens mid-JSON. Detected before parsing, never "repaired" into a
+# shorter object; one retry with doubled max_tokens; same finding count as the fault-free run.
+# `nth` = the stage's logical call index (0 = first call of assess), so the retry is clean.
+id: LLM-07
+description: The first assess call is truncated at max_tokens (60 % of the JSON).
+seed: 42
+llm:
+  - match: {stage: assess, nth: [0]}
+    fault: {type: stop_reason, value: max_tokens, truncate_at_fraction: 0.6}

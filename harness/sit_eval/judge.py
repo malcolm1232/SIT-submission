@@ -66,5 +66,32 @@ def build_judge(kind: str, *, out_dir: Any, **options: Any) -> JudgeClient:
     or ``"anthropic_api"`` (``ANTHROPIC_API_KEY``). ``out_dir`` receives the JSONL call log.
 
     Live kinds are implemented by the matcher workstream; tests build :class:`FakeJudge` directly.
+
+    Also accepts ``"fake"`` (a deterministic offline :class:`FakeJudge`; ``responder=`` overrides the
+    default plumbing responder of :mod:`sit_eval.fakes`). Options per kind (unknown options raise
+    ``ValueError``): ``claude_code`` - executable, timeout_s, max_retries, backoff_base_s,
+    backoff_max_s, max_budget_usd_per_call, inherit_api_key, extra_args, runner, sleep, seed,
+    log_name; ``anthropic_api`` - client, timeout_s, max_retries, backoff_base_s, backoff_max_s,
+    price_per_mtok, sleep, seed, log_name. The model and effort come from each
+    :class:`JudgeRequest`, never from the client.
     """
-    raise NotImplementedError(f"judge kind {kind!r} is not implemented yet")
+    import inspect
+
+    if kind == "fake":
+        from sit_eval.fakes import plumbing_responder
+
+        extra = set(options) - {"responder", "model"}
+        if extra:
+            raise ValueError(f"judge kind 'fake' does not take {sorted(extra)}")
+        return FakeJudge(options.get("responder") or plumbing_responder, model=options.get("model", "fake-judge"))
+    from sit_eval.live_judges import AnthropicJudge, ClaudeCodeJudge
+
+    classes = {"claude_code": ClaudeCodeJudge, "anthropic_api": AnthropicJudge}
+    if kind not in classes:
+        raise ValueError(f"unknown judge kind {kind!r}; expected one of fake, claude_code, anthropic_api")
+    cls = classes[kind]
+    allowed = set(inspect.signature(cls.__init__).parameters) - {"self", "out_dir"}
+    extra = set(options) - allowed
+    if extra:
+        raise ValueError(f"judge kind {kind!r} does not take {sorted(extra)}; allowed: {sorted(allowed)}")
+    return cls(out_dir=out_dir, **options)

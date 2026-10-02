@@ -1,0 +1,8 @@
+# LLM-01 (S1, P0, L0): 429 with retry-after. The retry waits >= 15 s (virtual), attempts stay
+# within llm.max_retries, assess completes.
+id: LLM-01
+description: The first attempt of the assess call returns 429 with retry-after 15 s.
+seed: 42
+llm:
+  - match: {stage: assess, attempt: 0}
+    fault: {type: http_status, status: 429, retry_after: 15}

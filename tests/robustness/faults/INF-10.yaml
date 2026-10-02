@@ -1,0 +1,9 @@
+# INF-10 (S2, P0, L0): malformed response. Caught, classified as a tool failure, retried once,
+# never half-stored. The suite runs this schedule once per kind (html, non_json, truncated_json,
+# wrong_id) by rewriting `kind` in a temp copy.
+id: INF-10
+description: Every web-search call returns a malformed body (an HTML error page from the ingress).
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: search}
+    fault: {type: malformed_body, kind: html}

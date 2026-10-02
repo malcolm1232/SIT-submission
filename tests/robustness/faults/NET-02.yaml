@@ -1,0 +1,9 @@
+# NET-02 (S1, P0, L0): laptop fully offline at start. Expected: non-zero exit with an actionable
+# message in <= 10 s, no hang, no review without LLM provenance.
+# FAILING, NEEDS DECISION (tests/robustness/README.md): the agent gives up only after the model
+# retry budget (2+4+8+16 s jittered, 15-30 s), past the 10 s criterion; nothing probes the network first.
+id: NET-02
+description: No network at all from the start of the run.
+seed: 42
+network:
+  - {type: offline, from_seconds: 0}

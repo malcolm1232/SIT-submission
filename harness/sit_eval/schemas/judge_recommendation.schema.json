@@ -1,0 +1,22 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_recommendation",
+ "type": "object",
+ "properties": {
+  "benefit_follows": {
+   "type": "boolean"
+  },
+  "rationale_explains": {
+   "type": "boolean"
+  },
+  "rationale": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "benefit_follows",
+  "rationale_explains",
+  "rationale"
+ ],
+ "additionalProperties": false
+}

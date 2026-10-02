@@ -1,0 +1,44 @@
+# config/eval.yaml - evaluation harness (`sit-eval`, harness/sit_eval). Not read by the agent.
+# CLI flags override these values for one invocation. Defaults are prereg-faithful (eval/prereg.yaml
+# `matcher`, `grounding`); anything marked DEVIATION needs the owner's approval before a scored run.
+
+judge:
+  kind: claude_code              # claude_code (headless `claude -p`, ADR-010 billing) | anthropic_api | fake
+  model: claude-opus-5-5         # prereg matcher.model branch_B (same family as the agent; disclosed)
+  effort: high                   # prereg matcher.effort
+  max_tokens: 16000
+  timeout_s: 1200                # per attempt; generous (an Opus call at high effort took 20-520 s live)
+  max_retries: 3                 # retryable failures only (timeout, overload, rate limit, transport)
+  backoff_base_s: 5
+  backoff_max_s: 120
+  max_budget_usd_per_call: 1.0   # claude_code: passed as --max-budget-usd; also the per-call reserve of the cost stop
+  inherit_api_key: false         # claude_code: strip ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the child env
+  executable: claude
+
+matcher:
+  # pairwise       = prereg-faithful: one call per (finding, flaw) candidate pair per sample.
+  # per_flaw_batch = DEVIATION: one call per flaw per sample scoring all of that flaw's candidates.
+  call_granularity: pairwise
+  samples: 3                     # prereg matcher.pairwise_scoring: 3 samples, median
+  shortlist_k: 3                 # prereg matcher.candidates: listwise LLM shortlist, up to 3 per flaw
+  severity_epsilon: 0.01         # prereg matcher.assignment: score + 0.01 x primary severity weight
+  embedding_prefilter: false     # prereg: optional; only if an embedding model is recorded at freeze
+
+grounding:
+  theta_q: 0.90                  # prereg grounding.theta_q (null until the pilot calibration); default 0.90
+  judges: true                   # G3 premise judge + citation support judge; --no-grounding-judges switches off
+  recommendation_judge: false    # RJR_subst Q_benefit / Q_rat judge; RJR_subst is a prereg deferred metric
+
+run:
+  concurrency: 4
+  seed: 20261002                 # shuffles, adjudication sample, bootstrap
+  max_cost_usd: null             # hard stop for one `sit-eval score`; null = no stop
+
+cost_estimate:                   # used only by --dry-run and as the reserve when a client reports no cost
+  per_call_usd: {low: 0.05, typical: 0.10, high: 0.15}
+  per_call_s: {low: 20, high: 60}
+
+statistics:
+  bootstrap_b: 10000             # prereg statistics.intervals
+  seed: 0                        # metrics.md §12.2 uses default_rng(0); §12.3 uses default_rng(1)
+  paired_seed: 1

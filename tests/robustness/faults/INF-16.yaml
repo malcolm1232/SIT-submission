@@ -1,0 +1,8 @@
+# INF-16 (S2, P0, L0): oversized response. The tool text shown to the model stays under the cap;
+# the full payload stays on disk (tools.jsonl); no context-length error.
+id: INF-16
+description: Every fetched page is padded to 2 MB.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: fetch}
+    fault: {type: oversize, bytes: 2000000}

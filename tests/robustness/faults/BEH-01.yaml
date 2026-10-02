@@ -1,0 +1,11 @@
+# BEH-01 (S1, P0, L0): infinite research loop. The scripted model never stops asking for more
+# evidence (suite: test_robustness_scenarios.py); this schedule makes the tools return the same
+# irrelevant hits for every query ("new but irrelevant hits"), so nothing ever answers a question.
+# Research must end at a cap (iterations / tool calls / tokens) or no_marginal_gain, and the report
+# must still be produced.
+id: BEH-01
+description: Every web search returns the same three irrelevant (vector-graphics) results.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: search}
+    fault: {type: replace_content, fixture: tests/robustness/fixtures/tools/irrelevant_results.json}

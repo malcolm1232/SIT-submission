@@ -1,0 +1,21 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_shortlist",
+ "type": "object",
+ "properties": {
+  "candidate_ids": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "rationale": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "candidate_ids",
+  "rationale"
+ ],
+ "additionalProperties": false
+}

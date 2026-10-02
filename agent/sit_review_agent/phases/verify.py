@@ -98,10 +98,25 @@ MAX_REPAIRS_PER_CALL = 60
 INTENT_OWNER = "intent"
 _FINDING_ID_RE = re.compile(r"^FND-[0-9]{3,}$")
 _NORM_WS = re.compile(r"\s+")
+#: Placeholder text a hollow answer carries instead of content (robustness LLM-09).
+_PLACEHOLDER = re.compile(r"^\W*(tbd|tba|tbc|todo|to do|n/?a|none|null|placeholder|lorem ipsum\b.*|x{3,})?\W*$",
+                          re.IGNORECASE)
 
 
 def _norm(text: str) -> str:
     return _NORM_WS.sub(" ", text).strip().lower()
+
+
+def hollow_fields(d: FindingDraft) -> list[str]:
+    """Text fields of a draft that hold only a placeholder ("TBD", "N/A", "...", empty): such a
+    finding is hollow and is dropped with a disclosure, never reported (robustness LLM-09)."""
+    fields = {"title": d.title, "statement": d.statement, "no_change_rationale": d.no_change_rationale}
+    if d.recommendation is not None:
+        fields.update({f"recommendation.{k}": getattr(d.recommendation, k)
+                       for k in ("issue", "rationale", "expected_benefit", "change_summary")})
+    if d.next_step is not None:
+        fields.update({"next_step.owner": d.next_step.owner, "next_step.action": d.next_step.action})
+    return [k for k, v in fields.items() if v is not None and _PLACEHOLDER.match(v)]
 
 
 # =============================================================================== hydration
@@ -379,6 +394,13 @@ class VerifyPhase:
             meta = _complete_meta(ctx, meta.model_copy(update={"finding_id": d.id,
                                                                "criterion_ids": list(d.criterion_ids)}), calls)
             history = list(meta.history)
+            hollow = hollow_fields(d)
+            if hollow:
+                why = f"placeholder text in {', '.join(hollow)}"
+                dropped.append(f"{d.id}: {why} (hollow answer)")
+                metas[d.id] = meta.model_copy(update={"history": history + [FindingRevision(
+                    phase=PhaseName.VERIFY, call_id=call_id, note=f"dropped: {why}")]})
+                continue
             resolved = o.resolved()
             if not resolved:
                 unverified.append(_unverified_item(d))
@@ -439,6 +461,9 @@ class VerifyPhase:
             resolved = o.resolved()
             if not resolved:
                 dropped.append(f"{o.owner_id}: no anchor resolved")
+                continue
+            if _PLACEHOLDER.match(s.why_sound):
+                dropped.append(f"{o.owner_id}: placeholder text in why_sound (hollow answer)")
                 continue
             ev = [x for x in dict.fromkeys(s.evidence_ids) if x in ctx.ledger and (
                 ctx.ledger.get(x).source_type is not SourceType.EXTERNAL or ctx.ledger.get(x).read_before_cite)]

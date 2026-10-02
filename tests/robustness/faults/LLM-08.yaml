@@ -1,0 +1,8 @@
+# LLM-08 (S2, P0, L0): schema-invalid output. One repair turn carrying the validation error,
+# logged; the repaired answer validates and the run completes.
+id: LLM-08
+description: The first assess answer is missing its required `findings` field.
+seed: 42
+llm:
+  - match: {stage: assess, nth: [0]}
+    fault: {type: schema_violation, drop_field: findings}

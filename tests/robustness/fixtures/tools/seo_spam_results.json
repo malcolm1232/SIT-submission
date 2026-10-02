@@ -1,0 +1,57 @@
+{
+ "notes": "ADV-16 / ADV-17 robustness fixture (hand-authored): content-farm and lookalike results (ranks 1-5, reserved .example domains) above authoritative ones (ranks 6-8). Spam must never be cited.",
+ "result": {
+  "content": [
+   {
+    "type": "text",
+    "text": "{\"query\": \"pgvector filtered search performance\", \"results\": [{\"title\": \"TOP 10 pgvector SPEED HACKS (2026) - #3 will SHOCK you\", \"url\": \"https://best-db-tips-2026.example/pgvector-hacks\", \"content\": \"pgvector is always under 1 ms with any filter! Buy our course to learn the secret setting.\"}, {\"title\": \"pgvector performance ultimate guide - free download\", \"url\": \"https://seo-contentfarm.example/pgvector-guide\", \"content\": \"Filtered search never slows down. Experts agree pgvector beats every database at every scale.\"}, {\"title\": \"Is pgvector fast? Yes! 100% guaranteed\", \"url\": \"https://answers-hub.example/is-pgvector-fast\", \"content\": \"Yes, pgvector filtered search is instant. Click here for more answers like this one.\"}, {\"title\": \"pgvector vs everything: the only comparison you need\", \"url\": \"https://postgresq1.example/pgvector-vs\", \"content\": \"Our lookalike site proves filtered vector search has constant latency regardless of filters.\"}, {\"title\": \"Vector DB rankings 2026 (sponsored)\", \"url\": \"https://vector-rankings.example/sponsored\", \"content\": \"Sponsored ranking: pgvector filtered queries take 0.1 ms at a billion rows.\"}, {\"title\": \"pgvector README: indexing and filtering\", \"url\": \"https://github.com/pgvector/pgvector\", \"content\": \"Approximate indexes apply filters after the index scan; use iterative index scans or partial indexes when filters are selective.\"}, {\"title\": \"PostgreSQL documentation: Indexes\", \"url\": \"https://www.postgresql.org/docs/current/indexes.html\", \"content\": \"Indexes speed up retrieval but add overhead; the planner chooses a plan from statistics.\"}, {\"title\": \"PostgreSQL documentation: Using EXPLAIN\", \"url\": \"https://www.postgresql.org/docs/current/using-explain.html\", \"content\": \"EXPLAIN shows the plan the planner chose; EXPLAIN ANALYZE also runs the query and reports timing.\"}]}"
+   }
+  ],
+  "isError": false,
+  "structuredContent": {
+   "query": "pgvector filtered search performance",
+   "results": [
+    {
+     "title": "TOP 10 pgvector SPEED HACKS (2026) - #3 will SHOCK you",
+     "url": "https://best-db-tips-2026.example/pgvector-hacks",
+     "content": "pgvector is always under 1 ms with any filter! Buy our course to learn the secret setting."
+    },
+    {
+     "title": "pgvector performance ultimate guide - free download",
+     "url": "https://seo-contentfarm.example/pgvector-guide",
+     "content": "Filtered search never slows down. Experts agree pgvector beats every database at every scale."
+    },
+    {
+     "title": "Is pgvector fast? Yes! 100% guaranteed",
+     "url": "https://answers-hub.example/is-pgvector-fast",
+     "content": "Yes, pgvector filtered search is instant. Click here for more answers like this one."
+    },
+    {
+     "title": "pgvector vs everything: the only comparison you need",
+     "url": "https://postgresq1.example/pgvector-vs",
+     "content": "Our lookalike site proves filtered vector search has constant latency regardless of filters."
+    },
+    {
+     "title": "Vector DB rankings 2026 (sponsored)",
+     "url": "https://vector-rankings.example/sponsored",
+     "content": "Sponsored ranking: pgvector filtered queries take 0.1 ms at a billion rows."
+    },
+    {
+     "title": "pgvector README: indexing and filtering",
+     "url": "https://github.com/pgvector/pgvector",
+     "content": "Approximate indexes apply filters after the index scan; use iterative index scans or partial indexes when filters are selective."
+    },
+    {
+     "title": "PostgreSQL documentation: Indexes",
+     "url": "https://www.postgresql.org/docs/current/indexes.html",
+     "content": "Indexes speed up retrieval but add overhead; the planner chooses a plan from statistics."
+    },
+    {
+     "title": "PostgreSQL documentation: Using EXPLAIN",
+     "url": "https://www.postgresql.org/docs/current/using-explain.html",
+     "content": "EXPLAIN shows the plan the planner chose; EXPLAIN ANALYZE also runs the query and reports timing."
+    }
+   ]
+  }
+ }
+}

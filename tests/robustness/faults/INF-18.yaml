@@ -1,0 +1,14 @@
+# INF-18 (S2, P0, L0): intermittent flakiness, p = 0.3 per call. The suite runs seeds 1..10 (seed
+# rewritten in a temp copy); 10/10 complete and coverage >= 90 % of the fault-free run.
+id: INF-18
+description: Each MCP call fails with p = 0.3 (HTTP 502, connection reset or hang).
+seed: 1
+mcp:
+  - match: {server: "*"}
+    fault:
+      type: flaky
+      p: 0.3
+      inner:
+        - {type: http_status, status: 502}
+        - {type: connection_reset}
+        - {type: hang}

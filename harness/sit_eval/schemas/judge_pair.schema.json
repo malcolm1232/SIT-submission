@@ -1,0 +1,44 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_pair",
+ "type": "object",
+ "properties": {
+  "score": {
+   "type": "integer",
+   "enum": [
+    0,
+    1,
+    2,
+    3
+   ]
+  },
+  "core_insight_present": {
+   "type": "string",
+   "enum": [
+    "yes",
+    "partly",
+    "no"
+   ]
+  },
+  "location_ok": {
+   "type": "boolean"
+  },
+  "credit_items_stated": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  },
+  "rationale": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "score",
+  "core_insight_present",
+  "location_ok",
+  "credit_items_stated",
+  "rationale"
+ ],
+ "additionalProperties": false
+}

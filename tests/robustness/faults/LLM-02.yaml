@@ -1,0 +1,8 @@
+# LLM-02 (S1, P0, L0): spend cap. 429 with no retry-after on every call: stop after the retry
+# budget, checkpoint, exit 3 ("LLM unavailable") with an actionable message; resumable.
+id: LLM-02
+description: Every model call returns 429 without retry-after (spend cap reached).
+seed: 42
+llm:
+  - match: {}
+    fault: {type: http_status, status: 429}

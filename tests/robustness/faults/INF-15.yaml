@@ -1,0 +1,8 @@
+# INF-15 (S2, P0, L1): irrelevant content. Needs the live model's relevance gate: laptop only.
+# `sit-review run <sample.pdf> --faults INF-15` (k=3); pass: zero citations to the fixture's URLs.
+id: INF-15
+description: Web search returns vector-graphics / SVG pages for every query.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: search}
+    fault: {type: replace_content, fixture: tests/robustness/fixtures/tools/irrelevant_results.json}

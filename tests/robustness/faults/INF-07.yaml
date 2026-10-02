@@ -1,0 +1,8 @@
+# INF-07 (S1, P0, L0): shared-key 401. At most one confirmation retry; all servers disabled
+# together (one shared key); the message names SIT_MCP_API_KEY, never its value; doc-only review.
+id: INF-07
+description: Every MCP call is refused with HTTP 401 (shared key revoked).
+seed: 42
+mcp:
+  - match: {server: "*"}
+    fault: {type: auth, status: 401}

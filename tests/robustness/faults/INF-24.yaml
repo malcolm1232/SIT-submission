@@ -1,0 +1,9 @@
+# INF-24 (S1, P0, L0 + L2): all MCP servers down. Doc-only review, zero external citations,
+# "No external research was possible" in the report, breakers open fast (no 4 x 150 s waits).
+# Laptop (L2): `sit-review run <pdf> --faults INF-24` with the live model.
+id: INF-24
+description: Every MCP server refuses connections for the whole run.
+seed: 42
+mcp:
+  - match: {server: "*"}
+    fault: {type: down}

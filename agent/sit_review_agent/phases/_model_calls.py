@@ -543,7 +543,10 @@ class _EvidenceResolver:
                     break
         if loc is None and anchor is not None:
             loc = (anchor.doc_id, anchor.page, anchor.section_ref.strip() or "1")
-            q = q or normalise_quote(anchor.quote)
+            # The cited quote is not in the document: never record it as document text (an external
+            # fact labelled "doc" would become doc evidence; robustness BEH-17). Use the anchor's quote,
+            # which verify checks.
+            q = normalise_quote(anchor.quote)
         if loc is None or not q:
             return None
         doc_id, page, section = loc

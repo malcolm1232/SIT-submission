@@ -1,0 +1,10 @@
+# INF-01 (S1, P0, L0 + L2): cold start. Offline: tests/robustness/test_robustness_scenarios.py.
+# Laptop (L2): leave the servers idle >= 30 min, then `sit-review run <pdf> --faults INF-01` adds the
+# simulated delay on top of the real one; for the pure live drill run without --faults.
+id: INF-01
+description: Every MCP server is cold; the first call to each takes 90 s (connection held while the replica starts).
+seed: 42
+clock: virtual
+mcp:
+  - match: {server: "*", call_index: 0}
+    fault: {type: latency, seconds: 90}

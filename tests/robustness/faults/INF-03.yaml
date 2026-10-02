@@ -1,0 +1,8 @@
+# INF-03 (S1, P0, L0): one server never wakes. Research continues with the other server; the
+# limitation names the dead server; no ledger entry or citation comes from it.
+id: INF-03
+description: mcp-research-information is down (connection refused) for the whole run.
+seed: 42
+mcp:
+  - match: {server: mcp-research-information}
+    fault: {type: down}

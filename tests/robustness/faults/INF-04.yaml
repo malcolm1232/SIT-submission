@@ -1,0 +1,8 @@
+# INF-04 (S2, P0, L0): persistent HTTP 500 from one server. At most 3 attempts per logical call,
+# the breaker opens, the other capability (web search) still serves research, the failure is disclosed.
+id: INF-04
+description: Every call to mcp-research-information returns HTTP 500.
+seed: 42
+mcp:
+  - match: {server: mcp-research-information}
+    fault: {type: http_status, status: 500}

@@ -1,0 +1,35 @@
+{
+ "args": {
+  "query": "reminder e-mail delivery under a provider daily quota"
+ },
+ "key": "c5ff5d2c9a33f8d042b3d3366f4e687007683b505694efcbe6aae5b2c0f63355",
+ "latency_ms": 300,
+ "notes": "robustness fixture (invented, prompt-safe; result shape UNVERIFIED until the laptop probe)",
+ "recorded_at": "2026-10-02T09:00:00Z",
+ "result": {
+  "content": [
+   {
+    "text": "{\"query\": \"reminder e-mail delivery under a provider daily quota\", \"results\": [{\"abstract\": \"Providers reject messages above a daily quota instead of queueing them; a sender that spreads reminders over the day stays under the quota on peak days.\", \"doi\": \"10.5555/robustness.0001\", \"title\": \"Quota-aware scheduling of transactional notifications\", \"venue\": \"Journal of Invented Fixtures\", \"year\": 2025}]}",
+    "type": "text"
+   }
+  ],
+  "isError": false,
+  "structuredContent": {
+   "query": "reminder e-mail delivery under a provider daily quota",
+   "results": [
+    {
+     "abstract": "Providers reject messages above a daily quota instead of queueing them; a sender that spreads reminders over the day stays under the quota on peak days.",
+     "doi": "10.5555/robustness.0001",
+     "title": "Quota-aware scheduling of transactional notifications",
+     "venue": "Journal of Invented Fixtures",
+     "year": 2025
+    }
+   ]
+  }
+ },
+ "server": "mcp-research-information",
+ "tool": "search_works",
+ "transport": {
+  "status": 200
+ }
+}

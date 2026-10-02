@@ -1,0 +1,8 @@
+# LLM-11 (S1, P0, L0): invalid model credentials. Not retried; exit 3 within 10 s (virtual) with
+# a message naming the credential (ANTHROPIC_API_KEY or the Claude Code login), never its value.
+id: LLM-11
+description: Every model call is refused with HTTP 401.
+seed: 42
+llm:
+  - match: {}
+    fault: {type: auth, status: 401}

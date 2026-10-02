@@ -1,0 +1,48 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_adjudicate",
+ "type": "object",
+ "properties": {
+  "class": {
+   "type": "string",
+   "enum": [
+    "DUPLICATE",
+    "VALID_UNPLANTED",
+    "HALLUCINATED",
+    "NON_SPECIFIC",
+    "INVALID_OPINION",
+    "OUT_OF_SCOPE"
+   ]
+  },
+  "duplicate_of": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "matches_observation_id": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "rationale": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "class",
+  "duplicate_of",
+  "matches_observation_id",
+  "rationale"
+ ],
+ "additionalProperties": false
+}

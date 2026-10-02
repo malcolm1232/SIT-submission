@@ -1,0 +1,15 @@
+# LLM-03 (S1, P0, L0): overloaded. 529 on the first four attempts of assess; the fifth (last
+# allowed by llm.max_retries: 4) succeeds. No model switch (ADR-002); manifest models accurate.
+# The suite also runs a persistent variant (529 on every attempt): exit 3, then resume completes.
+id: LLM-03
+description: The assess call is overloaded (HTTP 529) for four attempts, then recovers.
+seed: 42
+llm:
+  - match: {stage: assess, attempt: 0}
+    fault: {type: http_status, status: 529}
+  - match: {stage: assess, attempt: 1}
+    fault: {type: http_status, status: 529}
+  - match: {stage: assess, attempt: 2}
+    fault: {type: http_status, status: 529}
+  - match: {stage: assess, attempt: 3}
+    fault: {type: http_status, status: 529}

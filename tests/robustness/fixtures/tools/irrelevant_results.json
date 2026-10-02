@@ -1,0 +1,32 @@
+{
+ "notes": "INF-15 robustness fixture (hand-authored, invented): results about vector GRAPHICS for a vector-DATABASE query; none is relevant and none may be cited.",
+ "result": {
+  "content": [
+   {
+    "type": "text",
+    "text": "{\"query\": \"pgvector filtered query latency\", \"results\": [{\"title\": \"Optimising SVG vector graphics for fast page loads\", \"url\": \"https://svg-tips.example/optimise-vector-graphics\", \"content\": \"Minify path data and remove editor metadata to make vector graphics render faster in the browser.\"}, {\"title\": \"Vector illustration filters explained\", \"url\": \"https://design-blog.example/vector-filters\", \"content\": \"Blur, drop-shadow and colour-matrix filters change how a vector illustration is drawn on screen.\"}, {\"title\": \"Latency of animated SVG icons on mobile\", \"url\": \"https://frontend-notes.example/svg-icon-latency\", \"content\": \"Animated icons with many path nodes add rendering latency on low-end phones.\"}]}"
+   }
+  ],
+  "isError": false,
+  "structuredContent": {
+   "query": "pgvector filtered query latency",
+   "results": [
+    {
+     "title": "Optimising SVG vector graphics for fast page loads",
+     "url": "https://svg-tips.example/optimise-vector-graphics",
+     "content": "Minify path data and remove editor metadata to make vector graphics render faster in the browser."
+    },
+    {
+     "title": "Vector illustration filters explained",
+     "url": "https://design-blog.example/vector-filters",
+     "content": "Blur, drop-shadow and colour-matrix filters change how a vector illustration is drawn on screen."
+    },
+    {
+     "title": "Latency of animated SVG icons on mobile",
+     "url": "https://frontend-notes.example/svg-icon-latency",
+     "content": "Animated icons with many path nodes add rendering latency on low-end phones."
+    }
+   ]
+  }
+ }
+}

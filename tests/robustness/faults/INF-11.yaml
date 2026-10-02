@@ -1,0 +1,10 @@
+# INF-11 (S2, P0, L0): mcp-document-intelligence rejects every input. With the default config the
+# server is disabled, so it is called 0 times and the local parser output is used; the requirement
+# inventory equals the fault-free run. Laptop: enable the server in config/tools.yaml to check
+# "called at most once" against the live server.
+id: INF-11
+description: mcp-document-intelligence answers every call with isError (no allowed root or domain configured).
+seed: 42
+mcp:
+  - match: {server: mcp-document-intelligence}
+    fault: {type: tool_error, message: "rejects all inputs because no allowed local root or remote domains are configured"}

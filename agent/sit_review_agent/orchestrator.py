@@ -82,9 +82,11 @@ class Orchestrator:
                 if cap is not None:
                     if ctx.state.stop_reason is None:
                         ctx.state.stop_reason = cap
-                        ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
-                                                  f"stop rule {cap.detail} ({cap.code}) before {phase.value}",
-                                                  f"skipped to {ON_CAP[phase].value}; evidence may be partial")
+                    # Disclosed on every skip, also when research already set the stop reason
+                    # (a deadline that skips refine must not be hidden; INV-07, robustness LLM-05).
+                    ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
+                                              f"stop rule {cap.detail} ({cap.code}) before {phase.value}",
+                                              f"skipped to {ON_CAP[phase].value}; evidence may be partial")
                     ctx.progress.emit(phase.value, f"stop rule {cap.code} fired; skipping to {ON_CAP[phase].value}",
                                       "warn")
                     phase = ON_CAP[phase]
@@ -395,7 +397,7 @@ def _run_build_llm(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: ob
     else:
         gw = build_llm_gateway(cfg, rd, clock=clock, progress=progress)  # type: ignore[arg-type]
     if sched is not None:
-        gw = FaultInjectingLLMGateway(gw, sched, clock=clock)  # type: ignore[arg-type]
+        gw = FaultInjectingLLMGateway(gw, sched, clock=clock, policy=cfg.agent.llm)  # type: ignore[arg-type]
         # The wrapper forwards ``native_pdf`` from the backend it wraps (llm.backend.supports_native_pdf).
     return gw
 

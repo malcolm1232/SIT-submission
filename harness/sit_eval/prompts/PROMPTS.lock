@@ -1,0 +1,26 @@
+{
+ "bundle_sha256": "d9e14df564478b453b54e47560ef72a5d98a457a262f7bc31dd7809905a996dd",
+ "files": {
+  "prompts/adjudicator_system.md": "9e3cbe4c7c28074adb29080cdab98979bc833a190cb5b0925bc8a2f131466bdb",
+  "prompts/adjudicator_user.md": "78858f45c089a4f5a1ae398d74936602a2b7e4aa25fa9fb0a98ffa4814c91836",
+  "prompts/citation_system.md": "8edcbaea45e97cde680b26d8af10eddc214f5edc58ea392b15c1abca49c15c8b",
+  "prompts/citation_user.md": "6f924866034c57760ca35318084c005a315fd3c988314314579793358ee92193",
+  "prompts/matcher_batch.md": "07802c6cd584807bf1963098dcf43b696d25dd5705e08d8e8458c634fd974bae",
+  "prompts/matcher_pair.md": "800251a69c5161387720bb641f8cd4acf329374c362032e5ca6b9b6bfb6d59e8",
+  "prompts/matcher_shortlist.md": "b932cc619d12580fd6aab400a0ae417648988ad42391da2ce5a5527fc30b6457",
+  "prompts/matcher_system.md": "0e3db4ae281ce9d3c02c875751697d8491f6251db02ba0edd5e12d315003b779",
+  "prompts/premise_system.md": "89dd657700d2e693dd6cf4478ae3aa76d0481a8a2cb3e282500875034221fc36",
+  "prompts/premise_user.md": "3535565e37f1a01e8858a8b8146fee8ef085df9361e03df8c9f0cf47990a09d7",
+  "prompts/recommendation_system.md": "34048e51fd74814fe4707461306341b7ceb74cc114ffbdecda33eb6b619acaa1",
+  "prompts/recommendation_user.md": "dc3ed85d939f9c8a5a56217f6a2fb6d9f0257b0638003b3fe4d33edec2d84a1f",
+  "schemas/judge_adjudicate.schema.json": "28ec0d85e17937760eb18fe8a36342edc0bb74b361a8839cedc4435d80f4b804",
+  "schemas/judge_batch.schema.json": "2c0042f0eb78d271def8ff7930a708bb6764616719008b2c1d42aff634e53b2c",
+  "schemas/judge_citation.schema.json": "1313d6fca9565eaad8ae98080cbc23af62b2809598a0e135c45083c955ebb6b9",
+  "schemas/judge_pair.schema.json": "e8a1beaac4bbb64c30eb1615d0dc4261788d0a01b7991380e2a552f6db0a13e8",
+  "schemas/judge_premise.schema.json": "14460b1e32e305c81c0ac28660c44e11492d75de14ad37ee0620d1c1ecc85e6b",
+  "schemas/judge_recommendation.schema.json": "22a18a14a9027567a9bdf5a84bd3c95c5b8ee4ebb289795a44e08458de8d27b8",
+  "schemas/judge_shortlist.schema.json": "ce3eada16cfbbeb57ff0d45d64d00e58bf68b89d0228e0e9184d0b0ef4789b87"
+ },
+ "lock_version": 1,
+ "note": "bundle_sha256 is the value eval/prereg.yaml matcher.prompt_sha256 takes at freeze"
+}

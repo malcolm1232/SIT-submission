@@ -1,0 +1,39 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_citation",
+ "type": "object",
+ "properties": {
+  "items": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "evidence_id": {
+      "type": "string"
+     },
+     "support": {
+      "type": "string",
+      "enum": [
+       "FULL",
+       "PARTIAL",
+       "NONE"
+      ]
+     },
+     "rationale": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "evidence_id",
+     "support",
+     "rationale"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ "required": [
+  "items"
+ ],
+ "additionalProperties": false
+}

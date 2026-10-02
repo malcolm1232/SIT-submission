@@ -1,0 +1,27 @@
+{
+ "notes": "ADV-14 robustness fixture (hand-authored, invented numbers): evidence that filtered vector-query latency depends strongly on index type and filter selectivity, contradicting a flat '5-15 ms' claim.",
+ "result": {
+  "content": [
+   {
+    "type": "text",
+    "text": "{\"query\": \"pgvector filtered query latency\", \"results\": [{\"title\": \"Filtered approximate nearest-neighbour search: why selectivity matters\", \"url\": \"https://github.com/pgvector/pgvector#filtering\", \"content\": \"With approximate indexes, filtering is applied after the index is scanned; when a filter matches few rows, fewer results are returned unless more of the index is searched, and latency grows.\"}, {\"title\": \"Benchmarking filtered vector search at 10M vectors\", \"url\": \"https://benchmarks.example-research.org/filtered-ann-2026\", \"content\": \"Median latency ranged from 4 ms to over 300 ms depending on index type (HNSW vs IVFFlat) and on filter selectivity; low-selectivity filters needed iterative scans to keep recall.\"}]}"
+   }
+  ],
+  "isError": false,
+  "structuredContent": {
+   "query": "pgvector filtered query latency",
+   "results": [
+    {
+     "title": "Filtered approximate nearest-neighbour search: why selectivity matters",
+     "url": "https://github.com/pgvector/pgvector#filtering",
+     "content": "With approximate indexes, filtering is applied after the index is scanned; when a filter matches few rows, fewer results are returned unless more of the index is searched, and latency grows."
+    },
+    {
+     "title": "Benchmarking filtered vector search at 10M vectors",
+     "url": "https://benchmarks.example-research.org/filtered-ann-2026",
+     "content": "Median latency ranged from 4 ms to over 300 ms depending on index type (HNSW vs IVFFlat) and on filter selectivity; low-selectivity filters needed iterative scans to keep recall."
+    }
+   ]
+  }
+ }
+}

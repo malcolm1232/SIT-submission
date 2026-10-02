@@ -1,0 +1,8 @@
+# INF-19 (S1, P0, L0): hang. The read timeout (tools.yaml call_timeout_s, 60 s) fires; the call
+# errors within the timeout + 1 s and is retried; the run completes (INV-01).
+id: INF-19
+description: The first web-search call opens and never answers.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, call_index: 0}
+    fault: {type: hang}

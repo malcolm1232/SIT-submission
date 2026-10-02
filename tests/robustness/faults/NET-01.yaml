@@ -1,0 +1,13 @@
+# NET-01 (S1, P0, L0 + L1): network lost mid-run. Planning takes 200 s (virtual), then the network
+# drops at 210 s for 120 s, during research: tool calls fail as network errors, the model call
+# fails after its retry budget, the run halts with exit 3 and a resumable checkpoint (plan).
+# `sit-review resume <run_dir>` then completes without repeating completed work. The window is
+# measured from the first call through each fault layer, so it does not recur on resume.
+id: NET-01
+description: Network unreachable from 210 s to 330 s, while research runs.
+seed: 42
+llm:
+  - match: {stage: plan}
+    fault: {type: latency, seconds: 200}
+network:
+  - {type: offline, from_seconds: 210, duration_seconds: 120}

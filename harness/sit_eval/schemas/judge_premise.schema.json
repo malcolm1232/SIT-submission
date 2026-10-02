@@ -1,0 +1,42 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "judge_premise",
+ "type": "object",
+ "properties": {
+  "is_absence_claim": {
+   "type": "boolean"
+  },
+  "premise": {
+   "type": "string"
+  },
+  "label": {
+   "type": "string",
+   "enum": [
+    "SUPPORTED",
+    "CONTRADICTED",
+    "NOT_FOUND"
+   ]
+  },
+  "doc_passage": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "rationale": {
+   "type": "string"
+  }
+ },
+ "required": [
+  "is_absence_claim",
+  "premise",
+  "label",
+  "doc_passage",
+  "rationale"
+ ],
+ "additionalProperties": false
+}

@@ -600,10 +600,16 @@ class _ResearchRun:
                           f"{state.budget.tool_calls} tool call(s) and {state.budget.research_iterations} iteration(s)",
                           "partial evidence; questions not fully answered: " + (", ".join(partial) or "none")
                           + "; not attempted: " + (", ".join(not_attempted) or "none"))
-        if (self.tools_down or stop.code is StopReasonCode.TOOL_FAILURE) and not any(
+        # Every call that reached a server failed (and none succeeded): the review is doc-only even
+        # when too few calls were made to open every breaker (robustness INF-24).
+        all_failed = not any(c.status is ToolCallStatus.OK for c in state.tool_calls) and any(
+            c.status in (ToolCallStatus.ERROR, ToolCallStatus.TIMEOUT) for c in state.tool_calls)
+        if (self.tools_down or stop.code is StopReasonCode.TOOL_FAILURE or all_failed) and not any(
                 e.source_type is SourceType.EXTERNAL for e in ctx.ledger):
             self._degrade("doc_only", DegradationType.TOOL_UNAVAILABLE,
-                          "No external research was possible: the tool servers became unavailable",
+                          "No external research was possible: "
+                          + ("the tool servers became unavailable" if not all_failed or self.tools_down
+                             else "every tool call failed"),
                           "doc-only review: questions that need external evidence are reported as validation needs")
         answered = sum(q.status == "answered" for q in external)
         ctx.emit(f"research stopped: {stop.code.value} ({stop.detail}); {answered}/{len(external)} answered, "

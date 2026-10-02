@@ -1,0 +1,10 @@
+# LLM-05 (S1, P0, L0): stalled model call. The per-attempt timeout is config/agent.yaml
+# llm.timeout_s = 1800 s (raised from 600 s after the first live run, docs/HANDOVER_FULL.md §8).
+# FAILING, NEEDS DECISION (tests/robustness/README.md): one hang costs 1800 s, past the 540 s
+# deadline + 30 s that INV-01 allows; the deadline is not propagated into the call timeout.
+id: LLM-05
+description: The first attempt of the assess call hangs (no tokens until the client timeout).
+seed: 42
+llm:
+  - match: {stage: assess, attempt: 0}
+    fault: {type: hang}

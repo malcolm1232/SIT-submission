@@ -890,12 +890,17 @@ class FaultInjectingLLMGateway:
     """Applies the ``llm:`` rules of a robustness fault schedule *below* the retry policy
     (robustness §5.1): ``http_status`` (429/529/503 with optional ``retry_after``), ``hang``,
     ``auth``, ``connection_reset``, ``stop_reason`` (refusal / max_tokens), ``schema_violation``,
-    ``latency``, ``flaky``. Match keys: ``stage``, ``attempt``, ``after_seconds``."""
+    ``latency``, ``flaky``. Match keys: ``stage``, ``attempt``, ``nth``, ``after_seconds``.
 
-    def __init__(self, inner: LLMGateway, schedule: Any, *, clock: Clock | None = None) -> None:
+    ``policy`` (``config.agent.llm``) supplies the retry policy when the wrapped gateway does not
+    carry it (``FakeGateway``), so a fake-transport drill uses the configured timeout and retries."""
+
+    def __init__(self, inner: LLMGateway, schedule: Any, *, clock: Clock | None = None,
+                 policy: Any = None) -> None:
         self.inner = inner
         self.schedule = schedule     # tools.faults.FaultSchedule (typed there to avoid an import cycle)
         self.clock = clock or SystemClock()
+        self.policy = policy         # config.LLMConfig or None
         self._refusals: list[dict[str, Any]] = []      # injected refusals (the inner never saw them)
 
     @property
@@ -917,12 +922,14 @@ class FaultInjectingLLMGateway:
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         """One logical call. Each *attempt* is matched against the ``llm:`` rules (``stage`` =
-        phase, ``attempt`` = 0-based attempt of this call, ``after_seconds`` since the first call
-        through this wrapper) and against ``network: offline`` windows. An attempt with no fault
+        phase, ``attempt`` = 0-based attempt of this call, ``nth`` = 0-based index of this logical
+        call among the stage's calls through this wrapper, so a phase-level retry such as the
+        ``max_tokens`` retry or the schema repair turn is call ``nth + 1``; ``after_seconds`` since
+        the first call through this wrapper) and against ``network: offline`` windows. An attempt with no fault
         goes to ``inner``. A retryable fault (429, 529/503/5xx, ``hang``, ``connection_reset``,
         offline) is retried here with the live gateways' policy, read from ``inner`` when it has
-        it (``max_retries``, ``backoff_base_s``, ``backoff_max_s``, ``timeout_s``; else the
-        ``config/agent.yaml`` defaults 4 / 2.0 / 60.0 / 600): ``retry-after`` is honoured exactly,
+        it (``max_retries``, ``backoff_base_s``, ``backoff_max_s``, ``timeout_s``; else from
+        ``policy``; else 4 / 2.0 / 60.0 / 600): ``retry-after`` is honoured exactly,
         otherwise exponential backoff with jitter on the injected clock; after the budget the typed
         error is raised (exit 3). Non-retryable faults raise at once: ``auth`` / 401 / 403 ->
         :class:`LLMAuthError`, 400 -> :class:`LLMBadRequestError`, ``stop_reason: refusal`` ->
@@ -953,10 +960,14 @@ class FaultInjectingLLMGateway:
         st["seq"] += 1
         seq = st["seq"]
         phase = request.phase.value
-        max_retries = int(getattr(self.inner, "max_retries", 4))
-        base_s = float(getattr(self.inner, "backoff_base_s", 2.0))
-        max_s = float(getattr(self.inner, "backoff_max_s", 60.0))
-        timeout_s = float(getattr(self.inner, "timeout_s", 600.0))
+        stage_calls = st.setdefault("stage_calls", {})
+        nth = stage_calls.get(phase, 0)
+        stage_calls[phase] = nth + 1
+        pol = self.policy
+        max_retries = int(getattr(self.inner, "max_retries", getattr(pol, "max_retries", 4)))
+        base_s = float(getattr(self.inner, "backoff_base_s", getattr(pol, "backoff_base_s", 2.0)))
+        max_s = float(getattr(self.inner, "backoff_max_s", getattr(pol, "backoff_max_s", 60.0)))
+        timeout_s = float(getattr(self.inner, "timeout_s", getattr(pol, "timeout_s", 600.0)))
         progress = getattr(self.inner, "progress", None)
         log = getattr(self.inner, "log", None)
         seed = getattr(self.schedule, "seed", 0)
@@ -971,7 +982,7 @@ class FaultInjectingLLMGateway:
                 spec = "offline"
             else:
                 for rule in self.schedule.llm:
-                    if not fa.match_rule(rule.match, stage=phase, attempt=attempt, elapsed_s=elapsed):
+                    if not fa.match_rule(rule.match, stage=phase, attempt=attempt, nth=nth, elapsed_s=elapsed):
                         continue
                     s = fa.resolve_flaky(rule.fault, rng)
                     if s is None:

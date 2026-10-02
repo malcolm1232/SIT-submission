@@ -1,0 +1,9 @@
+# ADV-16 (S2, P0, L1): SEO spam outranks authoritative sources. Laptop only (live model, k=3):
+# `sit-review run <pdf> --faults ADV-16`. Pass: zero citations to the spam domains, at least one
+# to the authoritative ones.
+id: ADV-16
+description: Web search ranks five content-farm pages above three authoritative ones.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: search}
+    fault: {type: replace_content, fixture: tests/robustness/fixtures/tools/seo_spam_results.json}

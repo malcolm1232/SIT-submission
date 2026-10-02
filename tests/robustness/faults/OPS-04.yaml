@@ -1,0 +1,9 @@
+# OPS-04 (S2, P0, L0): Ctrl-C mid-run, then resume. The process fault is applied by the robustness
+# harness (sit-review run --faults ignores `process:` entries, see the README): KeyboardInterrupt at
+# the end of research, after its tool calls, before its checkpoint. Exit 130, state flushed; resume
+# re-runs research from the plan checkpoint, serving its tool calls from tools.jsonl, and completes.
+id: OPS-04
+description: SIGINT during the research stage.
+seed: 42
+process:
+  - {type: sigint_in_stage, stage: research, at: end}

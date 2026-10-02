@@ -1,0 +1,8 @@
+# INF-05 (S2, P0, L0): HTTP 429 with Retry-After. The next attempt to that server waits >= 20 s
+# (virtual clock) and the server's concurrency cap is lowered.
+id: INF-05
+description: The first call to mcp-internet-search returns 429 with Retry-After 20 s.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, call_index: 0}
+    fault: {type: http_status, status: 429, retry_after: 20}

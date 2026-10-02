@@ -1,0 +1,9 @@
+# ADV-14 (S2, P0, L1): web evidence contradicts the doc. Laptop only (live model), on the SIT
+# sample: `sit-review run <sample.pdf> --faults ADV-14` (k=3). Pass: the finding's disposition is
+# needs_prototyping, it cites the evidence and the doc anchor, confidence not high on one source.
+id: ADV-14
+description: Web search returns benchmark evidence that filtered vector-query latency depends on index type and filter selectivity.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, tool: search}
+    fault: {type: replace_content, fixture: tests/robustness/fixtures/tools/benchmark_contradiction.json}
