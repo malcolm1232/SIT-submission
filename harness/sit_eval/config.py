@@ -38,7 +38,7 @@ class MatcherCfg(_M):
     shortlist_k: int = Field(3, ge=0)
     severity_epsilon: float = 0.01
     embedding_prefilter: bool = False
-    adaptive_third_sample: bool = False
+    adaptive_third_sample: bool = True   # owner decision 2026-10-02 (USER_DECISIONS #15); same median of 3
 
 
 class GroundingCfg(_M):

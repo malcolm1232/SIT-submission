@@ -36,7 +36,7 @@ MAX_REQUEST_BYTES = 32 * 1024 * 1024
 #: A page with fewer extracted characters than this but at least one image is "image-only" (INP-04).
 IMAGE_ONLY_MAX_CHARS = 50
 
-#: Numbered heading at line start ("6.2 Notifications", "10.Alert management"). Heuristic: numbered
+#: Numbered heading at line start ("6.2 Notifications", "10.Room bookings"). Heuristic: numbered
 #: lists can match too; duplicates are tolerated (find_sections returns every candidate).
 _HEADING_RE = re.compile(r"^(?P<num>\d{1,2}(?:\.\d{1,3}){0,4})(?:\.\s*|\s+)(?P<title>[A-Z][^\n]*)$", re.M)
 #: Requirement / decision / constraint IDs such as FR-9, NFR-7, AC-12, D-3, SEC-AUTH-2 (spec §2.2).

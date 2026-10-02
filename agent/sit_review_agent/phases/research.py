@@ -54,8 +54,13 @@ How the loop works (decisions the docs left open are marked *decision*):
 * Model failures: a refusal is retried once with professional-review framing
   (``llm.refusal_retries``), then the phase completes with ``declined_sections += ["research"]``;
   a schema error gets one repair turn; ``max_tokens`` ends the phase; both are degradations with
-  stop reason ``error``. Other ``LLMError``\\ s (rate limit, overload, auth, timeout) propagate after the
-  gateway's retry budget (exit 3, resumable). Strict-replay misses (``ReplayMiss``) propagate.
+  stop reason ``error``. A model call cut by the run deadline (``LLMDeadlineError``) ends research with
+  stop reason ``deadline`` (robustness LLM-05); a conversation grown past the context limit
+  (``LLMContextTooLongError``, never sent) ends it with ``budget_tokens`` / ``context_window``
+  (LLM-10). Research's deadline rule keeps ``assess_reserve_seconds`` on top of the report reserve,
+  so research absorbs the squeeze and assess keeps its time. Other ``LLMError``\\ s (rate limit,
+  overload, auth, timeout) propagate after the gateway's retry budget (exit 3, resumable).
+  Strict-replay misses (``ReplayMiss``) propagate.
 * ``--plan-only`` (``ctx.plan_only``): nothing happens here (zero tool calls).
 """
 
@@ -70,7 +75,15 @@ from typing import Any
 from sit_review_agent import stop_rules
 from sit_review_agent.clock import SystemClock
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMRefusalError, LLMSchemaError, LLMTruncatedError, ReplayMiss, ToolError
+from sit_review_agent.errors import (
+    LLMContextTooLongError,
+    LLMDeadlineError,
+    LLMRefusalError,
+    LLMSchemaError,
+    LLMTruncatedError,
+    ReplayMiss,
+    ToolError,
+)
 from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest, LLMResult, ToolUse
 from sit_review_agent.llm.outputs import ResearchOutput
@@ -127,7 +140,11 @@ class _ResearchRun:
     def __init__(self, ctx: RunContext) -> None:
         self.ctx = ctx
         self.state = ctx.state
-        self.params = ctx.config.stop_rules
+        sr = ctx.config.stop_rules
+        # Research absorbs the squeeze (robustness LLM-05): its deadline rule also keeps
+        # assess_reserve_seconds for assess, as the model-call timeouts do (llm.runtime.RunDeadline).
+        self.params = sr.model_copy(update={"report_reserve_seconds": sr.report_reserve_seconds
+                                            + sr.assess_reserve_seconds})
         self.call_ids = ctx.state.llm_calls.setdefault(PhaseName.RESEARCH.value, [])
         self.conversation_id = f"{ctx.state.run_id}-research-{len(self.call_ids)}"
         self.messages: list[dict[str, Any]] = []
@@ -297,6 +314,22 @@ class _ResearchRun:
                 self._degrade("schema", DegradationType.OTHER, "research answer failed schema validation twice",
                               "answers of this round were discarded; evidence stays in the ledger")
                 return None, StopReason.of(StopReasonCode.ERROR, "schema_error")
+            except LLMDeadlineError as exc:
+                if exc.call_id:
+                    self.call_ids.append(exc.call_id)
+                self._degrade("deadline", DegradationType.BUDGET_OR_DEADLINE_HIT,
+                              f"a research model call was cut by the run deadline ({exc})",
+                              "research ended early to keep time for assess; open questions are reported as "
+                              "unanswered")
+                return None, StopReason.of(StopReasonCode.DEADLINE, "model_call_cut_by_deadline")
+            except LLMContextTooLongError as exc:
+                # The document itself fitted (understand and plan ran); the tool results grew the
+                # conversation past the limit, so research ends rather than the run.
+                self._degrade("context", DegradationType.BUDGET_OR_DEADLINE_HIT,
+                              f"the research conversation reached the context limit and was not sent ({exc})",
+                              "research ended early; answers of this round were discarded and open questions "
+                              "are reported as unanswered")
+                return None, StopReason.of(StopReasonCode.BUDGET_TOKENS, "context_window")
             except LLMTruncatedError:
                 self._degrade("max_tokens", DegradationType.OTHER, "research answer truncated at max_tokens",
                               "answers of this round were discarded; evidence stays in the ledger")
@@ -464,7 +497,7 @@ class _ResearchRun:
 
     def _register(self, res: ToolResult) -> list[tuple[str, Any]]:
         out: list[tuple[str, Any]] = []
-        for src in extract_sources(res):
+        for src in extract_sources(res, self.ctx.config.url_policy.authority):
             key = self._ukey(src.url_or_citation)
             known = self._url_index.get(key)
             if known is not None and (known.read_before_cite or not src.read_in_full):

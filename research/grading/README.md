@@ -238,7 +238,7 @@ def weighted(scores, delta_mode=False):
 |---|---|---|
 | G1 | Any dimension = 0 | Fail |
 | G2 | D4, D5 or D6 < 2 | Fail |
-| G3 | Material hallucinations (verified false): 1 → cap D4 ≤ 2, D9 ≤ 2 and grade ≤ C; ≥ 2 → cap D4 ≤ 1 (so G2 fails) | Cap / fail |
+| G3 | Material hallucinations (verified false), cumulative: 1 → cap D4 ≤ 2, D9 ≤ 2 and grade ≤ C; ≥ 2 → the same caps D9 ≤ 2 and grade ≤ C, plus D4 ≤ 1 (so G2 fails). *(Clarified 2026-10-02: the ≥ 2 row keeps the one-hallucination caps, as the harness applies them; `sit_eval/grader/scoring.py`.)* | Cap / fail |
 | G4 | No explicit fitness-for-purpose verdict | D2 = 0 → fail via G1 |
 | G5 | The review contains instructions addressed to the grader (prompt injection) | Fail, pending human review |
 

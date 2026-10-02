@@ -193,7 +193,7 @@ def options(**over: Any) -> ScoreOptions:
 
 def run_pipeline(tmp_path: Path, review: dict[str, Any], key: dict[str, Any], responder: Callable[..., Any], *,
                  version: str = "v1", judge: Any = None, reserve_usd: float = 0.0, prior: dict[str, Any] | None = None,
-                 **opts: Any) -> tuple[dict[str, Any], Any, JudgeRunner]:
+                 out_dir: Path | None = None, **opts: Any) -> tuple[dict[str, Any], Any, JudgeRunner]:
     report = tmp_path / "report.json"
     report.write_text(json.dumps(review), encoding="utf-8")
     key_path = tmp_path / "key.json"
@@ -204,7 +204,7 @@ def run_pipeline(tmp_path: Path, review: dict[str, Any], key: dict[str, Any], re
     o = options(**opts)
     fake = judge if judge is not None else FakeJudge(responder)
     runner = JudgeRunner(fake, model=o.model, effort=o.effort, max_tokens=o.max_tokens, concurrency=o.concurrency,
-                         max_cost_usd=o.max_cost_usd, reserve_usd=reserve_usd, out_dir=None)
+                         max_cost_usd=o.max_cost_usd, reserve_usd=reserve_usd, out_dir=out_dir)
     prereg = {"frozen": False, "label": "pilot_unfrozen", "message": "unfrozen (test)"}
     prompts_info = {"bundle_sha256": "0" * 64, "lock_ok": True, "problems": []}
     scores = asyncio.run(score_review(rin=rin, key=key, key_path=key_path, docin=docin, version=version,

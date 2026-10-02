@@ -60,7 +60,8 @@ def score(
     concurrency: int | None = typer.Option(None, "--concurrency", min=1),
     adaptive_samples: bool | None = typer.Option(None, "--adaptive-samples/--no-adaptive-samples",
                                                  help="Ask the third pairwise sample only when the first two "
-                                                      "disagree (same median; needs owner approval)."),
+                                                      "disagree or one failed (same median of 3; default on, "
+                                                      "owner decision 2026-10-02)."),
     grounding_judges: bool | None = typer.Option(None, "--grounding-judges/--no-grounding-judges",
                                                  help="G3 premise and citation support judges."),
     recommendation_judge: bool | None = typer.Option(None, "--recommendation-judge/--no-recommendation-judge"),

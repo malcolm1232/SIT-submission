@@ -166,6 +166,26 @@ def fallback_verdict(findings: list[Finding], reason: str) -> Verdict:
                    what_would_change_it=None)
 
 
+def assessment_cut(degradation_events: list[str]) -> bool:
+    """Whether the run deadline left the design unassessed (robustness LLM-05): the orchestrator or
+    ``assess`` recorded the ``out of time before assessment`` degradation."""
+    from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+
+    return any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in degradation_events)
+
+
+def not_assessed_verdict() -> Verdict:
+    """The verdict of a run the deadline stopped before assessment. The schema's labels are closed
+    (fit / fit_with_conditions / not_fit) and none means "not assessed": ``not_fit`` at confidence
+    0 is used so an unreviewed design is never certified, and the rationale and ``report.md`` say
+    plainly that no assessment took place (``report.render``). No finding is made up."""
+    return Verdict(label=VerdictLabel.NOT_FIT, confidence=0.0, conditions=[], per_objective=[],
+                   rationale="Not assessed: the run ran out of time before assessment, so the design was not "
+                             "reviewed and no finding was produced. This is not a judgement that the design is "
+                             "unfit; it must not be read as a review result.",
+                   what_would_change_it="Rerun the review with a longer deadline.")
+
+
 def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, list[UnresolvedItem], list[Limitation]]:
     """Canonical verdict, unresolved items and limitations from the model's draft: unknown finding
     and degradation IDs removed, empty items dropped, confidence clamped to [0, 1]."""
@@ -385,16 +405,24 @@ class ReportPhase:
         st = ctx.state
         if not ctx.documents:
             raise StageCrash(PhaseName.REPORT.value, InvariantViolation("no documents loaded"))
-        out, reason = await _verdict_call(ctx)
-        if out is None:
-            st.add_degradation(DegradationType.OTHER, f"verdict call failed: {reason}",
-                               "the verdict was derived by rule from the findings (no model judgement); "
-                               "unresolved items and limitations were generated from the run record")
-            st.verdict = fallback_verdict(st.findings, reason or "unavailable")
-            model_unresolved: list[UnresolvedItem] = []
+        model_unresolved: list[UnresolvedItem] = []
+        if assessment_cut([d.event for d in st.degradations]):
+            # Out of time before assessment (robustness LLM-05): no model verdict on an unassessed
+            # design; the time left is not spent on a call that could only invent one.
+            ctx.emit("out of time before assessment: no verdict call; the report says the design was not assessed",
+                     "warn")
+            st.verdict = not_assessed_verdict()
             st.limitations = []
         else:
-            st.verdict, model_unresolved, st.limitations = settle_report_output(ctx, out)
+            out, reason = await _verdict_call(ctx)
+            if out is None:
+                st.add_degradation(DegradationType.OTHER, f"verdict call failed: {reason}",
+                                   "the verdict was derived by rule from the findings (no model judgement); "
+                                   "unresolved items and limitations were generated from the run record")
+                st.verdict = fallback_verdict(st.findings, reason or "unavailable")
+                st.limitations = []
+            else:
+                st.verdict, model_unresolved, st.limitations = settle_report_output(ctx, out)
         st.unresolved = list(st.unresolved) + model_unresolved      # verify's unverified items first
 
         try:

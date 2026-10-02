@@ -37,12 +37,14 @@ from robustness_harness import (
     RunRecord,
     Scenario,
     answer,
+    long_design_pages,
     resume,
     run,
     tool_turn,
     two_source_research,
 )
 
+from sit_review_agent.config import LLMSettings, Transport
 from sit_review_agent.paths import config_dir
 from sit_review_agent.phases.research import MAX_TOOL_TEXT_CHARS
 from sit_review_agent.selftest import FIXTURE_QUERY, FIXTURE_URL
@@ -117,6 +119,13 @@ def ok(rec: RunRecord) -> dict[str, Any]:
 
 def sc(sid: str, **kw: Any) -> Callable[[Path], Scenario]:
     return lambda _tmp: Scenario(id=sid, **kw)
+
+
+def _llm(**kw: Any) -> LLMSettings:
+    """``config/agent.yaml llm:`` with ``kw`` changed (the repo's other values kept)."""
+    from sit_review_agent.config import load_config
+
+    return load_config().agent.llm.model_copy(update=kw)
 
 
 def served(manifest: dict[str, Any]) -> list[str]:
@@ -431,7 +440,75 @@ def check_llm11(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     return Metric("time to a clear exit (s, virtual)", rec.virtual_s, "<= 10")
 
 
+def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """A hang on assess. Demo profile (540 s): the attempt's timeout is the time left before the
+    verify + report reserve, the cut call is not retried, the report says "out of time before
+    assessment" with no finding and a not-assessed verdict, and the run ends within the deadline.
+    Default deadline (3600 s): the hang costs llm.timeout_s (1800 s), the retry succeeds."""
+    demo, default = recs
+    r = ok(demo)
+    cfg = demo.config.stop_rules
+    assert cfg.deadline_seconds == 540 and demo.virtual_s <= cfg.deadline_seconds + 30, demo.virtual_s
+    fault = [e for e in llm_calls(demo, "assess") if e.get("fault")]
+    assert len(fault) == 1 and fault[0]["outcome"] == "LLMDeadlineError"         # cut, never retried
+    assert demo.virtual_s <= cfg.deadline_seconds - cfg.report_reserve_seconds + 1
+    assert r["findings"] == [] and r["verdict"]["confidence"] == 0.0
+    assert any(d.startswith("out of time before assessment") for d in degs(demo))
+    text = md(demo)
+    assert "Not assessed (out of time before assessment)" in text and "out of time before assessment" in text
+    assert not llm_calls(demo, "report") and not llm_calls(demo, "refine")      # no invented verdict, refine skipped
+    r2 = ok(default)
+    hang = [e for e in llm_calls(default, "assess") if e.get("fault")]
+    assert [e["outcome"] for e in hang] == ["LLMTimeoutError"]                   # full timeout, then a retry
+    assert 1800 <= default.virtual_s <= default.config.stop_rules.deadline_seconds + 30
+    assert titles(default) == titles(control) and r2["findings"]
+    return Metric("virtual run time vs deadline (s), demo profile", round(demo.virtual_s),
+                  f"<= {cfg.deadline_seconds} + 30; assess cut and disclosed")
+
+
+def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """150-page generated document against a 150k-token context window: the first request is
+    estimated over 80 % of the window and never sent; exit 2 naming the document size."""
+    rec = recs[0]
+    assert oracles.exit_code(rec) == 2 and rec.report is None
+    assert rec.gateway is not None and rec.gateway.calls == []                  # nothing reached the model
+    assert not rec.run_dir.llm_log.is_file() or llm_calls(rec) == []
+    fail = rec.failure
+    assert fail["error"] == "LLMContextTooLongError" and fail["phase"] == "understand"
+    assert "150 pages" in fail["message"] and "characters" in fail["message"] and "120,000 tokens" in fail["message"]
+    assert fail["completed_phases"] == ["ingest"]
+    return Metric("over-limit requests sent", 0, "0; typed error names the document size")
+
+
 # ============================================================================= NET / OPS
+
+
+def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    rec = recs[0]
+    assert oracles.exit_code(rec) == 3 and rec.report is None
+    assert rec.virtual_s <= 10, rec.virtual_s
+    fail = rec.failure
+    assert fail["error"] == "LLMConnectionError" and fail["message"].startswith("no network")
+    assert "resume" in fail["message"] and "--replay" in fail["message"]
+    attempts = [e for e in llm_calls(rec) if e.get("fault") == "offline"]
+    assert 2 <= len(attempts) <= rec.config.agent.llm.max_retries                # a short window, not the budget
+    assert all(e["phase"] == "understand" for e in attempts)
+    return Metric("time to a clear 'no network' exit (s, virtual)", round(rec.virtual_s, 1), "<= 10")
+
+
+def check_inf08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """Live tool transport with the MCP key unset: a usage error (exit 2) before any model call or
+    run directory, naming the variable and --no-tools; with --no-tools the review runs doc-only."""
+    missing, no_tools = recs
+    assert oracles.exit_code(missing) == 2 and missing.report is None
+    msg = str(missing.raised)
+    assert type(missing.raised).__name__ == "ConfigError" and "SIT_MCP_API_KEY" in msg and "--no-tools" in msg
+    assert not missing.run_dir.root.exists() and missing.gateway is None        # no model built, none called
+    assert missing.wall_s < 5
+    r = ok(no_tools)
+    assert not no_tools.outbound and "No external research was possible" in md(no_tools)
+    assert all(t["enabled"] is False for t in r["run_manifest"]["tools"])
+    return Metric("model calls before the missing-key exit", 0, "0; exit 2 within 5 s")
 
 
 def check_net01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -799,6 +876,35 @@ def check_beh28(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     return Metric("required sections missing", 0, "0")
 
 
+# ============================================================================= OVF
+
+
+def check_ovf07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """scripts/leakage_grep.py over agent/, prompts/ and config/ (answer keys and evaluated documents
+    of eval/synthetic as sources; eval/blind never read) finds no unresolved term, the known
+    sample-stack hosts included, and no 13-word overlap; the agent never imports the script."""
+    import importlib.util
+    import sys
+
+    from sit_review_agent.paths import repo_root
+
+    ok(recs[0])
+    path = repo_root() / "scripts" / "leakage_grep.py"
+    spec = importlib.util.spec_from_file_location("leakage_grep_ovf07", path)
+    assert spec is not None and spec.loader is not None
+    lg = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = lg                                  # dataclasses resolve their module
+    spec.loader.exec_module(lg)
+    sources = lg.load_sources(lg.DEFAULT_KEYS, lg.DEFAULT_DOCS, [])
+    assert sources and not [s for s in sources if s.path.startswith("eval/blind")]
+    res = lg.run(sources, lg.extract_terms(sources))
+    assert res["passed"], res["unresolved"] or res["overlap_failures"]
+    assert not [h for h in res["hits"] if h["kind"] == "known" and h["area"] in ("agent", "config", "prompts")]
+    pkg = repo_root() / "agent" / "sit_review_agent"
+    assert not [p for p in pkg.rglob("*.py") if "leakage_grep" in p.read_text(encoding="utf-8")]
+    return Metric("unresolved sample terms in agent/, prompts/, config/", 0, "0")
+
+
 # ============================================================================= DEMO
 
 
@@ -899,8 +1005,19 @@ CASES: list[Case] = [
     Case("LLM-08", [sc("LLM-08", faults="LLM-08")], check_llm08),
     Case("LLM-09", [sc("LLM-09-hollow", patches={"assess": _hollow, "refine": _hollow}),
                     sc("LLM-09-empty", patches={"assess": _empty, "refine": _empty})], check_llm09),
+    Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}),
+                    sc("LLM-05-default", faults="LLM-05")], check_llm05,
+         notes="demo profile (540 s): assess cut and disclosed; default deadline: full timeout, then retry"),
+    Case("LLM-10", [lambda tmp: Scenario(id="LLM-10", doc=long_design_pages(tmp / "long_150.pages.txt"),
+                                         agent={"llm": _llm(context_window_tokens=150_000)})], check_llm10,
+         notes="generated 150-page document (text form), 150k-token window: refused before sending"),
     Case("LLM-11", [sc("LLM-11", faults="LLM-11")], check_llm11),
     Case("NET-01", [sc("NET-01", faults="NET-01")], check_net01),
+    Case("NET-02", [sc("NET-02", faults="NET-02")], check_net02),
+    Case("INF-08", [sc("INF-08", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",)),
+                    sc("INF-08-no-tools", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",),
+                       overrides={"no_tools": True})], check_inf08,
+         notes="live tool transport, key unset: exit 2 before any model call; --no-tools: doc-only"),
     Case("OPS-03", [sc("OPS-03")], check_ops03),
     Case("OPS-04", [sc("OPS-04", faults="OPS-04")], check_ops04),
     Case("OPS-10", [sc("OPS-10")], check_ops10),
@@ -924,6 +1041,7 @@ CASES: list[Case] = [
                        patches={"plan": _third_question})], check_beh24),
     Case("BEH-25", [sc("BEH-25", faults="BEH-25")], check_beh25),
     Case("BEH-28", [sc("BEH-28")], check_beh28),
+    Case("OVF-07", [sc("OVF-07")], check_ovf07, notes="static: scripts/leakage_grep.py over agent/, prompts/, config/"),
     Case("DEMO-01", [demo01_config], check_demo01),
     Case("DEMO-02", [sc("DEMO-02", overrides={"max_tool_calls": 5}, research=demo02_research())], check_demo02),
     Case("DEMO-03", [sc("DEMO-03", overrides={"disable_tools": ("mcp-internet-search",)})], check_demo03),

@@ -84,9 +84,18 @@ class Orchestrator:
                         ctx.state.stop_reason = cap
                     # Disclosed on every skip, also when research already set the stop reason
                     # (a deadline that skips refine must not be hidden; INV-07, robustness LLM-05).
-                    ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
-                                              f"stop rule {cap.detail} ({cap.code}) before {phase.value}",
-                                              f"skipped to {ON_CAP[phase].value}; evidence may be partial")
+                    if phase is PhaseName.ASSESS:
+                        from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+
+                        ctx.state.add_degradation(
+                            DegradationType.BUDGET_OR_DEADLINE_HIT,
+                            f"{OUT_OF_TIME_BEFORE_ASSESSMENT}: stop rule {cap.detail} ({cap.code}) fired before "
+                            "assess", "the design was not assessed: the report has no findings and its verdict "
+                                      "is not a judgement of the design; rerun with a longer deadline")
+                    else:
+                        ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
+                                                  f"stop rule {cap.detail} ({cap.code}) before {phase.value}",
+                                                  f"skipped to {ON_CAP[phase].value}; evidence may be partial")
                     ctx.progress.emit(phase.value, f"stop rule {cap.code} fired; skipping to {ON_CAP[phase].value}",
                                       "warn")
                     phase = ON_CAP[phase]
@@ -182,6 +191,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         refs.append(placeholder_ref(request.v1_pdf, DocumentRole.PRIOR_VERSION, taken={refs[0].doc_id}))
         prior_review_id = f"none (prior version {Path(request.v1_pdf).name} supplied without a prior review)"
     sched = _run_fault_schedule(cfg)                                # a bad schedule is a ConfigError (exit 2)
+    _run_check_tool_key(cfg)                                        # robustness INF-08: before any model call
     run_id = request.run_id or new_run_id(created)
     rd = open_run_dir(cfg, run_id)
     if rd.report_json.exists() or any(rd.checkpoints.iterdir()):
@@ -208,9 +218,14 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         warm = _run_start_warmup(ctx)
         from sit_review_agent.manifest import start_manifest
 
-        start_manifest(ctx, models_retrieve=await _run_models_retrieve(ctx))
-        ctx.emit(f"run {run_id}: {rd.root}")
+        # The no-retry preflight first (robustness NET-02: offline at start fails fast), then
+        # models.retrieve (which retries) only when the backend answered.
         failed = await _run_llm_preflight(ctx)
+        retrieved = (await _run_models_retrieve(ctx) if failed is None
+                     else {"status": "not retrieved (LLM preflight failed)"})
+        start_manifest(ctx, models_retrieve=retrieved)
+        _run_attach_runtime(ctx, retrieved)
+        ctx.emit(f"run {run_id}: {rd.root}")
     except BaseException as exc:  # noqa: BLE001 - recorded in failure.json (INV-02), re-raised typed
         err = await _run_setup_failed(rd, run_id, ctx, warm, exc)
         if err is exc:
@@ -220,7 +235,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
         return _run_fail(ctx, failed)
-    return await _run_execute(ctx, phases, PhaseName.INGEST, stdin, stdout, warm)
+    return await _run_execute(ctx, _run_process_faults(ctx, sched, phases), PhaseName.INGEST, stdin, stdout, warm)
 
 
 async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bool = False,
@@ -298,6 +313,8 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
     state.current_phase = None
     prog = progress or _run_console_progress(clk, rd)
     sched = _run_fault_schedule(config)
+    if start_at is not None:
+        _run_check_tool_key(config)                                 # robustness INF-08
     ctx: RunContext | None = None
     warm: asyncio.Task[None] | None = None
     try:
@@ -321,6 +338,9 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
         from sit_review_agent.manifest import start_manifest
 
         start_manifest(ctx, deviations=deviations)
+        _run_attach_runtime(ctx, None)
+        if sched is not None and getattr(sched, "process", None):
+            ctx.emit("fault schedule: process faults are not re-applied on resume (the interruption is over)")
         ctx.emit(f"resuming run {state.run_id} at {start_at.value if start_at else 'end'}"
                  + (f" (accepted drift: {'; '.join(d for d in deviations if d.startswith('--accept'))})"
                     if accept_drift and any(d.startswith("--accept") for d in deviations) else ""))
@@ -378,6 +398,98 @@ def _run_fault_schedule(cfg: EffectiveConfig) -> object:
     from sit_review_agent.tools.faults import load_fault_schedule
 
     return load_fault_schedule(cfg.resolve_repo_path(cfg.agent.fault_schedule))
+
+
+def _run_check_tool_key(cfg: EffectiveConfig) -> None:
+    """Robustness INF-08: with live MCP servers enabled and their key unset, stop before any model
+    call with a usage error (exit 2) that says what to do. Replayed or fake tool transports need no
+    key, and a key revoked during the run keeps the doc-only degradation (runbook §6)."""
+    import os
+
+    from sit_review_agent.config import Transport
+    from sit_review_agent.errors import ConfigError
+
+    if cfg.agent.transport not in (Transport.LIVE, Transport.RECORD):
+        return
+    servers = [s.name for s in cfg.tools.enabled_servers()]
+    if servers and not (os.environ.get(cfg.tools.auth_env) or "").strip():
+        raise ConfigError(f"{cfg.tools.auth_env} is not set, and the enabled MCP tool servers ({', '.join(servers)}) "
+                          f"need it. Set it (export {cfg.tools.auth_env}=<key>; the value is never logged), or pass "
+                          "--no-tools for a document-only review. No model call was made")
+
+
+def _run_attach_runtime(ctx: RunContext, retrieved: Mapping[str, object] | None) -> None:
+    """One set of run limits for every layer of the LLM stack (``llm.runtime``): the deadline read
+    from this run's clock (resume-adjusted ``budget.started_monotonic``), the pre-send size check
+    against the model's context window (``models.retrieve`` when the backend gave one)."""
+    from sit_review_agent.llm.runtime import attach_runtime, build_runtime
+
+    state, clk = ctx.state, ctx.clock
+
+    def elapsed() -> float:
+        return clk.monotonic() - state.budget.started_monotonic
+
+    def pages() -> int:
+        return sum(d.page_count or 0 for d in state.documents)
+
+    window = (retrieved or {}).get("max_input_tokens")
+    attach_runtime(ctx.llm, build_runtime(ctx.config, elapsed, retrieved_window=window, pages=pages))
+
+
+class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule
+    """A ``process:`` entry of the run's fault schedule (research/robustness/README.md §5.3) around
+    one phase: ``raise_in_stage`` (BEH-25: an exception, exit 4 with a partial report),
+    ``sigint_in_stage`` (OPS-04: Ctrl-C, exit 130) and ``clock_jump`` (NET-03: the run clock jumps
+    ``seconds`` forward before the phase). ``at: end`` (the default) fires after the phase's work and
+    before its checkpoint, so a resume re-runs the stage (its tool calls served from
+    ``tools.jsonl``); ``at: start`` fires before the phase does anything. Applied once, on a new
+    run only: ``resume`` never re-applies it."""
+
+    def __init__(self, inner: Phase, spec: object) -> None:
+        self.inner = inner
+        self.name = inner.name
+        self.spec = spec
+
+    async def run(self, ctx: RunContext) -> RunContext:
+        from sit_review_agent.tools.faults import FaultType
+
+        extra = getattr(self.spec, "model_extra", None) or {}
+        kind = self.spec.type  # type: ignore[attr-defined]
+        if kind is FaultType.CLOCK_JUMP:
+            seconds = float(extra.get("seconds", 600))
+            advance = getattr(ctx.clock, "advance", None)
+            if callable(advance):
+                advance(seconds)                                    # a virtual clock: everything sees the jump
+            else:
+                ctx.state.budget.started_monotonic -= seconds       # the run clock jumps forward
+            ctx.emit(f"injected fault: clock jump of {seconds:g} s before {self.name.value}", "warn")
+            return await self.inner.run(ctx)
+        if str(extra.get("at", "end")) == "end":
+            ctx = await self.inner.run(ctx)
+        ctx.emit(f"injected fault: {kind.value} in {self.name.value}", "warn")
+        if kind is FaultType.SIGINT_IN_STAGE:
+            raise KeyboardInterrupt
+        raise RuntimeError(f"injected fault: raise_in_stage {self.name.value}")
+
+
+def _run_process_faults(ctx: RunContext, sched: object,
+                        phases: Mapping[PhaseName, Phase] | None) -> Mapping[PhaseName, Phase] | None:
+    """Wrap the phases named by the schedule's ``process:`` entries (so ``sit-review run --faults
+    BEH-25`` / ``OPS-04`` drill the crash and Ctrl-C paths of runbook §7). An entry without a valid
+    ``stage`` is a ConfigError at load time (``tools.faults``)."""
+    specs = list(getattr(sched, "process", None) or [])
+    if not specs:
+        return phases
+    from sit_review_agent.phases import default_phases
+
+    out: dict[PhaseName, Phase] = dict(phases) if phases is not None else default_phases()
+    for spec in specs:
+        stage = PhaseName(str((spec.model_extra or {}).get("stage")))
+        out[stage] = _run_ProcessFault(out[stage], spec)
+        at = (spec.model_extra or {}).get("at", "end")
+        ctx.emit(f"fault schedule {getattr(sched, 'id', '?')}: {spec.type.value} armed "
+                 f"({'before' if spec.type.value == 'clock_jump' else f'at the {at} of'} {stage.value})", "warn")
+    return out
 
 
 def _run_build_llm(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: object, sched: object,

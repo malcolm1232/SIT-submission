@@ -80,8 +80,9 @@
  ],
  "$defs": {
   "Sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-  "AdjClass": {"enum": ["DUPLICATE", "VALID_UNPLANTED", "HALLUCINATED", "NON_SPECIFIC", "INVALID_OPINION",
-                        "OUT_OF_SCOPE", "UNADJUDICATED"]},
+  "AdjClass": {"enum": ["DUPLICATE", "VALID_UNPLANTED", "PARTIAL_KEY_MATCH", "HALLUCINATED", "NON_SPECIFIC",
+                        "INVALID_OPINION", "OUT_OF_SCOPE", "UNADJUDICATED"],
+               "description": "PARTIAL_KEY_MATCH is assigned by the harness (strict-unmatched, median 2 against a key flaw nobody matched; UD #14), never by the LLM adjudicator"},
   "Metric": {
    "type": "object", "required": ["value", "reason", "status"],
    "properties": {
@@ -95,7 +96,11 @@
             "properties": {"score": {"type": "number", "minimum": 2, "maximum": 3}}}},
   "AdjRows": {"type": "array", "items": {"type": "object", "required": ["finding_id", "class", "basis"],
               "properties": {"class": {"$ref": "#/$defs/AdjClass"},
-                             "basis": {"enum": ["llm", "deterministic_duplicate", "still_valid_observation",
-                                                "llm_failed"]}}}}
+                             "basis": {"enum": ["llm", "deterministic_duplicate", "deterministic_partial",
+                                                "still_valid_observation", "llm_failed"]}},
+              "if": {"properties": {"class": {"const": "PARTIAL_KEY_MATCH"}}},
+              "then": {"required": ["partial_key_flaw_id"],
+                       "properties": {"partial_key_flaw_id": {"type": "string"},
+                                      "basis": {"const": "deterministic_partial"}}}}}
  }
 }

@@ -455,7 +455,7 @@ grader:   # UD #2; GR §5-§8; spec/README.md grader-facing projection
     api: Message Batches (50 % price)
     disclosure: same family as the agent; numbers labelled "same-family" and tied to the validity tier reached
   second_provider:
-    available: null      # fill before freeze from the key report (UD #3)
+    available: false     # owner decision 2026-10-02 (UD #16): no second-provider judge; Anthropic only, so the same-family limitation is disclosed per research/models/README.md (ADR-003 closed)
     model_id: null       # exact ID returned by one structured-output call; UNVERIFIED until then
     effort: high
     rule: >-
@@ -477,12 +477,12 @@ grader:   # UD #2; GR §5-§8; spec/README.md grader-facing projection
   rubric: GR §3 (D1-D10, D11 in delta mode), weights and gates GR §4
   validation_tier_reached_rule: smoke n = 5 (GR §7 targets); tentative n >= 20 with ordinal alpha >= 0.667; primary per MR §8. Tier A reaches smoke plus a 5-review frozen-agent sample (10 reviews); claims are worded at the tier reached (RA C2).
   meta_validation_tier_A: [V1, V4, V10]   # GR §8; FE core; full V1-V13 is Tier C
-  prompt_sha256: null
+  prompt_sha256: null   # fill at freeze from harness/sit_eval/grader/prompts.lock.json bundle_sha256 (64efe6b88489ac5542d7028f62782ed3c0b3096b0dfbfc0ac9ead22b4db75df0 on 2026-10-02)
 
 matcher:   # MM §2; spec C4, C5
   only_source_of_recall: true
   model:
-    branch_A: the second-provider model, if a key exists (cross-family)
+    branch_A: the second-provider model, if a key exists (cross-family)   # not available (UD #16, grader.second_provider.available false)
     branch_B: claude-opus-5-5 via Message Batches, disclosed as same-family (FE §2.3 core; ADR-003 B3 shape). Local open-weight matchers are Tier C.
   effort: high
   rule: core_insight_plus_location_v1 - one-to-one, core insight stated, location compatible, category labels ignored
@@ -498,16 +498,18 @@ matcher:   # MM §2; spec C4, C5
     comparison_mode: "union (overlap union shortlist, the draft rule) is kept in the harness as --candidate-rule union; any run under it is a deviation"
   prefilter:
     tau_pre: null   # if the embedding prefilter is used - calibrated on S-dev so >= 0.98 of owner-confirmed matches survive
-  pairwise_scoring: 0-3 scale (MATCH 3, PARTIAL 2, RELATED 1, UNRELATED 0); 3 samples, median
+  pairwise_scoring: 0-3 scale (MATCH 3, PARTIAL 2, RELATED 1, UNRELATED 0); 3 samples, median; the third sample is asked only when the first two disagree or one failed, which leaves the median of 3 unchanged (amended 2026-10-02, UD #15; eval/prereg_deviations.md entry 3)
   assignment: Hungarian on score + 0.01 x primary severity weight; eligible pairs score 3 (strict) or >= 2 (lenient)
   blinding: matcher never sees the condition or model; findings shuffled per call
   still_valid_observations: a finding matching one is pre-adjudicated VALID_UNPLANTED
   adjudication:
     first_pass: same model as the matcher; classes DUPLICATE, VALID_UNPLANTED, HALLUCINATED, NON_SPECIFIC, INVALID_OPINION, OUT_OF_SCOPE
+    deterministic: before the first pass, DUPLICATE when the finding scores >= 2 against a flaw matched to another finding; then, under strict matching, PARTIAL_KEY_MATCH when its best median is 2 against a flaw nobody matched (the flaw id is recorded). PARTIAL_KEY_MATCH counts as correct for Precision, adjudicated (only if the flaw is in the run's gold set), is reported as its own count, is never VALID_UNPLANTED, never enters the pooled key G+ and never removes a sound unit (amended 2026-10-02, UD #14; MM §2.3 step 4; eval/prereg_deviations.md entry 2)
     human_review: on S-heldout runs, 100 % of VALID_UNPLANTED and HALLUCINATED plus a random 20 % of the rest (human_labelling_protocol.md task T6); on S-dev runs the LLM first pass stands and is labelled as such
-  key_freeze: sealed keys are never edited after a scored run; confirmed VALID_UNPLANTED go to the pooled supplementary key G+
+  key_freeze: sealed keys are never edited after a scored run; confirmed VALID_UNPLANTED go to the pooled supplementary key G+ (PARTIAL_KEY_MATCH never does)
   validation: human_labelling_protocol.md task T4 (100 S-dev pairs) and H10
-  prompt_sha256: null
+  shortlist_recall: T4 also labels 12 overlap_not_shortlisted pairs (pairs whose locations overlap but which the shortlist did not return, so the matcher never scored them), mixed blind into the T4 sheet and not counted in the 100; the share the rater scores 3 estimates the shortlist's miss rate on overlapping pairs and is reported with a Wilson 95 % CI in the instrument validity table; it is not a gate (amended 2026-10-02; eval/prereg_deviations.md entry 4)
+  prompt_sha256: null   # fill at freeze from harness/sit_eval/prompts/PROMPTS.lock bundle_sha256 (ac35d198ecef1c5a9176acd29e3d82fd9203c35eee4f4624d86da2b429ecc156 on 2026-10-02)
 
 grounding:   # MM §5.1; ADR-006, ADR-007
   text: canonical doc.pages.txt from the pinned extractor; the same function as the agent's verify stage
@@ -584,7 +586,7 @@ stop_rule:
     - H10 has a recorded outcome (validated, tentative, or failed with the protocol §7 fallback applied).
     - Owner adjudication of S-heldout VALID_UNPLANTED and HALLUCINATED labels is complete.
     - The leakage audit and the runtime access scan are recorded.
-    - Every table in reporting.always_reported is produced by eval/score.py from logs alone.
+    - Every table in reporting.always_reported is produced by `sit-eval score` and `sit-eval aggregate` (harness/sit_eval) from logs alone.
   infrastructure_failure: >-
     A run may be re-launched once only if it failed before producing any review output
     because of a harness bug fixed without touching prompts or config, an Anthropic API
@@ -648,7 +650,7 @@ leakage_controls:   # all must pass before scoring; results go in the leakage ta
     - id: LC8
       check: Distinctive SIT-sample terms absent from prompts and config (MR R5)
     - id: LC9
-      check: eval/score.py reproduces the MM §14 worked example exactly (unit test)
+      check: "`sit-eval score` reproduces the MM §14 worked example exactly (unit test tests/eval_harness/test_eval_worked_example.py)"
   before_unsealing_s_heldout:
     - id: LC10
       check: >-

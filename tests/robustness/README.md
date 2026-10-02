@@ -9,10 +9,10 @@ orchestrator. Offline only: no key, no network, no `claude` CLI (ADR-008).
 
 ```
 . .venv/bin/activate
-pytest tests/robustness -q                              # the suite (about 15 s)
+pytest tests/robustness -q                              # the suite (about 22 s)
 ROBUSTNESS_RESULTS_CSV=tests/robustness/results/robustness_results.csv pytest tests/robustness -q
                                                         # the same, and writes the real results table
-python tests/robustness/robustness_repro.py [ID]        # the "needs decision" reproductions below (LLM-05, NET-02, INF-08)
+python tests/robustness/robustness_repro.py [ID]        # the runtime-policy drills (LLM-05, NET-02, INF-08), printed
 ```
 
 One scenario through the CLI, offline (the built-in scripted model; the cassettes cover both
@@ -24,8 +24,10 @@ sit-review run agent/sit_review_agent/fixtures/selftest/design.pages.txt --trans
 ```
 
 Through the CLI the clock is real (a 90 s injected cold start waits 90 s; the suite uses a virtual
-clock), and `process:` entries are ignored (BEH-25 and OPS-04 run clean that way; see "For the
-verifier"). On the laptop the same `--faults <ID>` applies to a live run:
+clock). `process:` entries are applied by the agent itself (`orchestrator._run_ProcessFault`, new runs
+only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial report) and
+`--faults OPS-04` interrupts research (exit 130) through the CLI too. On the laptop the same
+`--faults <ID>` applies to a live run:
 `sit-review run <pdf> --faults <ID>` (`cli._resolve_faults` maps an ID to
 `tests/robustness/faults/<ID>.yaml`).
 
@@ -36,15 +38,15 @@ verifier"). On the laptop the same `--faults <ID>` applies to a live run:
 | `faults/<ID>.yaml` | 29 fault schedules (format of research/robustness/README.md §5.2), loaded by `tools/faults.load_fault_schedule`. The header comment of each file states the expectation |
 | `fixtures/cassettes/` | Strict replay cassettes: the selftest's web search and fetch, plus one scholarly `search_works` record, so both enabled servers are exercised |
 | `fixtures/tools/*.json` | Hand-authored `replace_content` fixtures: an injected page (ADV-04/05), irrelevant results (INF-15, BEH-01), benchmark evidence (ADV-14), content-farm results (ADV-16). Invented; `.example` / `.invalid` domains, no key |
-| `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, the process-fault layer and an outbound log |
+| `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, an outbound log, and the generated 150-page document of LLM-10 (`long_design_pages`, built at test time, never committed) |
 | `oracles.py` | INV-01..INV-11 as post-run checks (INV-03..INV-10 call `sit_review_agent.invariants`), plus OPS-10, BEH-23, BEH-28 and DEMO-06 |
-| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 44 P0 scenarios, 59 runs plus 4 resumes and one shared fault-free control run |
+| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 49 P0 scenarios, 66 runs plus 4 resumes and one shared fault-free control run |
 | `test_robustness_schedules.py` | Every schedule loads and resolves; this table, the registry, the cases and scenarios.md agree; cassette keys; no secret in a fixture; the offline CLI drill above runs (INF-24, INF-03) |
-| `test_robustness_regressions.py` | Regression tests for the agent defects fixed here (six by the implementer, four by the verifier) |
+| `test_robustness_regressions.py` | Regression tests for the agent defects fixed here (six by the implementer, four by the verifier); the runtime policies of 2026-10-02 are tested in `tests/test_runtime_policies.py` |
 | `test_robustness_results_csv.py` | The results writer |
 | `robustness_coverage.py` | The coverage registry this README's table is checked against |
 | `robustness_results.py` | Writer for `results/robustness_results.csv` and `results/robustness_summary.txt` (research §8 columns) |
-| `robustness_repro.py` | Reproductions of the scenarios that fail on an agent defect left for a decision |
+| `robustness_repro.py` | Prints what LLM-05, NET-02 and INF-08 now do (they were the "needs decision" reproductions until the runtime policies of 2026-10-02) |
 
 ## How a scenario runs
 
@@ -54,8 +56,9 @@ verifier"). On the laptop the same `--faults <ID>` applies to a live run:
    and `fault_schedule: faults/<ID>.yaml`, exactly what `sit-review run --faults <ID>` builds. Both
    default servers (web search, scholarly) are enabled.
 3. **Faults** sit below the policy: `FaultInjectingGateway` (MCP) and `FaultInjectingLLMGateway`
-   (model), built by the agent from the schedule. The harness adds only what the agent does not
-   apply: `process:` entries (`raise_in_stage`, `sigint_in_stage`, `clock_jump`) wrap the phase objects.
+   (model), built by the agent from the schedule; `process:` entries (`raise_in_stage`,
+   `sigint_in_stage`, `clock_jump`) are applied by the agent's orchestrator around the named phase.
+   The harness adds no fault layer of its own.
 4. **Model**: a scripted `FakeGateway` built from the selftest fixture script. Research runs web
    search and scholarly search in parallel, then fetches the web hit; a scenario can replace the
    research turns (a model that never stops, that obeys an injection, that asks to stop at once) or
@@ -85,10 +88,13 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 
 | Coverage | Scenarios | Of which need a decision |
 |---|---|---|
-| offline | 46 | 2 (LLM-05, NET-02) |
+| offline | 49 | 0 |
 | laptop | 28 | 0 |
-| not a schedule | 7 | 3 (INF-08, LLM-10, OVF-07) |
-| **total** | **81** | **5** |
+| not a schedule | 4 | 0 |
+| **total** | **81** | **0** |
+
+LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the runtime policies of
+2026-10-02 (section "Runtime policies" below); INF-08, LLM-10 and OVF-07 became offline cases.
 
 | ID | Sev | Lvl | Coverage | Schedule | What runs offline, or why not | Laptop (live model / MCP) | Covered by / needs decision |
 |---|---|---|---|---|---|---|---|
@@ -97,7 +103,7 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | INF-04 | S2 | L0 | offline | yes | HTTP 500 from mcp-research-information: <= 3 attempts per call, breaker open after 3 calls, the 4th refused, web search still serves, disclosed | - | - |
 | INF-05 | S2 | L0 | offline | yes | 429 Retry-After 20 on the first web call: retry >= 20 s later (virtual), cap lowered to 1 | - | - |
 | INF-07 | S1 | L0 | offline | yes | 401 on every MCP call: <= 1 confirmation retry, all servers disabled (only the first call reaches the transport), SIT_MCP_API_KEY named, no key characters anywhere, 'No external research was possible' | - | - |
-| INF-08 | S2 | L0 | not a schedule (needs decision) | - | environment condition (key unset), not a fault schedule; probed offline | `unset SIT_MCP_API_KEY; sit-review run <pdf>` (expected: exit within 5 s) | test_tool_gateways.py::test_preflight_missing_key_names_the_variable_and_fails, ::test_mcp_missing_key_and_disabled_server; test_selftest_cli.py::test_cli_plan_only_and_no_tools (--no-tools branch); **Needs decision:** `sit-review run` with servers enabled and the key unset does not exit within 5 s: it spends model calls and continues doc-only (preflight does flag it) |
+| INF-08 | S2 | L0 | offline | - | live tool transport with SIT_MCP_API_KEY unset: exit 2 (usage) before any model call or run directory, naming the variable and --no-tools; with --no-tools the review runs doc-only | `unset SIT_MCP_API_KEY; sit-review run <pdf>` (expected: exit 2 within 5 s) | test_runtime_policies.py::test_inf08_missing_key_*; a key revoked mid-run stays doc-only (INF-07) |
 | INF-10 | S2 | L0 | offline | yes | malformed body on every web search, once per kind (html, non_json, truncated_json, wrong_id): retried once, classified, nothing stored | - | - |
 | INF-11 | S2 | L0 | offline | yes | document-intelligence rejects all inputs: 0 calls with the default config, canonical text and sections identical to the fault-free run | enable mcp-document-intelligence in config/tools.yaml, then `sit-review run <pdf> --faults INF-11` (called at most once) | test_fault_injection.py::test_inf11_tool_error_not_retried_then_unusable (the not-retried, unusable-for-the-session half; the server is disabled by default, so the end-to-end run never reaches the fault) |
 | INF-15 | S2 | L1 | laptop | yes | needs the live model's relevance gate (k=3) | `sit-review run <sit_sample.pdf> --faults INF-15` | - |
@@ -108,19 +114,19 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | LLM-01 | S1 | L0 | offline | yes | 429 retry-after 15 on assess attempt 0: retried >= 15 s later, attempts within the policy, assess completes | - | - |
 | LLM-02 | S1 | L0 | offline | yes | 429 without retry-after on every call: exit 3 after max_retries + 1 attempts, checkpoint, 'spend cap' message, resumable | - | - |
 | LLM-03 | S1 | L0 | offline | yes | 529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent variant: exit 3, then resume completes | - | - |
-| LLM-05 | S1 | L0 | offline (needs decision) | yes | assess hangs once; per-attempt timeout 1800 s (config/agent.yaml) | - | test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); **Needs decision:** one hang costs the full 1800 s per-attempt timeout, past the 540 s deadline + 30 s (INV-01); the deadline does not bound an in-flight model call |
+| LLM-05 | S1 | L0 | offline | yes | assess hangs once. Demo profile (540 s): the attempt is cut at the verify + report reserve, not retried, 'out of time before assessment' disclosed, no finding, run within the deadline; default deadline: the full 1800 s timeout, then the retry succeeds | - | test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); test_runtime_policies.py (deadline-bounded attempts in both live gateways) |
 | LLM-06 | S1 | L0, L1 | offline | yes | refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, other stages complete; once -> reframed retry succeeds | `sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06` (L1 refusal-prone domain: the INP-14b protocol fixture is not authored yet) | - |
 | LLM-07 | S1 | L0 | offline | yes | max_tokens on the first assess call: one retry with doubled max_tokens, same finding count as the fault-free run, schema-valid | - | - |
 | LLM-08 | S2 | L0 | offline | yes | first assess answer misses `findings`: one repair turn logged, repaired answer used | - | - |
 | LLM-09 | S2 | L0 | offline | - | assess/refine return placeholder ('TBD') findings, or none: hollow findings dropped and disclosed, no placeholder in the report (fixed here: verify placeholder rule) | - | - |
-| LLM-10 | S2 | L0 | not a schedule (needs decision) | - | no fault type rewrites a request by prompt size, and the agent has no pre-send token count | - | stop rule budget_tokens (test_research_phase.py::test_budget_tokens); claude_code maps 'prompt is too long' to a bad request (test_claude_code_gateway.py::test_non_retryable_cli_errors); **Needs decision:** no token pre-count before sending (scenario: never send an over-limit request); needs the 150-page fixture and a design choice |
+| LLM-10 | S2 | L0 | offline | - | generated 150-page document (page-marked text, built at test time) against a 150k-token context window: the first request is estimated over 80 % of the window from characters and never sent; exit 2 naming the document size | - | test_runtime_policies.py (estimate, both live gateways refuse before sending); claude_code still maps 'prompt is too long' to a bad request (test_claude_code_gateway.py::test_non_retryable_cli_errors) |
 | LLM-11 | S1 | L0 | offline | yes | 401 on every model call: not retried, exit 3 within 10 s virtual, credential named, never its value | - | test_run_and_resume.py::test_live_backend_preflight_failure_exits_3_before_ingest |
 | NET-01 | S1 | L0, L1 | offline | yes | network drops at 210 s (during research) for 120 s: exit 3 with a plan checkpoint, then `resume` completes with no duplicate ledger entry | physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` (docs/DEMO_DAY_RUNBOOK.md §7 drill 5) | - |
-| NET-02 | S1 | L0 | offline (needs decision) | yes | no network from the start | - | **Needs decision:** the run gives up only after the model retry budget (15-30 s jittered, measured 19 s virtual), past the 10 s criterion; nothing probes the network first |
+| NET-02 | S1 | L0 | offline | yes | no network from the start: connection errors on the first model call get a 10 s window, then exit 3 with a 'no network' message naming resume and --replay | Wi-Fi off, then `sit-review run <pdf>` (claude_code: how `claude -p` reports an offline network is unverified); anthropic_api: the no-retry preflight fails first | test_runtime_policies.py (first-call window in both live gateways; anthropic_api preflight before models.retrieve) |
 | OPS-01 | S1 | L2 | not a schedule | - | a fresh clone on a clean machine is a procedure, not a fault | docker run python:3.11, clone, follow README verbatim, `sit-review selftest` | docs/REPRODUCIBILITY.md §7 (R0-R3); `sit-review selftest` (test_selftest_cli.py::test_selftest_end_to_end) |
 | OPS-02 | S1 | L0 | not a schedule | - | static scan of the repository and its git history (git is not run here) | gitleaks detect; then grep the full history (git log -p) for the key prefix | test_tool_gateways.py::test_policy_module_has_no_secret_values; test_robustness_schedules.py::test_fixtures_hold_no_secret |
 | OPS-03 | S1 | L0 | offline | - | every scenario runs with canary keys in the environment; INV-08 greps every run directory and the outbound log; ADV-05 tries to exfiltrate them | - | - |
-| OPS-04 | S2 | L0 | offline | yes | SIGINT at the end of research (process fault applied by the harness): exit 130, state flushed, resume re-serves research's tool calls from tools.jsonl, completed stages not re-run, same findings | - | - |
+| OPS-04 | S2 | L0 | offline | yes | SIGINT at the end of research (process fault applied by the agent): exit 130, state flushed, resume re-serves research's tool calls from tools.jsonl, completed stages not re-run, same findings | - | - |
 | OPS-10 | S1 | L0 | offline | - | log oracle on every run: tools.jsonl / llm.jsonl fields, a checkpoint and a progress transition per completed phase, ledger.jsonl replay == ledger.json | - | - |
 | INP-01 | S1 | L0, L1 | offline | - | image-only PDF (no text layer): clean abort, exit 2, no review of an empty extraction (the OCR branch is P1, ADR-006) | `sit-review run <scanned sample>` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
 | INP-03 | S1 | L0 | not a schedule | - | ingest of the SIT sample's tables; the sample PDF is not in the repository | `sit-review run <sit_sample.pdf> --no-tools`, then compare runs/<id>/text/*.sections.json with FR-1..FR-16, NFR-1..NFR-10 | test_ingest_verify_report.py::test_ingest_generated_pdf, ::test_heading_heuristic_on_booking_fixture |
@@ -157,7 +163,7 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | BEH-20 | S2 | L1 | offline | - | L0: verdict 'fit' with a critical finding: the inconsistency is disclosed | `sit-review run <sit_sample.pdf>` (k=3) | test_ingest_verify_report.py::test_verdict_inconsistent_with_severities_is_disclosed |
 | BEH-23 | S2 | L0 | offline | - | oracle on every run: a fault or evidence gap always shows in limitations and the rendered 'Unresolved issues' / 'Evidence limitations' sections | - | - |
 | BEH-24 | S1 | L0 | offline | - | max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, not-attempted list non-empty, report produced | - | - |
-| BEH-25 | S1 | L0 | offline | yes | exception in assess (process fault applied by the harness): exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and no finding, no report.json; resume completes. Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and ON_CAP only move forward (fixed by the verifier) | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed |
+| BEH-25 | S1 | L0 | offline | yes | exception in assess (process fault applied by the agent): exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and no finding, no report.json; resume completes. Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and ON_CAP only move forward (fixed by the verifier) | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed |
 | BEH-27 | S1 | L1 | laptop | - | claims about the doc vs gold facts (judge) | `sit-review run <pdf>`, judged by `sit-eval` | - |
 | BEH-28 | S2 | L0 | offline | - | oracle on every run: INV-03 schema plus every brief section rendered in report.md | - | - |
 | DEMO-01 | S1 | L0, L2 | offline | - | a criterion appended to a copied criteria.yaml (4-line form): in the manifest, the plan, the coverage map and report.md | stopwatch rehearsal (runbook §4.2 #1) | - |
@@ -171,24 +177,26 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | DEMO-14 | S1 | L2 | laptop | - | preflight on the demo laptop | `sit-review preflight --warm` | - |
 | OVF-03 | S1 | L1 | laptop | - | renamed-entity invariance | `sit-review run docs/renamed_sample.pdf` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
 | OVF-06 | S1 | L1 | laptop | - | sample bleed-through on far-domain docs | `sit-review run docs/far_bridge.pdf` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
-| OVF-07 | S1 | L0 | not a schedule (needs decision) | - | static grep of agent/, config/, prompts/ for sample terms; the TF-IDF term list needs the sample | - | test_prompts.py::test_no_eval_leakage (eval-item names in prompts only); **Needs decision:** a hand grep finds sample-specific hosts in agent/sit_review_agent/tools/sources.py (github.com/pgvector, pgvector.dev, kafka.apache.org); scripts/leakage_grep.py does not exist |
+| OVF-07 | S1 | L0 | offline | - | static: scripts/leakage_grep.py over agent/, prompts/ and config/ with the eval/synthetic keys and documents as sources (eval/blind never read): 0 unresolved terms, 0 known sample-stack hosts, 0 13-word overlaps; the agent never imports the script | python scripts/leakage_grep.py --sample <sit_sample.pdf> [--strict] | test_runtime_leakage.py (mechanics); test_prompts.py::test_no_eval_leakage |
 | OVF-12 | S1 | L1 | laptop | - | tuning vs held-out gap, once at the final evaluation (ADR-004) | `sit-eval` (final evaluation only) | - |
 
 ## Failing, needs decision
 
-Agent defects a P0 scenario exposes that are too large, or too much a design choice, to fix in this
-workstream. Each is out of the passing suite (no test asserts the current behaviour); its schedule
-is kept. `python tests/robustness/robustness_repro.py <ID>` reproduces LLM-05, NET-02 and INF-08 offline.
-BEH-25, BEH-10 and BEH-12 were in this table; the verifier fixed them and they are now in the passing
-suite (see "Agent defects fixed here").
+None since 2026-10-02. The five scenarios that were here (LLM-05, NET-02, INF-08, LLM-10, OVF-07)
+were decided by the coordinator (owner-delegated) and implemented; see the next section.
 
-| ID | Expected (scenarios.md) | What the agent does | Options |
-|---|---|---|---|
-| LLM-05 | A stalled call errors within the timeout + 1 s; INV-01: the run ends within the deadline + 30 s | With `llm.timeout_s: 1800` (raised after the first live run, HANDOVER §8) one hang costs 1800 s; the run ends at 1802 s virtual against a 540 s deadline. The deadline is checked only between phases | Bound each model attempt by the remaining budget (deadline propagation, research §1.1), or set the deadline and the timeout consistently (the live run used `--deadline 2400`) |
-| NET-02 | Fully offline at start: non-zero exit with an actionable message within 10 s | Exit 3 after the model retry budget, 19 s virtual (15-30 s jittered); the message is "network unreachable" | A connectivity probe before the first model call, or connection errors on the very first call not retried |
-| INF-08 | Missing MCP key: exit within 5 s with an actionable message before any model spend (or doc-only with `--no-tools`) | `sit-review run` warns "SIT_MCP_API_KEY is not set (use --no-tools ...)", then spends 6 model calls and finishes doc-only (exit 0). `sit-review preflight` does fail | Fail fast in `run_review` when servers are enabled and the key is unset, or accept the doc-only continuation (runbook §6 prefers continuing when the key is revoked) |
-| LLM-10 | Count tokens before sending; never send an over-limit request (150-page fixture) | No pre-send token count; only the `budget_tokens` stop rule and the backend's "prompt is too long" error | Needs the 150-page fixture and a token-count design |
-| OVF-07 | Zero sample-specific terms in `agent/`, `config/`, `prompts/` | `tools/sources.py` lists `github.com/pgvector`, `pgvector.dev`, `kafka.apache.org` as official vendor hosts (the sample's stack); `scripts/leakage_grep.py` does not exist | Drop or generalise those hosts, and build the TF-IDF grep against the sample on the laptop |
+## Runtime policies (2026-10-02)
+
+Implemented in the agent (edit log: `research/audit/runtime_policies_editlog.md`; tests:
+`tests/test_runtime_policies.py`, `tests/test_runtime_leakage.py` and the cases here).
+
+| ID | Was | Now |
+|---|---|---|
+| LLM-05 | One hang cost the full 1800 s timeout; the run ended at 1802 s against a 540 s deadline | Each model attempt's timeout is `min(llm.timeout_s, time left - reserve)` from the one run clock, in `AnthropicGateway`, `ClaudeCodeGateway`, `FakeGateway` and the fault wrapper (`llm/runtime.py`). The reserve is `stop_rules.report_reserve_seconds` (verify + report, 180 s by default; the same reserve the between-phase rule keeps); research also keeps `assess_reserve_seconds` (600 s) for assess. A cut attempt raises `LLMDeadlineError` and is never retried; no retry starts without 10 s left. A cut research call ends research (`deadline`); a cut or skipped assess gives a report that says "out of time before assessment", no finding and a not-assessed verdict; a cut refine keeps the assess findings. Default deadline 3600 s (`config/stop_rules.yaml`, reasons there); the demo runs at 540 s via `--profile demo` |
+| NET-02 | Exit 3 only after the whole retry budget (19 s virtual) | Connection-type errors (not 429/529/5xx) on the first model call of a run get a 10 s window (`llm.first_call_network_window_s`), then exit 3 with "no network ..." naming resume and `--replay`; later calls keep the full policy. `anthropic_api` runs its no-retry preflight before `models.retrieve` |
+| INF-08 | Warned, made 6 model calls, finished doc-only | Live tool transport with servers enabled and the key unset: `ConfigError` (exit 2) before any model call or run directory, naming the variable and `--no-tools`. A key revoked mid-run keeps the doc-only degradation (INF-07) |
+| LLM-10 | No pre-send count | Before each model call the input is estimated from characters at 3 characters per token (plus 2,000 tokens per page for a native PDF block); over 80 % of the context window (`llm.context_window_tokens`, else the model's known window or `models.retrieve`) the request is never sent: `LLMContextTooLongError` (exit 2) naming the document size. A research conversation that grows past the limit ends research instead (`budget_tokens` / `context_window`) |
+| OVF-07 | Sample hosts hard-coded in `tools/sources.py`; no grep | The authority host lists live in `config/url_policy.yaml` `authority:` without the three sample-stack hosts; `scripts/leakage_grep.py` scans agent code, prompts, config, cassettes and fixtures (gating the first three) |
 
 ## Agent defects fixed here
 
@@ -213,9 +221,10 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
 1. **One fixture document, scripted model.** Every offline scenario reviews the selftest fixture
    (invented, prompt-safe) with the selftest script, so a failure points at the fault, not at the
    input. Quality metrics (recall, ASR, P_adj) stay L1 work for `sit-eval` on the laptop.
-2. **Process faults in the harness.** `sit-review run --faults` ignores `process:` entries; the
-   harness applies them by wrapping phases (`at: end` = after the stage's work, before its
-   checkpoint, so OPS-04's resume must re-serve that stage's tool calls). See "For the verifier".
+2. **Process faults in the agent.** Since 2026-10-02 the orchestrator applies `process:` entries by
+   wrapping phases (`at: end` = after the stage's work, before its checkpoint, so OPS-04's resume
+   must re-serve that stage's tool calls), on a new run only; `resume` never re-applies them. The
+   loader refuses a malformed entry (unknown stage, non-process type, `at` other than start/end).
 3. **`nth` on the LLM layer** means the stage's logical call index (fix 2). `attempt` keeps its
    meaning (the gateway's retry attempt within one call). Research §3 keys the fake LLM by
    `(stage, attempt)` in the second sense of `nth`.
@@ -254,16 +263,18 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
   example how `claude -p` reports an offline network, NET-02).
 - Real cassette shapes: the scholarly record and the adversarial fixtures are invented
   ("UNVERIFIED until the laptop probe", like the selftest cassettes).
-- `ClaudeCodeGateway` logs no latency on successful calls (only `elapsed_s` on failures), which
-  OPS-10 asks for; the fake gateway logs none either, so the offline OPS-10 oracle does not check it.
+- `ClaudeCodeGateway` now logs `elapsed_s` on successful calls (OPS-10; unit-tested); the fake
+  gateway logs none, so the offline OPS-10 oracle does not check latency.
+- How `claude -p` reports an offline network (NET-02's connection markers) and how long it retries
+  internally before it does; whether a deadline-bounded `claude -p` kill leaves usable state.
 
 ## For the verifier
 
-- `process:` entries of a schedule load but nothing in the agent applies them, so
-  `sit-review run --faults BEH-25` (or OPS-04) runs clean and silently. Either implement them in the
-  orchestrator or reject them at load time with a message.
+- (Resolved 2026-10-02.) `process:` entries are applied by the orchestrator and validated at load
+  time.
 - `FaultInjectingGateway` and `FaultInjectingLLMGateway` measure `after_seconds` / `offline` windows
   from their own start (tools: construction; model: first call); research §5.2 implies one run clock.
+  The run deadline itself (LLM-05) is read from the one run clock (`RunContext.elapsed_s`).
 - The argument sanitiser allows up to 2,000 characters of verbatim document text in one search
   query (`policy.MAX_ARG_CHARS`); the whole 657-character fixture document passes. ADV-05's pass
   criterion is the canary, so the suite sends bulk text over the limit; whether shorter verbatim
@@ -272,8 +283,7 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
   reported `stop_reason: sufficient_evidence (model_stop_vote)` with zero evidence.
 - scenarios.md: BEH-02's "exactly 2 refine cycles" and BEH-17's "caught because the anchor does not
   resolve" assume a different architecture (deviations 6, 7); LLM-10 and OVF-07 name a fixture and a
-  script that do not exist; DEMO-04 is tagged L0 but its simulation is L2 only; the 1800 s model
-  timeout against the 540 s default deadline also bears on INF-17 (P1) and DEMO-05 (10-minute budget),
-  not only LLM-05.
+  script that do not exist (both now built: the 150-page document is generated as page-marked
+  text at test time); DEMO-04 is tagged L0 but its simulation is L2 only.
 - A key prefix in scenarios.md (OPS-02) is redacted as `<REDACTED-KEY-PREFIX>`; nothing in this
   folder holds a key or a canary value outside `robustness_harness.py` (`test_fixtures_hold_no_secret`).

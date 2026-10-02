@@ -70,13 +70,11 @@ COVERAGE: dict[str, Coverage] = {
                  schedule=True),
     "INF-07": _o("401 on every MCP call: <= 1 confirmation retry, all servers disabled, SIT_MCP_API_KEY named, "
                  "no key characters anywhere, 'No external research was possible'", schedule=True),
-    "INF-08": _n("environment condition (key unset), not a fault schedule; probed offline",
-                 "test_tool_gateways.py::test_preflight_missing_key_names_the_variable_and_fails, "
-                 "::test_mcp_missing_key_and_disabled_server; test_selftest_cli.py::test_cli_plan_only_and_no_tools "
-                 "(--no-tools branch)",
-                 laptop="`unset SIT_MCP_API_KEY; sit-review run <pdf>` (expected: exit within 5 s)",
-                 decision="`sit-review run` with servers enabled and the key unset does not exit within 5 s: it "
-                          "spends model calls and continues doc-only (preflight does flag it)"),
+    "INF-08": _o("live tool transport with SIT_MCP_API_KEY unset: exit 2 (usage) before any model call or run "
+                 "directory, naming the variable and --no-tools; with --no-tools the review runs doc-only",
+                 laptop="`unset SIT_MCP_API_KEY; sit-review run <pdf>` (expected: exit 2 within 5 s)",
+                 covered_by="test_runtime_policies.py::test_inf08_missing_key_*; a key revoked mid-run stays "
+                            "doc-only (INF-07)"),
     "INF-10": _o("malformed body on every web search, once per kind (html, non_json, truncated_json, wrong_id): "
                  "retried once, classified, nothing stored", schedule=True),
     "INF-11": _o("document-intelligence rejects all inputs: 0 calls with the default config, canonical text and "
@@ -103,10 +101,11 @@ COVERAGE: dict[str, Coverage] = {
                  "'spend cap' message, resumable", schedule=True),
     "LLM-03": _o("529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent "
                  "variant: exit 3, then resume completes", schedule=True),
-    "LLM-05": _o("assess hangs once; per-attempt timeout 1800 s (config/agent.yaml)", schedule=True,
-                 covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level)",
-                 decision="one hang costs the full 1800 s per-attempt timeout, past the 540 s deadline + 30 s "
-                          "(INV-01); the deadline does not bound an in-flight model call"),
+    "LLM-05": _o("assess hangs once. Demo profile (540 s): the attempt is cut at the verify + report reserve, "
+                 "not retried, 'out of time before assessment' disclosed, no finding, run within the deadline; "
+                 "default deadline: the full 1800 s timeout, then the retry succeeds", schedule=True,
+                 covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); "
+                            "test_runtime_policies.py (deadline-bounded attempts in both live gateways)"),
     "LLM-06": _o("refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, other stages "
                  "complete; once -> reframed retry succeeds", schedule=True,
                  laptop="sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06 (L1 refusal-prone "
@@ -117,12 +116,12 @@ COVERAGE: dict[str, Coverage] = {
                  schedule=True),
     "LLM-09": _o("assess/refine return placeholder ('TBD') findings, or none: hollow findings dropped and "
                  "disclosed, no placeholder in the report (fixed here: verify placeholder rule)"),
-    "LLM-10": _n("no fault type rewrites a request by prompt size, and the agent has no pre-send token count",
-                 "stop rule budget_tokens (test_research_phase.py::test_budget_tokens); "
-                 "claude_code maps 'prompt is too long' to a bad request (test_claude_code_gateway.py::"
-                 "test_non_retryable_cli_errors)",
-                 decision="no token pre-count before sending (scenario: never send an over-limit request); "
-                          "needs the 150-page fixture and a design choice"),
+    "LLM-10": _o("generated 150-page document (page-marked text, built at test time) against a 150k-token "
+                 "context window: the first request is estimated over 80 % of the window from characters and "
+                 "never sent; exit 2 naming the document size",
+                 covered_by="test_runtime_policies.py (estimate, both live gateways refuse before sending); "
+                            "claude_code still maps 'prompt is too long' to a bad request "
+                            "(test_claude_code_gateway.py::test_non_retryable_cli_errors)"),
     "LLM-11": _o("401 on every model call: not retried, exit 3 within 10 s virtual, credential named, never "
                  "its value", schedule=True,
                  covered_by="test_run_and_resume.py::test_live_backend_preflight_failure_exits_3_before_ingest"),
@@ -131,9 +130,12 @@ COVERAGE: dict[str, Coverage] = {
                  "`resume` completes with no duplicate ledger entry", schedule=True,
                  laptop="physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` "
                         "(docs/DEMO_DAY_RUNBOOK.md §7 drill 5)"),
-    "NET-02": _o("no network from the start", schedule=True,
-                 decision="the run gives up only after the model retry budget (15-30 s jittered, measured 19 s "
-                          "virtual), past the 10 s criterion; nothing probes the network first"),
+    "NET-02": _o("no network from the start: connection errors on the first model call get a 10 s window, then "
+                 "exit 3 with a 'no network' message naming resume and --replay", schedule=True,
+                 laptop="Wi-Fi off, then `sit-review run <pdf>` (claude_code: how `claude -p` reports an offline "
+                        "network is unverified); anthropic_api: the no-retry preflight fails first",
+                 covered_by="test_runtime_policies.py (first-call window in both live gateways; anthropic_api "
+                            "preflight before models.retrieve)"),
     # ------------------------------------------------------------------------------------- OPS
     "OPS-01": _n("a fresh clone on a clean machine is a procedure, not a fault",
                  "docs/REPRODUCIBILITY.md §7 (R0-R3); `sit-review selftest` (test_selftest_cli.py::"
@@ -145,7 +147,7 @@ COVERAGE: dict[str, Coverage] = {
                  laptop="gitleaks detect; then grep the full history (git log -p) for the key prefix"),
     "OPS-03": _o("every scenario runs with canary keys in the environment; INV-08 greps every run directory and "
                  "the outbound log; ADV-05 tries to exfiltrate them"),
-    "OPS-04": _o("SIGINT at the end of research (process fault applied by the harness): exit 130, state flushed, "
+    "OPS-04": _o("SIGINT at the end of research (process fault applied by the agent): exit 130, state flushed, "
                  "resume re-serves research's tool calls from tools.jsonl, completed stages not re-run, same "
                  "findings", schedule=True),
     "OPS-10": _o("log oracle on every run: tools.jsonl / llm.jsonl fields, a checkpoint and a progress "
@@ -216,7 +218,7 @@ COVERAGE: dict[str, Coverage] = {
                  "'Unresolved issues' / 'Evidence limitations' sections"),
     "BEH-24": _o("max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, "
                  "not-attempted list non-empty, report produced"),
-    "BEH-25": _o("exception in assess (process fault applied by the harness): exit 4, checkpoint, failure.json, "
+    "BEH-25": _o("exception in assess (process fault applied by the agent): exit 4, checkpoint, failure.json, "
                  "report.partial.md listing the completed stages and no finding, no report.json; resume completes. "
                  "Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and "
                  "ON_CAP only move forward (fixed by the verifier)", schedule=True,
@@ -245,11 +247,11 @@ COVERAGE: dict[str, Coverage] = {
     # ------------------------------------------------------------------------------------- OVF
     "OVF-03": _l("renamed-entity invariance", f"sit-review run docs/renamed_sample.pdf ({L1_DOC})"),
     "OVF-06": _l("sample bleed-through on far-domain docs", f"sit-review run docs/far_bridge.pdf ({L1_DOC})"),
-    "OVF-07": _n("static grep of agent/, config/, prompts/ for sample terms; the TF-IDF term list needs the sample",
-                 "test_prompts.py::test_no_eval_leakage (eval-item names in prompts only)",
-                 decision="a hand grep finds sample-specific hosts in agent/sit_review_agent/tools/sources.py "
-                          "(github.com/pgvector, pgvector.dev, kafka.apache.org); scripts/leakage_grep.py does "
-                          "not exist"),
+    "OVF-07": _o("static: scripts/leakage_grep.py over agent/, prompts/ and config/ with the eval/synthetic keys "
+                 "and documents as sources (eval/blind never read): 0 unresolved terms, 0 known sample-stack "
+                 "hosts, 0 13-word overlaps; the agent never imports the script",
+                 laptop="python scripts/leakage_grep.py --sample <sit_sample.pdf> [--strict]",
+                 covered_by="test_runtime_leakage.py (mechanics); test_prompts.py::test_no_eval_leakage"),
     "OVF-12": _l("tuning vs held-out gap, once at the final evaluation (ADR-004)", "sit-eval (final evaluation only)"),
 }
 

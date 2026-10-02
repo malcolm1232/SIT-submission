@@ -108,11 +108,25 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
     }
 
 
+def not_assessed(review: Review) -> bool:
+    """The run deadline stopped the review before assessment (robustness LLM-05); the verdict label
+    is then a placeholder and is shown as "not assessed" (``phases.report.not_assessed_verdict``)."""
+    from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+
+    return any(d.event.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for d in review.research_log.degradations)
+
+
+def verdict_label_text(review: Review) -> str:
+    if not_assessed(review):
+        return "not assessed (out of time before assessment)"
+    return review.verdict.label.value.replace("_", " ")
+
+
 def executive_summary(review: Review, *, max_words: int = EXEC_SUMMARY_MAX_WORDS) -> str:
     """At most ``max_words`` words from existing fields only (verdict + top-ranked findings;
     runbook DEMO-08: the Review schema has no executive_summary field)."""
     v = review.verdict
-    parts = [f"Verdict: {v.label.value.replace('_', ' ')} (confidence {v.confidence:.2f}). {_one_line(v.rationale)}"]
+    parts = [f"Verdict: {verdict_label_text(review)} (confidence {v.confidence:.2f}). {_one_line(v.rationale)}"]
     top = [f for f in sorted(review.findings, key=lambda f: f.rank) if f.disposition is not Disposition.NO_CHANGE][:3]
     if top:
         parts.append("Top findings: " + "; ".join(f"{f.id} {_one_line(f.title)}" for f in top) + ".")
@@ -178,7 +192,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
                    "assumptions": [{"ref": o.ref, "text": _one_line(o.text)}
                                    for o in review.intent_summary.key_assumptions],
                    "anchors": [{"page": a.page, "section": a.section_ref} for a in review.intent_summary.doc_anchors]},
-        "verdict": {"label": review.verdict.label.value, "label_text": review.verdict.label.value.replace("_", " "),
+        "verdict": {"label": review.verdict.label.value, "label_text": verdict_label_text(review),
                     "confidence": f"{review.verdict.confidence:.2f}",
                     "band": confidence_band(review.verdict.confidence),
                     "rationale": _one_line(review.verdict.rationale),

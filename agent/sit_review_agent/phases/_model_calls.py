@@ -20,7 +20,11 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   ``llm.refusal_retries`` times (at most once) with ``reframed=True``, then recorded as a degradation
   plus ``declined_sections`` and the phase continues with a code fallback; a schema error gets one
   repair call, then propagates; a ``max_tokens`` truncation gets one call with doubled
-  ``max_tokens`` (capped at 128k), then propagates. Other :class:`LLMError`\\ s propagate.
+  ``max_tokens`` (capped at 128k), then propagates. A call cut by the run deadline
+  (:class:`LLMDeadlineError`, robustness LLM-05) is not retried: it is disclosed as a
+  ``budget_or_deadline_hit`` degradation and the phase continues with its code fallback (assess:
+  "out of time before assessment", no findings; refine: the assess drafts unchanged). Other
+  :class:`LLMError`\\ s propagate.
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
@@ -43,7 +47,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ValidationError
 
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMRefusalError, LLMSchemaError, LLMTruncatedError
+from sit_review_agent.errors import LLMDeadlineError, LLMRefusalError, LLMSchemaError, LLMTruncatedError
 from sit_review_agent.ingest.pdf import Document
 from sit_review_agent.ingest.text import flatten_for_match, normalise_quote, quote_tokens
 from sit_review_agent.llm.backend import supports_native_pdf
@@ -91,10 +95,11 @@ class PhaseCall:
     result: LLMResult[Any] | None
     brief: RenderedPrompt
     refusal_category: str | None = None
+    cut: bool = False                    # the run deadline cut the call (robustness LLM-05)
 
     @property
     def declined(self) -> bool:
-        return self.result is None
+        return self.result is None and not self.cut
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -208,6 +213,24 @@ def record_result(ctx: RunContext, phase: PhaseName, result: LLMResult[Any]) -> 
                                   "part of this review was produced by another model; the run is not eval evidence")
 
 
+def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
+    """Disclose a model call the run deadline cut (robustness LLM-05; INV-07)."""
+    from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+
+    if phase is PhaseName.ASSESS:
+        event = f"{OUT_OF_TIME_BEFORE_ASSESSMENT}: the assess call was cut by the run deadline ({exc})"
+        impact = ("the design was not assessed: the report has no findings and its verdict is not a judgement of "
+                  "the design; rerun with a longer deadline")
+    elif phase is PhaseName.REFINE:
+        event = f"the refine call was cut by the run deadline ({exc})"
+        impact = "the assess findings are reported as drafted, without the self-critique pass"
+    else:
+        event = f"the {phase.value} call was cut by the run deadline ({exc})"
+        impact = f"the {phase.value} step was completed by code without model output"
+    ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT, event, impact)
+    ctx.emit(f"{phase.value}: model call cut by the run deadline; {impact}", "warn")
+
+
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
@@ -265,6 +288,10 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             repaired, schema_error, k, reason = True, _short_error(exc), k + 1, "schema_repair"
             ctx.emit("answer did not match the output schema; one repair call", "warn")
             continue
+        except LLMDeadlineError as exc:
+            _note_call(ctx, phase, exc.call_id)
+            deadline_cut(ctx, phase, exc)
+            return PhaseCall(result=None, brief=brief, cut=True)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
             if widened or max_tokens >= MAX_OUTPUT_TOKENS:

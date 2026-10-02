@@ -1,0 +1,33 @@
+# config/profiles/demo.yaml - the demo-day profile: `sit-review run <pdf> --profile demo`.
+# Deep-merged over config/agent.yaml and config/stop_rules.yaml (config/profiles/README.md); the
+# pinned lines of those files are unchanged. Decided by the coordinator on 2026-10-02 (owner-delegated).
+#
+# UNMEASURED. No run has used these settings yet. Every timing below is an estimate scaled down from
+# the one measured run at `high` (docs/HANDOVER_FULL.md §8). Rehearse with a stopwatch before the
+# demo (runbook §4 / DEMO-05) and adjust the reserves from what the rehearsal logs (llm.jsonl elapsed_s,
+# state.json budget.phase_seconds).
+#
+# Why not `high` (USER_DECISIONS #1 allows high but asks that spend be justified): at high the model
+# calls alone took ~16 min in the measured run (understand 158 s, plan 158 s, assess ~520 s, verify
+# 33 s, report 88 s; no research, refine skipped), three times the 9-minute slot. Medium is the model's
+# own default on Opus 5.5; research only reads and summarises tool results, so it runs at low.
+# Per-stage effort costs no prompt cache on the claude_code backend: every call forks a fresh CLI
+# session and the shared prefix was re-written on every phase anyway (HANDOVER §8, "Cache"); on the
+# anthropic_api backend each effort switch rewrites the cached prefix (ADR-002 Consequences).
+agent:
+  effort:
+    plan: medium          # understand shares this level (states.EFFORT_KEY)
+    research: low
+    assess: medium
+    refine: medium
+    verify: medium
+    report: medium
+
+stop_rules:
+  deadline_seconds: 540   # 9 minutes: one minute of margin in the 10-minute live run (runbook §5)
+  # Reserves (robustness LLM-05; see config/stop_rules.yaml). The defaults (180 s and 600 s) are sized
+  # from `high`; at 540 s they would leave research no time at all. Guesses at medium, UNMEASURED:
+  report_reserve_seconds: 120   # verify (~20 s) + report (~60 s) at medium, plus margin
+  assess_reserve_seconds: 200   # one assess call at medium (high took ~520 s)
+  # Resulting budget: every model call before verify ends by 420 s; research ends by 220 s, so it gets
+  # whatever understand and plan leave of the first 220 s (possibly nothing; then the report says so).

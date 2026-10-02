@@ -3,11 +3,26 @@ active: [sufficient_evidence, no_marginal_gain, budget_tool_calls, budget_tokens
 max_tool_calls: 30
 max_research_iterations: 4
 max_input_tokens: 4000000
-deadline_seconds: 540
+deadline_seconds: 3600
 no_marginal_gain_window: 2
 min_independent_sources: 2
 # ---- Lines 1-8 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
 # Every rule in `active` must be registered in agent/sit_review_agent/stop_rules.py and reports one
 # of the closed StopReasonCode values (spec/finding.schema.json, spec/taxonomy.yaml stop_reasons).
-report_reserve_seconds: 60         # the deadline rule leaves this long for verify + report
+# deadline_seconds (line 6) is the default for every run without --deadline or a profile (dev and
+# Tier A evaluation). eval/prereg.yaml and eval/EVAL_PLAN.md set no deadline for Tier A runs (only
+# an 8-10 min planning estimate, now contradicted by measurement). 3600 s because a high-effort run
+# needs it: measured 2026-10-02 (docs/HANDOVER_FULL.md §8, Opus 5.5 high, claude_code, no research):
+# understand 158 s + plan 158 s + assess ~520 s (one good attempt) + verify 33 s + report 88 s
+# = ~16 min of model time; refine (unmeasured, re-emits every finding, likely ~5-9 min) and research
+# (up to 4 iterations and 30 tool calls, ~10 min) bring a full run to ~35-40 min, and one retried
+# assess-sized call adds ~9 min. 60 min covers that with ~25 % margin and still bounds a stuck run
+# (llm.timeout_s 1800 x 5 attempts would otherwise be 2.5 h). The demo runs at 540 s through
+# config/profiles/demo.yaml, not this default.
+report_reserve_seconds: 180        # kept for verify + report: the deadline rule fires this long before the
+                                   # deadline, and every model attempt before verify ends by then (LLM-05).
+                                   # Measured at high: verify 33 s + report 88 s = ~2 min, plus ~1 min margin
+assess_reserve_seconds: 600        # research also stops this long before the report reserve, so assess keeps
+                                   # its time (research absorbs the squeeze; LLM-05). Measured: one assess
+                                   # attempt at high took ~520 s (HANDOVER §8)
 max_output_tokens: null            # optional cap on summed output tokens (null = none)

@@ -43,7 +43,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LedgerError, LLMRefusalError, LLMSchemaError, LLMTruncatedError
+from sit_review_agent.errors import LedgerError, LLMDeadlineError, LLMRefusalError, LLMSchemaError, LLMTruncatedError
 from sit_review_agent.hashing import sha256_json
 from sit_review_agent.ingest.anchor import (
     NO_ANCHORS,
@@ -591,7 +591,7 @@ class VerifyPhase:
         ctx.emit(f"{len(failures)} anchor(s) unresolved; one repair turn")
         try:
             res = await ctx.llm.call(req)
-        except (LLMRefusalError, LLMSchemaError, LLMTruncatedError) as exc:
+        except (LLMRefusalError, LLMSchemaError, LLMTruncatedError, LLMDeadlineError) as exc:
             if exc.call_id:
                 ctx.state.llm_calls.setdefault(PhaseName.VERIFY.value, []).append(exc.call_id)
             if isinstance(exc, LLMRefusalError):

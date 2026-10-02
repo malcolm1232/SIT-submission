@@ -142,7 +142,7 @@ class LLMContextTooLongError(LLMError):
 
     exit_code = ExitCode.USAGE
 
-    def __init__(self, message: str, *, estimated_tokens: int, limit_tokens: int, call_id: str | None = None,
+    def __init__(self, message: str, *, estimated_tokens: int = 0, limit_tokens: int = 0, call_id: str | None = None,
                  phase: str | None = None) -> None:
         super().__init__(message, call_id=call_id, phase=phase)
         self.estimated_tokens = estimated_tokens

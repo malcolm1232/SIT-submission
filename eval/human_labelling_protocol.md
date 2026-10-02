@@ -13,13 +13,13 @@ Date: 2026-10-02. Implements the one-person plan of `research/audit/research_aud
 | T1 Independent key for the SIT sample | 1 document, about 30 pages | — | 3.5 | H9 (CL9); R_base; grader calibration |
 | T2 Onboarding | this file, §5 codebook, `research/grading/README.md` §1-§4, `research/grading/worked_examples.md` | — | 0.75 | all |
 | T3 `core_insight` sign-off, S-dev | 45 flaws (3 × 14 v1 + 3 introduced in v2) | 2 min | 1.5 | matcher validation; S-dev keys `scored_run_ready` |
-| T4 Matcher validation pairs | 100 pairs + 5 repeated pairs | 1 min (+ lookup) | 1.75 | H10 (CL10) |
+| T4 Matcher validation pairs | 100 pairs + 5 repeated pairs + 12 shortlist-miss pairs | 1 min (+ lookup) | 1.95 | H10 (CL10); shortlist recall |
 | T5 Grader calibration (smoke tier) | 5 reviews of the SIT sample | 25 min | 2.1 | grader smoke tier |
 | T5b R_base preparation | 1 review | 30 min | 0.5 | grader V1, V4, V10 |
 | T6a `core_insight` sign-off, S-heldout | 28 flaws | 2 min | 1.0 | S-heldout keys `scored_run_ready` (LC12) |
 | T6b Adjudication review, S-heldout runs | about 80-100 findings (estimate refreshed from the pilot) | 1-1.5 min | 2.0 | Precision, adjudicated; Hallucinated-finding rate |
 | T7 Grader sample from the frozen agent | 5 reviews | 22 min | 1.8 | grader agreement on final outputs (RA G5) |
-| **Labelling total** | | | **14.9** | |
+| **Labelling total** | | | **15.1** | |
 | T8 SIT v2 fixture and gold diff (authoring, not labelling) | 1 document | — | 3.0 | H7 extras (CL7) |
 | **Tier A total** | | | **about 18** | |
 
@@ -73,9 +73,11 @@ A Claude session drafts each `core_insight` from the flaw's description and cred
 
 Record `accept / edit / reject` and, for an edit, the new text. Signing sets `scored_run_ready: true` together with the signer and date. This makes the rater the second reviewer that RA L12 requires (FE N12).
 
-### T4 Matcher validation pairs (100 pairs)
+### T4 Matcher validation pairs (100 pairs, plus 12 shortlist-miss pairs)
 
 **Source.** Candidate pairs from the pilot runs (line A-2: FULL and B0 on the 3 S-dev v1 documents), drawn from the matcher's candidate set under the same rule the scored runs use (metrics.md §2.3 step 1, prereg `matcher.candidates`): the pairs the listwise shortlist returned, up to 3 per flaw. Location overlap (and the embedding top-3, if used) is only the hint shown to the shortlist; an overlapping pair the shortlist did not return is not a candidate pair here either, so the validated matcher is the one used. *(Amended 2026-10-02, docs/USER_DECISIONS.md #10; it read "location overlap ∪ listwise shortlist ∪ embedding top-3".)* Sampling is stratified by the matcher's hidden score so that at least 35 pairs are likely matches (score 2-3) and at least 30 are likely non-matches, across all 3 documents and both conditions. Five pairs are repeated at random positions to measure within-session consistency (not counted in the 100).
+
+**Shortlist-miss stratum (12 pairs, not counted in the 100).** The 100 pairs check the scorer, not the shortlist: since the shortlist bounds pairwise scoring, a true match it leaves out scores 0 and lowers recall with no error. The scores record, per flaw, the findings whose location overlaps the flaw but which the shortlist did not return (`matching.shortlist.<flaw>.overlap_not_shortlisted`). Draw 12 such pairs from the same pilot runs, spread over the 3 documents and both conditions (at most 2 per flaw; all of them if fewer than 12 exist), and mix them into the T4 sheet at random positions. They look like every other row: the rater does not know which rows they are (§2 rule 4). The share the rater scores 3 estimates the shortlist's miss rate among overlapping pairs; it is reported with a Wilson 95 % CI in the instrument validity table, next to the number of `overlap_not_shortlisted` pairs in the pilot runs, and is not a gate. A miss at a location that does not overlap the flaw leaves no record and is not estimated (stated as a limitation). Size: 12 pairs at about 1 minute each (0.2 h), so one rater-confirmed match among 12 already shows misses happen. *(Added 2026-10-02 with prereg `matcher.shortlist_recall`; `eval/prereg_deviations.md` entry 4.)*
 
 **Each row shows.** The flaw: description, `core_insight`, credit items with roles, location. The finding: statement, `doc_anchors` with quotes and pages. The document text of the cited sections.
 
@@ -99,7 +101,7 @@ Take the best FULL SIT review and edit it by hand into a competent review that s
 
 ### T6b Adjudication review, S-heldout runs only
 
-**Queue.** From every S-heldout run (FULL, B0, B0-$): 100 % of findings that the LLM adjudicator labelled VALID_UNPLANTED or HALLUCINATED, plus a seeded random 20 % of the other unmatched findings (MM §2.3 step 4). The LLM label is hidden. If the queue exceeds 120 items, a seeded random 120 is drawn from the VALID_UNPLANTED and HALLUCINATED group and the sampling fraction is reported (pre-registered, not a deviation).
+**Queue.** From every S-heldout run (FULL, B0, B0-$): 100 % of findings that the LLM adjudicator labelled VALID_UNPLANTED or HALLUCINATED, plus a seeded random 20 % of the other unmatched findings (MM §2.3 step 4; this includes the harness's deterministic DUPLICATE and PARTIAL_KEY_MATCH labels). The LLM or harness label is hidden. If the queue exceeds 120 items, a seeded random 120 is drawn from the VALID_UNPLANTED and HALLUCINATED group and the sampling fraction is reported (pre-registered, not a deviation).
 
 **Each row shows.** The finding with its anchors, the cited document text, a search box over `doc.pages.txt` (for absence claims), and the key's flaw list and `still_valid_observations` for that document.
 
@@ -151,8 +153,9 @@ Edge cases:
 | NON_SPECIFIC | Generic advice that would apply to any design |
 | INVALID_OPINION | Grounded, but the claimed problem is technically wrong, or it criticises a choice the document justifies |
 | OUT_OF_SCOPE | About something the document explicitly puts out of scope |
+| PARTIAL_KEY_MATCH | It states the same defect as a key flaw that no finding of this review matches, but only partly (match score 2, §5.1). Name the flaw. Use this, not VALID_UNPLANTED, when the defect is in the key *(added 2026-10-02, UD #14)* |
 
-When two classes fit, use the first one in this order: HALLUCINATED, DUPLICATE, OUT_OF_SCOPE, NON_SPECIFIC, INVALID_OPINION, VALID_UNPLANTED.
+When two classes fit, use the first one in this order: HALLUCINATED, DUPLICATE, OUT_OF_SCOPE, NON_SPECIFIC, INVALID_OPINION, PARTIAL_KEY_MATCH, VALID_UNPLANTED.
 
 ### 5.3 Rubric (T5, T7)
 
@@ -166,7 +169,8 @@ When two classes fit, use the first one in this order: HALLUCINATED, DUPLICATE, 
 |---|---|---|---|
 | Matcher vs rater (H10) | Cohen's κ on the binary decision MATCH (3) vs not | 100 pairs; bootstrap over flaws (pairs are nested in flaws), 10,000 resamples | Quadratic-weighted κ on 0-3; confusion matrix; percent agreement; Gwet's AC1 if more than 70 % of pairs are non-matches; the share of rater-confirmed matches the matcher also scores 3 |
 | Within-session consistency | Agreement on the 5 repeated pairs | count | — |
-| LLM adjudicator vs rater (T6b) | Cohen's κ over the 6 classes, and κ on the binary "counts as correct for adjudicated precision" | reviewed items; bootstrap over findings | Confusion matrix |
+| Shortlist miss rate (T4 stratum) | Share of the 12 `overlap_not_shortlisted` pairs the rater scores 3 | 12 pairs; Wilson 95 % CI | Number of `overlap_not_shortlisted` pairs in the pilot runs; rater score distribution on the stratum |
+| LLM adjudicator vs rater (T6b) | Cohen's κ over the classes (the six LLM classes plus PARTIAL_KEY_MATCH), and κ on the binary "counts as correct for adjudicated precision" | reviewed items; bootstrap over findings | Confusion matrix |
 | LLM grader vs rater (T5 + T7) | Quadratic-weighted κ over the paired dimension ratings (10 reviews × 10 dimensions = 100 pairs); ordinal Krippendorff's α | bootstrap over reviews | `research/grading/README.md` §7 table: exact and within-1 agreement, mean signed difference per dimension, mean absolute difference of S, pass/fail agreement, hallucination-flag precision and recall, Spearman ρ on S (report only) |
 | Rater vs illustrative SIT key (T1) | Overlap counts: both, owner-only, illustrative-only | items | Chapman's estimate as a lower-bound indicator (MM §9) |
 | Agent vs rater's SIT key (H9) | Recall against the owner key, by severity | 3 runs | Model-only findings adjudicated by the rater with §5.2 |

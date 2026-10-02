@@ -16,11 +16,18 @@ persona: generalist_architect
 thinking_display: omitted          # omitted | summarized (thinking is always adaptive on Opus 5.5)
 
 llm:
-  timeout_s: 1800                  # per attempt. Measured 2026-10-02: assess on Opus high via claude_code took ~520 s and 63k output tokens; 600 s timed out 4 times (docs/HANDOVER_FULL.md §8)
+  timeout_s: 1800                  # per attempt, and never past the run deadline minus the verify + report reserve
+                                   # (stop_rules.yaml report_reserve_seconds; robustness LLM-05). Measured
+                                   # 2026-10-02: assess on Opus high via claude_code took ~520 s and 63k output
+                                   # tokens; 600 s timed out 4 times (docs/HANDOVER_FULL.md §8)
   max_retries: 4                   # owned by LLMGateway; the SDK client always runs with max_retries=0
   backoff_base_s: 2.0
   backoff_max_s: 60.0
   refusal_retries: 1               # one retry with professional-review framing (robustness LLM-06)
+  first_call_network_window_s: 10  # connection errors on the first model call of a run: retried only this long,
+                                   # then exit 3 "no network" (robustness NET-02); later calls keep max_retries
+  context_window_tokens: null      # pre-send size check against 80 % of this (LLM-10); null = the model's known
+                                   # window (1M for every supported model) or models.retrieve's max_input_tokens
   backend: claude_code   # claude_code (Claude subscription / cloud credits via headless Claude Code, ADR-010) | anthropic_api (ANTHROPIC_API_KEY)
 
 claude_code:                       # used only when llm.backend is claude_code

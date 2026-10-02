@@ -8,11 +8,9 @@ environment. The fault schedule is the scenario's own ``faults/<ID>.yaml``, load
 loader through ``agent.fault_schedule`` exactly as ``sit-review run --faults <ID>`` does, so the
 MCP and LLM fault injectors sit *below* the retry, breaker and budget policy (§5.1).
 
-What the harness adds on top of the agent:
+What the harness adds on top of the agent (the agent itself applies every layer of the schedule,
+``process:`` entries included, since 2026-10-02: ``orchestrator._run_ProcessFault``):
 
-* the **process** layer of a schedule (``raise_in_stage``, ``sigint_in_stage``, ``clock_jump``,
-  §5.3). ``sit-review run --faults`` ignores ``process:`` entries (reported in the README), so the
-  harness applies them by wrapping the phase objects, the same hook the existing tests use;
 * an **outbound log**: the bottom tool layer records every call that would have left the machine,
   so INV-08's "no secret in any outbound request" half can be checked offline (§2, §6.4);
 * a **scripted model** built from the selftest fixture script (an invented, prompt-safe "campus
@@ -47,7 +45,6 @@ from sit_review_agent.clock import FakeClock
 from sit_review_agent.config import ConfigOverrides, EffectiveConfig, Transport, load_config
 from sit_review_agent.llm.gateway import FakeGateway, FakeResponse, LLMRequest, LLMResult, ToolUse
 from sit_review_agent.orchestrator import RunOutcome, RunRequest, resume_run, run_review
-from sit_review_agent.phases import default_phases
 from sit_review_agent.progress import ConsoleProgress
 from sit_review_agent.rundir import JsonlWriter, RunDir
 from sit_review_agent.selftest import (
@@ -59,7 +56,7 @@ from sit_review_agent.selftest import (
     fixture_script,
 )
 from sit_review_agent.states import PhaseName
-from sit_review_agent.tools.faults import FaultSchedule, FaultType, load_fault_schedule
+from sit_review_agent.tools.faults import FaultSchedule, load_fault_schedule
 from sit_review_agent.tools.gateway import ReplayGateway, ToolResult, build_tool_gateway, split_qualified
 
 HERE = Path(__file__).resolve().parent
@@ -268,46 +265,26 @@ class OutboundReplayGateway(ReplayGateway):
         return await super().call(tool_name, args, phase=phase)
 
 
-# ============================================================================= process faults
+# ============================================================================= generated fixtures
 
 
-class ProcessFault:
-    """``process:`` entries of a schedule (README §5.3): ``raise_in_stage`` (BEH-25),
-    ``sigint_in_stage`` (OPS-04) and ``clock_jump`` (NET-03) around one phase. ``at: end`` (default)
-    fires after the phase's work, before its checkpoint, so a resume must re-run the stage without
-    repeating its completed tool calls; ``at: start`` fires before the phase does anything."""
-
-    def __init__(self, inner: Any, spec: Any) -> None:
-        self.inner = inner
-        self.name = inner.name
-        self.spec = spec
-        self.fired = False
-
-    async def run(self, ctx: Any) -> Any:
-        extra = self.spec.model_extra or {}
-        kind = self.spec.type
-        at = str(extra.get("at", "end"))
-        if kind is FaultType.CLOCK_JUMP:
-            ctx.clock.advance(float(extra.get("seconds", 600)))
-            return await self.inner.run(ctx)
-        if at == "end":
-            ctx = await self.inner.run(ctx)
-        self.fired = True
-        if kind is FaultType.SIGINT_IN_STAGE:
-            raise KeyboardInterrupt
-        raise RuntimeError(f"injected fault: raise_in_stage {self.name.value}")
-
-
-def process_phases(schedule: FaultSchedule | None) -> dict[PhaseName, Any] | None:
-    if schedule is None or not schedule.process:
-        return None
-    phases: dict[PhaseName, Any] = default_phases()
-    for spec in schedule.process:
-        stage = (spec.model_extra or {}).get("stage")
-        if stage is None:
-            continue
-        phases[PhaseName(stage)] = ProcessFault(phases[PhaseName(stage)], spec)
-    return phases
+def long_design_pages(path: Path, pages: int = 150, lines_per_page: int = 30) -> Path:
+    """The 150-page document of robustness LLM-10 (research/robustness/README.md §6.3), generated at
+    test time and never committed: an invented campus-facilities design with numbered sections and
+    requirement lines, about 3,700 characters per page (about 550k characters), in the page-marked
+    text form the agent ingests like the selftest fixture. Text, not PDF: pdfplumber needs about a
+    minute for 150 dense generated pages, past this suite's time budget, and LLM-10 is about the size
+    of what would be sent, not about extraction."""
+    out: list[str] = []
+    for p in range(1, pages + 1):
+        sec = (p - 1) // 5 + 1
+        out.append(f"[[PAGE {p}]]")
+        out.append(f"{sec}.{(p - 1) % 5 + 1} Facilities service area {p}. The wing {p} service is described below.")
+        for i in range(1, lines_per_page):
+            out.append(f"FAC-{p:03d}-{i:02d} The building service for wing {p} records each room booking, its "
+                       f"cleaning slot and its sensor reading (line {i}) in the campus register.")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    return path
 
 
 # ============================================================================= scenario + run
@@ -333,6 +310,7 @@ class Scenario:
     doc: Path = DOC
     clock: str = "fake"                                                  # fake | scheduling
     run_id: str | None = None
+    env_unset: tuple[str, ...] = ()                                      # env vars removed for the run (INF-08)
 
 
 @dataclass
@@ -349,7 +327,6 @@ class RunRecord:
     gateway: ScenarioGateway | None
     tools: Any
     schedule: FaultSchedule | None
-    process: dict[PhaseName, Any] | None
 
     @property
     def report(self) -> dict[str, Any] | None:
@@ -398,12 +375,18 @@ def scenario_config(sc: Scenario, workdir: Path, faults: Path | None) -> Effecti
 
 
 class _Env:
-    """Canary keys in the environment for the duration of a run (README §6.4)."""
+    """Canary keys in the environment for the duration of a run (README §6.4); ``unset`` names
+    variables removed instead (INF-08: the MCP key missing at start)."""
+
+    def __init__(self, unset: tuple[str, ...] = ()) -> None:
+        self.unset = unset
 
     def __enter__(self) -> None:
-        self.saved = {k: os.environ.get(k) for k in ("SIT_MCP_API_KEY", "ANTHROPIC_API_KEY")}
+        self.saved = {k: os.environ.get(k) for k in ("SIT_MCP_API_KEY", "ANTHROPIC_API_KEY", *self.unset)}
         os.environ["SIT_MCP_API_KEY"] = CANARY_MCP
         os.environ["ANTHROPIC_API_KEY"] = CANARY_LLM
+        for k in self.unset:
+            os.environ.pop(k, None)
 
     def __exit__(self, *exc: object) -> None:
         for k, v in self.saved.items():
@@ -457,23 +440,21 @@ async def run_scenario(sc: Scenario, workdir: Path) -> RunRecord:
     outbound: list[dict[str, Any]] = []
     holder: dict[str, Any] = {}
     llm_factory, tools_factory = _factories(sc, cfg, sched, outbound, holder)
-    phases = process_phases(sched)
     t0 = time.monotonic()
-    with _Env():
+    with _Env(sc.env_unset):
         outcome, raised = await _guarded(run_review(
-            RunRequest(pdf=sc.doc, config=cfg, run_id=run_id), phases=phases, llm_factory=llm_factory,
+            RunRequest(pdf=sc.doc, config=cfg, run_id=run_id), llm_factory=llm_factory,
             tools_factory=tools_factory, clock=clock, progress=progress))
     return RunRecord(scenario=sc, config=cfg, run_dir=rd, exit_code=outcome.exit_code if outcome else None,
                      raised=raised, virtual_s=clock.monotonic(), wall_s=time.monotonic() - t0, stdout=out.getvalue(),
-                     outbound=outbound, gateway=holder.get("llm"), tools=holder.get("tools"), schedule=sched,
-                     process=phases)
+                     outbound=outbound, gateway=holder.get("llm"), tools=holder.get("tools"), schedule=sched)
 
 
 async def resume_scenario(rec: RunRecord, *, config: EffectiveConfig | None = None,
                           accept_drift: bool = False) -> RunRecord:
     """``sit-review resume <run_dir>`` on a recorded run, same harness services (a fresh virtual
     clock: the laptop clock keeps running, the run's own budget clock is restored from the
-    checkpoint). Process faults are not re-applied (the interruption is over)."""
+    checkpoint). The agent does not re-apply process faults on resume (the interruption is over)."""
     sc = rec.scenario
     cfg = config or rec.config
     sched = None
@@ -492,8 +473,7 @@ async def resume_scenario(rec: RunRecord, *, config: EffectiveConfig | None = No
                                                     clock=clock, progress=progress))
     return RunRecord(scenario=sc, config=cfg, run_dir=rec.run_dir, exit_code=outcome.exit_code if outcome else None,
                      raised=raised, virtual_s=clock.monotonic(), wall_s=time.monotonic() - t0, stdout=out.getvalue(),
-                     outbound=outbound, gateway=holder.get("llm"), tools=holder.get("tools"), schedule=sched,
-                     process=None)
+                     outbound=outbound, gateway=holder.get("llm"), tools=holder.get("tools"), schedule=sched)
 
 
 def run(sc: Scenario, workdir: Path | None = None) -> RunRecord:

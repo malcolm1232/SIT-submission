@@ -80,6 +80,8 @@ Status values: **Accepted** (build on it), **Pending** (blocked on a named input
 
 **Status.** Pending: the user confirms which API keys they hold (audit P0 item 2).
 
+**Closing note (2026-10-02).** Closed by owner decision (`docs/USER_DECISIONS.md` #16): Anthropic only, no second-provider judge. The matcher, adjudicator, G3 premise judge and citation-support judge run on `claude-opus-5-5` (prereg `matcher.model` branch_B) and the grader on Claude; every Claude-judged number is disclosed as same-family per `research/models/README.md` (branch B row and §5). `eval/prereg.yaml` `grader.second_provider.available: false` (`eval/prereg_deviations.md` entry 5). The local open-weight matcher of branch B stays Tier C (prereg `matcher.model`).
+
 ---
 
 ## ADR-004. Evaluation tiers

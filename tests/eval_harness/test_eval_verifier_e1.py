@@ -161,10 +161,11 @@ def test_dry_run_flags_a_model_outside_the_price_basis():
     assert not any("do not apply" in c for c in opus["caveats"])
     assert any("do not apply" in c for c in haiku["caveats"])
     # measured on the live run under candidate_rule union (the pre-2026-10-02 rule, now a comparison mode):
-    # 80 overlap pairs, 300-440 calls pairwise; adaptive lowers the floor only. The shortlist_bounded default
-    # is pinned in test_eval_candidate_rule.py.
+    # 80 overlap pairs, 294-440 calls pairwise (the min is a true lower bound since verify_matcher_rule: every
+    # finding overlaps a flaw, so none must reach the adjudicator; it read 300 = N - G adjudications before);
+    # adaptive lowers the floor only. The shortlist_bounded default is pinned in test_eval_candidate_rule.py.
     assert opus["candidate_rule"] == "union"
-    assert opus["location_overlap_pairs"] == 80 and opus["calls"]["total"] == {"min": 300, "max": 440}
+    assert opus["location_overlap_pairs"] == 80 and opus["calls"]["total"] == {"min": 294, "max": 440}
     adaptive = plan_calls(rin, key, "v1", options(adaptive_samples=True, candidate_rule="union"), usd, secs)
     assert adaptive["calls"]["pair_scoring"] == {"min": 160, "max": 366}
 

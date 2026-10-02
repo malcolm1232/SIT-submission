@@ -76,13 +76,19 @@ def test_dry_run_reports_call_count(tmp_path: Path):
     plan = json.loads(res.output)
     assert plan["judge"] == "claude_code" and plan["granularity"] == "pairwise" and plan["candidate_rule"] == "union"
     assert plan["calls"]["shortlist"] == 14 and plan["location_overlap_pairs"] == 80
-    assert plan["calls"]["pair_scoring"]["min"] == 240 and plan["calls"]["total"]["min"] > 240
+    # adaptive third sample is on by default (UD #15): 80 overlap pairs x 2 samples at the floor
+    assert plan["adaptive_third_sample"] is True
+    assert plan["calls"]["pair_scoring"]["min"] == 160 and plan["calls"]["total"]["min"] > 160
     assert plan["cost_usd_estimate"]["high"] > plan["cost_usd_estimate"]["low"] > 0
     assert not (tmp_path / "never").exists()
     batch = json.loads(runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--dry-run",
                                            "--candidate-rule", "union", "--granularity", "per_flaw_batch",
-                                           "--no-grounding-judges"]).output)
+                                           "--no-grounding-judges", "--no-adaptive-samples"]).output)
     assert batch["calls"]["pair_scoring"] == {"min": 42, "max": 42} and batch["calls"]["premise_judge"] == 0
+    batch_ad = json.loads(runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--dry-run",
+                                              "--candidate-rule", "union", "--granularity", "per_flaw_batch",
+                                              "--no-grounding-judges"]).output)
+    assert batch_ad["calls"]["pair_scoring"] == {"min": 28, "max": 42}
 
 
 def test_bad_inputs_fail_cleanly(tmp_path: Path):

@@ -1,7 +1,8 @@
 # LLM-05 (S1, P0, L0): stalled model call. The per-attempt timeout is config/agent.yaml
-# llm.timeout_s = 1800 s (raised from 600 s after the first live run, docs/HANDOVER_FULL.md §8).
-# FAILING, NEEDS DECISION (tests/robustness/README.md): one hang costs 1800 s, past the 540 s
-# deadline + 30 s that INV-01 allows; the deadline is not propagated into the call timeout.
+# llm.timeout_s = 1800 s, bounded by the run deadline minus the verify + report reserve (runtime
+# policy 2026-10-02, agent/sit_review_agent/llm/runtime.py). With --profile demo (540 s) the hang is
+# cut at 420 s and not retried: "out of time before assessment", run within the deadline. With the
+# default deadline (3600 s) the hang costs 1800 s and the retry succeeds.
 id: LLM-05
 description: The first attempt of the assess call hangs (no tokens until the client timeout).
 seed: 42

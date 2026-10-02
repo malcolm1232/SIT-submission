@@ -1,5 +1,5 @@
-# OPS-04 (S2, P0, L0): Ctrl-C mid-run, then resume. The process fault is applied by the robustness
-# harness (sit-review run --faults ignores `process:` entries, see the README): KeyboardInterrupt at
+# OPS-04 (S2, P0, L0): Ctrl-C mid-run, then resume. The process fault is applied by the agent's
+# orchestrator (also through `sit-review run --faults OPS-04`; never on resume): KeyboardInterrupt at
 # the end of research, after its tool calls, before its checkpoint. Exit 130, state flushed; resume
 # re-runs research from the plan checkpoint, serving its tool calls from tools.jsonl, and completes.
 id: OPS-04

@@ -15,12 +15,15 @@ arguments name a URL) becomes one source read in full.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
+from sit_review_agent.config import AuthorityHosts
 from sit_review_agent.models import SourceAuthority
 from sit_review_agent.tools.gateway import ToolResult
 
@@ -58,7 +61,7 @@ class ExternalSource:
 # ------------------------------------------------------------------------------ extraction
 
 
-def extract_sources(result: ToolResult) -> list[ExternalSource]:
+def extract_sources(result: ToolResult, hosts: AuthorityHosts | None = None) -> list[ExternalSource]:
     """Server-specific parsing of search hits / records / fetched pages (UNVERIFIED shapes until
     the laptop probe records real results). Authority is classified by domain heuristics.
 
@@ -94,16 +97,16 @@ def extract_sources(result: ToolResult) -> list[ExternalSource]:
     if fetch_url is not None:
         body = text if text.strip() else json.dumps(data, ensure_ascii=False, sort_keys=True)
         return [ExternalSource(url_or_citation=fetch_url, title=_page_title(body, data), excerpt=_clip(body),
-                               content=body, authority=classify_authority(fetch_url), read_in_full=True)]
+                               content=body, authority=classify_authority(fetch_url, hosts), read_in_full=True)]
 
     out: list[ExternalSource] = []
     if data is not None:
         for rec in _records(data):
-            src = _from_record(rec)
+            src = _from_record(rec, hosts)
             if src is not None:
                 out.append(src)
     if not out and text.strip():
-        out = _from_text(text)
+        out = _from_text(text, hosts)
     if not out:
         body = text if text.strip() else json.dumps(data, ensure_ascii=False, sort_keys=True)
         args = json.dumps(result.args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -226,7 +229,7 @@ def _authors(d: dict[str, Any]) -> str:
     return names[0] + (" et al." if len(names) > 1 else "")
 
 
-def _from_record(d: dict[str, Any]) -> ExternalSource | None:
+def _from_record(d: dict[str, Any], hosts: AuthorityHosts | None = None) -> ExternalSource | None:
     url = _first_str(d, _URL_KEYS)
     if url is not None and not _URL_RE.fullmatch(url):
         url = None
@@ -251,14 +254,14 @@ def _from_record(d: dict[str, Any]) -> ExternalSource | None:
     else:
         cite = url
     if scholarly:
-        authority = classify_authority(url) if url else SourceAuthority.SECONDARY
-        preprint = (doi or "").lower().startswith(_PREPRINT_DOI_PREFIXES) or _is_preprint_host(url or "")
+        authority = classify_authority(url, hosts) if url else SourceAuthority.SECONDARY
+        preprint = (doi or "").lower().startswith(_PREPRINT_DOI_PREFIXES) or _is_preprint_host(url or "", hosts)
         if not preprint and (doi or d.get("venue") or d.get("journal")):
             authority = SourceAuthority.PEER_REVIEWED
         content = json.dumps(d, ensure_ascii=False, sort_keys=True)
         read = bool(abstract)
     else:
-        authority = classify_authority(cite)
+        authority = classify_authority(cite, hosts)
         content = snippet or (title or "")
         read = False
     excerpt = _clip(snippet or title or cite)
@@ -266,7 +269,7 @@ def _from_record(d: dict[str, Any]) -> ExternalSource | None:
                           authority=authority, read_in_full=read)
 
 
-def _from_text(text: str) -> list[ExternalSource]:
+def _from_text(text: str, hosts: AuthorityHosts | None = None) -> list[ExternalSource]:
     out: list[ExternalSource] = []
     md = {m.group(2).rstrip(".,;:"): m.group(1).strip() for m in _MD_LINK_RE.finditer(text)}
     lines = text.splitlines()
@@ -294,58 +297,32 @@ def _from_text(text: str) -> list[ExternalSource]:
                                                 flags=re.IGNORECASE))
             snippet = " ".join(snippet_lines) or (title or url)
             out.append(ExternalSource(url_or_citation=url, title=title[:300] if title else None,
-                                      excerpt=_clip(snippet), content=snippet, authority=classify_authority(url),
+                                      excerpt=_clip(snippet), content=snippet, authority=classify_authority(url, hosts),
                                       read_in_full=False))
     return out
 
 
 # ------------------------------------------------------------------------------ authority
 
-#: Standards bodies, regulators and intergovernmental organisations (``primary_official``).
-_STANDARDS = ("iso.org", "iec.ch", "ietf.org", "rfc-editor.org", "w3.org", "nist.gov", "etsi.org", "itu.int",
-              "standards.ieee.org", "owasp.org", "cisecurity.org", "pcisecuritystandards.org", "oasis-open.org",
-              "ecma-international.org", "whatwg.org", "unicode.org", "openid.net", "fidoalliance.org",
-              "cloudevents.io", "opentelemetry.io", "spec.openapis.org", "json-schema.org", "europa.eu",
-              "legislation.gov.uk", "who.int", "ich.org", "oecd.org", "un.org", "cnil.fr", "ico.org.uk",
-              "pdpc.gov.sg", "imda.gov.sg", "csa.gov.sg", "mas.gov.sg", "hhs.gov", "fda.gov", "cisa.gov",
-              "enisa.europa.eu", "bsi.bund.de", "ncsc.gov.uk", "modelcontextprotocol.io")
-#: Official vendor / project documentation hosts (``primary_official``).
-_VENDOR_DOCS = ("learn.microsoft.com", "docs.microsoft.com", "docs.aws.amazon.com", "cloud.google.com",
-                "developer.apple.com", "developers.google.com", "docs.oracle.com", "docs.github.com",
-                "kubernetes.io", "postgresql.org", "python.org", "docs.python.org", "apache.org", "redis.io",
-                "nginx.org", "mongodb.com", "elastic.co", "docker.com", "hashicorp.com", "terraform.io",
-                "openai.com", "anthropic.com", "docs.anthropic.com", "platform.claude.com", "code.claude.com",
-                "azure.microsoft.com", "aws.amazon.com", "cloudflare.com", "stripe.com", "twilio.com",
-                "mysql.com", "sqlite.org", "nodejs.org", "rust-lang.org", "go.dev", "golang.org", "java.com",
-                "openjdk.org", "spring.io", "djangoproject.com", "fastapi.tiangolo.com", "pydantic.dev",
-                "github.com/pgvector", "pgvector.dev", "snowflake.com", "databricks.com", "confluent.io",
-                "kafka.apache.org", "grafana.com", "prometheus.io")
-#: Publishers, indexes of peer-reviewed work and proceedings (``peer_reviewed``).
-_PEER = ("doi.org", "dl.acm.org", "acm.org", "ieeexplore.ieee.org", "ieee.org", "springer.com", "link.springer.com",
-         "sciencedirect.com", "elsevier.com", "nature.com", "science.org", "wiley.com", "onlinelibrary.wiley.com",
-         "tandfonline.com", "sagepub.com", "plos.org", "mdpi.com", "frontiersin.org", "bmj.com", "thelancet.com",
-         "nejm.org", "jamanetwork.com", "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "usenix.org",
-         "aclanthology.org", "openreview.net", "jmlr.org", "proceedings.mlr.press", "neurips.cc", "papers.nips.cc",
-         "aaai.org", "ojs.aaai.org", "vldb.org", "cambridge.org", "academic.oup.com", "jstor.org",
-         "cochranelibrary.com", "iopscience.iop.org", "asce.org", "ascelibrary.org", "icevirtuallibrary.com")
-#: Preprint servers and scholarly indexes: reputable but not peer reviewed (``secondary``).
-_PREPRINT = ("arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com", "researchsquare.com", "preprints.org",
-             "researchgate.net", "semanticscholar.org", "openalex.org", "crossref.org", "scholar.google.com",
-             "core.ac.uk", "hal.science", "zenodo.org")
-#: Reputable secondary summaries: references, quality engineering publications, textbooks (``secondary``).
-_SECONDARY = ("wikipedia.org", "britannica.com", "martinfowler.com", "infoq.com", "thoughtworks.com",
-              "queue.acm.org", "lwn.net", "oreilly.com", "highscalability.com", "brendangregg.com",
-              "netflixtechblog.com", "engineering.fb.com", "engineering.atspotify.com", "blog.cloudflare.com",
-              "aws.amazon.com/blogs", "cloud.google.com/blog", "techcommunity.microsoft.com", "devblogs.microsoft.com",
-              "github.blog", "uber.com/blog", "dropbox.tech", "slack.engineering", "stripe.com/blog",
-              "gartner.com", "forrester.com", "mckinsey.com", "iapp.org", "lexology.com", "jdsupra.com")
-#: Forums, Q&A, self-publishing and content platforms (``informal``; checked first).
-_INFORMAL = ("medium.com", "dev.to", "stackoverflow.com", "stackexchange.com", "serverfault.com", "superuser.com",
-             "reddit.com", "quora.com", "hashnode.dev", "hashnode.com", "substack.com", "blogspot.com",
-             "wordpress.com", "linkedin.com", "youtube.com", "twitter.com", "x.com", "news.ycombinator.com",
-             "geeksforgeeks.org", "tutorialspoint.com", "w3schools.com", "javatpoint.com", "facebook.com",
-             "tiktok.com", "pinterest.com", "slideshare.net", "scribd.com", "towardsdatascience.com")
-_DOCS_PREFIXES = ("docs.", "developer.", "developers.", "learn.", "spec.", "specs.", "documentation.")
+# The host lists live in config/url_policy.yaml ``authority:`` (robustness OVF-07: no evaluated
+# document's own stack hard-coded in agent code). ``classify_authority`` and ``extract_sources`` take
+# them from the run's config (``EffectiveConfig.url_policy.authority``); without one they read the
+# repository's config/url_policy.yaml once.
+
+
+@functools.lru_cache(maxsize=1)
+def default_authority_hosts() -> AuthorityHosts:
+    """``authority:`` of the repository's ``config/url_policy.yaml`` (callers without a run config)."""
+    import yaml
+
+    from sit_review_agent.paths import config_dir
+
+    data = yaml.safe_load((config_dir() / "url_policy.yaml").read_text(encoding="utf-8")) or {}
+    return AuthorityHosts.model_validate(data.get("authority") or {})
+
+
+def _hosts(hosts: AuthorityHosts | None) -> AuthorityHosts:
+    return hosts if hosts is not None else default_authority_hosts()
 
 
 def _host_path(url: str) -> tuple[str, str]:
@@ -358,7 +335,7 @@ def _host_path(url: str) -> tuple[str, str]:
     return host, (p.path or "").lower()
 
 
-def _matches(host: str, path: str, entries: tuple[str, ...]) -> bool:
+def _matches(host: str, path: str, entries: Sequence[str]) -> bool:
     for e in entries:
         dom, _, sub = e.partition("/")
         if (host == dom or host.endswith("." + dom)) and (not sub or path.startswith("/" + sub)):
@@ -377,12 +354,12 @@ def _is_gov(host: str) -> bool:
     return False
 
 
-def _is_preprint_host(url: str) -> bool:
+def _is_preprint_host(url: str, hosts: AuthorityHosts | None = None) -> bool:
     host, path = _host_path(url)
-    return _matches(host, path, _PREPRINT)
+    return _matches(host, path, _hosts(hosts).preprint)
 
 
-def classify_authority(url: str) -> SourceAuthority:
+def classify_authority(url: str, hosts: AuthorityHosts | None = None) -> SourceAuthority:
     """Domain heuristics: standards bodies, regulators, official vendor docs -> primary_official;
     DOI / journals -> peer_reviewed; known reference sites -> secondary; else informal.
 
@@ -400,8 +377,10 @@ def classify_authority(url: str) -> SourceAuthority:
     vendor *blogs* are ``secondary``; anything unknown is ``informal``, so an unrecognised site
     never outranks a recognised one. A non-URL citation (a scholarly record without a link, or the
     ``mcp:`` pseudo-citation) is ``informal`` here; scholarly records are upgraded by
-    :func:`extract_sources`.
+    :func:`extract_sources`. ``hosts``: the run's ``url_policy.authority`` (default: the
+    repository's ``config/url_policy.yaml``).
     """
+    h = _hosts(hosts)
     u = url.strip()
     if u.lower().startswith("doi:"):
         doi = u[4:].strip().lower()
@@ -412,17 +391,17 @@ def classify_authority(url: str) -> SourceAuthority:
     if host in ("doi.org", "dx.doi.org"):
         doi = path.lstrip("/")
         return SourceAuthority.SECONDARY if doi.startswith(_PREPRINT_DOI_PREFIXES) else SourceAuthority.PEER_REVIEWED
-    if _matches(host, path, _INFORMAL):
+    if _matches(host, path, h.informal):
         return SourceAuthority.INFORMAL
-    if _matches(host, path, _SECONDARY) or "/blog" in path or host.startswith("blog."):
+    if _matches(host, path, h.secondary) or "/blog" in path or host.startswith("blog."):
         return SourceAuthority.SECONDARY
-    if _matches(host, path, _STANDARDS) or _is_gov(host):
+    if _matches(host, path, h.standards) or _is_gov(host):
         return SourceAuthority.PRIMARY_OFFICIAL
-    if _matches(host, path, _PREPRINT):
+    if _matches(host, path, h.preprint):
         return SourceAuthority.SECONDARY
-    if _matches(host, path, _PEER):
+    if _matches(host, path, h.peer_reviewed):
         return SourceAuthority.PEER_REVIEWED
-    if _matches(host, path, _VENDOR_DOCS) or host.startswith(_DOCS_PREFIXES):
+    if _matches(host, path, h.vendor_docs) or host.startswith(tuple(h.docs_prefixes)):
         return SourceAuthority.PRIMARY_OFFICIAL
     if host.endswith(".edu") or ".ac." in host or host.endswith(".edu.sg"):
         return SourceAuthority.SECONDARY

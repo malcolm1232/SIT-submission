@@ -57,11 +57,14 @@ Defaults live in `config/eval.yaml`; flags override them for one run.
    `sources` is `["overlap", "shortlist"]` or `["shortlist"]`. `--candidate-rule union` restores the
    earlier rule (overlap union shortlist, sources may be `["overlap"]` alone) for comparison; it uses the
    same shortlist prompt, so a union run into the same `--out` reuses the shortlist and pair answers and
-   pays only for the overlap-only pairs. Pairwise 0-3 scores, 3 samples, median. Hungarian assignment (`hungarian.py`, pure Python) on score + 0.01 x primary weight.
+   pays only for the overlap-only pairs. Pairwise 0-3 scores, 3 samples, median (the third sample only
+   when the first two disagree or one failed; owner decision #15). Hungarian assignment (`hungarian.py`,
+   pure Python) on score + 0.01 x primary weight.
    Strict (3) and lenient (>= 2) results. Credit rule per flaw (`substance | all_of | any_of`).
-3. **Adjudicate** unmatched findings into the six classes (deterministic DUPLICATE when a finding scores
-   >= 2 against a flaw matched to another finding; LLM otherwise; still-valid observations pre-adjudicate
-   VALID_UNPLANTED). A human-review queue (100 % VALID_UNPLANTED and HALLUCINATED, 20 % of the rest) is listed.
+3. **Adjudicate** unmatched findings: deterministic DUPLICATE when a finding scores >= 2 against a flaw
+   matched to another finding; else (strict) deterministic PARTIAL_KEY_MATCH when it scores PARTIAL (2)
+   against a flaw nobody matched (UD #14); otherwise the LLM gives one of the six classes, and a
+   still-valid observation match is VALID_UNPLANTED. Both deterministic labels use scored pairs only. A human-review queue (100 % VALID_UNPLANTED and HALLUCINATED, 20 % of the rest) is listed.
 4. **Ground** (MM §5): G1 quote existence, G2 the agent's `verify_anchor`, G3 premise judge, citation
    provenance from the ledger and a citation-support judge.
 5. **Metrics** (MM §3-§10) with `{value, reason, status}`; `value: null` always carries the reason.
@@ -84,22 +87,30 @@ are shuffled per listwise call with a seed derived from `--seed` and recorded in
 
 | Mode | Judge calls | Cost (per-kind prices below) | Wall time at concurrency 4 |
 |---|---|---|---|
-| pairwise, shortlist_bounded (prereg), grounding judges on | 60-200 | $10.72-19.12 | 5-50 min |
-| pairwise, shortlist_bounded, `--no-grounding-judges` | 20-160 | $3.52-11.92 | 2-40 min |
-| per_flaw_batch (deviation), shortlist_bounded, judges on | 60-116 | $10.72-17.86 | 5-29 min |
-| per_flaw_batch, shortlist_bounded, `--no-grounding-judges` | 20-76 | $3.52-10.66 | 2-19 min |
-| pairwise, `--candidate-rule union` (deviation), judges on | 300-440 | $17.92-26.32 | 25-110 min |
-| pairwise, `--candidate-rule union`, `--no-grounding-judges` | 260-400 | $10.72-19.12 | 22-100 min |
+| pairwise, shortlist_bounded (prereg), grounding judges on | 74-200 | $9.94-19.12 | 2-17 min |
+| pairwise, shortlist_bounded, `--no-grounding-judges` | 34-160 | $2.74-11.92 | 1-13 min |
+| per_flaw_batch (deviation), shortlist_bounded, judges on | 68-116 | $9.58-17.86 | 1-10 min |
+| per_flaw_batch, shortlist_bounded, `--no-grounding-judges` | 28-76 | $2.38-10.66 | 1-6 min |
+| pairwise, `--candidate-rule union` (deviation), judges on | 214-440 | $13.54-26.32 | 5-37 min |
+| pairwise, `--candidate-rule union`, `--no-grounding-judges` | 174-400 | $6.34-19.12 | 4-33 min |
 
-Ranges come from `--dry-run`. Under shortlist_bounded the shortlist decides how many findings per flaw
-are scored (0 to 3; the 2026-10-02 pilot shortlist returned 2.0 per flaw), so pair scoring lands between
-0 and 126 calls; adjudication lands between N - G and N calls. The dry run prices each call kind
+Ranges come from `--dry-run` with the default adaptive third sample (`--no-adaptive-samples`: pairwise
+shortlist_bounded 74-200 calls, $10.54-19.12; union 294-440, $15.94-26.32). The bounds are true bounds,
+not scenarios (verify_matcher_rule, 2026-10-02): a finding with no scored pair always goes to the
+adjudicator, and a finding with one can avoid it (matched, deterministic DUPLICATE or deterministic
+PARTIAL_KEY_MATCH). So the fewest calls under shortlist_bounded come from empty shortlists (no pair
+scored, all 20 findings adjudicated), while the lowest cost comes from giving every finding one scored
+pair ($0.06-0.09) instead of an adjudication ($0.33); the two minima are different outcomes. (The first
+version reported 60 calls and $10.72, which assumed 0 pair calls and 14 matched flaws at once.) Under
+shortlist_bounded the shortlist decides how many findings per flaw are scored (0 to 3; the 2026-10-02
+pilot shortlist returned 2.0 per flaw), so pair scoring lands between 0 and 126 calls. The dry run prices each call kind
 separately (`config/eval.yaml` `cost_estimate.per_kind_usd`, Opus 5.5 at effort high through `claude -p`):
 shortlist $0.11, per-flaw batch $0.06 and adjudication $0.33 (whole document) are means measured on the
 pilot (`docs/live_runs/live_cc_opus_payments_v1/eval_pilot/judge_calls.jsonl`, 57 calls); a single pair
 call ($0.03, from batch cost against candidate count), the premise judge ($0.33, whole document) and the
 citation judge ($0.03) were not in the pilot and are estimates. Whole-document calls (adjudication,
-premise) now dominate the cost of a run. Retries are not counted. `--adaptive-samples` asks the third
+premise) now dominate the cost of a run. Retries are not counted. The adaptive third sample (on by
+default, `docs/USER_DECISIONS.md` #15; `--no-adaptive-samples` turns it off for one run) asks the third
 pairwise sample only when the first two disagree or one failed; the median of three is then unchanged, so
 results are identical (verifier E1, 2026-10-02); it lowers the floor of pair scoring only.
 
@@ -121,14 +132,17 @@ grader package fails to import (`grade` then reports the import error).
 - Message Batches is not used: `AnthropicJudge` makes synchronous streamed calls.
 - `AnthropicJudge` reports cost only when given a price table (`price_per_mtok`); otherwise the cost stop
   charges each call its reserve.
-- G1/G2 reuse the agent's normaliser and `verify_anchor`: character-level partial ratio (MM says
-  token-level), exact match first, a section that cannot be resolved falls back to the page window.
-  Doc-evidence quotes shorter than 8 tokens are allowed but must match exactly.
-- A strict-unmatched finding whose best score is PARTIAL (2) against a flaw nobody matched goes to the
-  LLM adjudicator like any unmatched finding (MM §13 pseudo-code); the flaw is recorded as
-  `partial_key_flaw_id`. Primary P_a counts VALID_UNPLANTED only; the exploratory
-  `precision_adjudicated_partial_credit` also credits such partial findings (unless DUPLICATE or
-  HALLUCINATED). MM does not define this case (verifier E1, 2026-10-02).
+- G1/G2 reuse the agent's normaliser and `verify_anchor`: character-level partial ratio (MM §5.1 says so
+  since 2026-10-02), exact match first, a section that cannot be resolved falls back to the page window.
+  The 8-token minimum applies to the agent's `doc_anchors` quotes; doc-evidence quotes shorter than 8
+  tokens are allowed but must match exactly.
+- A strict-unmatched finding whose best median is PARTIAL (2) against a flaw nobody matched is labelled
+  `PARTIAL_KEY_MATCH` by the harness, with the flaw in `partial_key_flaw_id` (owner decision 2026-10-02,
+  `docs/USER_DECISIONS.md` #14; MM §2.3 step 4). No adjudicator call. It counts as correct for P_a
+  (P_a = (TP + VALID_UNPLANTED + PARTIAL_KEY_MATCH) / N, the flaw must be in the version's gold set),
+  is reported as `partial_key_match_count`, is never VALID_UNPLANTED, never enters the pooled key G+, and
+  never removes a sound unit (nor counts as a false positive on one). DUPLICATE is checked first. The
+  exploratory `precision_adjudicated_partial_credit` of verifier E1 is gone (P_a now covers it).
 - The result cache (`judge_results.jsonl`) is keyed by the client namespace too (`claude_code`,
   `anthropic_api`, `FakeJudge`), so fake answers are never reused by a live run in the same `--out`.
 - Ties between findings for one flaw go to the agent's higher-ranked finding (a < 1e-4 weight term).

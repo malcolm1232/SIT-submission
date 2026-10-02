@@ -53,6 +53,13 @@ from sit_review_agent.errors import (
     LLMTruncatedError,
 )
 from sit_review_agent.hashing import sha256_json, sha256_text
+from sit_review_agent.llm.runtime import (
+    FirstCallNetwork,
+    RuntimeLimits,
+    attempt_timeout,
+    check_context,
+    retry_allowed,
+)
 from sit_review_agent.models import FallbackEvent
 from sit_review_agent.progress import ProgressSink
 from sit_review_agent.rundir import JsonlWriter, RunDir
@@ -365,6 +372,7 @@ def _anthropic_classify(exc: BaseException, *, call_id: str | None,
     from sit_review_agent.errors import (
         LLMAuthError,
         LLMBadRequestError,
+        LLMConnectionError,
         LLMOverloadedError,
         LLMRateLimitError,
         LLMTimeoutError,
@@ -379,7 +387,7 @@ def _anthropic_classify(exc: BaseException, *, call_id: str | None,
     if isinstance(exc, anthropic.APITimeoutError | TimeoutError):
         return LLMTimeoutError("request to the Anthropic API timed out", **kw), True, None, None
     if isinstance(exc, anthropic.APIConnectionError):
-        return LLMUnavailableError("could not reach the Anthropic API (connection error)", **kw), True, None, None
+        return LLMConnectionError("could not reach the Anthropic API (connection error)", **kw), True, None, None
     if isinstance(exc, anthropic.APIStatusError):
         status = int(getattr(exc, "status_code", 0) or 0)
         etype = getattr(exc, "type", None)
@@ -464,6 +472,8 @@ class AnthropicGateway:
 
     #: Native PDF document blocks are accepted (``llm.backend.supports_native_pdf``).
     native_pdf: bool = True
+    #: Run deadline and context guard (``llm.runtime.attach_runtime``); ``None`` = no run limits.
+    runtime: RuntimeLimits | None = None
 
     def __init__(self, config: EffectiveConfig, run_dir: RunDir, *, clock: Clock | None = None,
                  progress: ProgressSink | None = None, client: Any | None = None) -> None:
@@ -485,6 +495,7 @@ class AnthropicGateway:
         self._fallbacks: list[FallbackEvent] = []
         self._refusals: list[dict[str, Any]] = []
         self._seq = 0
+        self._net = FirstCallNetwork(config.agent.llm.first_call_network_window_s)
         import random
 
         self._rng = random.Random()
@@ -586,8 +597,19 @@ class AnthropicGateway:
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         """Stream the request (``client.messages.stream`` + ``get_final_message``; see the class
         docstring for why not ``.parse``), apply the retry policy, check ``stop_reason`` before
-        reading content, parse ``output_schema``, and log every attempt to ``llm.jsonl``."""
+        reading content, parse ``output_schema``, and log every attempt to ``llm.jsonl``.
+
+        Run limits (``llm.runtime``): the request's estimated size is checked before anything is
+        sent (LLM-10); each attempt's timeout is bounded by the run deadline, a cut attempt is never
+        retried and no retry starts without time for it (LLM-05); connection errors on the first
+        call of the run are retried only within ``llm.first_call_network_window_s`` (NET-02)."""
+        import asyncio
+
+        from sit_review_agent.errors import LLMConnectionError, LLMDeadlineError
+
         self._guard.check(request)
+        check_context(self.runtime, request, model=self.model)
+        first = self._net.start_call()
         call_id = self.next_call_id()
         phase = request.phase.value
         body = self.build_body(request)
@@ -597,21 +619,37 @@ class AnthropicGateway:
         t_call = self.clock.monotonic()
         attempt = 0
         while True:
+            try:
+                timeout_s, cut = attempt_timeout(self.runtime, request.phase, self.timeout_s)
+            except LLMDeadlineError as exc:
+                exc.call_id = call_id
+                raise
             started_at = isoformat_z(self.clock.now_utc())
             t0 = self.clock.monotonic()
             base: dict[str, Any] = {
                 "call_id": call_id, "phase": phase, "purpose": request.purpose,
                 "conversation_id": request.conversation_id, "request_sha256": req_hash, "started_at": started_at,
                 "backend": _ANTHROPIC_BACKEND, "attempt": attempt, "requested_model": self.model,
-                "effort": request.effort, "max_tokens": request.max_tokens,
+                "effort": request.effort, "max_tokens": request.max_tokens, "timeout_s": round(timeout_s, 3),
             }
             if attempt == 0:
                 base["request"] = logged_body           # body minus PDF bytes, once per call (REPRODUCIBILITY §6)
                 base["pdf_sha256"] = pdf_hashes
             try:
-                message, request_id = await self._anthropic_stream(body, phase, call_id)
+                if cut:
+                    message, request_id = await asyncio.wait_for(self._anthropic_stream(body, phase, call_id),
+                                                                 timeout_s)
+                else:
+                    message, request_id = await self._anthropic_stream(body, phase, call_id)
             except Exception as exc:  # noqa: BLE001 - classified below; non-SDK exceptions re-raised
-                mapped = _anthropic_classify(exc, call_id=call_id, phase=phase)
+                import anthropic
+
+                if cut and isinstance(exc, TimeoutError | anthropic.APITimeoutError):
+                    assert self.runtime is not None and self.runtime.deadline is not None
+                    mapped: tuple[LLMError, bool, float | None, int | None] | None = (
+                        self.runtime.deadline.cut(request.phase, timeout_s, call_id=call_id), False, None, None)
+                else:
+                    mapped = _anthropic_classify(exc, call_id=call_id, phase=phase)
                 if mapped is None:
                     raise
                 err, retry, retry_after, status = mapped
@@ -623,12 +661,20 @@ class AnthropicGateway:
                               "usage": Usage().__dict__, "content": [], "elapsed_s": elapsed})
                 if retry and attempt < self.max_retries:
                     delay = retry_after if retry_after is not None else self._anthropic_backoff(attempt)
+                    if first and self._net.give_up(err, self.clock.monotonic() - t_call, delay):
+                        raise self._net.error(err, attempt + 1) from None
+                    if not retry_allowed(self.runtime, request.phase, delay):
+                        assert self.runtime is not None and self.runtime.deadline is not None
+                        raise self.runtime.deadline.no_time(request.phase, after=type(err).__name__,
+                                                            call_id=call_id) from None
                     if self.progress is not None:
                         self.progress.emit(phase, f"{type(err).__name__} on {call_id}; retry "
                                                   f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")
                     await self.clock.sleep(delay)
                     attempt += 1
                     continue
+                if first and isinstance(err, LLMConnectionError):
+                    raise self._net.error(err, attempt + 1) from None
                 raise err from None
             elapsed = self.clock.monotonic() - t0
             attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
@@ -745,7 +791,13 @@ class AnthropicGateway:
                                                    messages=[{"role": "user", "content": "ping"}]) as stream:
                 return await stream.get_final_message()
 
-        message = await self._anthropic_simple(ping, label="preflight", retries=0)
+        from sit_review_agent.errors import LLMConnectionError
+        from sit_review_agent.llm.runtime import NO_NETWORK_HINT
+
+        try:
+            message = await self._anthropic_simple(ping, label="preflight", retries=0)
+        except LLMConnectionError as exc:      # robustness NET-02: offline at start, no retries
+            raise LLMConnectionError(f"{NO_NETWORK_HINT} (preflight: {exc})") from None
         self._usage = self._usage + _anthropic_usage(_anthropic_get(message, "usage"))
         self._served.add(str(_anthropic_get(message, "model") or self.model))
 
@@ -783,7 +835,14 @@ class FakeResponse:
 
 class FakeGateway:
     """Deterministic gateway for tests: pops the next :class:`FakeResponse` scripted for the
-    request's phase. Logs to ``llm.jsonl`` like the live gateway when ``run_dir`` is given."""
+    request's phase. Logs to ``llm.jsonl`` like the live gateway when ``run_dir`` is given.
+
+    Run limits (``runtime``, set by ``llm.runtime.attach_runtime``) apply as in the live gateways:
+    an over-size request is refused before it is "sent" (LLM-10, ``calls`` does not record it) and a
+    call is not started without time for it before the deadline (LLM-05)."""
+
+    #: Run deadline and context guard (``llm.runtime.attach_runtime``); ``None`` = no run limits.
+    runtime: RuntimeLimits | None = None
 
     def __init__(self, script: Mapping[PhaseName | str, Sequence[FakeResponse]], *,
                  run_dir: RunDir | None = None, model: str = "claude-opus-5-5",
@@ -810,6 +869,8 @@ class FakeGateway:
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         self._guard.check(request)
+        check_context(self.runtime, request, model=self.model)
+        attempt_timeout(self.runtime, request.phase, float("inf"))      # raises LLMDeadlineError without time
         self.calls.append(request)
         call_id = self.next_call_id()
         queue = self.script.get(str(request.phase))
@@ -893,7 +954,15 @@ class FaultInjectingLLMGateway:
     ``latency``, ``flaky``. Match keys: ``stage``, ``attempt``, ``nth``, ``after_seconds``.
 
     ``policy`` (``config.agent.llm``) supplies the retry policy when the wrapped gateway does not
-    carry it (``FakeGateway``), so a fake-transport drill uses the configured timeout and retries."""
+    carry it (``FakeGateway``), so a fake-transport drill uses the configured timeout and retries.
+
+    Run limits (``runtime``) apply as in the live gateways: a ``hang`` lasts the attempt timeout
+    bounded by the run deadline (a cut attempt raises :class:`LLMDeadlineError` and is not
+    retried), no retry starts without time for it, and ``offline`` / ``connection_reset`` on the
+    first call of the run are retried only within ``first_call_network_window_s`` (NET-02)."""
+
+    #: Run deadline and context guard (``llm.runtime.attach_runtime``); ``None`` = no run limits.
+    runtime: RuntimeLimits | None = None
 
     def __init__(self, inner: LLMGateway, schedule: Any, *, clock: Clock | None = None,
                  policy: Any = None) -> None:
@@ -901,6 +970,7 @@ class FaultInjectingLLMGateway:
         self.schedule = schedule     # tools.faults.FaultSchedule (typed there to avoid an import cycle)
         self.clock = clock or SystemClock()
         self.policy = policy         # config.LLMConfig or None
+        self._net = FirstCallNetwork(float(getattr(policy, "first_call_network_window_s", 10.0)))
         self._refusals: list[dict[str, Any]] = []      # injected refusals (the inner never saw them)
 
     @property
@@ -948,6 +1018,8 @@ class FaultInjectingLLMGateway:
         from sit_review_agent.errors import (
             LLMAuthError,
             LLMBadRequestError,
+            LLMConnectionError,
+            LLMDeadlineError,
             LLMOverloadedError,
             LLMRateLimitError,
             LLMTimeoutError,
@@ -955,6 +1027,10 @@ class FaultInjectingLLMGateway:
         )
         from sit_review_agent.tools import fault_apply as fa
 
+        check_context(self.runtime, request, model=str(getattr(self.inner, "model", "")))
+        net = self._net
+        first = net.start_call()
+        t_call = self.clock.monotonic()
         st = self.__dict__.setdefault("_fault_state", {"t0": self.clock.monotonic(), "seq": 0,
                                                        "rng": _random.Random(getattr(self.schedule, "seed", 0))})
         st["seq"] += 1
@@ -996,18 +1072,26 @@ class FaultInjectingLLMGateway:
             if spec is None:
                 return self._with_injected(await self.inner.call(request), injected)
             kind = spec if isinstance(spec, str) else spec.type.value
+            attempt_s, cut = attempt_timeout(self.runtime, request.phase, timeout_s)
             t_attempt, started_attempt = self.clock.monotonic(), isoformat_z(self.clock.now_utc())
             status_code: int | None = None
             err: LLMError
             retry = True
             wait: float | None = None
             if kind == "offline":
-                err = LLMUnavailableError("network unreachable (offline) [injected fault]", phase=phase)
+                err = LLMConnectionError("network unreachable (offline) [injected fault]", phase=phase)
             elif kind == "hang":
-                await self.clock.sleep(timeout_s)
-                err = LLMTimeoutError(f"no response within {timeout_s:.0f} s (hang) [injected fault]", phase=phase)
+                await self.clock.sleep(attempt_s)
+                if cut:
+                    assert self.runtime is not None and self.runtime.deadline is not None
+                    err = LLMDeadlineError(f"{self.runtime.deadline.cut(request.phase, attempt_s)} (hang) "
+                                           "[injected fault]", phase=phase)
+                    retry = False
+                else:
+                    err = LLMTimeoutError(f"no response within {attempt_s:.0f} s (hang) [injected fault]",
+                                          phase=phase)
             elif kind == "connection_reset":
-                err = LLMUnavailableError("connection reset by peer [injected fault]", phase=phase)
+                err = LLMConnectionError("connection reset by peer [injected fault]", phase=phase)
             elif kind in ("http_status", "auth"):
                 extra = spec.model_extra or {}
                 status = int(extra.get("status", extra.get("code", extra.get("value", 401 if kind == "auth" else 500))))
@@ -1062,6 +1146,17 @@ class FaultInjectingLLMGateway:
             else:                                   # MCP- or process-level fault types: not for this layer
                 return self._with_injected(await self.inner.call(request), injected)
             final = not retry or attempt >= max_retries
+            wait_next: float | None = None
+            if not final:
+                wait_next = wait if wait is not None else (
+                    min(max_s, base_s * (2 ** attempt)) * (0.5 + 0.5 * st["rng"].random()))
+                if first and net.give_up(err, self.clock.monotonic() - t_call, wait_next):
+                    err, final = net.error(err, attempt + 1), True
+                elif not retry_allowed(self.runtime, request.phase, wait_next):
+                    assert self.runtime is not None and self.runtime.deadline is not None
+                    err, final = self.runtime.deadline.no_time(request.phase, after=type(err).__name__), True
+            elif first and isinstance(err, LLMConnectionError):
+                err = net.error(err, attempt + 1)
             if final and err.call_id is None:
                 # The call ends here: number it like a real call (schema_violation keeps the
                 # inner call's ID). A retried fault is logged with call_id null: the attempt that
@@ -1080,8 +1175,7 @@ class FaultInjectingLLMGateway:
                          "started_at": started_attempt})
             if final:
                 raise err
-            if wait is None:
-                wait = min(max_s, base_s * (2 ** attempt)) * (0.5 + 0.5 * st["rng"].random())
+            wait = wait_next if wait_next is not None else 0.0
             if progress is not None:
                 progress.emit(phase, f"{type(err).__name__}: {err}; retry {attempt + 1}/{max_retries} in "
                                      f"{wait:.0f} s", "warn")

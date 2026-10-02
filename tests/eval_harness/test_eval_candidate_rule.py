@@ -174,6 +174,9 @@ def test_shortlist_failure(tmp_path, rule):
         assert recall["value"] == 0.5 and recall["shortlist_failed_flaws"] == ["F01"]
         assert "lower bound" in recall["note"]
         assert scores["metrics"]["lenient_recall"]["shortlist_failed_flaws"] == ["F01"]
+        # the recall-based metrics carry the same lower-bound note (F01 is the critical flaw)
+        assert scores["metrics"]["severity_weighted_recall"]["shortlist_failed_flaws"] == ["F01"]
+        assert scores["metrics"]["critical_recall"]["shortlist_failed_flaws"] == ["F01"]
         assert any("shortlist failed for F01" in w and "lower bounds" in w for w in scores["warnings"])
         # the overlap the shortlist would have been hinted with is still on record
         assert m["shortlist"]["F01"]["overlap_hint_ids"] == ["FND-001", "FND-002", "FND-003", "FND-004"]
@@ -193,21 +196,30 @@ def test_dry_run_on_the_live_run_plans_far_fewer_calls(tmp_path):
 
     bounded = plan()
     assert bounded["candidate_rule"] == "shortlist_bounded" and bounded["granularity"] == "pairwise"
+    assert bounded["adaptive_third_sample"] is True                     # config default (UD #15)
     assert bounded["findings_scored"] == 20 and bounded["key_flaws"] == 14
     assert bounded["location_overlap_pairs"] == 80                       # still reported: it is the hint
     assert bounded["candidate_pairs"] == {"min": 0, "max": 42}           # 14 flaws x shortlist_k 3
     c = bounded["calls"]
     assert c["shortlist"] == 14 and c["pair_scoring"] == {"min": 0, "max": 126}
-    assert c["adjudication"] == {"min": 6, "max": 20} and c["premise_judge"] == 20 and c["citation_judge"] == 20
-    assert c["total"] == {"min": 60, "max": 200}
+    # the fewest calls: every shortlist empty, so nothing is matched and all 20 findings are adjudicated
+    # (the first version claimed 6 adjudications with 0 pair calls, an impossible outcome)
+    assert c["adjudication"] == {"min": 20, "max": 20} and c["premise_judge"] == 20 and c["citation_judge"] == 20
+    assert c["total"] == {"min": 74, "max": 200}
     assert "shortlist_bounded" in bounded["note"]
-    assert plan("--no-grounding-judges")["calls"]["total"] == {"min": 20, "max": 160}
-    assert plan("--granularity", "per_flaw_batch")["calls"]["pair_scoring"] == {"min": 0, "max": 42}
-    union = plan("--candidate-rule", "union")
+    assert plan("--no-grounding-judges")["calls"]["total"] == {"min": 34, "max": 160}
+    assert plan("--granularity", "per_flaw_batch", "--no-adaptive-samples")["calls"]["pair_scoring"] == \
+        {"min": 0, "max": 42}
+    assert plan("--no-adaptive-samples")["calls"]["total"] == {"min": 74, "max": 200}
+    union = plan("--candidate-rule", "union", "--no-adaptive-samples")
     assert union["candidate_pairs"] == {"min": 80, "max": 122}
     assert union["calls"]["pair_scoring"] == {"min": 240, "max": 366}
-    assert union["calls"]["total"] == {"min": 300, "max": 440}
-    assert plan("--candidate-rule", "union", "--no-grounding-judges")["calls"]["total"] == {"min": 260, "max": 400}
+    # every finding overlaps some flaw, so under union no finding has to reach the adjudicator
+    assert union["calls"]["adjudication"] == {"min": 0, "max": 20}
+    assert union["calls"]["total"] == {"min": 294, "max": 440}
+    assert plan("--candidate-rule", "union", "--no-adaptive-samples", "--no-grounding-judges")["calls"]["total"] \
+        == {"min": 254, "max": 400}
+    assert plan("--candidate-rule", "union")["calls"]["total"] == {"min": 214, "max": 440}   # adaptive floor
     assert bounded["cost_usd_estimate"]["high"] < union["cost_usd_estimate"]["high"]
     assert bounded["cost_usd_estimate"]["low"] < union["cost_usd_estimate"]["low"]
     bad = runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--dry-run",
@@ -222,21 +234,27 @@ def test_dry_run_prices_call_kinds_separately():
              "recommendation": 0.03}
     p = plan_calls(rin, key, "v1", options(), usd, secs, per_kind_usd=kinds)
     est = p["cost_usd_estimate"]
-    # min plan: 14 shortlist + 6 adjudicate + 20 premise + 20 citation; max adds 126 pair calls, 20 adjudicate
-    assert est["low"] == pytest.approx(14 * 0.11 + 6 * 0.33 + 20 * 0.33 + 20 * 0.03) == 10.72
+    # cheapest outcome: each of the 20 findings gets one scored pair (3 samples at $0.03 < one $0.33
+    # adjudication) and is matched or a deterministic DUPLICATE / PARTIAL_KEY_MATCH, so nothing is adjudicated:
+    # 14 shortlist + 60 pair + 20 premise + 20 citation. Max: 126 pair calls and 20 adjudications.
+    assert est["low"] == pytest.approx(14 * 0.11 + 60 * 0.03 + 20 * 0.33 + 20 * 0.03) == 10.54
     assert est["high"] == pytest.approx(14 * 0.11 + 126 * 0.03 + 20 * 0.33 + 20 * 0.33 + 20 * 0.03) == 19.12
+    ad = plan_calls(rin, key, "v1", options(adaptive_samples=True), usd, secs, per_kind_usd=kinds)
+    assert ad["cost_usd_estimate"]["low"] == pytest.approx(14 * 0.11 + 40 * 0.03 + 20 * 0.33 + 20 * 0.03) == 9.94
     assert est["by_kind_at_max"] == {"shortlist": 1.54, "pair": 3.78, "adjudicate": 6.6, "premise": 6.6,
                                      "citation": 0.6}
     off = plan_calls(rin, key, "v1", options(grounding_judges=False), usd, secs, per_kind_usd=kinds)
-    assert (off["cost_usd_estimate"]["low"], off["cost_usd_estimate"]["high"]) == (3.52, 11.92)
+    assert (off["cost_usd_estimate"]["low"], off["cost_usd_estimate"]["high"]) == (3.34, 11.92)
     un = plan_calls(rin, key, "v1", options(candidate_rule="union"), usd, secs, per_kind_usd=kinds)
-    assert (un["cost_usd_estimate"]["low"], un["cost_usd_estimate"]["high"]) == (17.92, 26.32)
+    assert (un["cost_usd_estimate"]["low"], un["cost_usd_estimate"]["high"]) == (15.94, 26.32)
     batch = plan_calls(rin, key, "v1", options(granularity="per_flaw_batch", grounding_judges=False), usd, secs,
                        per_kind_usd=kinds)
     assert batch["cost_usd_estimate"]["by_kind_at_max"]["batch"] == 2.52
+    # batch: 7 flaws x 3 findings cover all 20 findings for 7 x 3 batch calls
+    assert batch["cost_usd_estimate"]["low"] == pytest.approx(14 * 0.11 + 21 * 0.06) == 2.8
     # without a per-kind table the flat per-call prices still work
     flat = plan_calls(rin, key, "v1", options(), usd, secs)
-    assert flat["cost_usd_estimate"]["low"] == round(60 * 0.03, 2) and "by_kind_at_max" not in flat["cost_usd_estimate"]
+    assert flat["cost_usd_estimate"]["low"] == round(74 * 0.03, 2) and "by_kind_at_max" not in flat["cost_usd_estimate"]
 
 
 def test_default_config_is_shortlist_bounded():

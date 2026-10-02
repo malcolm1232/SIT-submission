@@ -50,6 +50,8 @@ from sit_review_agent.errors import (
     ConfigError,
     LLMAuthError,
     LLMBadRequestError,
+    LLMConnectionError,
+    LLMDeadlineError,
     LLMError,
     LLMOverloadedError,
     LLMRateLimitError,
@@ -69,6 +71,13 @@ from sit_review_agent.llm.gateway import (
     ToolUse,
     Usage,
     request_sha256,
+)
+from sit_review_agent.llm.runtime import (
+    FirstCallNetwork,
+    RuntimeLimits,
+    attempt_timeout,
+    check_context,
+    retry_allowed,
 )
 from sit_review_agent.models import FallbackEvent
 from sit_review_agent.progress import ProgressSink, heartbeat
@@ -248,6 +257,11 @@ class _AttemptFailed(Exception):
 
 _AUTH_MARKERS = ("authentication", "invalid api key", "/login", "oauth token", "not logged in", "login expired")
 _BAD_REQUEST_MARKERS = ("invalid_request_error", "prompt is too long", "credit balance is too low")
+#: Error text of a connection-type failure (robustness NET-02). How ``claude -p`` words an offline
+#: network is UNVERIFIED; these are the usual Node / undici / fetch messages.
+_CONNECTION_MARKERS = ("connection error", "unable to connect", "could not connect", "econnrefused", "econnreset",
+                       "enotfound", "eai_again", "getaddrinfo", "enetunreach", "ehostunreach", "network is unreachable",
+                       "fetch failed", "socket hang up", "connect etimedout", "no internet", "offline")
 
 
 def _classify(text: str, *, call_id: str, phase: str) -> tuple[LLMError, bool]:
@@ -265,6 +279,9 @@ def _classify(text: str, *, call_id: str, phase: str) -> tuple[LLMError, bool]:
                                  phase=phase), True
     if "overloaded" in t or re.search(r"\b(529|503)\b", t):
         return LLMOverloadedError(f"model overloaded: {short}", call_id=call_id, phase=phase), True
+    if any(m in t for m in _CONNECTION_MARKERS):
+        return LLMConnectionError(f"Claude Code could not reach the model API: {short}", call_id=call_id,
+                                  phase=phase), True
     if "timed out" in t or "timeout" in t:
         return LLMTimeoutError(f"Claude Code timed out: {short}", call_id=call_id, phase=phase), True
     return LLMUnavailableError(f"Claude Code error: {short}", call_id=call_id, phase=phase), True
@@ -316,6 +333,8 @@ class ClaudeCodeGateway:
 
     #: The CLI cannot take native PDF document blocks; callers send canonical text only.
     native_pdf: bool = False
+    #: Run deadline and context guard (``llm.runtime.attach_runtime``); ``None`` = no run limits.
+    runtime: RuntimeLimits | None = None
 
     def __init__(self, config: EffectiveConfig, run_dir: RunDir, *, clock: Clock | None = None,
                  progress: ProgressSink | None = None, runner: Runner | None = None) -> None:
@@ -350,6 +369,7 @@ class ClaudeCodeGateway:
         self._tool_id_alias: dict[str, str] = {}     # issued id -> the id the model wrote
         self._tool_seq = 0
         self._seq = 0
+        self._net = FirstCallNetwork(config.agent.llm.first_call_network_window_s)
         self._rng = random.Random()
 
     # ---------------------------------------------------------------- protocol accessors
@@ -533,7 +553,14 @@ class ClaudeCodeGateway:
     # ---------------------------------------------------------------- the call
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
+        """One logical call (one ``claude -p`` per attempt) under the retry policy and the run
+        limits (``llm.runtime``): the request's size is checked before anything runs (LLM-10; PDF
+        blocks are dropped here, so they do not count), each attempt's timeout is bounded by the run
+        deadline and a cut attempt is not retried (LLM-05), and connection errors on the first call
+        of the run are retried only within ``llm.first_call_network_window_s`` (NET-02)."""
         self._guard.check(request)
+        check_context(self.runtime, request, model=self.model, native_pdf=False)
+        first = self._net.start_call()
         call_id = self.next_call_id()
         phase = request.phase.value
         conv = self._conversations.get(request.conversation_id)
@@ -563,6 +590,11 @@ class ClaudeCodeGateway:
         while True:
             # A fresh session id per attempt: a failed attempt may have created (or, resuming in
             # place, polluted) a transcript, so retries never reuse it (see _Conversation).
+            try:
+                timeout_s, cut = attempt_timeout(self.runtime, request.phase, self.timeout_s)
+            except LLMDeadlineError as exc:
+                exc.call_id = call_id
+                raise
             attempt_uuid = str(uuid.uuid4())
             argv = self.build_argv(request, system_text=system_text, schema_json=schema_json,
                                    session_uuid=attempt_uuid, resume_from=conv.session_uuid)
@@ -576,9 +608,11 @@ class ClaudeCodeGateway:
                 "backend": BACKEND, "cli_session_id": attempt_uuid, "cli_resumed_from": conv.session_uuid,
                 "argv": logged_argv,
                 "prompt_sha256": prompt_hash, "pdf_dropped": pdf_dropped, "attempt": attempt,
+                "timeout_s": round(timeout_s, 3),
             }
             try:
-                result = await self._attempt(request, conv, call_id, argv, prompt, env, base_entry)
+                result = await self._attempt(request, conv, call_id, argv, prompt, env, base_entry,
+                                             timeout_s=timeout_s, cut=cut)
             except _AttemptFailed as fail:
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
@@ -586,12 +620,20 @@ class ClaudeCodeGateway:
                 self._log_failure(base_entry, fail, elapsed, conv)
                 if fail.retry and attempt < self.max_retries:
                     delay = self._backoff(attempt)
+                    if first and self._net.give_up(fail.error, self.clock.monotonic() - t_call, delay):
+                        raise self._net.error(fail.error, attempt + 1) from None
+                    if not retry_allowed(self.runtime, request.phase, delay):
+                        assert self.runtime is not None and self.runtime.deadline is not None
+                        raise self.runtime.deadline.no_time(request.phase, after=type(fail.error).__name__,
+                                                            call_id=call_id) from None
                     if self.progress is not None:
                         self.progress.emit(phase, f"{type(fail.error).__name__} on {call_id}; retry "
                                                   f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")
                     await self.clock.sleep(delay)
                     attempt += 1
                     continue
+                if first and isinstance(fail.error, LLMConnectionError):
+                    raise self._net.error(fail.error, attempt + 1) from None
                 raise fail.error from None
             elapsed = self.clock.monotonic() - t0
             attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
@@ -622,19 +664,26 @@ class ClaudeCodeGateway:
                       "terminal_reason": out.get("terminal_reason"), "elapsed_s": elapsed})
 
     async def _run(self, argv: list[str], prompt: str, env: dict[str, str], phase: str,
-                   call_id: str) -> CompletedRun:
+                   call_id: str, timeout_s: float | None = None) -> CompletedRun:
+        t = self.timeout_s if timeout_s is None else timeout_s
         if self.progress is None:
-            return await self.runner(argv, prompt, env, self.cwd, self.timeout_s)
+            return await self.runner(argv, prompt, env, self.cwd, t)
         async with heartbeat(self.progress, phase, lambda: f"waiting on claude -p ({call_id})", clock=self.clock):
-            return await self.runner(argv, prompt, env, self.cwd, self.timeout_s)
+            return await self.runner(argv, prompt, env, self.cwd, t)
 
     async def _attempt(self, request: LLMRequest, conv: _Conversation, call_id: str, argv: list[str], prompt: str,
-                       env: dict[str, str], base_entry: dict[str, Any]) -> dict[str, Any]:
+                       env: dict[str, str], base_entry: dict[str, Any], *, timeout_s: float | None = None,
+                       cut: bool = False) -> dict[str, Any]:
         phase = request.phase.value
+        t = self.timeout_s if timeout_s is None else timeout_s
+        t0 = self.clock.monotonic()
         try:
-            run = await self._run(argv, prompt, env, phase, call_id)
+            run = await self._run(argv, prompt, env, phase, call_id, t)
         except TimeoutError:
-            raise _AttemptFailed(LLMTimeoutError(f"claude -p exceeded {self.timeout_s:g} s", call_id=call_id,
+            if cut and self.runtime is not None and self.runtime.deadline is not None:
+                raise _AttemptFailed(self.runtime.deadline.cut(request.phase, t, call_id=call_id),
+                                     retry=False) from None
+            raise _AttemptFailed(LLMTimeoutError(f"claude -p exceeded {t:g} s", call_id=call_id,
                                                  phase=phase), retry=True) from None
         except FileNotFoundError:
             raise _AttemptFailed(LLMAuthError(f"Claude Code executable {self.executable!r} not found; install "
@@ -704,7 +753,8 @@ class ClaudeCodeGateway:
         self.log.log({**base_entry, "model": served, "stop_reason": result["stop_reason"], "outcome": "ok",
                       "usage": usage.__dict__, "content": result["content"], "num_turns": out.get("num_turns"),
                       "total_cost_usd": out.get("total_cost_usd"), "call_cost_usd": call_cost,
-                      "terminal_reason": out.get("terminal_reason"), "cli_stop_reason": stop})
+                      "terminal_reason": out.get("terminal_reason"), "cli_stop_reason": stop,
+                      "elapsed_s": round(self.clock.monotonic() - t0, 3)})   # latency (robustness OPS-10)
         return result
 
     def _interpret(self, request: LLMRequest, out: dict[str, Any], call_id: str) -> dict[str, Any]:

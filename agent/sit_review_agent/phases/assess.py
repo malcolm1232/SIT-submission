@@ -25,7 +25,9 @@ Implementation notes (workstream A):
 * coverage has exactly one row per configured criterion, consistent with the findings
   (``_model_calls.reconcile_coverage``);
 * the phase replaces (not appends to) the four fields, so a re-run from the checkpoint is safe;
-* after a persistent refusal: no findings, every criterion's coverage row says it was not assessed.
+* after a persistent refusal: no findings, every criterion's coverage row says it was not assessed;
+* when the run deadline cuts the call (robustness LLM-05): the same, disclosed as "out of time
+  before assessment"; nothing is made up, and ``report`` skips the model verdict.
 """
 
 from __future__ import annotations
@@ -77,9 +79,10 @@ class AssessPhase:
             ctx.state.finding_drafts = []
             ctx.state.finding_meta = {}
             ctx.state.sound_area_drafts = []
+            note = ("not assessed: out of time before assessment (run deadline)" if call.cut
+                    else "not assessed: the model declined the assess call")
             ctx.state.coverage = [CriterionCoverage(criterion_id=c, outcome="not_applicable", finding_ids=[],
-                                                    note="not assessed: the model declined the assess call")
-                                  for c in known_criteria(ctx)]
+                                                    note=note) for c in known_criteria(ctx)]
             return ctx
         out = result.parsed
 

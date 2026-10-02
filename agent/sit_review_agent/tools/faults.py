@@ -3,8 +3,9 @@
 Schedules live in ``tests/robustness/faults/<SCENARIO-ID>.yaml`` and are selected with
 ``--faults`` or ``agent.yaml fault_schedule``; the schedule ID and file hash go in the manifest
 (INV-09). This module is pure data + loader; the injectors are
-:class:`~sit_review_agent.tools.gateway.FaultInjectingGateway` (MCP) and
-:class:`~sit_review_agent.llm.gateway.FaultInjectingLLMGateway` (LLM).
+:class:`~sit_review_agent.tools.gateway.FaultInjectingGateway` (MCP),
+:class:`~sit_review_agent.llm.gateway.FaultInjectingLLMGateway` (LLM) and, for ``process:``
+entries, the orchestrator's phase wrapper (``orchestrator._run_ProcessFault``, new runs only).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from sit_review_agent.errors import ConfigError
 from sit_review_agent.hashing import sha256_file
@@ -44,6 +45,10 @@ class FaultType(StrEnum):
     RAISE_IN_STAGE = "raise_in_stage"
     SIGINT_IN_STAGE = "sigint_in_stage"
     CLOCK_JUMP = "clock_jump"
+
+
+#: Fault types of a schedule's ``process:`` layer (applied around a phase by the orchestrator).
+PROCESS_FAULTS = frozenset({FaultType.RAISE_IN_STAGE, FaultType.SIGINT_IN_STAGE, FaultType.CLOCK_JUMP})
 
 
 class FaultSpec(BaseModel):
@@ -90,6 +95,24 @@ class FaultSchedule(BaseModel):
     network: list[FaultSpec] = Field(default_factory=list)
     process: list[FaultSpec] = Field(default_factory=list)
     sha256: str | None = Field(default=None, description="hash of the source file, set by the loader")
+
+    @model_validator(mode="after")
+    def _process_entries(self) -> FaultSchedule:
+        """``process:`` entries are applied by the orchestrator (``orchestrator._run_ProcessFault``),
+        so a malformed one is refused at load time rather than silently ignored."""
+        from sit_review_agent.states import PhaseName
+
+        stages = {p.value for p in PhaseName}
+        for i, spec in enumerate(self.process):
+            extra = spec.model_extra or {}
+            if spec.type not in PROCESS_FAULTS:
+                raise ValueError(f"process[{i}]: {spec.type.value} is not a process fault "
+                                 f"({', '.join(sorted(t.value for t in PROCESS_FAULTS))})")
+            if extra.get("stage") not in stages:
+                raise ValueError(f"process[{i}]: stage must be one of {sorted(stages)}, got {extra.get('stage')!r}")
+            if str(extra.get("at", "end")) not in ("start", "end"):
+                raise ValueError(f"process[{i}]: at must be start or end, got {extra.get('at')!r}")
+        return self
 
     def manifest_entry(self) -> dict[str, Any]:
         return {"profile": self.id, "schedule_sha256": self.sha256}

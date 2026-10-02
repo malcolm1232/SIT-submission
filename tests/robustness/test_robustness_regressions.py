@@ -72,7 +72,7 @@ class _Step:
         if self.name is PhaseName.RESEARCH:
             ctx.state.stop_reason = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "all_questions_answered")
         if self.name is PhaseName.ASSESS:
-            self.clock.advance(1800)                                     # one model call at llm.timeout_s
+            self.clock.advance(ctx.config.stop_rules.deadline_seconds)   # assess runs to the deadline
         return ctx
 
 

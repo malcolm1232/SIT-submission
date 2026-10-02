@@ -86,34 +86,36 @@ Strengths (`kind = strength`) are excluded from defect matching. They are scored
    c. Listwise LLM shortlist: one call per flaw that sees all findings (shuffled) and the hints from a and b, and returns up to 3 candidate ids or "none".
    The candidate set of a flaw is the shortlist c, at most 3 findings. Only these pairs are scored in step 2; every other pair scores 0, whether or not its locations overlap. Location compatibility still governs the score itself (§2.1 rule 3: a 3 with an incompatible location is at most PARTIAL). If the shortlist call fails after retries, the flaw has no candidates, counts as unmatched, and the failure is reported with the run's scores (recall is then a lower bound); it does not fall back to the overlap set. The scores record, per flaw, which shortlisted findings also overlap and which overlapping findings were not shortlisted.
    *(Amended 2026-10-02 by owner decision, docs/USER_DECISIONS.md #10: the candidate set was the union of a, b and c. That rule is kept in the harness as `--candidate-rule union`, a comparison mode and a deviation.)*
-2. **Pairwise scoring.** An LLM matcher (from a model family **different** from the agent's) scores each candidate pair on the 0–3 scale. *(Superseded, reconciliation 2026-10-02: the matcher's model is set by `docs/DECISIONS.md` ADR-003, Pending; branch B uses a local open-weight model validated against the user's 150 labelled S-dev pairs, else Claude in batch disclosed as same-family. The same applies to the adjudicator, G3 judge and citation judge. Audit C3.)* It returns JSON `{score, core_insight_present, location_ok, rationale}`. Use 3 samples, or a deterministic call plus a re-ask with the two texts in swapped order, and take the **median** score.
+2. **Pairwise scoring.** An LLM matcher (from a model family **different** from the agent's) scores each candidate pair on the 0–3 scale. *(Superseded, reconciliation 2026-10-02: the matcher's model is set by `docs/DECISIONS.md` ADR-003, Pending; branch B uses a local open-weight model validated against the user's 150 labelled S-dev pairs, else Claude in batch disclosed as same-family. The same applies to the adjudicator, G3 judge and citation judge. Audit C3.)* It returns JSON `{score, core_insight_present, location_ok, rationale}`. Use 3 samples, or a deterministic call plus a re-ask with the two texts in swapped order, and take the **median** score. The third sample is asked only when the first two disagree or one of them failed: when two samples agree, the median of three is their value whatever the third says, so the median is unchanged and about a third of the calls are saved. *(Amended 2026-10-02 by owner decision, docs/USER_DECISIONS.md #15; `--no-adaptive-samples` asks all three.)*
 3. **Assignment.** Solve a maximum-weight bipartite assignment (Hungarian algorithm, e.g. `scipy.optimize.linear_sum_assignment`) on weight = score + ε·w(s(g)), with ε = 0.01 to break ties toward more severe flaws. Ineligible pairs get weight 0. Drop assigned pairs below the eligibility threshold.
-4. **Adjudication of unmatched findings.** Each unmatched finding gets exactly one class:
+4. **Adjudication of unmatched findings.** Each unmatched finding gets exactly one class, in this order: (i) DUPLICATE, deterministically, if it scores ≥ 2 against a flaw assigned to another finding; (ii) under strict matching, PARTIAL_KEY_MATCH, deterministically, if its best median score is 2 (PARTIAL) against a flaw that no finding matches (ties go to the more severe flaw, then the earlier one in the key; the flaw is recorded with the finding); (iii) otherwise the LLM adjudicator gives one of the six remaining classes, and a finding matching a still-valid observation is VALID_UNPLANTED. Both deterministic rules use scored pairs only (step 1 bounds which pairs are scored).
 
 | Class | Meaning | Counts as correct for precision? |
 |---|---|---|
 | DUPLICATE | Restates a finding already matched (score ≥ 2 to an already-assigned flaw, or semantically the same as another finding) | strict: no; adjudicated: no |
+| PARTIAL_KEY_MATCH | Same defect as a key flaw that nothing matched, but only PARTIAL (score 2): a real issue that is **in** the key, so not "missing from the key". Assigned by the harness, never by the LLM | strict: no; **adjudicated: yes** (only if the flaw is in the run's gold set G_d). Reported as its own count; never enters G⁺_d (step 5); never removes a sound unit (§6.2) |
 | VALID_UNPLANTED | Correct, specific, doc-grounded issue missing from the key | strict: no; **adjudicated: yes** |
 | HALLUCINATED | Central premise about the doc is false (fabricated quote or section, false-absence claim, misreading) | no |
 | NON_SPECIFIC | Generic advice that would apply to any design ("add monitoring") | no |
 | INVALID_OPINION | Grounded, but the claimed problem is technically wrong or criticises a justified choice | no |
 | OUT_OF_SCOPE | About something the doc explicitly puts out of scope | no |
 
-   An LLM adjudicator (different family) makes the first pass. A human then reviews **100% of VALID_UNPLANTED and HALLUCINATED** labels (they move precision and HFR the most) and a random 20% of the rest. Disagreements go to a second human, and the majority decides.
-5. **Key maintenance.** A VALID_UNPLANTED finding that the humans confirm is a key defect. Add it to a **pooled supplementary key** G⁺_d, the union over **all** conditions in the same evaluation round (TREC-style pooling, standard IR practice; citation not verified this session). The sealed key G_d is never edited after a held-out or blind run. Recall is reported against G_d (primary) and G_d ∪ G⁺_d (secondary).
+   An LLM adjudicator (different family) makes the first pass. A human then reviews **100% of VALID_UNPLANTED and HALLUCINATED** labels (they move precision and HFR the most) and a random 20% of the rest (the rest includes the deterministic DUPLICATE and PARTIAL_KEY_MATCH labels, which follow from the validated matcher scores). Disagreements go to a second human, and the majority decides.
+   *(Amended 2026-10-02 by owner decision, docs/USER_DECISIONS.md #14: PARTIAL_KEY_MATCH added. Before, a strict-unmatched finding that scored PARTIAL against an unmatched flaw went to the LLM adjudicator, which could call it VALID_UNPLANTED, "missing from the key", although the key has it; that also sent it to G⁺_d and let it remove sound units. The verifier-E1 exploratory `precision_adjudicated_partial_credit` is retired: P_a now covers the case. `spec/taxonomy.yaml` `adjudication_classes` still lists the six classes the LLM may give; PARTIAL_KEY_MATCH is a seventh, harness-assigned label. `eval/prereg_deviations.md` entry 2.)*
+5. **Key maintenance.** A VALID_UNPLANTED finding that the humans confirm is a key defect (a PARTIAL_KEY_MATCH finding is not: its defect is already in the key). Add it to a **pooled supplementary key** G⁺_d, the union over **all** conditions in the same evaluation round (TREC-style pooling, standard IR practice; citation not verified this session). The sealed key G_d is never edited after a held-out or blind run. Recall is reported against G_d (primary) and G_d ∪ G⁺_d (secondary).
 6. **Matcher validation** (gate before use): at least 150 candidate pairs from S-dev (drawn from the candidate set of step 1, i.e. shortlisted pairs, so the validated matcher is the one used), each labelled by 2 humans. Report human–human κ and matcher-vs-consensus κ on the binary decision MATCH vs not (strict). The gate is κ ≥ 0.80 (PROPOSED DEFAULT, following Krippendorff's reliability threshold [30]). The B-gen generic-checklist baseline must also score strict recall ≤ 0.05.
 
 ---
 
 ## 3. Detection metrics
 
-For one run (d, j): let TP = |M_dj| (strict), N = |F_dj \ strengths|, V = #VALID_UNPLANTED, G = |G_d|.
+For one run (d, j): let TP = |M_dj| (strict), N = |F_dj \ strengths|, V = #VALID_UNPLANTED, PK = #PARTIAL_KEY_MATCH against a flaw in G_d (§2.3 step 4), G = |G_d|.
 
 | Metric | Formula | Notes |
 |---|---|---|
 | Recall | R = TP / G | Undefined if G = 0 (fully sound doc). Excluded from recall, scored by CDR instead |
 | Precision, strict | P_s = TP / N | Undefined if N = 0. Excluded from macro-P; the number of zero-finding runs is reported |
-| Precision, adjudicated | P_a = (TP + V) / N | Primary precision |
+| Precision, adjudicated | P_a = (TP + V + PK) / N | Primary precision. PK is reported as its own count (amended 2026-10-02, UD #14; it read (TP + V) / N) |
 | F1 | F1_x = 2·P_x·R / (P_x + R), x ∈ {s, a} | 0 if P_x + R = 0 |
 | Pooled recall (secondary) | R⁺ = (TP + TP⁺) / (G + |G⁺_d|) | TP⁺ = matches to the pooled supplementary key |
 | Duplication rate | #DUPLICATE / N | |
@@ -124,7 +126,7 @@ For one run (d, j): let TP = |M_dj| (strict), N = |F_dj \ strengths|, V = #VALID
 > **Superseded (reconciliation 2026-10-02):** "category" here is the `category` axis of `spec/taxonomy.yaml` (defect mechanism: 9 codes plus `other`), which drives the per-category recall table and the taxonomy-dependence check; the lab §2.3 `kind` axis drives grader D3. Audit C7.
 
 - Per-category **recall** uses the **gold** category: R_c = |{g ∈ M : cat(g) = c}| / |{g ∈ G : cat(g) = c}|.
-- Per-category **precision** uses the **agent's** category: P_c = |{f matched or VALID_UNPLANTED : cat̂(f) = c}| / |{f : cat̂(f) = c}|.
+- Per-category **precision** uses the **agent's** category: P_c = |{f matched, VALID_UNPLANTED or PARTIAL_KEY_MATCH : cat̂(f) = c}| / |{f : cat̂(f) = c}|.
 - F1_c = harmonic mean of P_c and R_c.
 - **Typed (strict-category) variant:** a match counts for category c only if cat̂(f) = cat(g).
 - **Category-label accuracy** on matched pairs, plus the full confusion matrix.
@@ -158,7 +160,7 @@ The agent's findings are ordered by `rank` (ties broken by output order). For po
 ## 5. Grounding: hallucinated findings and citation faithfulness
 
 ### 5.1 Grounding checks (run on **every** finding, matched or not)
-- **G1 Quote existence.** *(Superseded, reconciliation 2026-10-02: "the doc text" is the canonical page-marked text `doc.pages.txt` produced once by the pinned pdfplumber extractor and read by every verifier; G1 and G2 share one function with the agent's verify stage; quotes must be ≥ 8 tokens and match on the cited page ±1 and within the cited section or an adjacent one (G2). `docs/DECISIONS.md` ADR-006, ADR-007; audit C14, G1-G3.)* Normalise both the quote and the doc text (Unicode NFKC, lowercase, collapse whitespace, undo PDF hyphenation and ligatures). Pass if the best token-level partial-match ratio is ≥ θ_q. **PROPOSED DEFAULT θ_q = 0.90**, calibrated on S-dev against human judgements because PDF extraction adds noise. This step is deterministic.
+- **G1 Quote existence.** *(Superseded, reconciliation 2026-10-02: "the doc text" is the canonical page-marked text `doc.pages.txt` produced once by the pinned pdfplumber extractor and read by every verifier; G1 and G2 share one function with the agent's verify stage; quotes must be ≥ 8 tokens and match on the cited page ±1 and within the cited section or an adjacent one (G2). `docs/DECISIONS.md` ADR-006, ADR-007; audit C14, G1-G3.)* Normalise both the quote and the doc text (Unicode NFKC, lowercase, collapse whitespace, undo PDF hyphenation and ligatures). Pass if the best character-level partial-match ratio (the agent's `verify_anchor`: exact match first, then a fuzzy partial ratio over characters, not tokens) is ≥ θ_q. **PROPOSED DEFAULT θ_q = 0.90**, calibrated on S-dev against human judgements because PDF extraction adds noise. This step is deterministic. The 8-token minimum applies to the quotes of a finding's `doc_anchors` only; a shorter doc-evidence quote is allowed but must match exactly. *(Corrected 2026-10-02: it read "token-level"; the shared function has always been character-level.)*
 - **G2 Location validity.** The cited section or req id exists in the doc, and the quote lies in that location or ±1 adjacent section.
 - **G3 Premise faithfulness.** An LLM judge (different family) gets the claim and the cited location text. It labels the claim's premise about the doc SUPPORTED, CONTRADICTED or NOT_FOUND. For **absence claims** ("the doc never defines X"), the judge gets retrieval over the whole doc for X and its synonyms. If X is present, the claim is a **false-absence** hallucination. This is the most common grounding error for document reviewers (**UNVERIFIED** generalisation; it should be measured).
 
@@ -197,7 +199,7 @@ Unit = a (claim, citation) pair, taken from finding evidence and recommendation 
 ### 6.1 Recommendation justification rate (RJR)
 For each recommendation r:
 - **S(r)** structural = issue, rationale, evidence and expected_benefit are all non-empty.
-- **Q_issue(r)** = at least one linked finding is a TP or VALID_UNPLANTED.
+- **Q_issue(r)** = at least one linked finding is a TP, VALID_UNPLANTED or PARTIAL_KEY_MATCH (correct for P_a).
 - **Q_evid(r)** = at least one evidence item has support FULL (§5.2).
 - **Q_benefit(r)** = expected_benefit names at least one doc objective, requirement or principle (`objective_refs` resolve in the doc), **and** a judge rates the stated benefit as following from the change (binary).
 - **Q_rat(r)** = a judge rates that the rationale explains why the change addresses the issue (binary).
@@ -210,7 +212,7 @@ For each recommendation r:
 | Action-type accuracy | on matched flaws whose key gives an `expected_disposition`: share where the finding's primary `disposition` agrees (spec enum; reconciled 2026-10-02, spec C8). **BLOCKED** until a person authors `expected_disposition` in the keys |
 
 ### 6.2 Correctly declined on sound units
-Map each finding to units by location overlap. For u ∈ S_d, let FP_u be the findings located in u that (a) have severity ≥ medium **or** carry a recommendation, and (b) are **not** TP and **not** VALID_UNPLANTED. If a VALID_UNPLANTED finding lands in u, the key was wrong: remove u from S_d and log it.
+Map each finding to units by location overlap. For u ∈ S_d, let FP_u be the findings located in u that (a) have severity ≥ medium **or** carry a recommendation, and (b) are **not** TP, **not** VALID_UNPLANTED and **not** PARTIAL_KEY_MATCH. If a VALID_UNPLANTED finding lands in u, the key was wrong: remove u from S_d and log it. A PARTIAL_KEY_MATCH finding never removes u (its defect is already a key flaw).
 
 - declined(u) = 1 if FP_u = ∅, else 0
 - **CDR** = Σ_u declined(u) / |S_d| (pooled over docs for micro; per doc for macro)
@@ -229,7 +231,7 @@ ADV = #violated a / |A_d|. Flagging a genuinely flawed approved decision with ev
 ## 7. Calibration and stability
 
 ### 7.1 Calibration (findings only; duplicates excluded)
-The label is y_f = 1 if f is a TP or VALID_UNPLANTED, else 0.
+The label is y_f = 1 if f is a TP or counts as correct for P_a (VALID_UNPLANTED, PARTIAL_KEY_MATCH), else 0.
 - **ECE** (equal-mass bins b = 1..B; B = 10 if n ≥ 200, else 5): ECE = Σ_b (|b|/n) · | mean_{f∈b} y_f − mean_{f∈b} c_f | [11]
 - **Brier** = (1/n) Σ_f (c_f − y_f)²; **Brier skill** = 1 − Brier / (ȳ(1 − ȳ))
 - **AUROC** of c_f for predicting y_f (Mann–Whitney). It catches constant-confidence gaming (L19).
@@ -380,8 +382,12 @@ def score_run(doc, key, out, matcher, adjudicator, judge, strict=True):
         hint = {f.id for f in F if overlaps(f.location, g.location)}             # a hint, not candidates
         hint |= {f.id for f in top_k_by_embedding(F, g, k=3, min_cos=TAU_PRE)}  # optional prefilter, also a hint
         cand |= {(f.id, g.id) for f in matcher.shortlist(g, shuffled(F), k=3, hint=hint)}  # failure -> none
-    # --- 2.3.2 pairwise scores (median of 3; matcher blind to condition)
-    S = {(fi, gi): median(matcher.score(F[fi], G[gi]) for _ in range(3)) for (fi, gi) in cand}
+    # --- 2.3.2 pairwise scores (median of 3; the 3rd sample only if the first two differ, UD #15;
+    #     matcher blind to condition)
+    S = {}
+    for (fi, gi) in cand:
+        a, b = matcher.score(F[fi], G[gi]), matcher.score(F[fi], G[gi])
+        S[(fi, gi)] = a if a == b else median([a, b, matcher.score(F[fi], G[gi])])
     # --- 2.3.3 Hungarian assignment
     thr = 3 if strict else 2
     Wm = np.zeros((len(F), len(G)))
@@ -390,16 +396,26 @@ def score_run(doc, key, out, matcher, adjudicator, judge, strict=True):
     rows, cols = linear_sum_assignment(Wm, maximize=True)
     M = [(r, c) for r, c in zip(rows, cols) if Wm[r, c] > 0]
     matched_f = {r for r, _ in M}; matched_g = {c for _, c in M}
-    # --- 2.3.4 adjudicate unmatched (LLM first pass; human review queued per protocol)
-    cls = {i: adjudicator.classify(F[i], doc, key) for i in range(len(F)) if i not in matched_f}
+    # --- 2.3.4 adjudicate unmatched: deterministic DUPLICATE, then (strict) PARTIAL_KEY_MATCH (UD #14),
+    #     else the LLM first pass; human review queued per protocol. Scored pairs only.
+    taken = dict((c, r) for r, c in M)
+    cls = {}
+    for i in (i for i in range(len(F)) if i not in matched_f):
+        if any(s >= 2 and gi in taken for (fi, gi), s in S.items() if fi == i):
+            cls[i] = "DUPLICATE"
+        elif strict and max((s for (fi, gi), s in S.items() if fi == i and gi not in taken), default=0) == 2:
+            cls[i] = "PARTIAL_KEY_MATCH"
+        else:
+            cls[i] = adjudicator.classify(F[i], doc, key)
     queue_for_human([i for i, c in cls.items() if c in ("VALID_UNPLANTED", "HALLUCINATED")])
     queue_for_human(random_sample([i for i, c in cls.items() if c not in ("VALID_UNPLANTED", "HALLUCINATED")], frac=0.2))
     # --- 5.1 grounding on ALL findings
     halluc = {i for i in range(len(F)) if not grounded(F[i], doc, judge)} | {i for i, c in cls.items() if c == "HALLUCINATED"}
     TP, N, V = len(M), len(F), sum(c == "VALID_UNPLANTED" for c in cls.values())
+    PK = sum(c == "PARTIAL_KEY_MATCH" for c in cls.values())       # G here is the run's gold set G_d
     R  = TP / len(G) if G else None
     Ps = TP / N if N else None
-    Pa = (TP + V) / N if N else None
+    Pa = (TP + V + PK) / N if N else None
     SWR = (sum(W[G[c].severity] for c in matched_g) / sum(W[g.severity] for g in G)) if G else None
     gains = [W[G[dict(M)[i]].severity] if i in matched_f else 0 for i in rank_order(F)]
     ideal = sorted((W[g.severity] for g in G), reverse=True)
@@ -411,7 +427,7 @@ def score_run(doc, key, out, matcher, adjudicator, judge, strict=True):
     cdr  = correctly_declined(out, key, M, cls)                                           # §6.2
     adv  = approved_decision_violations(out, key, cite)                                   # §6.3
     cal  = calibration([F[i].confidence for i in range(N) if cls.get(i) != "DUPLICATE"],
-                       [1 if (i in matched_f or cls.get(i) == "VALID_UNPLANTED") else 0
+                       [1 if (i in matched_f or cls.get(i) in ("VALID_UNPLANTED", "PARTIAL_KEY_MATCH")) else 0
                         for i in range(N) if cls.get(i) != "DUPLICATE"])                 # §7.1
     return dict(R=R, Ps=Ps, Pa=Pa, F1s=f1(Ps, R), F1a=f1(Pa, R), SWR=SWR, nDCG=ndcg,
                 HFR=HFR, **cite, **rjr, **cdr, ADV=adv, **cal,

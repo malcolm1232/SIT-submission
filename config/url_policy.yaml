@@ -6,3 +6,58 @@ allow_domains: []
 deny_domains: []
 fetch_only_from_results: true     # fetch only URLs seen in search results or cited in the document
 reject_added_query_strings: true  # block query strings that were not in the source URL (ADV-05)
+
+# Source authority (tools.sources.classify_authority; spec/taxonomy.yaml source_authority).
+# Moved here from agent/sit_review_agent/tools/sources.py (robustness OVF-07). Entries are a domain
+# (subdomains match) or domain/path-prefix. Keep them domain-general: no host taken from an evaluated
+# document's own technology stack (three such hosts from the SIT sample's stack were removed on
+# 2026-10-02: research/audit/runtime_policies_editlog.md; scripts/leakage_grep.py checks). Order of
+# checks: informal, secondary (and any /blog path or blog. host), standards and government hosts,
+# preprint, peer_reviewed, vendor_docs and docs_prefixes; anything else is informal.
+authority:
+  standards:  # standards bodies, regulators, intergovernmental organisations -> primary_official
+    ["iso.org", "iec.ch", "ietf.org", "rfc-editor.org", "w3.org", "nist.gov", "etsi.org", "itu.int",
+     "standards.ieee.org", "owasp.org", "cisecurity.org", "pcisecuritystandards.org", "oasis-open.org",
+     "ecma-international.org", "whatwg.org", "unicode.org", "openid.net", "fidoalliance.org",
+     "cloudevents.io", "opentelemetry.io", "spec.openapis.org", "json-schema.org", "europa.eu",
+     "legislation.gov.uk", "who.int", "ich.org", "oecd.org", "un.org", "cnil.fr", "ico.org.uk", "pdpc.gov.sg",
+     "imda.gov.sg", "csa.gov.sg", "mas.gov.sg", "hhs.gov", "fda.gov", "cisa.gov", "enisa.europa.eu",
+     "bsi.bund.de", "ncsc.gov.uk", "modelcontextprotocol.io"]
+  vendor_docs:  # official vendor / project documentation -> primary_official
+    ["learn.microsoft.com", "docs.microsoft.com", "docs.aws.amazon.com", "cloud.google.com",
+     "developer.apple.com", "developers.google.com", "docs.oracle.com", "docs.github.com", "kubernetes.io",
+     "postgresql.org", "python.org", "docs.python.org", "apache.org", "redis.io", "nginx.org", "mongodb.com",
+     "elastic.co", "docker.com", "hashicorp.com", "terraform.io", "openai.com", "anthropic.com",
+     "docs.anthropic.com", "platform.claude.com", "code.claude.com", "azure.microsoft.com", "aws.amazon.com",
+     "cloudflare.com", "stripe.com", "twilio.com", "mysql.com", "sqlite.org", "nodejs.org", "rust-lang.org",
+     "go.dev", "golang.org", "java.com", "openjdk.org", "spring.io", "djangoproject.com",
+     "fastapi.tiangolo.com", "pydantic.dev", "snowflake.com", "databricks.com", "confluent.io", "grafana.com",
+     "prometheus.io"]
+  peer_reviewed:  # publishers, indexes of peer-reviewed work, proceedings -> peer_reviewed
+    ["doi.org", "dl.acm.org", "acm.org", "ieeexplore.ieee.org", "ieee.org", "springer.com",
+     "link.springer.com", "sciencedirect.com", "elsevier.com", "nature.com", "science.org", "wiley.com",
+     "onlinelibrary.wiley.com", "tandfonline.com", "sagepub.com", "plos.org", "mdpi.com", "frontiersin.org",
+     "bmj.com", "thelancet.com", "nejm.org", "jamanetwork.com", "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov",
+     "usenix.org", "aclanthology.org", "openreview.net", "jmlr.org", "proceedings.mlr.press", "neurips.cc",
+     "papers.nips.cc", "aaai.org", "ojs.aaai.org", "vldb.org", "cambridge.org", "academic.oup.com",
+     "jstor.org", "cochranelibrary.com", "iopscience.iop.org", "asce.org", "ascelibrary.org",
+     "icevirtuallibrary.com"]
+  preprint:  # preprint servers and scholarly indexes (reputable, not peer reviewed) -> secondary
+    ["arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com", "researchsquare.com", "preprints.org",
+     "researchgate.net", "semanticscholar.org", "openalex.org", "crossref.org", "scholar.google.com",
+     "core.ac.uk", "hal.science", "zenodo.org"]
+  secondary:  # reputable secondary summaries, engineering publications, analysts -> secondary
+    ["wikipedia.org", "britannica.com", "martinfowler.com", "infoq.com", "thoughtworks.com", "queue.acm.org",
+     "lwn.net", "oreilly.com", "highscalability.com", "brendangregg.com", "netflixtechblog.com",
+     "engineering.fb.com", "engineering.atspotify.com", "blog.cloudflare.com", "aws.amazon.com/blogs",
+     "cloud.google.com/blog", "techcommunity.microsoft.com", "devblogs.microsoft.com", "github.blog",
+     "uber.com/blog", "dropbox.tech", "slack.engineering", "stripe.com/blog", "gartner.com", "forrester.com",
+     "mckinsey.com", "iapp.org", "lexology.com", "jdsupra.com"]
+  informal:  # forums, Q&A, self-publishing and content platforms -> informal (checked first)
+    ["medium.com", "dev.to", "stackoverflow.com", "stackexchange.com", "serverfault.com", "superuser.com",
+     "reddit.com", "quora.com", "hashnode.dev", "hashnode.com", "substack.com", "blogspot.com",
+     "wordpress.com", "linkedin.com", "youtube.com", "twitter.com", "x.com", "news.ycombinator.com",
+     "geeksforgeeks.org", "tutorialspoint.com", "w3schools.com", "javatpoint.com", "facebook.com",
+     "tiktok.com", "pinterest.com", "slideshare.net", "scribd.com", "towardsdatascience.com"]
+  docs_prefixes:  # host prefixes that mark official documentation -> primary_official
+    ["docs.", "developer.", "developers.", "learn.", "spec.", "specs.", "documentation."]

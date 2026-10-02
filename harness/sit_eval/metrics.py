@@ -16,11 +16,19 @@ from rapidfuzz import fuzz
 
 from sit_eval.grounding import GroundingResult
 from sit_eval.locations import anchors_location, key_location
-from sit_eval.matcher import W_PRIMARY, W_SENSITIVITY, MatchResult
+from sit_eval.matcher import PARTIAL_KEY_MATCH, W_PRIMARY, W_SENSITIVITY, MatchResult
 from sit_review_agent.ingest import Document
 
 SEV_ORDER = ["low", "medium", "high", "critical"]
 FP_CLASSES = {"HALLUCINATED", "INVALID_OPINION", "NON_SPECIFIC"}
+
+
+def correct_unmatched(d: Any, gold_ids: set[str]) -> bool:
+    """An unmatched finding that counts as correct for adjudicated precision (metrics.md §2.3 step 4):
+    VALID_UNPLANTED, or PARTIAL_KEY_MATCH against a flaw of this document's gold set (UD #14)."""
+    if d is None:
+        return False
+    return d.cls == "VALID_UNPLANTED" or (d.cls == PARTIAL_KEY_MATCH and d.partial_key_flaw_id in gold_ids)
 
 
 def M(value: Any, reason: str | None = None, *, status: str = "secondary", **extra: Any) -> dict[str, Any]:
@@ -133,29 +141,30 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
         tp_pairs = [(f, g) for f, g, _ in a.pairs if g in gold_ids]
         TP = len(tp_pairs)
         V = sum(1 for d in adj.values() if d.cls == "VALID_UNPLANTED")
+        PK = sum(1 for d in adj.values() if d.cls == PARTIAL_KEY_MATCH and d.partial_key_flaw_id in gold_ids)
         unadj = sum(1 for d in adj.values() if d.cls == "UNADJUDICATED")
         st = "primary" if setting == "strict" else "secondary"
         pfx = "" if setting == "strict" else "lenient_"
         R = ratio(TP, G)
         Ps = ratio(TP, N)
-        Pa = ratio(TP + V, N) if not unadj else None
+        Pa = ratio(TP + V + PK, N) if not unadj else None
         out[pfx + "recall"] = M(R, "G = 0 (fully sound document)" if G == 0 else None, status=st, tp=TP, g=G,
                                 **unscored)
         out[pfx + "precision_strict"] = M(Ps, "N = 0 (no findings)" if N == 0 else None, tp=TP, n=N)
         out[pfx + "precision_adjudicated"] = M(
             Pa, ("N = 0 (no findings)" if N == 0 else f"{unadj} unmatched findings could not be adjudicated"),
-            status="key_secondary" if setting == "strict" else "secondary", tp=TP, v=V, n=N)
+            status="key_secondary" if setting == "strict" else "secondary", tp=TP, v=V, partial_key_match=PK, n=N,
+            note="P_a = (TP + VALID_UNPLANTED + PARTIAL_KEY_MATCH) / N (metrics.md §3, amended 2026-10-02, UD #14)")
         if setting == "strict":
-            # Exploratory only: also credits unmatched findings that score PARTIAL (2) against a key flaw
-            # nobody matched, unless adjudicated DUPLICATE or HALLUCINATED. metrics.md does not define this
-            # case; the primary P_a counts VALID_UNPLANTED only (verifier E1 decision, 2026-10-02).
-            Vp = sum(1 for d in adj.values() if d.cls == "VALID_UNPLANTED" or (
-                d.partial_key_flaw_id is not None and d.cls not in ("DUPLICATE", "HALLUCINATED", "UNADJUDICATED")))
-            out["precision_adjudicated_partial_credit"] = M(
-                ratio(TP + Vp, N) if not unadj else None,
-                ("N = 0 (no findings)" if N == 0 else f"{unadj} unmatched findings could not be adjudicated"),
-                status="exploratory", tp=TP, v_or_partial=Vp, n=N,
-                partial_key_findings=sorted(d.finding_id for d in adj.values() if d.partial_key_flaw_id))
+            # PARTIAL_KEY_MATCH (UD #14): strict-unmatched findings that score PARTIAL (2) against a key flaw
+            # nobody matched; correct for P_a, never VALID_UNPLANTED, never in G+, never remove a sound unit
+            pk = sorted((d.finding_id, d.partial_key_flaw_id) for d in adj.values() if d.cls == PARTIAL_KEY_MATCH)
+            out["partial_key_match_count"] = M(
+                PK, status="secondary", findings=[{"finding_id": f, "flaw_id": g} for f, g in pk],
+                not_gold=[f for f, g in pk if g not in gold_ids],
+                note="strict-unmatched findings scoring PARTIAL (2) against a key flaw no finding matches; counted "
+                     "as correct in precision_adjudicated, not VALID_UNPLANTED (not_gold: the flaw is not in this "
+                     "version's gold set, so the finding is not credited)")
         out[pfx + "f1_strict"] = M(f1(Ps, R), "precision or recall undefined" if f1(Ps, R) is None else None)
         out[pfx + "f1_adjudicated"] = M(f1(Pa, R), "precision or recall undefined" if f1(Pa, R) is None else None)
         counts = Counter(d.cls for d in adj.values())
@@ -164,7 +173,8 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
         out[pfx + "adjudication_counts"] = M(dict(sorted(counts.items())), status="secondary",
                                              bases=dict(sorted(Counter(d.basis for d in adj.values()).items())))
     out["pooled_recall"] = M(None, "no pooled supplementary key G+ exists yet (built from human-confirmed "
-                                   "VALID_UNPLANTED after an evaluation round, metrics.md §2.3 step 5)")
+                                   "VALID_UNPLANTED after an evaluation round, metrics.md §2.3 step 5; "
+                                   "PARTIAL_KEY_MATCH findings are already key flaws and never enter G+)")
 
     strict = match.assignments["strict"]
     f2g = {f: g for f, g in strict.finding_to_flaw.items() if g in gold_ids}
@@ -179,7 +189,7 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
         gc = [g for g in gold if g.data["category"] == c]
         matched_gc = [g for g in gc if g.id in set(f2g.values())]
         fc = [f for f in findings if f.data.get("category") == c]
-        good = [f for f in fc if f.id in f2g or (adj_s.get(f.id) and adj_s[f.id].cls == "VALID_UNPLANTED")]
+        good = [f for f in fc if f.id in f2g or correct_unmatched(adj_s.get(f.id), gold_ids)]
         typed = [g for g in gc if any(f2g.get(f) == g.id and fmap[f].data.get("category") == c for f in f2g)]
         rc, pc = ratio(len(matched_gc), len(gc)), ratio(len(good), len(fc))
         per_cat[c] = {"recall": rc, "precision": pc, "f1": f1(pc, rc), "typed_recall": ratio(len(typed), len(gc)),
@@ -202,10 +212,12 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
             swr[f"weights_{wname}__mapping_{mname}"] = ratio(sum(w[sev(g)] for g in matched_gold),
                                                              sum(w[sev(g)] for g in gold))
     out["severity_weighted_recall"] = M(swr["weights_primary__mapping_primary"], "G = 0" if G == 0 else None,
-                                        status="key_secondary", variants=swr)
+                                        status="key_secondary", variants=swr, **unscored)
     crit = [g for g in gold if g.severity == "critical"]
+    crit_failed = [g.id for g in crit if g.id in failed_sl]
     out["critical_recall"] = M(ratio(sum(g in matched_gold for g in crit), len(crit)),
-                               "no critical flaw in the key" if not crit else None)
+                               "no critical flaw in the key" if not crit else None,
+                               **({**unscored, "shortlist_failed_flaws": crit_failed} if crit_failed else {}))
 
     # ---- severity agreement (§3.3)
     pairs_sev = [(SEV_ORDER.index(fmap[f].severity), SEV_ORDER.index(flaws[g].severity)) for f, g in f2g.items()
@@ -295,11 +307,11 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
             out[name] = M(None, "grounding not run")
 
     # ---- recommendations (§6.1)
-    out.update(_recommendation_metrics(findings, adj_s, f2g, grounding, halluc_ground, doc, key))
+    out.update(_recommendation_metrics(findings, adj_s, f2g, grounding, halluc_ground, doc, key, gold_ids))
     # ---- restraint (§6.2, §6.3)
     out.update(_restraint_metrics(findings, f2g, adj_s, key, version, review, grounding, gold))
     # ---- calibration (§7.1)
-    out.update(_calibration(findings, f2g, adj_s))
+    out.update(_calibration(findings, f2g, adj_s, gold_ids))
     # ---- v1 -> v2 (§8)
     out.update(_v2_metrics(match, key, version, review, prior_scores))
     # ---- efficiency (§10)
@@ -345,7 +357,7 @@ def _citation_metrics(gr: GroundingResult) -> dict[str, Any]:
 
 def _recommendation_metrics(findings: list[Any], adj: dict[str, Any], f2g: dict[str, str],
                             gr: GroundingResult | None, halluc_ground: set[str], doc: Document | None,
-                            key: dict[str, Any]) -> dict[str, Any]:
+                            key: dict[str, Any], gold_ids: set[str]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     recs = [(f, f.data["recommendation"]) for f in findings if f.data.get("recommendation")]
     n = len(recs)
@@ -367,7 +379,7 @@ def _recommendation_metrics(findings: list[Any], adj: dict[str, Any], f2g: dict[
         ok = 0
         incomplete = 0
         for f, r in recs:
-            q_issue = f.id in f2g or (adj.get(f.id) is not None and adj[f.id].cls == "VALID_UNPLANTED")
+            q_issue = f.id in f2g or correct_unmatched(adj.get(f.id), gold_ids)
             cite = gr.citation.get(f.id, {})
             sup = set(r.get("supporting_evidence_ids") or [])
             q_evid = any(i["support"] == "FULL" and i["evidence_id"] in sup for i in cite.get("items", []))
@@ -408,12 +420,13 @@ def _restraint_metrics(findings: list[Any], f2g: dict[str, str], adj: dict[str, 
     for u in units:
         uloc = key_location(u["location"])
         located = [f for f in findings if f.loc.overlaps(uloc)]
+        # only VALID_UNPLANTED removes a unit (the key missed an issue there); PARTIAL_KEY_MATCH never does
         vu = [f.id for f in located if f.id not in f2g and adj.get(f.id) and adj[f.id].cls == "VALID_UNPLANTED"]
         if vu:
             removed.append({"unit": u["id"], "because": ", ".join(vu)})
             continue
         fp = [f.id for f in located if (f.severity in ("critical", "high", "medium") or f.data.get("recommendation"))
-              and f.id not in f2g and not (adj.get(f.id) and adj[f.id].cls == "VALID_UNPLANTED")]
+              and f.id not in f2g and not correct_unmatched(adj.get(f.id), {g.id for g in gold})]
         fps[u["id"]] = fp
         declined[u["id"]] = not fp
     n_units = len(declined)
@@ -505,16 +518,17 @@ def _adv(ad: list[dict[str, Any]], findings: list[Any], f2g: dict[str, str], rev
     return M(ratio(len(violated), len(ad)), status="blocked", violated=violated)
 
 
-def _calibration(findings: list[Any], f2g: dict[str, str], adj: dict[str, Any]) -> dict[str, Any]:
+def _calibration(findings: list[Any], f2g: dict[str, str], adj: dict[str, Any], gold_ids: set[str]) -> dict[str, Any]:
     rows = [{"finding_id": f.id, "confidence": f.data.get("confidence"),
-             "label": int(f.id in f2g or (adj.get(f.id) is not None and adj[f.id].cls == "VALID_UNPLANTED"))}
+             "label": int(f.id in f2g or correct_unmatched(adj.get(f.id), gold_ids))}
             for f in findings if not (adj.get(f.id) and adj[f.id].cls == "DUPLICATE")]
     rows = [r for r in rows if isinstance(r["confidence"], int | float)]
     conf = [float(r["confidence"]) for r in rows]
     y = [r["label"] for r in rows]
     out: dict[str, Any] = {"calibration_inputs": M(rows, status="deferred", n=len(rows),
                                                    note="duplicates excluded (metrics.md §7.1); label = TP (strict) "
-                                                        "or VALID_UNPLANTED")}
+                                                        "or correct for adjudicated precision (VALID_UNPLANTED, "
+                                                        "PARTIAL_KEY_MATCH)")}
     n = len(rows)
     ybar = sum(y) / n if n else None
     brier = sum((c - t) ** 2 for c, t in zip(conf, y, strict=True)) / n if n else None

@@ -34,7 +34,7 @@ def test_schedule_loads_and_resolves(path: Path) -> None:
         fixture = (rule.fault.model_extra or {}).get("fixture") or (rule.fault.model_extra or {}).get("tools_list")
         if fixture:
             assert (repo_root() / fixture).is_file(), fixture
-    for spec in sched.process:                                           # applied by the harness (README)
+    for spec in sched.process:                                           # applied by the agent's orchestrator
         assert spec.type in (FaultType.RAISE_IN_STAGE, FaultType.SIGINT_IN_STAGE, FaultType.CLOCK_JUMP)
         assert (spec.model_extra or {}).get("stage")
 

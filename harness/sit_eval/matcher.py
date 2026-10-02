@@ -19,23 +19,27 @@ Procedure:
    the provenance of every candidate stays auditable. The optional embedding prefilter is not
    implemented (prereg: used only if an embedding model is recorded at freeze).
 2. Pairwise 0-3 scores, ``samples`` per pair, median (lower median when a sample failed and an even
-   number remains). With ``adaptive_third_sample`` (off by default; needs the owner's approval) the
-   third sample is asked only when the first two disagree or one failed: the median of three is the
-   agreed value whenever two agree, so the result is identical and about a third of calls are saved.
+   number remains). With ``adaptive_third_sample`` (on in config/eval.yaml by owner decision
+   2026-10-02, USER_DECISIONS #15; off in a bare ``MatcherSettings``) the third sample is asked
+   only when the first two disagree or one failed: the median of three is the agreed value whenever
+   two agree, so the result is identical and about a third of calls are saved.
    ``call_granularity: pairwise`` (prereg-faithful) makes one call per pair and
    sample; ``per_flaw_batch`` (a DEVIATION) makes one call per flaw and sample scoring all its
    candidates. A score of 3 with ``location_ok: false`` is capped at 2 (MATCH requires a
    compatible location, §2.2).
 3. Hungarian assignment on ``score + 0.01 * primary weight`` for eligible pairs (strict: 3,
    lenient: >= 2), plus a tie-break below 1e-4 favouring the agent's higher-ranked finding.
-4. Unmatched findings: deterministic DUPLICATE when the finding scores >= 2 against a flaw that is
-   assigned to another finding (§2.3 table); otherwise the LLM adjudicator gives one of the six
-   classes (metrics.md §13 ``adjudicator.classify`` for every unmatched finding); a still-valid
-   observation match is VALID_UNPLANTED. A strict-unmatched finding whose best score is 2 against a
-   flaw nobody matched is adjudicated by the LLM like any other; the flaw is recorded in
-   ``partial_key_flaw_id`` and feeds only the exploratory ``precision_adjudicated_partial_credit``.
-   (An earlier version labelled it VALID_UNPLANTED deterministically, which credited strict
-   precision with findings the strict rule rejects; verifier E1, 2026-10-02.)
+4. Unmatched findings (metrics.md §2.3 step 4): deterministic DUPLICATE when the finding scores >= 2
+   against a flaw that is assigned to another finding; else, in the strict setting, deterministic
+   PARTIAL_KEY_MATCH when its best median is 2 (PARTIAL) against a flaw nobody matched (the flaw is
+   recorded in ``partial_key_flaw_id``; owner decision 2026-10-02, docs/USER_DECISIONS.md #14: it is
+   a real issue, counts as correct for adjudicated precision, and is not "missing from the key", so it
+   is never VALID_UNPLANTED, never enters the pooled key G+ and never removes a sound unit);
+   otherwise the LLM adjudicator gives one of the six classes, and a still-valid observation match is
+   VALID_UNPLANTED. Both deterministic rules use scored pairs only, so under ``shortlist_bounded`` a
+   finding the shortlist left out never gets either label. (History: the first version labelled the
+   partial case VALID_UNPLANTED deterministically; verifier E1 then sent it to the LLM adjudicator,
+   where it could still come back VALID_UNPLANTED; the owner gave it its own class.)
 
 The prompts never contain the review's run id, model, condition, provenance or confidence.
 """
@@ -60,6 +64,8 @@ W_PRIMARY = {"critical": 8, "high": 4, "medium": 2, "low": 1}
 W_SENSITIVITY = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 RANK_TIE_BREAK = 1e-4
 ADJ_CLASSES = ("DUPLICATE", "VALID_UNPLANTED", "HALLUCINATED", "NON_SPECIFIC", "INVALID_OPINION", "OUT_OF_SCOPE")
+#: Assigned by the harness only (never by the LLM adjudicator): strict-unmatched, median 2 against a free flaw
+PARTIAL_KEY_MATCH = "PARTIAL_KEY_MATCH"
 
 
 @dataclass
@@ -122,12 +128,12 @@ class Assignment:
 class Adjudication:
     finding_id: str
     cls: str
-    basis: str    # llm | deterministic_duplicate | still_valid_observation | llm_failed
+    basis: str    # llm | deterministic_duplicate | deterministic_partial | still_valid_observation | llm_failed
     duplicate_of: str | None = None
     related_flaw_id: str | None = None
     observation_id: str | None = None
     rationale: str | None = None
-    partial_key_flaw_id: str | None = None   # strict only: median 2 (PARTIAL) against a flaw nobody matched
+    partial_key_flaw_id: str | None = None   # PARTIAL_KEY_MATCH only: the free flaw it scores PARTIAL (2) against
 
 
 @dataclass
@@ -278,9 +284,12 @@ class Matcher:
             raise
         except JudgeError as exc:
             return _with_provenance({"ids": [], "seed": seed, "ok": False, "error": str(exc)[:300]}, overlap)
-        ids = [i for i in dict.fromkeys(data.get("candidate_ids", [])) if i in known][: self.s.shortlist_k]
+        valid = [i for i in dict.fromkeys(data.get("candidate_ids", [])) if i in known]
+        ids = valid[: self.s.shortlist_k]
+        # ids past shortlist_k are never scored (the shortlist bounds pairwise scoring); they are recorded
         return _with_provenance({"ids": ids, "seed": seed, "ok": True,
-                                 "unknown_ids": [i for i in data.get("candidate_ids", []) if i not in known]},
+                                 "unknown_ids": [i for i in data.get("candidate_ids", []) if i not in known],
+                                 "ids_beyond_k": valid[self.s.shortlist_k:]},
                                 overlap)
 
     def candidates_for(self, g: FlawView, findings: list[FindingView], sl: dict[str, Any]) -> dict[str, list[str]]:
@@ -417,13 +426,14 @@ class Matcher:
     @staticmethod
     def partial_free_flaw(f: FindingView, a: Assignment, flaws: list[FlawView],
                           pairs: dict[tuple[str, str], PairScore]) -> str | None:
-        """Strict setting: the unassigned flaw this unmatched finding scores PARTIAL (2) against, if any."""
+        """Strict setting: the unassigned flaw this unmatched finding scores PARTIAL (2) against, if any
+        (scored pairs only; ties go to the more severe flaw, then the earlier flaw in the key)."""
         if a.setting != "strict":
             return None
         taken = a.flaw_to_finding
-        best = max(((pairs[(f.id, g.id)].median or 0.0, g.id) for g in flaws
-                    if (f.id, g.id) in pairs and g.id not in taken), default=(0.0, None))
-        return best[1] if best[0] >= 2 else None
+        best = max(((pairs[(f.id, g.id)].median or 0.0, W_PRIMARY[g.severity], -j, g.id) for j, g in enumerate(flaws)
+                    if (f.id, g.id) in pairs and g.id not in taken), default=(0.0, 0, 0, None))
+        return best[3] if best[0] >= 2 else None
 
     async def adjudicate_llm(self, f: FindingView, findings: list[FindingView], key: dict[str, Any],
                              key_summary: str, doc_text: str) -> dict[str, Any]:
@@ -484,6 +494,13 @@ class Matcher:
                 if f.id in matched:
                     continue
                 d = self.pre_adjudicate(f, a, flaws, pairs)
+                if d is None:
+                    g_partial = self.partial_free_flaw(f, a, flaws, pairs)
+                    if g_partial is not None:
+                        d = Adjudication(f.id, PARTIAL_KEY_MATCH, "deterministic_partial",
+                                         related_flaw_id=g_partial, partial_key_flaw_id=g_partial,
+                                         rationale=f"median {pairs[(f.id, g_partial)].median:g} (PARTIAL) against "
+                                                   f"{g_partial}, which no finding matches strictly")
                 pre[setting][f.id] = d
                 if d is None:
                     need_llm.add(f.id)
@@ -508,7 +525,6 @@ class Matcher:
                     else:
                         d = Adjudication(fid, ans["class"], "llm", duplicate_of=ans.get("duplicate_of"),
                                          rationale=ans.get("rationale"))
-                    d.partial_key_flaw_id = self.partial_free_flaw(by_id[fid], assignments[setting], flaws, pairs)
                 adjudication[setting][fid] = d
         return MatchResult(findings=findings, flaws=flaws, candidates=candidates, shortlist=shortlist, pairs=pairs,
                            assignments=assignments, adjudication=adjudication, llm_adjudication=llm,

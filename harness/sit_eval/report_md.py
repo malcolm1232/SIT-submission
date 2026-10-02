@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-HEADLINE = ["recall", "lenient_recall", "precision_strict", "precision_adjudicated", "lenient_precision_adjudicated",
+HEADLINE = ["recall", "lenient_recall", "precision_strict", "precision_adjudicated", "partial_key_match_count",
+            "lenient_precision_adjudicated",
             "f1_strict", "f1_adjudicated", "severity_weighted_recall", "critical_recall", "severity_agreement_qwk",
             "hallucinated_finding_rate", "hallucinated_finding_rate_without_g3", "quote_fabrication_rate",
             "citation_precision", "fabricated_citation_rate", "source_type_accuracy", "cdr", "balanced_unit_accuracy",
@@ -25,6 +26,14 @@ def _fmt(v: Any) -> str:
     if isinstance(v, dict):
         return ", ".join(f"{k}: {_fmt(x)}" for k, x in v.items())
     return str(v)
+
+
+def _cls(f: dict[str, Any]) -> str:
+    """Strict class; PARTIAL_KEY_MATCH names its flaw."""
+    c = f.get("class_strict")
+    if c == "PARTIAL_KEY_MATCH" and f.get("partial_key_flaw_strict"):
+        return f"{c} ({f['partial_key_flaw_strict']})"
+    return c or "-"
 
 
 def render_scores_md(s: dict[str, Any]) -> str:
@@ -87,7 +96,7 @@ def render_scores_md(s: dict[str, Any]) -> str:
                   "|---|---|---|---|---|---|"]
         for f in s["findings"]:
             lines.append(f"| {f['finding_id']} | {f['rank']} | {f.get('severity')} | {f['matched_flaw_strict'] or '-'} "
-                         f"| {f['class_strict'] or '-'} | {f['matched_flaw_lenient'] or '-'} |")
+                         f"| {_cls(f)} | {f['matched_flaw_lenient'] or '-'} |")
         lines.append("")
     if s.get("failures"):
         lines += ["## Failed judge calls", ""] + [f"- {x}" for x in s["failures"]] + [""]

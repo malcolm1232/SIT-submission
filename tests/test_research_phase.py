@@ -257,7 +257,10 @@ async def test_deadline_ends_research_without_a_wrap_up_call(tmp_path: Path) -> 
     clock = FakeClock()
     base = FakeToolGateway(SPECS, handlers(clock, advance=50.0), clock=clock)
     script = [FakeResponse(tool_uses=[tu(1, SEARCH, query="a")]), final(("RQ-001", "partial", []))]
-    ctx = make_ctx(tmp_path, script, base=base, clock=clock, c=config(deadline_seconds=100))
+    c = config(deadline_seconds=100)
+    c = c.model_copy(update={"stop_rules": c.stop_rules.model_copy(update={"report_reserve_seconds": 60,
+                                                                           "assess_reserve_seconds": 0})})
+    ctx = make_ctx(tmp_path, script, base=base, clock=clock, c=c)
     await ResearchPhase().run(ctx)                                         # 50 s >= 100 - report_reserve 60
     assert ctx.state.stop_reason.code is StopReasonCode.DEADLINE
     assert ctx.llm.remaining(R) == 1                                       # type: ignore[attr-defined]

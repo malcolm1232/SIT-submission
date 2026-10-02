@@ -60,10 +60,12 @@ def _scenario(rule: str = "shortlist_bounded"):
     return make_review(findings), key, responder_from(table)
 
 
-@pytest.mark.parametrize("rule", ["shortlist_bounded", "union"])
-def test_section_14_numbers(tmp_path, rule):
+@pytest.mark.parametrize(("rule", "adaptive"), [("shortlist_bounded", True), ("shortlist_bounded", False),
+                                                ("union", False)])
+def test_section_14_numbers(tmp_path, rule, adaptive):
+    # shortlist_bounded with the adaptive third sample is the configured default (UD #10, #15)
     review, key, responder = _scenario(rule)
-    scores, fake, _ = run_pipeline(tmp_path, review, key, responder, candidate_rule=rule)
+    scores, fake, _ = run_pipeline(tmp_path, review, key, responder, candidate_rule=rule, adaptive_samples=adaptive)
     assert scores["matching"]["candidate_rule"] == rule
     assert {(p["flaw_id"], p["finding_id"]) for p in scores["matching"]["pair_scores"]} == MATCHES
     m = {k: v["value"] for k, v in scores["metrics"].items()}

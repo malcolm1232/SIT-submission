@@ -21,7 +21,7 @@ The rubric, gates and protocol are in `README.md`. This file contains:
 | Pass B (×2) | §2 | §3.2 with intact review + merged Pass A table | `PassBOutput` (§5.2) |
 | Pass B key-aware (optional, ×2, fresh context) | §2 | §3.2 with `{{ANSWER_KEY}}` filled | `PassBOutput` with `answer_key_alignment` |
 
-- Sampling: the provider default. *(Reconciled 2026-10-02: was "Temperature: 0.3". Claude takes no `temperature`; set one only for a non-Claude grader that accepts it; `spec/README.md` §3 C15.)* The grader model is chosen by `docs/DECISIONS.md` ADR-003 (Pending): a different family if a second provider's key exists, else Claude disclosed as same-family (audit C3).
+- Sampling: the provider default. *(Reconciled 2026-10-02: was "Temperature: 0.3". Claude takes no `temperature`; set one only for a non-Claude grader that accepts it; `spec/README.md` §3 C15.)* The grader model is chosen by `docs/DECISIONS.md` ADR-003: a different family if a second provider's key exists, else Claude disclosed as same-family (audit C3). *(Closed 2026-10-02, `docs/USER_DECISIONS.md` #16: no second-provider judge; Claude, disclosed as same-family.)*
 - Finding IDs are the spec's `FindingId` (`FND-001`, `FND-002`, ...; `spec/finding.schema.json#/$defs/FindingId`): copy them verbatim from the agent's structured output (the harness renders grader inputs from the grader-facing projection of the Review, `spec/README.md` §1); the segmenter (§4) is only for a review that is not structured JSON. Severities use the spec enum `critical | high | medium | low` (`spec/taxonomy.yaml` `severities`). *(Reconciled 2026-10-02.)*
 - Fill `{{...}}` placeholders literally. Leave `{{ANSWER_KEY}}` as the string `NONE` in key-blind mode.
 - The harness computes weighted scores, applies caps and gates, and resolves disagreement (README §4, §6). The
@@ -573,10 +573,15 @@ REVIEW:
   "gates": {"G1": true, "G2": true, "G3": true, "G4": true, "G5": true},
   "S": 0.0, "grade": "B", "pass": true,
   "hallucinations": [{"type": "fabricated_source", "status": "verified_false", "severity": "material"}],
-  "key_alignment_diagnostic": {"aligned_high_share": 0.0, "aligned_all_share": 0.0, "trap_hits": 0, "valid_extras": 0},
+  "key_alignment_diagnostic": {"counts_median": {"key_items": 14, "key_items_high": 6, "aligned_full": 5,
+                                                 "aligned_full_high": 3, "aligned_partial": 2, "aligned_partial_high": 1,
+                                                 "not_aligned": 7, "trap_hits": 0, "no_change_areas_affirmed": 2,
+                                                 "valid_extras": 1}},
   "needs_human_review": false
 }
 ```
+
+> **Counts, not shares (2026-10-02):** `key_alignment_diagnostic` reports counts, each with its denominator in the same object (`aligned_full_high` of `key_items_high`, `aligned_full` and `aligned_partial` of `key_items`), as the harness writes them (`sit_eval/grader/answer_key.py`); an earlier draft of this example showed `aligned_high_share` / `aligned_all_share`. `caps_applied` is cumulative (README §4.2): with two or more verified material hallucinations it reads `G3: 2 material hallucinations -> D4<=1, D9<=2, grade<=C`.
 
 > **Superseded (reconciliation 2026-10-02):** the harness field was `"answer_key": {"recall_high", "recall_all", ...}`. It is renamed because key-aware alignment is diagnostic and is never reported as recall; recall comes only from the matcher in `research/methodology/metrics.md` §2, with each flaw's `credit.mode` (`spec/README.md` §3 C4, C5). `finding_id` values in all three schemas are spec `FindingId`s, `key_id` values are the answer key's `FlawId`s, and `severity_assessed` uses the spec severity enum. The `triage` enums above are the grader's legacy labels; for any reported metric they map to the spec `disposition` enum via `spec/taxonomy.yaml` `legacy_mappings.triage` (`mixed` → primary disposition + `secondary_dispositions[]`, `none` → `no_change`; C8).
 
