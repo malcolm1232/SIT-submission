@@ -354,3 +354,29 @@ The six implementer fixes are correct and minimal, and each test fails when its 
 
 ---
 
+## Owner decisions later in the session
+
+- "go with your recommendation on the matcher rule": the shortlist bounds pairwise scoring (USER_DECISIONS #10).
+- "can u proceed to build end to end and u decide what is necessary": remaining build decisions delegated to the coordinator.
+- Demo package approved (demo effort profile, deadline inside model calls, one $3-4 measurement run); the four robustness policies, the separate label for partial matches and the adaptive third sample "as per ur rec"; no second-provider judge.
+
+## Report: matcher rule implementer (shortlist bounds pairwise scoring)
+
+1. **Checks:** `ruff check agent harness tests` clean; `pytest -q` 884 passed, 0 skipped (867 before).
+2. **Files:** code `harness/sit_eval/{matcher,scoring,config,cli,metrics,report_md}.py`, `schemas/scores.schema.json`, `prompts/matcher_shortlist.md`, `prompts/PROMPTS.lock`, `config/eval.yaml`; tests new `tests/eval_harness/test_eval_candidate_rule.py` (9), updated `eval_builders.py`, `test_eval_matcher.py`, `test_eval_e2e.py`, `test_eval_verifier_e1.py`, `test_eval_worked_example.py` (tests that pinned 80 overlap pairs and 300-440 calls now run `union` explicitly; none deleted); text `research/methodology/metrics.md` (§2.3 steps 1 and 6, §13 pseudo-code, dated amendment note), `eval/prereg.yaml` (`matcher.candidates`, `deviations_log` comment), new `eval/prereg_deviations.md` (entry 1), `eval/human_labelling_protocol.md` (T4 source), `docs/USER_DECISIONS.md` (#10), `harness/README.md`, `docs/BUDGET.md` (pointer sentence only).
+3. **Design:** shortlist failure (after the runner's 3 retries) leaves the flaw with no candidates, unmatched, listed in `failures`, `shortlist_ok: false`; `recall` and `lenient_recall` carry `shortlist_failed_flaws` and a lower-bound note; no fallback to overlap (it would mix two rules). Under `union` a failed flaw keeps its overlap candidates. Hint: findings stay in seeded random order; a `<location_hint>` block lists overlapping ids or "none"; the prompt says look at those first, the hint is not a verdict, only returned findings get scored. `union` uses the same prompt. The optional embedding top-3 is also a hint only. Audit trail per flaw: `overlap_hint_ids`, `shortlisted_with_overlap`, `shortlisted_without_overlap`, `overlap_not_shortlisted`; `matching.candidate_rule` recorded. §14 example runs under both rules with an explicit shortlist fixture; same expected numbers. Default test fake shortlist returns the hinted ids up to K.
+4. **Dry run on the live run** (20 findings, 14 flaws), priced per call kind:
+
+| Mode | Calls | Pair scoring | Cost |
+|---|---|---|---|
+| Bounded, pairwise, grounding judges on | 60-200 | 0-126 | $10.72-19.12 |
+| Bounded, judges off | 20-160 | 0-126 | $3.52-11.92 |
+| Union, judges on | 300-440 | 240-366 | $17.92-26.32 |
+| Union, judges off | 260-400 | 240-366 | $10.72-19.12 |
+
+   Bounded with judges on: 14 shortlist, 6-20 adjudication, 20 premise, 20 citation calls. Bounded per_flaw_batch: 60-116 calls with judges, 20-76 without. Pilot prices check out (shortlist $0.110, batch $0.062, adjudication $0.332). A single pair call is not measured (the pilot had none); a fit of batch cost against candidate count gives about $0.03. Premise ($0.33) and citation ($0.03) are estimates. `per_call_s` changed to 5-20 s to match the pilot. Whole-document calls now dominate run cost, not pair scoring.
+5. **New matcher prompt bundle hash:** `ac35d198ecef1c5a9176acd29e3d82fd9203c35eee4f4624d86da2b429ecc156` (was `d9e14df5…`), written into the deviations entry.
+6. **Risks:** the shortlist is now the only way into scoring; a match it leaves out scores 0 and lowers recall with no error. With k=3 a flaw with more than 3 plausible findings can miss one; on the payments key the hint is long (sections 2.2, 24, 26.x, FR-5). `overlap_not_shortlisted` is where to look; a miss at a non-overlapping location leaves no trace. H10/T4 now samples shortlisted pairs only, so it checks the scorer, not shortlist recall; suggested a small T4 sample of `overlap_not_shortlisted` pairs. A deterministic DUPLICATE now needs the duplicate shortlisted too, otherwise it costs a $0.33 adjudication call. The dry-run minimum is now 0 pair calls; at the pilot's rate a run lands at about two thirds of the maximum. The old pilot `scores.json` was made under the union rule and left as is.
+
+---
+
