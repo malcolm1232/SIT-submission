@@ -239,7 +239,7 @@ The leakage gate also caught one of my own edits while I worked: the first wordi
 
 ## 7. Seen and not changed
 
-- `README.md` tells the reader to run `python3 spec/validate_examples.py` and `python3 spec/convert_answer_keys.py` with no tier; both then read the answer keys under `eval/blind/`, which `docs/SEALING.md` §6 rule 1 forbids until sealing. I ran the spec self-test with the blind directory filtered out (the same filter `convert_answer_keys.py --tier synthetic` uses).
+- `README.md` tells the reader to run `python3 spec/validate_examples.py` and `python3 spec/convert_answer_keys.py` with no tier; both then read the answer keys under `eval/blind/`, which `docs/SEALING.md` §6 rule 1 forbids until sealing. I ran the spec self-test with the blind directory filtered out (the same filter `convert_answer_keys.py --tier synthetic` uses). The keys worker's upstream commit `10ceb5a` (not in this branch) makes the validator skip `eval/blind/` unless `--include-blind` is given, which settles this point once the branches are merged.
 - `README.md` status paragraph still says 865 offline tests (dated 2026-10-02).
 - `docs/DEMO_DAY_RUNBOOK.md` header paragraph ("before the agent code exists") and §2 (`uv sync --frozen --offline`; the repository has no `uv.lock`) are older than the build.
 - `docs/HANDOVER_FULL.md` §10 lists these six items as in flight.

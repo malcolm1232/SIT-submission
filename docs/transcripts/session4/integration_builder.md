@@ -122,10 +122,19 @@ If the planner wants the change recorded there as a note, this is the proposed t
   unaffected (its verdict is `fit_with_conditions`).
 ```
 
+## Merging with the keys work
+
+While this branch was being built, the upstream branch `origin/claude/happy-darwin-d0bl94` gained 7 commits from the keys worker (`bf9fc63` to `2c7fba3`).
+This branch does not contain them and was not rebased.
+Both sides edit `README.md`, `spec/README.md` and `spec/validate_examples.py`.
+A trial merge in a scratch clone (aborted afterwards, nothing written to the repository) merged automatically with no conflict.
+On the merged tree: `make smoke` exit 0, `make test` exit 0 with 1018 passed, and `python3 spec/validate_examples.py` exit 0 with 37 negative and 29 adversarial cases.
+The upstream commit `10ceb5a` also makes the spec validator skip `eval/blind/` unless `--include-blind` is given, which settles the first point of the edit log §7.
+
 ## For the next worker
 
 - The demo measurement run (`docs/HANDOVER_FULL.md` §10 step 3) should be committed with its `llm.jsonl` and `state.json` so that `dra replay` has a live run to work on.
 - That run also gives the first chance to see whether an Opus call can pass 64,000 output tokens, and what a truncation costs.
 - `docs/BUDGET.md` and the cost lines of `eval/EVAL_PLAN.md` still carry the pre-measurement prices.
-- `README.md` documents two commands that read `eval/blind/` (edit log §7).
+- Merge this branch with the keys work (see above); the trial merge was clean.
 - `docs/HANDOVER_FULL.md` §10 still lists the six items as in flight.
