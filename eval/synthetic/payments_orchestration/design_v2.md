@@ -58,7 +58,7 @@
 
 This document describes the architecture of the Serindit Pay Merchant Payment Orchestration Platform (MPOP) — the system that accepts payment requests from Serindit Pay's merchants, routes each one to an appropriate acquirer, e-wallet provider, or bank-transfer rail, and accounts for every resulting movement of money until it is settled to the merchant. It is written to a level of technical detail sufficient for an engineering team to begin implementation. Section 27 gives an explicit assessment of where that is and is not yet true.
 
-MPOP replaces the current arrangement in which each market (Singapore, Malaysia, Indonesia, Thailand, Philippines) runs its own integration stack against one or two acquirers with no shared routing, no shared ledger, and market-specific reconciliation spreadsheets. It is not a merchant-facing checkout product; checkout UIs, hosted payment pages, and mobile SDKs consume MPOP's API and are specified separately.
+MPOP replaces five per-market integration stacks that share no routing, no ledger, and reconcile by spreadsheet. Checkout UIs, hosted pages and mobile SDKs consume MPOP's API and are specified separately.
 
 MPOP provides one merchant API across five markets; rule-based routing with cascading on retryable failures; idempotent handling of every mutating call; a tokenising card vault that confines PCI DSS scope to a small enclave; a synchronous fraud-scoring hook; a double-entry ledger; daily reconciliation against settlement files; signed merchant webhooks; and a merchant admin plane.
 
@@ -88,7 +88,7 @@ Payment acceptance, routing, retries, idempotency, vaulting, fraud-scoring integ
 
 ## 2. Requirements
 
-Requirements are grouped into Functional Requirements (what the platform must do) and Non-Functional Requirements (the quality attributes it must exhibit). Each requirement carries an ID used again in Section 26 (Validation and Acceptance Criteria) and Section 27 (Implementation Readiness Assessment).
+Each requirement carries an ID used again in Section 26 (Validation and Acceptance Criteria) and Section 27 (Implementation Readiness Assessment).
 
 ### 2.1 Functional Requirements
 
@@ -160,7 +160,7 @@ These ten principles govern every design decision in the platform. Where a later
 | Thailand | 2,300 | Visa, Mastercard (ACQ-TH1, ACQ-SG2) | TrueMoney, ShopeePay (via WAG-1) | PromptPay QR |
 | Philippines | 2,400 | Visa, Mastercard (ACQ-PH1, ACQ-SG2) | GCash, Maya (via WAG-1) | InstaPay QR |
 
-ACQ-SG2 is a regional acquirer with cross-border acquiring licences in all five markets and is the default secondary for card cascading. WAG-1 is a wallet aggregator that fronts all listed e-wallets behind one API. Bank-transfer rails are reached through per-market sponsor-bank connections.
+ACQ-SG2 is a regional acquirer licensed in all five markets and the default cascade secondary. WAG-1 is a wallet aggregator fronting all listed e-wallets. Bank rails are reached through per-market sponsor banks.
 
 E-wallet and bank-transfer payments are customer-redirect or QR flows: the customer completes payment in the wallet or banking app, and the provider notifies MPOP asynchronously. They are not cascaded (Section 11).
 
@@ -225,7 +225,7 @@ All workloads run on Amazon EKS in ap-southeast-1 (Singapore) across three Avail
 | Webhook endpoint | HTTPS URL plus signing secret. | `endpoint_id`, URL, event filter, signing secret (encrypted), status |
 | Payout account | Bank account for merchant payouts. | bank code, account number (encrypted), account name, verified_at |
 
-Secret API keys are displayed once at creation and stored only as a SHA-256 hash with a visible prefix (`sk_live_ab12…`) for identification. Publishable keys can call only the Vault's tokenise endpoint and the client-side payment confirmation endpoint.
+Secret API keys are displayed once and stored only as a SHA-256 hash with a visible prefix. Publishable keys can call only tokenise and client-side confirmation endpoints.
 
 ---
 
@@ -263,7 +263,7 @@ PARTIALLY_REFUNDED -> REFUNDED
 
 Each transition is written with an optimistic-concurrency version check (`UPDATE payment SET state = $new, version = version + 1 WHERE payment_id = $id AND version = $expected`). A failed version check aborts the transaction and the caller re-reads. A transition and its ledger journal (where one applies) and its outbox event are committed in one PostgreSQL transaction.
 
-Card authorizations expire per scheme rules (typically 7 days for e-commerce); an expiry sweeper voids uncaptured authorizations one day before expiry unless the merchant has configured auto-capture.
+An expiry sweeper voids uncaptured card authorizations one day before their scheme expiry.
 
 ---
 
@@ -290,7 +290,7 @@ The card authorization flow, end to end:
 13. Webhook Dispatcher: payment.authorised / payment.failed (asynchronous)
 ```
 
-E-wallet and bank-transfer flows diverge at step 7: the adapter creates a provider session and returns a redirect URL or QR payload, the payment moves to REQUIRES_ACTION, and the provider's asynchronous notification (verified by provider signature) drives the transition to SUCCEEDED, FAILED or CANCELLED. Provider notifications are themselves deduplicated on the provider's transaction reference.
+E-wallet and bank-transfer flows diverge at step 7: the adapter returns a redirect URL or QR payload, the payment moves to REQUIRES_ACTION, and the provider's signed asynchronous notification, deduplicated on the provider's reference, drives the final transition.
 
 ---
 
@@ -363,7 +363,7 @@ The cost-preferred ranking is subject to FR-8. At routing time, the engine compa
 
 ### 10.4 Health and circuit breaking
 
-Each acquirer connection has a circuit breaker over a 30-second sliding window: it opens when the error rate (timeouts, 5xx, connection failures) exceeds 20% with at least 50 calls, half-opens after 15 seconds with 5 probe transactions, and closes on 4 of 5 probes succeeding. An open breaker removes the acquirer from eligibility; it does not fail payments that have other eligible acquirers.
+Each acquirer connection has a circuit breaker (30-second window; opens above 20% errors with at least 50 calls; half-opens after 15 seconds). An open breaker removes the acquirer from eligibility.
 
 ### 10.5 Baseline outcomes
 
@@ -678,7 +678,7 @@ All primary data stores (Aurora, DynamoDB, ElastiCache, MSK, S3 intake and archi
 
 ### 20.1 Within-region
 
-- EKS node groups span three AZs; every service runs at least three replicas with pod anti-affinity across AZs.
+- Every service runs at least three replicas spread across three AZs.
 - Aurora PostgreSQL: writer plus two readers across three AZs; Aurora storage keeps six copies across three AZs; writer failover to a reader typically completes in under 60 seconds.
 - ElastiCache for Redis: cluster mode, Multi-AZ with automatic failover.
 - MSK: three brokers across three AZs, replication factor 3, `min.insync.replicas` 2, producer `acks=all`.
@@ -728,7 +728,7 @@ Summing component p99s gives a conservative 1,338 ms against the 1,500 ms target
 
 ### 21.2 Capacity
 
-- **Payments API and Orchestrator.** Stateless; horizontally scaled on CPU with a floor sized for 1,000 TPS and a pre-scaled campaign profile for 2,500 TPS applied 24 hours before known campaign events.
+- **Payments API and Orchestrator.** Stateless; pre-scaled for 2,500 TPS before known campaign events.
 - **Aurora.** Each card payment produces roughly nine row writes (payment, attempt, two state updates, journal, two to three postings, outbox). At 2,000 TPS that is about 18,000 row writes per second. A spike on `db.r7g.8xlarge` sustained 2,600 TPS of the full write mix for two hours at 58% writer CPU with commit latency p99 of 11 ms. Production uses `db.r7g.12xlarge` for headroom.
 - **MSK.** Average event size 1.8 KB, roughly six events per payment; 2,000 TPS ≈ 21.6 MB/s ingress, well within three `kafka.m7g.xlarge` brokers.
 
@@ -736,7 +736,7 @@ Summing component p99s gives a conservative 1,338 ms against the 1,500 ms target
 
 ## 22. Observability and Audit
 
-- **Tracing.** OpenTelemetry across all services; `payment_id` and `merchant_id` are attached as span attributes; traces sampled at 100% for failed payments and 10% for successful ones; all payment events are additionally written to the event bus, which is the basis for NFR-11.
+- **Tracing.** OpenTelemetry with `payment_id` and `merchant_id` as span attributes; all payment events are also written to the event bus, which is the basis for NFR-11.
 - **Logging.** Structured JSON logs. A logging library shared by all services drops any field on a deny-list (card_number, cvc, password, secret, authorization header) and applies a Luhn-pattern scrubber to free-text fields; the CDE has its own log pipeline that never leaves the CDE account.
 - **Audit.** Audit records (actor, actor type, action, target, before/after for configuration, request ID, source IP, timestamp) are written to an append-only table and streamed to an S3 bucket with Object Lock in compliance mode for five years (NFR-12).
 
@@ -804,12 +804,12 @@ Each requirement from Section 2 is validated by a specific method with a concret
 
 | ID | Validation method | Acceptance criteria |
 |---|---|---|
-| FR-1 | API contract test suite | Every endpoint and method returns the documented status code and schema for one valid and one invalid request, for each payment method family. |
+| FR-1 | API contract test suite | Every endpoint returns the documented status and schema for valid and invalid requests, per method family. |
 | FR-2 | State machine property test | Randomised event sequences (10^6 per run) never produce a transition outside Section 7.2; every acknowledged transition is present in the database after a forced pod kill. |
-| FR-3 | Connector conformance suite | Each adapter passes the shared conformance suite against the provider sandbox. |
+| FR-3 | Connector conformance suite | Each adapter passes the shared suite against the provider sandbox. |
 | FR-4 | API negative test | Mutating requests without `Idempotency-Key` return 400; retrieve requests succeed without it. |
 | FR-5 | Idempotency replay test | Send a create-payment request; after its response is received, resend the identical request with the same `Idempotency-Key`. The second response is byte-identical to the first and the acquirer simulator records exactly one authorization. Resending with a modified body returns 422. |
-| FR-6 | Routing eligibility table test | For a matrix of (market, currency, scheme, BIN country, merchant contracts), the eligible set equals the expected set. |
+| FR-6 | Routing eligibility test | For a matrix of eligibility inputs, the eligible set equals the expected set. |
 | FR-7 | Cascade simulation | With the acquirer simulator injecting each retryable and final outcome, cascades occur only on retryable outcomes, never exceed two additional attempts, and stop at scheme reattempt limits. |
 | FR-8 | Routing decision test | For synthetic transactions whose cheapest acquirer's prior is 1.9, 2.0 and 2.1 pp below the best, the cheapest acquirer is selected in the first two cases only; a replayed 28-day merchant history with a 1.1 pp gap to control triggers the weekly revert and a 0.9 pp gap does not. |
 | FR-9 | Fraud hook integration test | ACCEPT, REVIEW, REJECT and timeout each produce the documented payment outcome. |
@@ -818,9 +818,9 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | FR-12 | Webhook delivery test | Every state change emits exactly one event; signatures verify with the reference library; a failing endpoint receives the documented retry schedule and the event lands in the DLQ after 72 hours. |
 | FR-13 | Admin plane role matrix test | Each role can perform exactly the actions in Section 18.2; login without a second factor fails for every role; a payout account change without second-Owner approval, or cancelled during cooling-off, never affects a payout. |
 | FR-14 | Stored-credential test | A card-on-file payment uses a network token and cryptogram for a network-token-enabled test card, and correct MIT/CIT indicators. |
-| FR-15 | Refund test per method | Full and partial refunds succeed for each method; payout-based refunds produce a payout instruction. |
+| FR-15 | Refund test per method | Full and partial refunds succeed per method; payout-based refunds produce a payout instruction. |
 | FR-16 | Audit completeness test | A scripted sequence of API mutations and admin actions produces exactly one audit record per action with all fields populated. |
-| FR-17 | Payout schedule test | Merchants on T+1, T+2 and weekly schedules receive payout instructions on the correct dates for a simulated month. |
+| FR-17 | Payout schedule test | Each schedule produces payout instructions on the correct dates over a simulated month. |
 
 ### 26.2 Non-functional requirements
 
@@ -836,7 +836,7 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | NFR-8 | Reconciliation SLA test | On a 2027-volume replay using the real file arrival schedule, auto-match ≥ 99.9% and reports published by 09:00 SGT. |
 | NFR-9 | Noisy-neighbour test | One merchant at 3× its rate limit does not move other merchants' p99 by more than 5%. |
 | NFR-10 | Connector onboarding dry run | A new sandbox acquirer is onboarded with changes only in its adapter package and configuration. |
-| NFR-11 | Trace completeness test | For 1,000 sampled payments, every step is retrievable by `payment_id` within 5 seconds. |
+| NFR-11 | Trace completeness test | For 1,000 sampled payments, every step is retrievable by `payment_id` within 5 s. |
 | NFR-12 | Audit immutability test | An attempt to modify or delete an audit object in S3 fails under the compliance-mode Object Lock. |
 
 ---
@@ -881,6 +881,4 @@ The transaction core is specified to implementation level. The Admin API schemas
 | 8 | Fraud Hook (FRV-1) | Yes — vendor contract (Backlog item 4) |
 | 9 | Hardening — load, chaos and DR game days; PCI DSS assessment; Section 26 test plan | Follows Section 26 |
 
-First merchant cohort (Singapore, 200 merchants, cards and PayNow) goes live at the end of Phase 7; remaining markets follow at four-week intervals.
-
-This document, together with the MPOP Conceptual Design, represents the design phase in full. No implementation has begun.
+The first merchant cohort (Singapore, cards and PayNow) goes live after Phase 7; other markets follow at four-week intervals. No implementation has begun.
