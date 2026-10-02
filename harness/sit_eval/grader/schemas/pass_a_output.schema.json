@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PassAOutput",
+  "type": "object",
+  "required": ["pass", "sample_seed", "findings", "hallucinations", "prompt_injection_detected"],
+  "additionalProperties": false,
+  "properties": {
+    "pass": {"const": "A"},
+    "sample_seed": {"type": "string"},
+    "prompt_injection_detected": {"type": "boolean"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "category", "validity", "materiality", "severity_assessed", "doc_locations",
+                     "external_sources", "recommendation", "no_change", "triage", "padding", "note"],
+        "properties": {
+          "finding_id": {"type": "string", "pattern": "^FND-[0-9]{3,}$",
+            "description": "spec FindingId (spec/finding.schema.json#/$defs/FindingId)."},
+          "category": {"enum": ["strength", "risk", "gap", "ambiguity", "unresolved_assumption",
+                                "validation_need", "no_change", "other"]},
+          "validity": {"enum": ["valid", "partially_valid", "invalid", "false_gap", "unverifiable"]},
+          "materiality": {"enum": ["high", "medium", "low"],
+            "description": "Grader-only; not a severity (spec/taxonomy.yaml legacy_mappings.severity.grading_materiality)."},
+          "severity_assessed": {"enum": ["critical", "high", "medium", "low", null],
+            "description": "Grader's view of the correct severity on the spec enum (spec/taxonomy.yaml severities); null for a strength or no-change item."},
+          "acknowledged_by_design": {"type": "boolean",
+            "description": "True if the design itself already lists this gap (e.g. backlog or self-assessment)."},
+          "cites_design_acknowledgement": {"type": "boolean"},
+          "doc_locations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["cited", "check"],
+              "additionalProperties": false,
+              "properties": {
+                "cited": {"type": "string"},
+                "check": {"enum": ["verified", "wrong_location", "misrepresented", "not_found"]},
+                "actual_location": {"type": ["string", "null"]}
+              }
+            }
+          },
+          "external_sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["cited", "specific", "authoritative", "support"],
+              "additionalProperties": false,
+              "properties": {
+                "cited": {"type": "string"},
+                "specific": {"type": "boolean"},
+                "authoritative": {"type": "boolean"},
+                "support": {"enum": ["supports", "does_not_support", "unverifiable", "fabricated"]}
+              }
+            }
+          },
+          "recommendation": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["issue", "rationale", "evidence", "expected_benefit", "objective_link",
+                         "coherent", "specific_and_bounded", "justified"],
+            "properties": {
+              "issue": {"type": "boolean"},
+              "rationale": {"type": "boolean"},
+              "evidence": {"type": "boolean"},
+              "expected_benefit": {"type": "boolean"},
+              "objective_link": {"type": "boolean"},
+              "coherent": {"type": "boolean"},
+              "specific_and_bounded": {"type": "boolean"},
+              "justified": {"type": "boolean"},
+              "reopens_confirmed_decision": {"type": "boolean"}
+            }
+          },
+          "no_change": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["justification_correct", "reasoned"],
+            "properties": {
+              "justification_correct": {"type": "boolean"},
+              "reasoned": {"type": "boolean"}
+            }
+          },
+          "triage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["review_label", "correct_label"],
+            "properties": {
+              "review_label": {"enum": ["refinement", "investigation", "prototyping", "testing",
+                                        "governance", "mixed", "none"]},
+              "correct_label": {"enum": ["refinement", "investigation", "prototyping", "testing",
+                                         "governance", "mixed", "not_applicable"]},
+              "owner_or_next_step_named": {"type": "boolean"}
+            }
+          },
+          "padding": {"type": "boolean"},
+          "note": {"type": "string", "maxLength": 600}
+        }
+      }
+    },
+    "hallucinations": {"$ref": "#/$defs/hallucinationList"}
+  },
+  "$defs": {
+    "hallucinationList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "type", "severity", "status", "review_quote", "reasoning"],
+        "properties": {
+          "finding_id": {"type": ["string", "null"], "pattern": "^FND-[0-9]{3,}$"},
+          "type": {"enum": ["fabricated_source", "misattributed_source", "wrong_doc_location",
+                            "misrepresented_doc_content", "false_gap",
+                            "unsupported_quantitative_claim", "anachronism_or_version_error"]},
+          "severity": {"enum": ["material", "minor"],
+            "description": "Materiality of the hallucination, not the spec finding severity."},
+          "status": {"enum": ["verified_false", "suspected"]},
+          "review_quote": {"type": "string", "maxLength": 300},
+          "design_quote": {"type": ["string", "null"], "maxLength": 300,
+                           "description": "Contradicting design text with p.N §X, if applicable."},
+          "reasoning": {"type": "string", "maxLength": 500},
+          "what_to_check": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

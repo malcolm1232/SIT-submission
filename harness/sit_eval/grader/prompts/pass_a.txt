@@ -1,0 +1,36 @@
+PASS: A (finding-level). MODE: {{MODE}}   (key_blind | key_aware; add "+delta" if applicable)
+SAMPLE_SEED: {{SEED}}
+
+TASK
+You will see the page-marked design document and a SHUFFLED list of findings extracted from an AI-written
+design review. Their order is random and carries no meaning. You do NOT see the review's summary or verdict.
+For EACH finding:
+ 1. Decide validity against the design: valid | partially_valid | invalid | false_gap | unverifiable.
+ 2. Rate materiality: high | medium | low (P10 in your instructions). Also give the severity you consider correct
+    on the scale critical | high | medium | low (null for a strength or a "no change" item).
+ 3. Check each document location the finding cites: does that location contain what is claimed? Record
+    "verified", "wrong_location", "misrepresented" or "not_found".
+ 4. List each external source cited and whether it is specific, authoritative and supports the claim
+    ("supports" | "does_not_support" | "unverifiable" | "fabricated").
+ 5. If it recommends a change: mark which of the five elements are present AND substantive (issue,
+    rationale, evidence, expected_benefit, objective_link), and whether the recommendation is justified.
+ 6. If it states "no change needed": is the justification correct and reasoned?
+ 7. Record the triage label the review gives (or none) and the label you consider correct.
+ 8. Mark padding = true if the finding is generic (could apply to almost any system) and not anchored to the design.
+ 9. Record any hallucinations (types and rules in your instructions).
+Do not score D1-D11 in this pass.
+
+Return JSON conforming to schema "PassAOutput":
+{{PASS_A_SCHEMA}}
+
+<<<DESIGN>>>
+{{DESIGN_DOC_PAGE_MARKED}}
+<<<END DESIGN>>>
+
+EVIDENCE REGISTER (agent-supplied; may be NONE):
+{{EVIDENCE_REGISTER}}
+
+<<<REVIEW>>>
+FINDINGS (shuffled):
+{{SHUFFLED_FINDINGS_WITH_IDS}}
+<<<END REVIEW>>>

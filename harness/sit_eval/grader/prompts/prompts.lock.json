@@ -1,0 +1,16 @@
+{
+  "algorithm": "sha256",
+  "bundle_rule": "sha256 of the lines '<path> <sha256>\\n' sorted by path",
+  "bundle_sha256": "64efe6b88489ac5542d7028f62782ed3c0b3096b0dfbfc0ac9ead22b4db75df0",
+  "files": {
+    "prompts/pass_a.txt": "1e824c8dc85d9c80a07b33097fded206b08a04e251b284ef501307921a2c021e",
+    "prompts/pass_b.txt": "f189f511f66e8965c1c680ebde3a95dc72c85573685071086aadd93652c83e71",
+    "prompts/repair_note.txt": "f6cce1fd3f0f0c8beb2f7bfa5c2347260e8cb75a0813cd4f001322d2792652f3",
+    "prompts/segmenter.txt": "037ea3efef85f8efb15f8108e89be3aad1d4142b1ab35639fae73afe677c4cfa",
+    "prompts/system.txt": "b77e3b5bcb5fed34ecd85a653003610207ba6282c698fdfc83baca62ea30769f",
+    "schemas/pass_a_output.schema.json": "b0a04279fb1f12b26646761420aead9b66b8e82d9c2ca1ebebe0e1a2cd55f2f4",
+    "schemas/pass_b_output.schema.json": "6c18f72b7b40830ae36464d978d2c92f5298170f5ad49ddebc90dde7dc67a384"
+  },
+  "prereg_field": "grader.prompt_sha256 = bundle_sha256",
+  "prompt_version": "lecturer-v1"
+}

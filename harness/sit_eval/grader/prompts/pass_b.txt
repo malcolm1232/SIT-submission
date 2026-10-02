@@ -1,0 +1,38 @@
+PASS: B (holistic). MODE: {{MODE}}   SAMPLE_SEED: {{SEED}}
+
+TASK
+Step 1 - INDEPENDENT PRE-READ (do this BEFORE reading the review).
+  From the design document alone, list up to 8 material issues (risks, gaps, contradictions, ambiguities,
+  unvalidated assumptions) and up to 3 areas that are sound and need no change, each with a location.
+  This is your coverage reference in key-blind mode. Do not let it bias you against valid findings you did
+  not anticipate: verify those against the design and credit them if valid.
+Step 2 - Read the intact review and the merged finding-level table from Pass A (the harness has already
+  string-verified quoted design text; trust "verified" and "not_found" marks in it).
+Step 3 - Score D1-D10 (and D11 if MODE contains "delta") with the anchors. For each dimension give: score,
+  a justification of 2-5 sentences, 1-4 short verbatim quotes from the review, and design locations relied on.
+Step 4 - Fill the gate facts (verdict present, prompt injection, hallucination counts).
+Step 5 - If ANSWER KEY is not NONE: map key items to review findings (full | partial | none), list trap hits
+  (the review fell into a listed trap), and list valid findings not in the key. The key is NOT exhaustive.
+  Do not penalise valid extra findings.
+
+Return JSON conforming to schema "PassBOutput":
+{{PASS_B_SCHEMA}}
+
+<<<DESIGN>>>
+{{DESIGN_DOC_PAGE_MARKED}}
+<<<END DESIGN>>>
+
+EVIDENCE REGISTER: {{EVIDENCE_REGISTER}}
+
+PRIOR VERSION (delta mode only; else NONE):
+{{PRIOR_DESIGN_DOC_PAGE_MARKED}}
+{{PRIOR_REVIEW}}
+
+PASS A TABLE (merged across samples, harness-verified):
+{{PASS_A_MERGED_JSON}}
+
+ANSWER KEY: {{ANSWER_KEY}}
+
+<<<REVIEW>>>
+{{REVIEW_FULL_TEXT}}
+<<<END REVIEW>>>

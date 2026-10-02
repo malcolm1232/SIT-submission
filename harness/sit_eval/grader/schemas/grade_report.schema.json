@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GradeReport",
+  "description": "grade.json written by sit_eval.grader (harness output, never produced by the model). Superset of research/grading/grader_prompt.md §5.3; key_alignment_diagnostic carries counts, never shares or recall (spec C4).",
+  "type": "object",
+  "required": ["report_version", "status", "review_id", "grader_model", "grader_prompt_version", "grader_prompt_sha256",
+               "mode", "samples", "disagreement", "dimensions_final", "caps_applied", "gates", "S", "grade", "pass",
+               "hallucinations", "key_alignment_diagnostic", "needs_human_review", "human_review_reasons"],
+  "properties": {
+    "report_version": {"const": 1},
+    "status": {"enum": ["complete", "aborted_budget", "failed"]},
+    "review_id": {"type": ["string", "null"]},
+    "grader_model": {"type": ["string", "null"]},
+    "grader_prompt_version": {"const": "lecturer-v1"},
+    "grader_prompt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "mode": {"type": "string", "pattern": "^key_blind(\\+delta)?$"},
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seed", "dimensions", "dimensions_capped", "S_raw", "gates", "grade", "pass"],
+        "properties": {
+          "seed": {"type": "string"},
+          "dimensions": {"$ref": "#/$defs/dims"},
+          "dimensions_capped": {"$ref": "#/$defs/dims"},
+          "S_raw": {"type": "number", "minimum": 0, "maximum": 100},
+          "gates": {"$ref": "#/$defs/gates"},
+          "grade": {"$ref": "#/$defs/grade"},
+          "pass": {"type": "boolean"}
+        }
+      }
+    },
+    "disagreement": {
+      "type": ["object", "null"],
+      "required": ["max_dim_delta", "S_delta", "third_sample_run"],
+      "properties": {"max_dim_delta": {"type": "number"}, "S_delta": {"type": "number"},
+                     "third_sample_run": {"type": "boolean"}}
+    },
+    "dimensions_final": {"anyOf": [{"$ref": "#/$defs/dims"}, {"type": "null"}]},
+    "caps_applied": {"type": "array", "items": {"type": "string"}},
+    "gates": {"anyOf": [{"$ref": "#/$defs/gates"}, {"type": "null"}]},
+    "S": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "grade": {"anyOf": [{"$ref": "#/$defs/grade"}, {"type": "null"}]},
+    "pass": {"type": ["boolean", "null"]},
+    "hallucinations": {"type": "array", "items": {"type": "object",
+      "required": ["type", "status", "severity"],
+      "properties": {"type": {"type": "string"}, "status": {"enum": ["verified_false", "suspected"]},
+                     "severity": {"enum": ["material", "minor"]}}}},
+    "key_alignment_diagnostic": {
+      "type": ["object", "null"],
+      "required": ["label", "counts_median"],
+      "propertyNames": {"not": {"pattern": "recall|share"}},
+      "properties": {
+        "label": {"type": "string", "pattern": "DIAGNOSTIC ONLY"},
+        "counts_median": {"type": "object", "propertyNames": {"not": {"pattern": "recall|share"}},
+                          "additionalProperties": {"type": "number", "minimum": 0}}
+      }
+    },
+    "needs_human_review": {"type": "boolean"},
+    "human_review_reasons": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "dims": {
+      "type": "object",
+      "required": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"],
+      "propertyNames": {"pattern": "^D([1-9]|1[01])$"},
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 4}
+    },
+    "gates": {
+      "type": "object",
+      "required": ["G1", "G2", "G3", "G4", "G5"],
+      "additionalProperties": {"type": "boolean"}
+    },
+    "grade": {"enum": ["A", "B", "C", "D", "F"]}
+  }
+}

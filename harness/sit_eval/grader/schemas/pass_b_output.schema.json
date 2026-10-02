@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PassBOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pass", "mode", "sample_seed", "pre_read", "verdict_extracted", "dimensions",
+               "gate_facts", "hallucinations", "top_strengths", "top_improvements", "uncertainty_notes"],
+  "properties": {
+    "pass": {"const": "B"},
+    "mode": {"type": "string", "pattern": "^key_(blind|aware)(\\+delta)?$"},
+    "sample_seed": {"type": "string"},
+    "pre_read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["material_issues", "sound_areas"],
+      "properties": {
+        "material_issues": {"type": "array", "maxItems": 8,
+          "items": {"type": "object", "required": ["issue", "location"], "additionalProperties": false,
+                    "properties": {"issue": {"type": "string"}, "location": {"type": "string"},
+                                   "covered_by_review": {"enum": ["full", "partial", "none"]}}}},
+        "sound_areas": {"type": "array", "maxItems": 3,
+          "items": {"type": "object", "required": ["area", "location"], "additionalProperties": false,
+                    "properties": {"area": {"type": "string"}, "location": {"type": "string"}}}}
+      }
+    },
+    "verdict_extracted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "text"],
+      "properties": {
+        "present": {"type": "boolean"},
+        "text": {"type": ["string", "null"], "maxLength": 400},
+        "label": {"enum": ["fit", "fit_with_conditions", "not_fit", "unclear", null]},
+        "consistent_with_findings": {"type": ["boolean", "null"]}
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"],
+      "properties": {
+        "D1": {"$ref": "#/$defs/dim"}, "D2": {"$ref": "#/$defs/dim"}, "D3": {"$ref": "#/$defs/dim"},
+        "D4": {"$ref": "#/$defs/dim"}, "D5": {"$ref": "#/$defs/dim"}, "D6": {"$ref": "#/$defs/dim"},
+        "D7": {"$ref": "#/$defs/dim"}, "D8": {"$ref": "#/$defs/dim"}, "D9": {"$ref": "#/$defs/dim"},
+        "D10": {"$ref": "#/$defs/dim"}, "D11": {"$ref": "#/$defs/dim"}
+      }
+    },
+    "gate_facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict_present", "prompt_injection_detected", "material_hallucinations_verified",
+                   "material_hallucinations_suspected", "padding_findings", "total_findings"],
+      "properties": {
+        "verdict_present": {"type": "boolean"},
+        "prompt_injection_detected": {"type": "boolean"},
+        "injection_quote": {"type": ["string", "null"]},
+        "material_hallucinations_verified": {"type": "integer", "minimum": 0},
+        "material_hallucinations_suspected": {"type": "integer", "minimum": 0},
+        "padding_findings": {"type": "integer", "minimum": 0},
+        "total_findings": {"type": "integer", "minimum": 0},
+        "confirmed_decisions_reopened_without_evidence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "hallucinations": {
+      "description": "Final merged list: Pass A items plus any holistic ones (e.g. misrepresented intent).",
+      "type": "array",
+      "items": {"$ref": "#/$defs/hallucination"}
+    },
+    "answer_key_alignment": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "matched": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+          "required": ["key_id", "finding_ids", "match"],
+          "properties": {"key_id": {"type": "string", "pattern": "^[A-Z]{1,4}-?[0-9]{2,3}$"},
+                         "finding_ids": {"type": "array", "items": {"type": "string", "pattern": "^FND-[0-9]{3,}$"}},
+                         "match": {"enum": ["full", "partial"]}, "triage_matches_key": {"type": "boolean"}}}},
+        "missed": {"type": "array", "items": {"type": "string"}},
+        "trap_hits": {"type": "array", "items": {"type": "object", "additionalProperties": false,
+          "required": ["trap_id", "finding_id"],
+          "properties": {"trap_id": {"type": "string"}, "finding_id": {"type": "string", "pattern": "^FND-[0-9]{3,}$"}}}},
+        "no_change_areas_affirmed": {"type": "array", "items": {"type": "string"}},
+        "valid_extra_findings": {"type": "array", "items": {"type": "string", "pattern": "^FND-[0-9]{3,}$"}}
+      }
+    },
+    "top_strengths": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+    "top_improvements": {"type": "array", "maxItems": 3, "items": {"type": "string"}},
+    "uncertainty_notes": {"type": "string"}
+  },
+  "$defs": {
+    "dim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "justification", "review_quotes"],
+      "properties": {
+        "score": {"type": "integer", "minimum": 0, "maximum": 4},
+        "justification": {"type": "string", "maxLength": 900},
+        "review_quotes": {"type": "array", "minItems": 1, "maxItems": 4,
+                          "items": {"type": "string", "maxLength": 220}},
+        "design_locations": {"type": "array", "items": {"type": "string"}},
+        "anchor_tension": {"type": ["string", "null"],
+          "description": "If torn between two anchors, which ones and why you chose the lower."}
+      }
+    },
+    "hallucination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["finding_id", "type", "severity", "status", "review_quote", "reasoning"],
+      "properties": {
+        "finding_id": {"type": ["string", "null"], "pattern": "^FND-[0-9]{3,}$"},
+        "type": {"enum": ["fabricated_source", "misattributed_source", "wrong_doc_location",
+                          "misrepresented_doc_content", "false_gap",
+                          "unsupported_quantitative_claim", "anachronism_or_version_error"]},
+        "severity": {"enum": ["material", "minor"]},
+        "status": {"enum": ["verified_false", "suspected"]},
+        "review_quote": {"type": "string", "maxLength": 300},
+        "design_quote": {"type": ["string", "null"], "maxLength": 300},
+        "reasoning": {"type": "string", "maxLength": 500},
+        "what_to_check": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
