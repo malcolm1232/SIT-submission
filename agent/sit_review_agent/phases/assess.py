@@ -193,8 +193,9 @@ class AssessPhase:
             for t in pending:
                 t.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
+            # Retrieved here, also when this coroutine itself is cancelled (stage 1 stops it).
+            raised = [e for t in tasks.values() if not t.cancelled() and (e := t.exception()) is not None]
         results = dict(done)
-        raised = [e for t in tasks.values() if not t.cancelled() and (e := t.exception()) is not None]
         if raised:                                       # every exception is retrieved; the first is raised
             raise raised[0]
         for i, t in tasks.items():
