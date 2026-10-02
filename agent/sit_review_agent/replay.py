@@ -507,18 +507,34 @@ class ReplayClock(FakeClock):
 
 
 class _TimedPhase:
-    """Wraps a phase so the replay clock knows which recorded phase is running."""
+    """Wraps a phase so the replay clock knows which recorded phase is running.
+
+    A sharded assess (``run_shards``, ``merge`` and ``shards``, as ``orchestrator.Orchestrator``
+    looks for them) keeps that protocol through the wrapper: the orchestrator then runs the shards
+    as a stage 1 member and merges them when the stage closes, after research has stopped writing
+    to the ledger, as in the recorded run. Without it the replay merged inside the member, beside
+    research, and the evidence IDs (and so the next research request) diverged."""
 
     def __init__(self, inner: Any, clock: ReplayClock) -> None:
         self.inner = inner
         self.name = inner.name
         self.clock = clock
+        if callable(getattr(inner, "run_shards", None)) and callable(getattr(inner, "merge", None)):
+            self.run_shards = self._run_shards
+            self.merge = inner.merge
+            self.shards = inner.shards
 
     async def run(self, ctx: Any) -> Any:
         self.clock.begin_phase(self.name.value)
         ctx = await self.inner.run(ctx)
         self.clock.end_phase(self.name.value)
         return ctx
+
+    async def _run_shards(self, ctx: Any, **kw: Any) -> Any:
+        self.clock.begin_phase(self.name.value)
+        out = await self.inner.run_shards(ctx, **kw)
+        self.clock.end_phase(self.name.value)
+        return out
 
 
 def timed_phases(clock: ReplayClock) -> dict[PhaseName, Any]:

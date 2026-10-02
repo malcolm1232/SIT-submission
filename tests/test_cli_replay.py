@@ -78,7 +78,8 @@ def test_replay_reproduces_the_recorded_report_offline(cfgdir: Path, no_network:
     src = record(cfgdir, "rec", "--disable-tool", "mcp-research-information")
     res = replay(cfgdir, src, "rec-rp")
     assert res.exit_code == 0, res.output
-    assert "replayed 9 model call(s) and 2 tool call(s)" in res.output
+    # understand, plan, four assess shards, research (search, fetch, answer), refine, verify's repair, report
+    assert "replayed 12 model call(s) and 2 tool call(s)" in res.output
     assert "matches the recording" in res.output
     rd = src.parent / "rec-rp"
     assert (rd / "report.md").read_text(encoding="utf-8").startswith(BANNER_PREFIX)
@@ -91,12 +92,12 @@ def test_replay_reproduces_the_recorded_report_offline(cfgdir: Path, no_network:
     assert any(d.startswith("replayed evidence") for d in man["extra"]["deviations"])
     assert man["usage"]["cost_usd"] == 0.0                         # nothing was spent
     llm = JsonlWriter(rd / "llm.jsonl").read()
-    assert len(llm) == 9 and all(e["replayed"] and e["replayed_from"].startswith("rec/") for e in llm)
+    assert len(llm) == 12 and all(e["replayed"] and e["replayed_from"].startswith("rec/") for e in llm)
     tools = JsonlWriter(rd / "tools.jsonl").read()
     assert [e["call_id"] for e in tools] == ["call-0001", "call-0002"] and all(e["replayed"] for e in tools)
     rec = json.loads((rd / "replay.json").read_text(encoding="utf-8"))
     assert rec["replayed_evidence"] and rec["matches_recording"] and rec["source_run_id"] == "rec"
-    assert rec["model_calls_replayed"] == rec["model_calls_recorded"] == 9
+    assert rec["model_calls_replayed"] == rec["model_calls_recorded"] == 12
     # explain and coverage work on the replayed run (runbook §6: walk explain and the coverage map)
     fid = b["findings"][0]["id"]
     assert invoke(["explain", str(rd), fid]).exit_code == 0
@@ -609,3 +610,27 @@ def test_replay_of_a_record_logged_in_completion_order_is_byte_equal(cfgdir: Pat
     assert compare_reports(a, b) == []
     assert [f["id"] for f in a["findings"]] == [f["id"] for f in b["findings"]]
     assert [e["evidence_id"] for e in a["evidence_ledger"]] == [e["evidence_id"] for e in b["evidence_ledger"]]
+
+
+def test_replay_of_a_concurrent_fake_run_is_byte_equal(cfgdir: Path, no_network: None) -> None:
+    """The live form left for the integration pass (design section 7, W3 row): a real concurrent run
+    with the fake gateway (four assess shards beside understand, plan and research) replays to the
+    same review. The replay runs the shards as a stage 1 member and merges them when the stage
+    closes, as the recorded run did, so the merge's doc entries follow research's in the ledger and
+    every request research sends is the recorded one (before the fix the replay wrapper hid the
+    shard protocol, merged beside research and diverged at research's second call)."""
+    src = record(cfgdir, "live", "--disable-tool", "mcp-research-information")
+    recorded = JsonlWriter(src / "llm.jsonl").read()
+    shards = sorted({e["conversation_id"] for e in recorded if e.get("phase") == "assess"})
+    assert shards == [f"assess-0-s{k}" for k in range(1, 5)]
+    res = replay(cfgdir, src, "live-rp")
+    assert res.exit_code == 0, res.output
+    assert "matches the recording" in res.output
+    rd = src.parent / "live-rp"
+    a = json.loads((src / "report.json").read_text(encoding="utf-8"))
+    b = json.loads((rd / "report.json").read_text(encoding="utf-8"))
+    assert compare_reports(a, b) == []
+    assert (src / "ledger.json").read_bytes() == (rd / "ledger.json").read_bytes()
+    ledger = [(e["evidence_id"], e["source_type"]) for e in b["evidence_ledger"]]
+    assert [t for _, t in ledger[:2]] == ["external", "external"] and {t for _, t in ledger[2:]} == {"doc"}
+    assert len(JsonlWriter(rd / "llm.jsonl").read()) == len(recorded)

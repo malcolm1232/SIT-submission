@@ -104,7 +104,8 @@ async def test_report_counts_declined_verdict_calls(tmp_path: Path) -> None:
 
 async def test_budget_rule_fires_on_failed_calls_alone(tmp_path: Path) -> None:
     """Understand truncated twice spends 2 x 7,500 input tokens; with a 10,000-token budget the
-    run must stop before plan. Before the fix the budget read 0 and the run went on."""
+    run must stop before research and refine (plan and the assess shards start beside understand in
+    stage 1, so they have been called already). Before the fix the budget read 0 and the run went on."""
     base = selftest_config(tmp_path)
     cfg = base.model_copy(update={"stop_rules": base.stop_rules.model_copy(update={"max_input_tokens": 10_000})})
 
@@ -120,7 +121,8 @@ async def test_budget_rule_fires_on_failed_calls_alone(tmp_path: Path) -> None:
     state = json.loads((RunDir(out.run_dir).root / "state.json").read_text(encoding="utf-8"))
     assert state["budget"]["input_tokens"] >= 2 * BILLED.total_input_tokens
     assert state["stop_reason"]["code"] == StopReasonCode.BUDGET_TOKENS.value
-    assert "plan" not in (state.get("llm_calls") or {})                 # no model call after the cap fired
+    calls = state.get("llm_calls") or {}
+    assert "research" not in calls and "refine" not in calls           # no model call after the cap fired
 
 
 # ============================================================================== gateways set LLMError.usage
