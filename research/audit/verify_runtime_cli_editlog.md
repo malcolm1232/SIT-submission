@@ -361,3 +361,41 @@ Branch: `rsplit` back (3 tests fail).
 Located at: renderer without grouping; understand without dedupe; findings and sound areas without dedupe.
 Budget (12): `add_usage` removed from each `call_model` handler (truncation, refusal, schema, deadline), from all research handlers, from verify, from report; `billed` made a no-op; the Claude Code per-call sum dropped; `schema_violation` without the inner usage; replay without recorded usage; `add_usage` a no-op.
 Unknown usage (17): each Claude Code reason label dropped (3); the log override; the Claude Code and Anthropic interrupt entries; the Anthropic no-status branch; the fake gateway's killed flag; the explicit marker ignored; the legacy inference; the lower-bound flag; the report.md note; the report and failed-run console lines; the `--k` cell, total note and collector.
+
+## Session 4 hub verification
+
+Hub verifier, 2026-10-03: merged `s4/lc12` (103b8e6) and the demo measurement (feb1d9f) into `s4/integration`, then verified the second-truncation fallback, the accounting fixes, the LC12 guard and the demo measurement on the merged tree.
+Report: `docs/transcripts/session4/hub_verification.md`.
+
+### Merge
+
+| Merge | Conflict | Resolution |
+|---|---|---|
+| `b44a5d9` (`s4/lc12`) | `docs/USER_DECISIONS.md`: row #25 (amended on this branch, unchanged at 2d84f59 on the other) next to the new LC12 section with row #26 | Kept the amended row #25 and appended the LC12 section; the other side's row #25 was byte-identical to 2d84f59 |
+| `8b35dcd` (feb1d9f) | none | none |
+
+### Reproduced first
+
+- `dra replay docs/live_runs/demo_profile_measure_1` on the merged tree: exit 4, `TypeError: unsupported operand type(s) for +: 'dict' and 'Usage'` in assess. The demo branch replayed it with exit 0 before the accounting branch was merged.
+- A confirmatory `sit-eval score --prior-scores <exploratory scores.json>` (fake judge): exit 0, 118 judge calls, output marked confirmatory, no warning naming the prior.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/replay.py` | `recorded_error` passes `usage=None`: the log entry's `usage` dict never reaches an `LLMError` constructor (classes that inherit `LLMError.__init__`, such as `LLMDeadlineError`, took it since 0e14c4c); `ReplayLLMGateway` still sets the recorded billed usage through `billed` | `tests/test_cli_replay.py`: `test_a_recorded_usage_dict_never_reaches_the_error_constructor`, `test_the_committed_demo_measurement_run_replays_offline` |
+| `harness/sit_eval/lc12.py`, `cli.py`, `scoring.py` | `require_confirmatory_prior`: an exploratory `--prior-scores` (marked, or written before the guard on an unsigned key) is refused without `--exploratory`, in the CLI before any judge is built and at the top of `score_review` | `tests/eval_harness/test_eval_lc12.py`: `test_score_refuses_an_exploratory_prior_scores_without_the_flag`, `test_score_review_refuses_an_exploratory_prior_with_zero_judge_calls` |
+| `docs/USER_DECISIONS.md` | Row #27 (demo latency ruling) | none (text) |
+
+### Mutations
+
+Builders' work, in a scratch copy of the merged tree (`git archive`), each file restored from a `cp` copy: all 15 caught.
+Truncation (3): the second truncation re-raised instead of degrading; `assessment_missing` without the truncated branch; plan's `missing` always "declined".
+Accounting (6): `cost_usd_lower_bound` always false; `report.md` lower-bound clause dropped; `--k` cost cell without `>=`; `add_usage` dropped from the truncation handler of `call_model`; `add_usage` dropped from research's truncation handler; the legacy zero-usage cut reading disabled.
+LC12 (6): `require_signed` never raises; the cache serves exploratory rows to a confirmatory runner; `require_confirmatory_inputs` never raises; a pre-guard scores file never counts as exploratory; `grade_review_async` without `require_signed_key`; a legacy YAML key reported as signed off.
+Own fixes, in place after commit, restored from a `cp` copy: all 4 caught (replay `usage=None` removed; the CLI prior check removed; the library prior check removed; `require_confirmatory_prior` never raises).
+
+### Not changed, reported
+
+- 11 added lines carry U+2014: all are the reviewed PDF's own title, recorded verbatim in `docs/live_runs/demo_profile_measure_1` (report, state, checkpoints). Editing them would falsify a recorded run and break its replay comparison; the earlier committed live run carries the same title. No authored line has one.
+- `docs/live_runs/demo_profile_measure_1/effective_config.json` `config_root` holds a local home-directory path (39 characters); not a credential.
