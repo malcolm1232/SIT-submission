@@ -497,3 +497,56 @@ def test_coverage_and_raw_readers_take_the_latest_checkpoint_by_ordinal(tmp_path
     legacy.write_text(json.dumps(data), encoding="utf-8")
     (rd.checkpoints / "09-junk.json").write_text("{not json", encoding="utf-8")
     assert [checkpoint_file_order(f) for f in sorted(rd.checkpoints.glob("*.json"))] == [2, 5, 0]
+
+
+def test_apply_revisions_returns_findings_that_share_nothing_with_the_drafts() -> None:
+    """The refine phase edits the kept findings further (IDs, notes); that must never reach the drafts it
+    keeps in run state for resume and ``explain``."""
+    before = [d.model_dump() for d in DRAFTS]
+    kept = apply_revisions(DRAFTS, _out(_keep("FND-001", 1), _keep("FND-002", 2), _strength_keep(3)))
+    for k in kept:
+        k.doc_anchors[0].quote = "edited"
+        k.evidence.clear()
+        k.criterion_ids.append("edited")
+    assert [d.model_dump() for d in DRAFTS] == before
+
+
+def test_stage1_rules_hold_for_every_member_state_and_finishing_order() -> None:
+    """Exhaustive (the repo has no hypothesis): each of the four members not started, running, or ended
+    done / cut / skipped (5^4 states), then every finishing order of a scheduler that starts what is
+    ready and ends one running member at a time."""
+    from itertools import permutations, product
+
+    members = list(STAGE_1_DEPENDS)
+    for states in product(("idle", "running", "done", "cut", "skipped"), repeat=4):
+        ended = {p: s for p, s in zip(members, states, strict=True) if s in ("done", "cut", "skipped")}
+        running = {p for p, s in zip(members, states, strict=True) if s == "running"}
+        ready = stage1_ready(ended, running)
+        assert not ready & (set(ended) | running)
+        for p in members:
+            idle = p not in ended and p not in running
+            deps_ended = STAGE_1_DEPENDS[p] <= set(ended)
+            assert (p in ready) == (idle and deps_ended), (states, p)
+        closed = stage1_close(ended, running)
+        assert set(closed) == set(members)
+        assert all(closed[p] == ended[p] for p in ended)
+        assert all(closed[p] == "cut" for p in running)
+        assert all(closed[p] == "skipped" for p in members if p not in ended and p not in running)
+        assert stage1_ready(closed, set()) == set()
+    for order in permutations(members):
+        ended: dict[PhaseName, Any] = {}
+        running: set[PhaseName] = set()
+        started: list[PhaseName] = []
+        pending = list(order)                      # the order in which members would like to finish
+        while len(ended) < len(members):
+            new = stage1_ready(ended, running)
+            running |= new
+            started += sorted(new)
+            done = next(p for p in pending if p in running)
+            pending.remove(done)
+            running.discard(done)
+            ended[done] = "done"
+        assert sorted(started) == sorted(members) and len(started) == len(set(started))
+        r = started.index(PhaseName.RESEARCH)
+        assert {PhaseName.UNDERSTAND, PhaseName.PLAN} <= set(list(ended)[:list(ended).index(PhaseName.RESEARCH)])
+        assert r == 3                              # research is the last to start, whatever ends first
