@@ -37,7 +37,9 @@ No model call, agent run, scoring run or grading run was made.
 - The scratch copy for the owner's signing trial was made with `tar` over `git ls-files`, which also copied `eval/blind/**` bytes; that copy was deleted unopened.
 - The builder had avoided the direct run for this reason; the safe form is the converter's filtered self-test (`--tier synthetic`), which also passed.
 - `eval/blind/ACCESS_LOG.md` does not exist yet, so the access is recorded here and must be copied into it when it is created.
+- Added at close-out on 2026-10-03: the log now exists and this access is its entry 1; `spec/validate_examples.py` no longer reads `eval/blind` unless `--include-blind` is given.
 
 ## Found and not changed (reported)
 
 - The harness does not refuse a scored run on a key with `scored_run_ready: false`; `sit_eval/scoring.py` only adds a warning that the matcher scores are provisional, and `prereg.enforce` checks only the prereg freeze and prompt lock. Prereg LC12 is therefore a procedural control, not a code guard. Adding a refusal is a harness change outside this branch's scope.
+- Open gap, recorded at close-out on 2026-10-03: `sit_eval/scoring.py` still only warns on `scored_run_ready: false` although prereg LC12 allows no scored run on such a key; a later worker will make it a refusal with an explicit exploratory override, and until then LC12 is enforced by procedure only (no code changed here).
