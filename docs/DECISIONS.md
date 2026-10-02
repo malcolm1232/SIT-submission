@@ -194,7 +194,7 @@ Status values: **Accepted** (build on it), **Pending** (blocked on a named input
 
 ## ADR-010: Dual LLM backend — Claude Code headless (subscription / cloud credits) or Anthropic API key
 
-**Status:** Proposed, awaiting owner confirmation (2026-10-02).
+**Status:** Accepted 2026-10-02 (owner: "can u continue on it", taken as confirmation; USER_DECISIONS #9). Implementation: `agent/sit_review_agent/llm/claude_code.py`.
 
 **Context.** The owner prefers the agent's model calls to bill to Claude subscription usage (laptop) or Claude Code cloud credits (claude.ai/code sessions) rather than a separate Console API key. Measured in a cloud session on 2026-10-02:
 
@@ -214,3 +214,13 @@ The Anthropic Python SDK cannot use the session's credentials; it requires `ANTH
 - Policy: Anthropic's terms say subscription OAuth supports "ordinary, individual usage of Claude Code and the Agent SDK" and that developers building products for others must use API keys. Personal use for the owner's own lab work is the intended reading; the submission must not ship with subscription auth as the only option, hence the dual backend. Source: https://code.claude.com/docs/en/legal-and-compliance.md
 - Billing of nested `claude -p` inside a cloud session against cloud credits is UNVERIFIED in docs; confirm by checking the credit meter before and after a known run.
 - `total_cost_usd` is a client-side estimate, not the bill.
+
+**Verified in the cloud sandbox on 2026-10-02 (second session), Claude Code 2.1.287:**
+- `--bare` breaks authentication in a cloud session (the host-managed provider is skipped: "Authentication error"). The gateway must not pass it. `--disable-slash-commands`, `--tools ""`, `--strict-mcp-config`, `--disallowedTools "mcp__*"`, `--json-schema`, `--effort`, and the env vars `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` / `CLAUDE_CODE_DISABLE_ATTACHMENTS=1` all work.
+- Multi-turn: `--session-id <uuid>` on the first call and `--resume <uuid>` on later calls continues the conversation (tested: a word remembered across two `claude -p` invocations). `--no-session-persistence` must therefore NOT be used; the CLI stores the transcript under `~/.claude/projects/<cwd-slug>/<uuid>.jsonl`, so every call of a run uses the same `cwd` (the run directory).
+- The prompt is read from stdin when no positional argument is given; this is required because the first user turn carries the whole document text and Linux caps a single argv string at 128 KiB.
+- Structured output: `--json-schema` accepts nested `anyOf`, free-form `{"type":"object"}` and `additionalProperties:false`; the result JSON carries `structured_output`. A tool-calling envelope (`{"tool_calls":[{id,name,input}], "final": <phase schema>|null}`) was returned schema-valid in one call. Claude Code implements structured output through an internal tool, so the result's `stop_reason` reads `tool_use` and `num_turns` is 2-3 even for a plain answer; the gateway therefore decides `tool_use` vs `end_turn` from the envelope, and uses the CLI `stop_reason` only for `max_tokens` / `refusal`.
+- The result JSON carries `usage` (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`), `modelUsage` keyed by served model, `total_cost_usd` (client-side list-price estimate), `session_id`, `is_error`, `terminal_reason` and `result` (the error text when `is_error`).
+- Consequence for the research loop: with this backend the model cannot emit native `tool_use` blocks (all CLI tools are off), so the gateway renders the request's `tools` into the system prompt and asks for the envelope above; `tool_result` user blocks are rendered as text. The native backend keeps real tool use. Both go through the same `LLMGateway` protocol, so phases do not change.
+- `max_tokens` is passed as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`; whether the CLI honours it per call is UNVERIFIED. Thinking blocks are not returned by the CLI, so `LLMResult.content` holds only the text/tool-use blocks and resume replays from the CLI's own transcript, not from `llm.jsonl`.
+

@@ -1,0 +1,3 @@
+[console_scripts]
+dra = sit_review_agent.cli:main
+sit-review = sit_review_agent.cli:main

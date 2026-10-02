@@ -19,3 +19,5 @@ Decisions given by the project owner in conversation. These override research re
 | 6 | Billing for agent model calls | Owner wants all agent LLM calls on cloud credits / subscription usage, not a Console API key. | ADR-010 proposed: `claude_code` backend default, `anthropic_api` kept as an option. Pending owner confirmation of ADR-010. |
 | 7 | Second-provider judge | Owner will top up OpenAI and/or Google later. | ADR-003 judge branch A stays open; revisit when keys are funded. |
 | 8 | Cloud credits | This account: $36 of $250 left after this session (~$214 used). Two other accounts with $250 each, expiring 5 Nov. | Continue build in another account per docs/HANDOFF.md. |
+| 9 | ADR-010 (Claude Code backend) | Owner replied "CAN U CONTINUE on it please?" to the request for confirmation. Taken as confirmation. | ADR-010 accepted. `llm.backend: claude_code` is the default in `config/agent.yaml`; `anthropic_api` stays available for evaluators with an API key. |
+
