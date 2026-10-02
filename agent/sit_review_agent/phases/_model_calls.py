@@ -47,7 +47,7 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -86,6 +86,7 @@ MIN_QUOTE_TOKENS = 8
 EXCERPT_CHARS = 700
 FINDING_ID_RE = re.compile(r"^FND-[0-9]{3,}$")
 _URL_RE = re.compile(r"\S+://\S+")
+_AnchorT = TypeVar("_AnchorT", DocAnchor, DocAnchorDraft)
 
 
 class BriefRenderer(Protocol):
@@ -401,6 +402,20 @@ def fix_anchor(ctx: RunContext, a: DocAnchorDraft) -> DocAnchorDraft:
                                 "requirement_ids": [r for r in a.requirement_ids if r.strip()]})
 
 
+def unique_anchors(anchors: Iterable[_AnchorT]) -> list[_AnchorT]:
+    """``anchors`` with exact repeats removed (same document, page, section and normalised quote;
+    first kept, order kept). A model that cites one passage twice would otherwise make the report
+    list that location twice."""
+    seen: set[tuple[str, int | None, str, str]] = set()
+    out: list[_AnchorT] = []
+    for a in anchors:
+        key = (a.doc_id, a.page, a.section_ref, normalise_quote(a.quote))
+        if key not in seen:
+            seen.add(key)
+            out.append(a)
+    return out
+
+
 def spec_anchor(ctx: RunContext, a: DocAnchorDraft) -> DocAnchor | None:
     """The fixed draft as a canonical :class:`DocAnchor`, or ``None`` if it still breaks the spec."""
     try:
@@ -453,7 +468,7 @@ def normalise_findings(ctx: RunContext, drafts: Sequence[FindingDraft], *, keep_
       other draft gets the next free number. ``assess`` passes no ``keep_ids``.
     * ``rank`` becomes ``1..n`` ordered by the model's rank, then by output order.
     * ``confidence`` clamped to [0, 1]; ``criterion_ids`` filtered to configured criteria (order kept).
-    * anchors fixed with :func:`fix_anchor`.
+    * anchors fixed with :func:`fix_anchor`; exact repeats removed (:func:`unique_anchors`).
     * ``reassessment``: ``None`` in a full review; in a delta review a missing one becomes
       ``new_in_update`` (the spec requires one on every delta finding).
     """
@@ -482,7 +497,7 @@ def normalise_findings(ctx: RunContext, drafts: Sequence[FindingDraft], *, keep_
         out.append(d.model_copy(update={
             "id": fid, "confidence": _clamp(d.confidence),
             "criterion_ids": [c for c in dict.fromkeys(d.criterion_ids) if c in criteria],
-            "doc_anchors": [fix_anchor(ctx, a) for a in d.doc_anchors],
+            "doc_anchors": unique_anchors(fix_anchor(ctx, a) for a in d.doc_anchors),
             "reassessment": reassessment,
         }))
     order = sorted(range(len(out)), key=lambda i: (drafts[i].rank, i))
@@ -496,7 +511,7 @@ def normalise_sound_areas(ctx: RunContext, areas: Sequence[SoundAreaDraft], id_m
     for a in areas:
         related = [id_map.get(i, i) for i in a.related_finding_ids]
         out.append(a.model_copy(update={
-            "doc_anchors": [fix_anchor(ctx, x) for x in a.doc_anchors],
+            "doc_anchors": unique_anchors(fix_anchor(ctx, x) for x in a.doc_anchors),
             "related_finding_ids": [i for i in dict.fromkeys(related) if i in finding_ids]}))
     return out
 

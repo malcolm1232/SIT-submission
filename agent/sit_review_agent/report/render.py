@@ -160,6 +160,18 @@ def executive_summary(review: Review, *, max_words: int = EXEC_SUMMARY_MAX_WORDS
     return " ".join(words[:max_words]) + (" ..." if len(words) > max_words else "")
 
 
+
+def intent_locations(review: Review) -> list[dict[str, Any]]:
+    """The intent summary's locations for "Located at", each once in first-seen order, with the
+    number of anchored passages there. Two distinct quotes in one section are one location, so the
+    line never repeats itself; ``passages`` keeps it in agreement with ``report.json``."""
+    out: dict[tuple[str, int | None, str], dict[str, Any]] = {}
+    for a in review.intent_summary.doc_anchors:
+        loc = out.setdefault((a.doc_id, a.page, a.section_ref), {"page": a.page, "section": a.section_ref,
+                                                                  "passages": 0})
+        loc["passages"] += 1
+    return list(out.values())
+
 def render_markdown(review: Review, *, template: str = "standard", min_severity: Severity = Severity.LOW,
                     coverage: list[CriterionCoverage] | None = None) -> str:
     """Render ``review``. ``min_severity`` moves lower-severity findings to an appendix (live
@@ -217,7 +229,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
                                    for o in review.intent_summary.constraints],
                    "assumptions": [{"ref": o.ref, "text": _one_line(o.text)}
                                    for o in review.intent_summary.key_assumptions],
-                   "anchors": [{"page": a.page, "section": a.section_ref} for a in review.intent_summary.doc_anchors]},
+                   "anchors": intent_locations(review)},
         "verdict": {"label": review.verdict.label.value, "label_text": verdict_label_text(review),
                     "confidence": f"{review.verdict.confidence:.2f}",
                     "band": confidence_band(review.verdict.confidence),

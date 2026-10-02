@@ -102,7 +102,7 @@ Key assumptions:
 {% endfor %}
 
 {% endif %}
-Located at: {% for a in intent.anchors %}p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{{ ", " if not loop.last }}{% endfor %}.
+Located at: {% for a in intent.anchors %}p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{{ " (%d passages)" % a.passages if a.passages > 1 }}{{ ", " if not loop.last }}{% endfor %}.
 
 ## {{ headings["verdict"] }}
 
