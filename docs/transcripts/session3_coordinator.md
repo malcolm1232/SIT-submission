@@ -96,3 +96,83 @@ taken as: continue `docs/HANDOVER_FULL.md` §6 with the delegation pattern of se
 
 ---
 
+## Report: E1 matcher, metrics, live judges, scoring CLI
+
+**1. Status.** Not fully green yet, and only R's in-progress files block it.
+- **ruff:** my files are clean. `ruff check agent harness tests` reports 2 errors, both in `tests/robustness/oracles.py` (R's file, in progress).
+- **pytest -q:** 771 passed, 3 failed. All 3 are `tests/robustness/test_robustness_scenarios.py` [NET-01, ADV-05, BEH-17]. They do not import `sit_eval`; I re-ran and they still fail on R's side.
+- **Without R:** `--ignore=tests/robustness` gives 733 passed, 0 failed. That includes E2's grader tests, which go through my `build_judge`.
+- **Mine:** 210 tests in `tests/eval_harness`, about 7-8 s.
+
+**2. Files.**
+- **New code** in `harness/sit_eval/`: `aggregate.py`, `calls.py`, `config.py`, `fakes.py`, `grounding.py`, `hungarian.py`, `live_judges.py`, `loaders.py`, `locations.py`, `matcher.py`, `metrics.py`, `paths.py`, `prereg.py`, `prompts.py`, `report_md.py`, `scoring.py`, `stats.py`.
+- **New prompts:** 12 `.md` prompt files plus `PROMPTS.lock` in `harness/sit_eval/prompts/`.
+- **New schemas:** 7 `judge_*.schema.json` files plus `scores.schema.json` in `harness/sit_eval/schemas/`.
+- **New tests** in `tests/eval_harness/`: `eval_builders.py` (helpers) and `test_eval_{worked_example,hungarian,isolation,live_judges,runner,matcher,stats,grounding_metrics,e2e,prereg_prompts}.py`.
+- **Other new:** `config/eval.yaml`, `harness/README.md`.
+- **Edited:**
+  - `harness/sit_eval/judge.py`: only the body and docstring of `build_judge`. No signature changed.
+  - `harness/sit_eval/cli.py`: rewritten; it still mounts `grade`.
+- **Untouched:** `pyproject.toml`. No new dependency; there is no numpy or scipy, so everything is pure Python.
+
+**3. Design decisions.**
+1. A `JudgeRunner` sits between the pipeline and any `JudgeClient`. It handles concurrency (default 4), re-checks every answer against its schema, and keeps a result cache in `judge_results.jsonl`. Re-running into the same `--out` re-pays nothing, so a stopped run can be resumed.
+2. **Cost stop:** a call is refused if spend so far, plus the reserve of calls in flight, plus its own reserve would cross `--max-cost-usd`.
+   - The reserve is `max_budget_usd_per_call` ($1 by default), so the stop is conservative: about $5 below the limit at concurrency 4.
+   - Calls in flight at the stop are allowed to finish and are recorded. Status becomes `stopped_budget` and the CLI exits 3.
+3. Each live attempt is a fresh `claude -p` session, so per-call cost is that call's own total. The code still subtracts any previously seen cumulative total for the same session, and the log records which basis applied.
+4. **Imports from the agent backend:** `subprocess_runner`, `CompletedRun`, `API_KEY_ENV_VARS`, `FORBIDDEN_FLAGS`, `MAX_ARGV_TEXT_CHARS`, and the private helpers `_classify` and `_error_text` from `claude_code.py`, plus `_anthropic_classify` from `gateway.py`. If someone renames those private helpers, my imports break.
+5. **G2 is exactly the agent's `verify_anchor`**, with `fuzzy_threshold = theta_q`.
+6. **G1** uses the agent's normaliser and searches the whole document. It differs from the metrics.md wording in four ways:
+   - the ratio is character-level partial ratio; metrics.md says token-level;
+   - exact match is tried first, case-sensitive;
+   - a section that cannot be resolved falls back to the page window alone;
+   - doc-evidence quotes under 8 tokens are allowed, but must match exactly. The 8-token rule still applies to anchor quotes.
+7. **Grounding judges:** the G3 judge and the citation judge each make one call per finding, with the whole document in the prompt. For an absence claim, the whole document is the retrieval. `--no-grounding-judges` makes HFR and the citation metrics null with a reason; the variant without G3 is still reported.
+8. Every metric is `{value, reason, status}`. A null value always carries a reason (schema-enforced). Status is one of primary, key_secondary, secondary, exploratory, deferred or blocked, following the prereg.
+9. Prompts never contain the run id, review id, model, condition, provenance, confidence or finding labels; a test checks this. Shuffle seeds are derived from `--seed` and recorded in `scores.json`.
+10. `build_judge` also accepts `"fake"`, a deterministic responder whose answers are hashes and always labelled plumbing-only. Unknown options raise `ValueError`.
+
+**4. Deviations from the brief or the prereg/metrics text.**
+- **Unmatched finding with PARTIAL (2) against a flaw nobody matched:** I label it VALID_UNPLANTED with basis `partial_key_match`, deterministically. metrics.md does not define this case. It never joins the pooled key or removes a sound unit. Please confirm or change.
+- **Ties in the assignment** go to the agent's higher-ranked finding, through a weight term below 1e-4. The §14 example depends on this, because f1 and f4 tie on F2.
+- **Lower median** when a failed sample leaves an even count. A score of 3 with `location_ok: false` is capped at 2, because MATCH requires a compatible location.
+- **Not implemented, as allowed:** embedding prefilter; Message Batches (prereg `branch_B` names it; the default path is `claude -p`, synchronous); live URL/DOI resolution; claim splitter (citation recall covers finding claims only); DEFF inflation in the stratified permutation test (needs the pilot's rho).
+- **Partly computed:** JDR uses G1 only, with no G3 on sound areas. "Flawed units" for balanced unit accuracy are defined as section ids named in gold flaw locations. Critical-in-top-3 uses the first 3 criticals in key order when there are more than 3. RJR_subst needs the optional recommendation judge, which is off by default. copy-through needs `--prior-scores`. `false_resolution_rate` stays null: it is a proposed addition not yet in metrics.md.
+- **Computed though deferred:** the deferred metrics (nDCG, ECE and so on) are computed and labelled deferred.
+- **Statistics:** the bootstrap uses `random.Random`, so its draws differ from the numpy pseudo-code for the same seed.
+- **`--granularity per_flaw_batch` is a prereg deviation** (prereg says one call per pair, 3 samples). It must be approved by you before any scored run, and `scores.json` warns when it is used.
+
+**5. Expected cost to score the live run** (20 findings, 14 v1 flaws, 80 location-overlap pairs). Figures are from `--dry-run`, at $0.05-0.15 per call and concurrency 4:
+
+| Mode | Judge calls | Cost (typical) | Wall time |
+|---|---|---|---|
+| Pairwise (prereg default), grounding judges on | 300-440 | $15-66 (~$37) | 25-110 min |
+| Pairwise, `--no-grounding-judges` | 260-400 | $13-60 | 22-100 min |
+| Per-flaw batch (deviation; needs your approval), judges on | 102-116 | $5-17 (~$11) | 9-29 min |
+| Per-flaw batch, `--no-grounding-judges` | 62-76 | $3-11 | 5-19 min |
+
+- I expect a real run near the low end: the shortlist will mostly pick findings that already overlap by location.
+- Suggested command: `sit-eval score docs/live_runs/live_cc_opus_payments_v1 --key eval/synthetic/payments_orchestration/answer_key.canonical.json --out runs/eval/live_cc_opus_payments_v1 --max-cost-usd <cap>`.
+
+**6. Unverified; only a live call can confirm.**
+- **Schemas:** that `--json-schema` (and the API's `output_config.format`) accepts these schemas, especially the integer `enum: [0, 1, 2, 3]`.
+- **Billing:** real per-call cost and latency, and whether nested `claude -p` bills to cloud credits.
+- **Sampling:** whether 3 samples at provider-default sampling actually vary through the CLI.
+- **Caching:** whether the 15k-token document prefix of the adjudicator and premise calls gets cached.
+- **Per-call budget:** how tightly `--max-budget-usd` caps a single call.
+- **API judge:** that `AnthropicJudge`'s request body works live. It mirrors the agent's gateway but has not been called live, and it has no price table, so its cost is null unless one is given.
+
+**7. Writes beyond my list.** Yes, one. I ran `ruff check --fix harness/sit_eval` once without excluding the grader folder. At 13:31:36 UTC it applied lint-only autofixes (likely import sorting and pyupgrade) to four E2 files: `harness/sit_eval/grader/pipeline.py`, `prompts.py`, `schemas.py`, `verify.py`. I could not diff them, because git was off-limits. E2 should re-read those files before its next edit. After that, I ran fixes on my own paths only. Temporary output went only to the scratchpad.
+
+**8. For the other workstreams and the verifier.**
+- **Grader seam (E2):** E2 calls `build_judge(kind, out_dir=...)` with no options, so it gets a 1200 s timeout, 3 retries and no per-call budget. The model and effort come from each `JudgeRequest`. `ClaudeCodeJudge` passes `system` on argv, so `system` is limited to 100,000 characters. Long text such as the design document must go in `user`. Both workstreams log to `<out_dir>/judge_calls.jsonl`.
+- **Answer key:** every payments flaw has `core_insight: null` and `scored_run_ready: false`. The matcher substitutes description plus required credit items, and warns. Prereg LC12 forbids scored runs on such keys.
+- **Key locations:** sections "2.2" and "24" and FR-5 appear in most flaws, so location overlap is broad (80 pairs). That breadth is what drives the pairwise cost.
+- **Live report findings:** 5 doc-evidence quotes are under 8 tokens (table cells). EV-016 cites p1/s12.4 for a title-page quote, so G2 fails on it. The agent's verify stage does not check evidence citations' page or section.
+- **Prereg text to update:** it names `eval/score.py` (LC9, stop_rule); the tool is now `sit-eval score`. `matcher.prompt_sha256` should take `PROMPTS.lock`'s `bundle_sha256` (currently `d9e14df5…`).
+- **Leakage check LC7:** the overlap check between judge prompts and agent prompts was not run. The adjudicator sees the key summary: flaw descriptions plus sound-section traps.
+- **Held-out set:** I did not run `spec/validate_examples.py`, because it globs `eval/blind` (FE R-03). I opened nothing under `eval/blind/`. I also skipped spec/README §2.4, §2.6 and §2.7.
+
+---
+

@@ -530,7 +530,7 @@ class _EvidenceResolver:
 
     def doc_entry(self, quote: str | None, anchor: DocAnchorDraft | None) -> str | None:
         """A ledger ``doc`` entry for ``quote`` (located in the canonical text when found there,
-        else at ``anchor``); reuses an identical existing entry."""
+        else the anchor's own quote at ``anchor``); reuses an identical existing entry."""
         q = normalise_quote(quote or "")
         loc: tuple[str, int | None, str] | None = None
         if q:
