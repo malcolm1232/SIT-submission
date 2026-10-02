@@ -107,7 +107,18 @@ class Budget(_State):
     research_iterations: int = 0
     new_sources_by_iteration: list[int] = Field(default_factory=list)
     started_monotonic: float = 0.0
+    #: Wall seconds per phase. Stage 1 members overlap (latency redesign), so these no longer sum
+    #: to the run's elapsed time; use ``elapsed_s``.
     phase_seconds: dict[str, float] = Field(default_factory=dict)
+    #: The run clock's elapsed seconds when the state was last checkpointed (interface change of
+    #: 2026-10-03, latency redesign W0). Resume restores the clock from it. 0.0 = not recorded
+    #: (a state written before 2026-10-03, or before the first checkpoint).
+    elapsed_s: float = Field(0.0, ge=0.0)
+
+    def elapsed_for_resume(self) -> float:
+        """Seconds the run clock had used when checkpointed: ``elapsed_s`` when recorded, else the
+        sum of ``phase_seconds`` (exact only for the sequential runs that wrote such states)."""
+        return self.elapsed_s if self.elapsed_s > 0.0 else sum(self.phase_seconds.values())
 
 
 class RunState(_State):

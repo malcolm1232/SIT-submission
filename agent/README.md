@@ -146,6 +146,50 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   `FaultInjectingLLMGateway` (`schema_violation`), `ReplayLLMGateway` (via `llm.gateway.billed`).
   Readers: `phases/_model_calls.call_model`, `phases/research.py`, `phases/verify.py`,
   `phases/report.py` (via `llm.usage_budget.add_usage`). Additive: no existing constructor call changes.
+- 2026-10-03, latency redesign W0 (`docs/design/latency_and_demo_design.md` sections 4, 5 and 7).
+  Additive; every old name keeps its old shape, so no caller changes in this commit.
+  Tests: `tests/test_interfaces_w0.py`.
+  - `llm/outputs.py`: new `RefineRevisionsOutput`, `FindingRevisionDraft`, `RevisionAction` and
+    `revision_problems` (one revision per finding: keep with final rank, severity, disposition,
+    decision links and appended research evidence; merge into a kept finding; withdraw).
+    Writers: none yet (W2: `phases/refine.py`, `prompts/refine.md`). Readers: none yet (W2).
+  - `llm/outputs.py`: new `VerdictOutput` (the verdict only). Writers and readers: none yet
+    (W2: `phases/report.py`, `prompts/report.md`).
+  - Deprecated, removed by W2: `RefineOutput` and `RevisionNote` (writers: `phases/refine.py` via
+    `call_model`, scripted refine answers in `tests/test_llm_phases.py`, `tests/test_e2e_synthetic.py`,
+    `selftest.py`, the stub phase in `tests/test_run_and_resume.py`; readers: `phases/refine.py`,
+    `PHASE_OUTPUT_TYPES`, which `tests/test_anthropic_gateway.py` and `tests/test_not_assessed_verdict.py`
+    read) and `ReportOutput` (writers: `phases/report.py` `_verdict_call`, scripted report answers in
+    `tests/test_ingest_verify_report.py`, `tests/test_e2e_synthetic.py`, `tests/test_not_assessed_verdict.py`,
+    `selftest.py`; readers: `phases/report.py` `settle_report_output`, `PHASE_OUTPUT_TYPES`,
+    `tests/test_not_assessed_verdict.py`). `PHASE_OUTPUT_TYPES` still maps the old types until W2 switches.
+  - `errors.LLMDeadlineError` gained the keywords `partial` (the finished items of a cut stream) and
+    `estimated_usage` (marked estimated by being apart from `usage`, which stays measured only), and the
+    property `salvaged_items`. Writers today, unchanged: `llm/runtime.RunDeadline` (`no_time`, `cut`),
+    `llm/gateway.py` (`FaultInjectingLLMGateway` hang, `FakeGateway`), `llm/claude_code.py`,
+    `AnthropicGateway`; the new keywords get their writer in W1 (`llm/claude_code.py`, `llm/partial.py`).
+    Readers today: `phases/_model_calls.call_model`, `phases/research.py`, `phases/verify.py`,
+    `llm/gateway.py` (`unrecorded_usage`), `llm/claude_code.py`, `manifest.py` (by class name), and
+    `tests/test_runtime_policies.py`, `test_unrecorded_usage.py`, `test_budget_counts_failed_calls.py`,
+    `test_cli_replay.py`; the new fields get their readers in W2 (phases) and W3 (`manifest.py`).
+  - `states.py`: new `Stage`, `STAGE_ORDER`, `STAGE_MEMBERS`, `STAGE_TRANSITIONS`, `STAGE_ON_CAP`,
+    `STAGE_1_DEPENDS`, `MemberOutcome`, `stage_of`, `stage1_ready`, `stage1_close`. Readers: none yet
+    (W2: `orchestrator.py`). Deprecated, removed by W2: `TRANSITIONS` and `ON_CAP` (readers:
+    `orchestrator.py`, `states.mermaid`, `tests/robustness/test_robustness_scenarios.py`, the text of
+    `tests/robustness/robustness_coverage.py`).
+  - `state/checkpoint.Checkpoint` gained `ordinal` (default `None`: `write_checkpoint` assigns one more
+    than the highest on disk; a legacy file reads as `seq`), and `latest_checkpoint` picks the highest
+    ordinal, not the last file name. Writers: `write_checkpoint` (called by `orchestrator.py`); constructors
+    `orchestrator.py`, `tests/test_state_and_gateways.py`. Readers of `latest_checkpoint`:
+    `orchestrator.resume_run`, `tests/test_run_and_resume.py`, `test_orchestrator.py`, `test_llm_phases.py`.
+    Still picks by file name, to be moved by its owner: `report/coverage.py` (latest checkpoint state).
+  - `state/run_state.Budget` gained `elapsed_s` and `elapsed_for_resume()` (falls back to the sum of
+    `phase_seconds` for a state written before). Writers: none yet (W2: `orchestrator.py` sets it at every
+    checkpoint). Readers: none yet (W2: `orchestrator.resume_run`, which today sums `phase_seconds`;
+    W3: `manifest.py` timing and `replay.py`, which read `phase_seconds`).
+  - Not in this change: the config keys of design section 5 (`assess.shards`, `refine_reserve_seconds`
+    replacing `assess_reserve_seconds`, the stage limits, `claude_code.extra_args: ["--setting-sources", ""]`).
+    `config.ClaudeCodeSettings.extra_args` already exists and `ClaudeCodeGateway.build_argv` already appends it.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

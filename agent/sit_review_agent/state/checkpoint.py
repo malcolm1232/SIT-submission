@@ -16,7 +16,7 @@ import json
 import os
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sit_review_agent.errors import CheckpointError, ResumeDriftError
 from sit_review_agent.rundir import RunDir, write_json_atomic
@@ -53,6 +53,12 @@ class Checkpoint(BaseModel):
     hashes: PinnedHashes
     offsets: JournalOffsets
     state: RunState
+    #: 1-based order in which checkpoints were written in this run (interface change of 2026-10-03,
+    #: latency redesign W0). Stage 1 members end in any order, so the latest checkpoint is the one
+    #: with the highest ordinal, never the last file name. ``None`` when constructed means
+    #: :func:`write_checkpoint` assigns the next one; a legacy file without it reads as ``seq``
+    #: (sequential runs wrote checkpoints in phase order).
+    ordinal: int | None = Field(None, ge=1)
 
 
 def checkpoint_path(run_dir: RunDir, phase: PhaseName) -> Path:
@@ -68,9 +74,18 @@ def journal_offsets(run_dir: RunDir) -> JournalOffsets:
                           ledger_jsonl=size(run_dir.ledger_journal))
 
 
+def _all_checkpoints(run_dir: RunDir) -> list[Checkpoint]:
+    files = sorted(run_dir.checkpoints.glob("[0-9][0-9]-*.json")) if run_dir.checkpoints.exists() else []
+    return [load_checkpoint(f) for f in files]
+
+
 def write_checkpoint(run_dir: RunDir, ckpt: Checkpoint) -> Path:
-    """Atomic write (temp file, fsync, ``os.replace``); also refreshes ``state.json``."""
+    """Atomic write (temp file, fsync, ``os.replace``); also refreshes ``state.json``. A checkpoint
+    without an ordinal gets the next one (one more than the highest on disk); a rewritten phase
+    (resume re-runs a member) thus becomes the latest."""
     path = checkpoint_path(run_dir, ckpt.phase)
+    if ckpt.ordinal is None:
+        ckpt.ordinal = max((c.ordinal or 0 for c in _all_checkpoints(run_dir)), default=0) + 1
     try:
         data = ckpt.model_dump(mode="json")
         write_json_atomic(path, data)
@@ -82,15 +97,19 @@ def write_checkpoint(run_dir: RunDir, ckpt: Checkpoint) -> Path:
 
 def load_checkpoint(path: Path) -> Checkpoint:
     try:
-        return Checkpoint.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("ordinal") is None and "seq" in data:
+            data["ordinal"] = data["seq"]        # written before 2026-10-03: sequential, in phase order
+        return Checkpoint.model_validate(data)
     except (OSError, json.JSONDecodeError, ValidationError) as exc:
         raise CheckpointError(f"cannot read checkpoint {path}: {exc}") from exc
 
 
 def latest_checkpoint(run_dir: RunDir) -> Checkpoint | None:
-    """The checkpoint of the last completed phase, or ``None`` if there is none."""
-    files = sorted(run_dir.checkpoints.glob("[0-9][0-9]-*.json")) if run_dir.checkpoints.exists() else []
-    return load_checkpoint(files[-1]) if files else None
+    """The checkpoint written last (highest ordinal), or ``None`` if there is none. Never chosen by
+    file name: stage 1 members end in any order."""
+    ckpts = _all_checkpoints(run_dir)
+    return max(ckpts, key=lambda c: c.ordinal or 0) if ckpts else None
 
 
 def check_drift(ckpt: Checkpoint, current: PinnedHashes, *, accept_drift: bool = False) -> list[str]:

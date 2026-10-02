@@ -11,7 +11,7 @@ code" ADR-009 item 4 asks for without naming a number.
 from __future__ import annotations
 
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sit_review_agent.llm.gateway import Usage
@@ -116,7 +116,29 @@ class LLMDeadlineError(LLMTimeoutError):
     """A model attempt was cut by the run deadline, or no time was left to start (or retry) one
     (robustness LLM-05). Never retried past the deadline. Phases catch it and degrade: research
     ends, assess reports "out of time before assessment", refine keeps the assess findings, and
-    report falls back to a verdict by rule. Uncaught it ends the run like a timeout (exit 3)."""
+    report falls back to a verdict by rule. Uncaught it ends the run like a timeout (exit 3).
+
+    Salvage (interface change of 2026-10-03, latency redesign W0): ``partial`` is the answer the cut
+    stream had finished, as a JSON object whose list fields hold only the items whose JSON closed
+    before the cut (``{"findings": [...]}`` for an assess shard); ``None`` when nothing was salvaged.
+    The phase validates the items against its output type. ``estimated_usage`` is the gateway's
+    estimate for the cut attempt (the CLI reports no usage for a killed call). It is kept apart from
+    ``usage`` on purpose: ``usage`` stays measured (billed) usage only, so an estimate is never added
+    or shown as measured; whoever records it marks it estimated."""
+
+    def __init__(self, message: str, *, call_id: str | None = None, phase: str | None = None,
+                 usage: Usage | None = None, partial: dict[str, Any] | None = None,
+                 estimated_usage: Usage | None = None) -> None:
+        super().__init__(message, call_id=call_id, phase=phase, usage=usage)
+        self.partial = partial
+        self.estimated_usage = estimated_usage
+
+    @property
+    def salvaged_items(self) -> int:
+        """Finished items in ``partial`` (the sum of its list fields' lengths)."""
+        if not self.partial:
+            return 0
+        return sum(len(v) for v in self.partial.values() if isinstance(v, list))
 
 
 class LLMOverloadedError(LLMError):

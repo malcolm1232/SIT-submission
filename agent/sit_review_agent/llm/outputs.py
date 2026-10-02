@@ -212,6 +212,8 @@ class AssessOutput(Draft):
     coverage: list[CriterionCoverage]
 
 
+# Deprecated (latency redesign W0, 2026-10-03): the refine answer that re-emits every finding.
+# W2 removes it when phases/refine.py moves to RefineRevisionsOutput.
 class RevisionNote(Draft):
     finding_id: str
     change: Literal["revised", "withdrawn", "merged", "added", "unchanged"]
@@ -219,9 +221,109 @@ class RevisionNote(Draft):
     evidence_ids: list[str]
 
 
+# Deprecated (latency redesign W0, 2026-10-03): W2 removes it with RevisionNote.
 class RefineOutput(Draft):
     findings: list[FindingDraft]
     revisions: list[RevisionNote]
+
+
+class RevisionAction(StrEnum):
+    """What refine does with one merged draft finding (latency redesign, design section 4)."""
+
+    KEEP = "keep"
+    MERGE = "merge"
+    WITHDRAW = "withdraw"
+
+
+class FindingRevisionDraft(Draft):
+    """One revision per draft finding: a patch that code applies, never the finding re-emitted.
+
+    Every key is required and every value is final, so code applies it exactly:
+
+    * ``keep``: ``rank`` (1..n over the kept findings), ``severity`` (null is the final value for a
+      finding without a severity, never "unchanged") and ``disposition`` are the finding's values
+      after refine; ``affected_decisions`` replaces the draft's list (registry links, which assess no
+      longer makes); ``added_evidence`` is appended to the draft's evidence (research results);
+      ``merge_into`` is null.
+    * ``merge``: the finding is folded into ``merge_into``, which must be a kept finding; every other
+      field is null or empty.
+    * ``withdraw``: the finding is dropped; every other field is null or empty.
+
+    :func:`revision_problems` lists what breaks these rules; the refine phase decides what to do.
+    """
+
+    finding_id: str
+    action: RevisionAction
+    merge_into: str | None
+    rank: int | None
+    severity: Severity | None
+    disposition: Disposition | None
+    affected_decisions: list[AffectedDecisionDraft]
+    added_evidence: list[EvidenceCitation]
+    reason: str
+
+
+class RefineRevisionsOutput(Draft):
+    """The refine answer of the latency redesign: one global call, one revision per finding."""
+
+    revisions: list[FindingRevisionDraft]
+
+
+def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str]) -> list[str]:
+    """Every rule of :class:`FindingRevisionDraft` that ``out`` breaks against the merged draft
+    findings ``finding_ids``; empty when code can apply it exactly. Checks: one revision per known
+    finding, per-action field rules, merges only into a known kept finding (which also rules out a
+    merge into itself, chains and cycles), and kept ranks forming 1..n."""
+    problems: list[str] = []
+    known = set(finding_ids)
+    by_id: dict[str, list[FindingRevisionDraft]] = {}
+    for r in out.revisions:
+        if r.finding_id not in known:
+            problems.append(f"revision for unknown finding {r.finding_id}")
+            continue
+        by_id.setdefault(r.finding_id, []).append(r)
+    for fid in finding_ids:
+        n = len(by_id.get(fid, []))
+        if n == 0:
+            problems.append(f"no revision for {fid}")
+        elif n > 1:
+            problems.append(f"{fid} has {n} revisions")
+    kept = {fid for fid, rs in by_id.items() if len(rs) == 1 and rs[0].action is RevisionAction.KEEP}
+    ranks: list[int] = []
+    for r in out.revisions:
+        if r.finding_id not in known:
+            continue
+        a = r.action.value
+        if r.action is RevisionAction.KEEP:
+            if r.merge_into is not None:
+                problems.append(f"{r.finding_id} is keep but sets merge_into")
+            if r.rank is None:
+                problems.append(f"{r.finding_id} is keep without rank")
+            else:
+                ranks.append(r.rank)
+            if r.disposition is None:
+                problems.append(f"{r.finding_id} is keep without disposition")
+            continue
+        for field in ("rank", "severity", "disposition"):
+            if getattr(r, field) is not None:
+                problems.append(f"{r.finding_id} is {a} but sets {field}")
+        for field in ("affected_decisions", "added_evidence"):
+            if getattr(r, field):
+                problems.append(f"{r.finding_id} is {a} but sets {field}")
+        if r.action is RevisionAction.MERGE:
+            if r.merge_into is None:
+                problems.append(f"{r.finding_id} is merge without merge_into")
+            elif r.merge_into == r.finding_id:
+                problems.append(f"{r.finding_id} merges into itself")
+            elif r.merge_into not in known:
+                problems.append(f"{r.finding_id}: merge into unknown finding {r.merge_into}")
+            elif r.merge_into not in kept:
+                problems.append(f"{r.finding_id}: merge into {r.merge_into}, which is not kept")
+        elif r.merge_into is not None:
+            problems.append(f"{r.finding_id} is withdraw but sets merge_into")
+    if sorted(ranks) != list(range(1, len(kept) + 1)):
+        problems.append(f"ranks of kept findings must be 1..{len(kept)} with no gaps or repeats, got {sorted(ranks)}")
+    return problems
 
 
 # --------------------------------------------------------------------------- verify
@@ -283,10 +385,20 @@ class LimitationDraft(Draft):
     degradation_ids: list[str]
 
 
+# Deprecated (latency redesign W0, 2026-10-03): the verdict call that also writes unresolved items
+# and limitations. W2 removes it (with UnresolvedDraft and LimitationDraft if unused) when
+# phases/report.py moves to VerdictOutput.
 class ReportOutput(Draft):
     verdict: VerdictDraft
     unresolved: list[UnresolvedDraft]
     limitations: list[LimitationDraft]
+
+
+class VerdictOutput(Draft):
+    """The verdict call of the latency redesign: the verdict only; code writes unresolved items and
+    limitations (design section 9, decision 6)."""
+
+    verdict: VerdictDraft
 
 
 PHASE_OUTPUT_TYPES: dict[str, type[Draft]] = {
