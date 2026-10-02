@@ -197,6 +197,12 @@ class ResumeDriftError(AgentError):
         self.drift = drift
 
 
+class RunInterrupted(AgentError):
+    """Ctrl-C / cancellation; the state of the last completed phase is on disk (OPS-04)."""
+
+    exit_code = ExitCode.SIGINT
+
+
 class StageCrash(AgentError):
     """Wraps an unexpected exception raised inside a phase, after the checkpoint is flushed."""
 
