@@ -14,6 +14,13 @@
 5. verify: placeholder ("TBD") findings reached the report (LLM-09).
 6. _model_calls.resolve_evidence: a ``doc`` citation whose quote is not in the document became a
    ``doc`` ledger entry holding that (external) text (BEH-17).
+
+Verifier fixes (same edit log, "Verifier edits"):
+
+7. orchestrator: a stage crash wrote no partial report (BEH-25, ADR-009 item 5).
+8. refine: a severity / disposition / kind change with no reason and no new evidence was accepted (BEH-10).
+9. verify: a recommendation reversing an approved decision without a ``challenges`` label was not caught (BEH-12).
+10. research: a stop vote with zero external evidence was reported as ``sufficient_evidence`` (INF-24 run).
 """
 
 from __future__ import annotations
@@ -33,7 +40,8 @@ from sit_review_agent.llm.gateway import FakeGateway, FakeResponse, FaultInjecti
 from sit_review_agent.llm.outputs import FindingDraft
 from sit_review_agent.models import DegradationType, StopReason, StopReasonCode
 from sit_review_agent.orchestrator import Orchestrator
-from sit_review_agent.phases.verify import hollow_fields
+from sit_review_agent.models import Finding, RegistryEntry
+from sit_review_agent.phases.verify import hollow_fields, unlabelled_conflicts
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.prompts import PromptBundle
 from sit_review_agent.rundir import RunDir
@@ -144,14 +152,17 @@ def test_real_text_is_not_hollow() -> None:
     assert hollow_fields(FindingDraft.model_validate(d)) == []
 
 
-def test_hollow_finding_is_dropped_and_disclosed(tmp_path: Path) -> None:
+@pytest.mark.parametrize("field", ["recommendation.rationale", "title"])
+def test_hollow_finding_is_dropped_and_disclosed(field: str, tmp_path: Path) -> None:
     def tbd(p: dict[str, Any]) -> None:
-        p["findings"][0]["recommendation"]["rationale"] = "TBD"
+        if field == "title":                    # FND-002, a strength: no length floor caught this before
+            next(f for f in p["findings"] if f["id"] == "FND-002")["title"] = "TBD"
+        else:                                   # also below MIN_TEXT_CHARS, so it was dropped before too
+            p["findings"][0]["recommendation"]["rationale"] = "TBD"
 
     rec = run(Scenario(id="REG-5", patches={"assess": tbd, "refine": tbd}), tmp_path)
     assert "TBD" not in rec.run_dir.report_json.read_text(encoding="utf-8")
-    assert any("placeholder text in recommendation.rationale" in d["event"]
-               for d in rec.report["research_log"]["degradations"])
+    assert any(f"placeholder text in {field}" in d["event"] for d in rec.report["research_log"]["degradations"])
 
 
 # ============================================================================= 6. resolve_evidence
@@ -168,3 +179,74 @@ def test_doc_citation_with_a_quote_not_in_the_document_is_not_recorded_as_doc_te
     for e in json.loads(rec.run_dir.ledger.read_text(encoding="utf-8")):
         if e["source_type"] == "doc":
             assert external_text not in (e["excerpt"] or ""), e
+
+
+# ============================================================================= 7. partial report (BEH-25)
+
+
+def _crash_in(stage: str) -> Any:
+    def patch(data: dict[str, Any]) -> None:
+        data["process"][0]["stage"] = stage
+    return patch
+
+
+def test_stage_crash_writes_a_partial_report_listing_completed_stages(tmp_path: Path) -> None:
+    rec = run(Scenario(id="REG-7", faults="BEH-25", variant=_crash_in("understand")), tmp_path)
+    assert rec.exit_code == 4 and rec.report is None and rec.failure["partial_report"] == "report.partial.md"
+    text = (rec.run_dir.root / "report.partial.md").read_text(encoding="utf-8")
+    assert "Completed stages: ingest\n" in text and "Crashed stage: understand" in text
+    assert "Research questions planned: 0" in text                     # no plan yet: still renders
+
+
+def test_no_partial_report_when_the_model_is_unavailable(tmp_path: Path) -> None:
+    rec = run(Scenario(id="REG-7b", faults="LLM-02"), tmp_path)       # exit 3, not a stage crash
+    assert rec.exit_code == 3 and not (rec.run_dir.root / "report.partial.md").exists()
+    assert "partial_report" not in rec.failure
+
+
+# ============================================================================= 8. refine (BEH-10)
+
+
+@pytest.mark.parametrize("reason, kept", [("", "high"), ("Downgraded: section 6.2 already caps reminders.", "low")])
+def test_severity_change_needs_a_reason_or_new_evidence(reason: str, kept: str, tmp_path: Path) -> None:
+    def flip(p: dict[str, Any]) -> None:
+        next(f for f in p["findings"] if f["id"] == "FND-001")["severity"] = "low"
+        p["revisions"] = [r for r in p["revisions"] if r["finding_id"] != "FND-001"]
+        if reason:
+            p["revisions"].append({"finding_id": "FND-001", "change": "revised", "reason": reason,
+                                   "evidence_ids": []})
+
+    rec = run(Scenario(id="REG-8", patches={"refine": flip}), tmp_path)
+    f1 = next(f for f in rec.report["findings"] if f["id"] == "FND-001")
+    assert f1["severity"] == kept
+    notes = [h["note"] for h in rec.state["finding_meta"]["FND-001"]["history"] if h["phase"] == "refine"]
+    assert any(n.startswith("rejected: severity high -> low") for n in notes) == (not reason), notes
+
+
+# ============================================================================= 9. verify (BEH-12)
+
+
+_AD = RegistryEntry.model_validate({
+    "registry_id": "AD-001", "type": "approved_decision", "doc_ref": "D-3",
+    "statement": "The booking front end is built from the campus design system component library.",
+    "doc_anchor": {"doc_id": "doc", "page": 1, "section_ref": "1", "quote": "q" * 20}})
+
+
+def _finding_with(change: str, relation: str | None = None) -> Finding:
+    rec = run(Scenario(id="REG-9"))
+    f = next(f for f in rec.report["findings"] if f["recommendation"] is not None)
+    f["recommendation"]["change_summary"] = change
+    f["affected_decisions"] = ([{"registry_id": "AD-001", "relation": relation, "justification": "j" * 20}]
+                               if relation else [])
+    return Finding.model_validate(f)
+
+
+@pytest.mark.parametrize("change, relation, expected", [
+    ("Replace the campus design system with a bespoke component library.", None, ["AD-001"]),
+    ("Replace the campus design system with a bespoke component library.", "challenges", []),
+    ("Add the campus design system's date picker component library entry to section 5.", None, []),
+    ("Replace the polling worker with a queue.", None, []),
+])
+def test_unlabelled_reversal_of_an_approved_decision_is_detected(change: str, relation: str | None,
+                                                                 expected: list[str]) -> None:
+    assert unlabelled_conflicts(_finding_with(change, relation), [_AD]) == expected
