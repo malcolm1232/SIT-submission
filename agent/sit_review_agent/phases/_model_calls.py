@@ -19,8 +19,10 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
 * **Retries in the phase** (the gateway already retried transport errors): a refusal is retried
   ``llm.refusal_retries`` times (at most once) with ``reframed=True``, then recorded as a degradation
   plus ``declined_sections`` and the phase continues with a code fallback; a schema error gets one
-  repair call, then propagates; a ``max_tokens`` truncation gets one call with doubled
-  ``max_tokens`` (capped at 128k), then propagates. A call cut by the run deadline
+  repair call, then propagates; a ``max_tokens`` truncation gets one more call with doubled
+  ``max_tokens`` (capped at 128k; with the configured value already at that cap, as in
+  ``config/agent.yaml`` since 2026-10-03, the one retry runs at the same cap, because nothing wider
+  exists and output length varies from call to call), then propagates. A call cut by the run deadline
   (:class:`LLMDeadlineError`, robustness LLM-05) is not retried: it is disclosed as a
   ``budget_or_deadline_hit`` degradation and the phase continues with its code fallback (assess:
   "out of time before assessment", no findings; refine: the assess drafts unchanged). Other
@@ -294,11 +296,14 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             return PhaseCall(result=None, brief=brief, cut=True)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
-            if widened or max_tokens >= MAX_OUTPUT_TOKENS:
+            if widened:
                 raise
-            widened, max_tokens, k = True, min(MAX_OUTPUT_TOKENS, max_tokens * 2), k + 1
+            wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
+            how = (f"with max_tokens={wider}" if wider > max_tokens
+                   else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")
+            widened, max_tokens, k = True, wider, k + 1
             reason = "max_tokens_retry"
-            ctx.emit(f"answer truncated at max_tokens; retrying once with max_tokens={max_tokens}", "warn")
+            ctx.emit(f"answer truncated at max_tokens; retrying once {how}", "warn")
             continue
         record_result(ctx, phase, result)
         return PhaseCall(result=result, brief=brief)

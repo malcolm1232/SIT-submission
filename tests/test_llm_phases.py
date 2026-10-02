@@ -275,6 +275,44 @@ async def test_truncation_retried_with_more_tokens(tmp_path: Path, cfg: Effectiv
     assert second.max_tokens == min(128_000, 2 * first.max_tokens) and second.conversation_id == "understand-0-r1"
 
 
+@pytest.mark.parametrize("configured,retry_at", [(64_000, 128_000), (128_000, 128_000), (100_000, 128_000)])
+async def test_truncation_retry_at_and_below_the_output_cap(tmp_path: Path, cfg: EffectiveConfig, configured: int,
+                                                           retry_at: int) -> None:
+    """One retry whatever the configured cap: wider when a wider value exists, else at the cap
+    itself (config/agent.yaml is at the 128000 cap since 2026-10-03). A second truncation is never
+    retried again and never repaired: it propagates (robustness LLM-07)."""
+    from sit_review_agent.errors import LLMTruncatedError
+
+    capped = cfg.model_copy(update={"agent": cfg.agent.model_copy(update={"max_tokens": configured})})
+    ctx = make_ctx(tmp_path, capped, {PhaseName.UNDERSTAND: [FakeResponse(stop_reason="max_tokens"),
+                                                             FakeResponse(parsed=understand_output())]})
+    await UnderstandPhase().run(ctx)
+    first, second = ctx.llm.calls
+    assert (first.max_tokens, second.max_tokens) == (configured, retry_at)
+    assert second.purpose == "understand:max_tokens_retry" and ctx.state.intent_summary is not None
+    twice = make_ctx(tmp_path / "b", capped, {PhaseName.UNDERSTAND: [FakeResponse(stop_reason="max_tokens")] * 3})
+    with pytest.raises(LLMTruncatedError):
+        await UnderstandPhase().run(twice)
+    assert len(twice.llm.calls) == 2
+
+
+def test_configured_output_cap_is_the_model_maximum_and_fits_the_context_margin(cfg: EffectiveConfig) -> None:
+    """config/agent.yaml max_tokens is 128000 (the live assess used 63,392 of the earlier 64,000).
+    The pre-send size check (LLM-10) allows input up to 80 % of the context window and does not
+    count the output cap, so the margin it leaves must hold that cap for every supported model."""
+    from sit_review_agent.config import SUPPORTED_MODELS, load_config
+    from sit_review_agent.llm.runtime import CONTEXT_MARGIN, ContextGuard, context_window_for
+    from sit_review_agent.phases._model_calls import MAX_OUTPUT_TOKENS
+
+    shipped = load_config()
+    assert shipped.agent.max_tokens == MAX_OUTPUT_TOKENS == 128_000
+    for model in SUPPORTED_MODELS:
+        window = context_window_for(model)
+        guard = ContextGuard(window_tokens=window)
+        assert guard.limit_tokens == int(window * CONTEXT_MARGIN)
+        assert guard.limit_tokens + shipped.agent.max_tokens <= window, model
+
+
 async def test_text_only_backend_gets_no_pdf_block(tmp_path: Path, cfg: EffectiveConfig) -> None:
     class TextOnly(FakeGateway):
         native_pdf = False

@@ -1,5 +1,6 @@
 # LLM-07 (S1, P0, L0): max_tokens mid-JSON. Detected before parsing, never "repaired" into a
-# shorter object; one retry with doubled max_tokens; same finding count as the fault-free run.
+# shorter object; one retry (doubled max_tokens, never above the 128000 cap, which config/agent.yaml
+# is at since 2026-10-03, so the retry runs at the same cap); same finding count as the fault-free run.
 # `nth` = the stage's logical call index (0 = first call of assess), so the retry is clean.
 id: LLM-07
 description: The first assess call is truncated at max_tokens (60 % of the JSON).

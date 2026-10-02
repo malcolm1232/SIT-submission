@@ -272,6 +272,12 @@ _BAD_REQUEST_MARKERS = ("invalid_request_error", "prompt is too long", "credit b
 _CONNECTION_MARKERS = ("connection error", "unable to connect", "could not connect", "econnrefused", "econnreset",
                        "enotfound", "eai_again", "getaddrinfo", "enetunreach", "ehostunreach", "network is unreachable",
                        "fetch failed", "socket hang up", "connect etimedout", "no internet", "offline")
+#: How ``claude -p`` reports an answer that hit ``CLAUDE_CODE_MAX_OUTPUT_TOKENS``: not as
+#: ``stop_reason: max_tokens`` but as an error result ("API Error: Claude's response exceeded the
+#: 256 output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS
+#: environment variable."), after its own recovery turns. Observed 2026-10-03 with Claude Code
+#: 2.1.287 on Haiku at a cap of 256 (4 turns, 1,024 output tokens billed).
+_OUTPUT_CAP_RE = re.compile(r"exceeded the [\d,._]+ output token maximum", re.IGNORECASE)
 
 
 def _classify(text: str, *, call_id: str, phase: str) -> tuple[LLMError, bool]:
@@ -757,7 +763,14 @@ class ClaudeCodeGateway:
                 # violation this is not retried (LLM-08).
                 raise _AttemptFailed(LLMSchemaError(f"claude -p found no schema-valid output: {_error_text(out)[:500]}",
                                                     call_id=call_id, phase=phase), retry=False, out=out)
-            err, retry = _classify(_error_text(out), call_id=call_id, phase=phase)
+            text = _error_text(out)
+            if _OUTPUT_CAP_RE.search(text):
+                # Truncation, not an outage: never retried here at the same cap (each retry would
+                # repeat the CLI's recovery turns); the phase decides (one wider call, LLM-07).
+                raise _AttemptFailed(LLMTruncatedError(
+                    f"output truncated at max_tokens (claude -p: {text[:200]})", max_tokens=request.max_tokens,
+                    call_id=call_id, phase=phase), retry=False, out=out)
+            err, retry = _classify(text, call_id=call_id, phase=phase)
             raise _AttemptFailed(err, retry=retry, out=out)
 
         fallback: FallbackEvent | None = None

@@ -7,12 +7,24 @@ effort:
   refine: high
   verify: high
   report: high
-max_tokens: 64000
+max_tokens: 128000
 allow_fallback: false
 persona: generalist_architect
 # ---- Lines 1-12 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
 # Effort: USER_DECISIONS 2026-10-02 #1 sets `high` for every agent phase (one effort level per
 # conversation, ADR-002); `understand` shares the `plan` level. max_tokens applies to every stage.
+# max_tokens is 128000 since 2026-10-03 (was 64000): the model's output maximum, raised because the
+# measured assess call used 63,392 of 64,000 (docs/HANDOVER_FULL.md §8). It is also the largest value
+# config.py accepts and the cap of the truncation retry, so a truncated answer now gets its one retry
+# at the same cap (phases/_model_calls.py). How each backend applies it:
+#   anthropic_api: sent as `max_tokens` on every request (tests/test_anthropic_gateway.py). UNVERIFIED live.
+#   claude_code:   passed as CLAUDE_CODE_MAX_OUTPUT_TOKENS in the child environment. Checked 2026-10-03 with
+#                  Claude Code 2.1.287 on Haiku, two calls: a cap of 256 was enforced (the CLI answered
+#                  "exceeded the 256 output token maximum"), and a cap of 128000 was accepted. NOT verified:
+#                  that Opus 5.5 through the CLI can actually emit more than 64,000 tokens in one call (no Opus
+#                  call was made; the CLI may clamp the value per model). When the cap is hit the CLI first
+#                  makes its own recovery turns (4 turns seen), each billed, then reports an error, which the
+#                  gateway types as a truncation (LLMTruncatedError, never retried at the gateway).
 thinking_display: omitted          # omitted | summarized (thinking is always adaptive on Opus 5.5)
 
 llm:

@@ -310,6 +310,30 @@ async def test_cli_stop_reasons(tmp_path: Path, base_cfg: EffectiveConfig) -> No
     assert len(runner.calls) == 2
 
 
+async def test_cli_output_cap_error_is_a_truncation_not_an_outage(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
+    """What `claude -p` 2.1.287 really returns when the answer hits CLAUDE_CODE_MAX_OUTPUT_TOKENS
+    (captured on Haiku, 2026-10-03): an error result, not ``stop_reason: max_tokens``. It used to
+    be classed as LLMUnavailableError and retried ``llm.max_retries`` times at the same cap."""
+    msg = ("API Error: Claude's response exceeded the 256 output token maximum. To configure this behavior, set "
+           "the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.")
+    out = {**cli_result(None, is_error=True, result=msg, stop="stop_sequence"), "terminal_reason": "api_error",
+           "num_turns": 4}
+    gw, runner, rd = make(tmp_path, base_cfg, out, cli_result(PLAN))
+    with pytest.raises(LLMTruncatedError) as trunc:
+        await gw.call(req([user("doc")], conv="a"))
+    assert trunc.value.max_tokens == 4321 and "output token maximum" in str(trunc.value)
+    assert len(runner.calls) == 1                                    # not retried by the gateway
+    assert runner.calls[0]["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "4321"
+    entry = json.loads(rd.llm_log.read_text(encoding="utf-8").splitlines()[-1])
+    assert entry["outcome"] == "LLMTruncatedError" and entry["usage"]["output_tokens"] == 20   # spend is counted
+    # a 128000 cap reads the same way (the number is not mistaken for an HTTP status)
+    big = {**out, "result": msg.replace("256", "128000")}
+    gw2, runner2, _ = make(tmp_path / "b", base_cfg, big)
+    with pytest.raises(LLMTruncatedError):
+        await gw2.call(req([user("doc")], conv="a"))
+    assert len(runner2.calls) == 1
+
+
 # ------------------------------------------------------------------------------ (h) PDF
 
 

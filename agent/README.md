@@ -210,6 +210,14 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   page) against 80 % of the context window; over it, `LLMContextTooLongError` (exit 2), never sent.
   Errors raised before an attempt is made are logged to `llm.jsonl` with `sent: false` (for replay).
 - **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
+- **Output cap (2026-10-03).** `config/agent.yaml` `max_tokens` is 128000, the model's maximum and the
+  largest value `config.py` accepts. A truncated answer gets one retry: at double the cap when the
+  configured value is below 128000, else at the same cap; a second truncation ends the stage (exit 4),
+  never a repaired object (LLM-07). `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+  (checked on Haiku with Claude Code 2.1.287: a cap of 256 was enforced). When the cap is hit, `claude -p`
+  does not report `stop_reason: max_tokens`: after its own recovery turns it returns an error result
+  ("... exceeded the N output token maximum ..."), which the gateway types as `LLMTruncatedError` and does
+  not retry. Whether Opus 5.5 through the CLI can emit more than 64,000 tokens in one call is UNVERIFIED.
 
 ### LLM backends (ADR-010)
 

@@ -77,7 +77,7 @@ def test_runbook_four_line_criterion_append(tmp_path: Path) -> None:
     (("agent.yaml", "model: claude-opus-5-5", "model: claude-haiku-4-5"), "not supported"),
     (("agent.yaml", "  verify: true", "  verify: false"), "cannot be disabled"),
     (("agent.yaml", "persona: generalist_architect", "persona: nobody"), "persona"),
-    (("agent.yaml", "max_tokens: 64000", "max_tokens: 64000\nunknown_key: 1"), "unknown_key"),
+    (("agent.yaml", "max_tokens: 128000", "max_tokens: 128000\nunknown_key: 1"), "unknown_key"),
 ])
 def test_invalid_config_is_rejected(tmp_path: Path, edit: tuple[str, str, str], needle: str) -> None:
     d = _copy_config(tmp_path)
