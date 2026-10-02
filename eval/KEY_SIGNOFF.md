@@ -10,6 +10,8 @@ Date drafted: 2026-10-02. Drafted by: an agent session on `claude-opus-5-5` (wor
 - #18 external facts: the eval-data audit is accepted as the S-dev verification; `verified` stays false (section 4, step 4).
 - #19 core insights: the substance-mode rule (item 10) is applied: payments F04 and F11 trimmed, clinical F09 replaced with the item-12 text, lakehouse F01 trimmed, lakehouse F05 and F06 c2 made `supporting` in `role_of()`; clinical F03 and F05 and lakehouse F04 accepted as drafted; all drafted dispositions accepted; items 7 and 8 left as they are; item 9 (`v2.changed_sections`) accepted.
 - #20 payments F15 is linked to AD-004 (rule under item 7).
+- #21 (SIT FABLE for the owner, 2026-10-03) clarifies the linking rule of #20: a link needs two conditions, and the links stand as drafted and verified (item 7). No key changed.
+- #22 (SIT FABLE for the owner, 2026-10-03): the item-10 rule is for `substance` mode, so lakehouse F05 and F06 (`all_of`) keep their core insights as drafted; where the session record gives a "Keep" text, the core insight equals it exactly (item 10). No key changed.
 
 SIT FABLE's instruction was that, after these, only your signature remains: rows it did not name stay as drafted and are covered by your signature (section 4, step 3). These are decisions on the drafts, not your signature. The `signoff` block in each key is still empty.
 
@@ -83,7 +85,8 @@ These are the flaws where the core insight was hard to state, or where the exist
    If you link them, a correct finding that challenges those rows can no longer count as an approved-decision violation.
 
    - **SIT FABLE (#19, #20):** these three non-links are left as they are.
-   - **Linking rule (SIT FABLE #20), for all three keys alike:** a decision row is linked to a flaw when the flaw's location cites the section that row governs. Only F15/AD-004 was changed under it; the other drafted links were not re-derived from the rule. Under it, payments F15 (location §9.4; 20.2; 24) cites §20.2, which the "Disaster recovery" row (AD-004) governs, so F15 is linked to AD-004 as well as AD-006 (item 13).
+   - **Linking rule (SIT FABLE #20, clarified by #21 on 2026-10-03), for all three keys alike:** A decision row is linked to a flaw when (a) the flaw's location cites the section that row governs AND (b) the flaw's defect is in the subject that row decides. Condition (a) alone is necessary, not sufficient: a broad section that hosts several decisions does not link every flaw located in it. The links on the sheet as drafted and verified stand, including the deliberate non-links in item 7; no link is re-derived mechanically.
+   - **Why payments F15 -> AD-004 meets (b):** (a) F15 (location §9.4; 20.2; 24) cites §20.2, which the "Disaster recovery" row (AD-004) governs. (b) F15's defect is that duplicates arriving in different regions can both acquire the lock, and a duplicate can arrive in a second region only because the v2 "Disaster recovery" row adds the warm API cell in ap-southeast-3 (§20.2: Route 53 shifts merchant traffic to it); §9.4 says the global table exists "to support the regional recovery posture in Section 20". So (b) holds through the two-region write topology that row decides, not through the lock itself, which is AD-006's subject (item 13).
 8. **payments F05 severity.** It is still `minor` (low), although audit P2-13 suggests major. This was not changed: severity is outside this sheet.
    - **SIT FABLE (#19):** left as it is.
 9. **The v2 revision logs are incomplete.** Payments v2 also changed §10.3 and §19.1, clinical v2 also changed §14.5, §17.1 and §23, and lakehouse v2 also changed §20 and the NFR-9 criterion in §22.2. The logs do not name these. They are included in `v2.changed_sections`.
@@ -95,6 +98,7 @@ A second agent checked these drafts against the design documents and the legacy 
 
 10. **How strict a core insight is.** In `substance` mode (payments and clinical) the matcher is told the finding "must state the core insight as a whole". So every clause in a draft is a requirement, including clauses after a semicolon and lists in brackets. If a clause is only supporting detail, delete it. Examples to look at: payments F04 ("(and 3,000 RCU)", "at least 1,800 WCU"), payments F11 (the 1,500 TPS trigger clause), lakehouse F01 (the zero-data-retention clause, which is a supporting item).
     - **Rule for `substance` mode (SIT FABLE #19):** the core insight states the defect and why it is a defect, nothing else. Numbers, parentheticals and secondary consequences are supporting detail and come out unless a credit item requires them. Applied: payments F04 and F11 trimmed, clinical F09 replaced (item 12), lakehouse F01 trimmed; clinical F03 and F05 and lakehouse F04 accepted as drafted. The same rule applies to any later edit of a core insight.
+    - **Scope of the rule, and "Keep" texts (SIT FABLE #22, 2026-10-03):** (i) Rule #19 (the core insight states the defect and why it is a defect, nothing else) applies to flaws scored in `substance` mode. Lakehouse F05 and F06 are scored in `all_of` mode, where the credit items carry the match; their core insights stand as drafted, and their c2 items stay `supporting` per #19. (ii) Where the session record gives a "Keep" text for a flaw, the core insight equals that text exactly; a figure that a credit item needs lives in the credit item, not in the core insight (applied to payments F04 in 5b464ba).
 11. **clinical_rpm F05 also drops c4.** Besides the "up to" wording (item 4), the draft leaves out c4 (APNs/FCM push has no latency guarantee), which the legacy key lists as a must-mention item. The distractor note treats the push figure as secondary, so this looks right, but it is looser than the legacy list.
     - **SIT FABLE (#19):** accepted; c4 is not required.
 12. **clinical_rpm F09 lists every quasi-identifier but omits c2.** The draft names the postal code, timestamps, ward and bed, age, sex and ethnicity, so a strict matcher may want all of them. It does not say why the postal code matters (c2: a 6-digit Singapore postal code usually identifies one building). A possible text: "The 'anonymised' extracts remove only direct identifiers and keep strong quasi-identifiers, notably the full 6-digit home postal code, which in Singapore usually identifies a single building, together with demographics or exact timestamps, so patients remain re-identifiable and the data is still personal data; the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, is therefore unjustified."
@@ -291,7 +295,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Anchor** (design_v2.pdf p. 8): "exactly one request can acquire the lock for a given merchant and key regardless of which region receives it"
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_investigation`)
 - Linked approved decisions: AD-004, AD-006
-- ☐ accept ☐ edit ☐ reject - SIT FABLE (#20, for the owner): linked to AD-004 (item 7 linking rule: F15 cites §20.2, which the DR row governs).
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#20, for the owner): linked to AD-004 (item 7 linking rule: F15 cites §20.2, which the DR row governs, and its defect is in the two-region write topology that row decides; #21).
 
 ### 5.2 Clinical remote patient monitoring (HPHC RPM-P): `synthetic-clinical-rpm-001` (15 flaws, credit mode `substance`)
 
@@ -458,7 +462,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Anchor** (design_v1.pdf p. 14): "Vector data (180M × 1,024 dimensions) ≈ 184 GB"
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_prototyping`)
 - Linked approved decisions: AD-010
-- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 1); the core insight was not ruled on and is unchanged.
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 1). SIT FABLE (#22, for the owner): the core insight stands as drafted, because rule #19 is for `substance` mode and this flaw is scored `all_of` (item 10).
 
 #### F06 · low (legacy minor) · missing_or_unverifiable_requirement
 - Location: §2.2; 22.2 (NFR-6)
@@ -466,7 +470,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Core insight (draft):** NFR-6 cites NIST SP 800-171 requirement 3.1.1 for customer-managed-key encryption with 90-day rotation, but 3.1.1 is an access-control requirement; protection of CUI at rest is 3.13.16 and FIPS-validated cryptography is 3.13.11, so the requirement is traced to the wrong control.
 - **Anchor** (design_v1.pdf p. 3): "Datasets tagged CUI shall be encrypted at rest with customer-managed AWS KMS keys rotated every 90 days, as required by NIST"
 - **Expected disposition:** `refinement_now`
-- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 2); the core insight was not ruled on and is unchanged.
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 2). SIT FABLE (#22, for the owner): the core insight stands as drafted, because rule #19 is for `substance` mode and this flaw is scored `all_of` (item 10).
 
 #### F07 · high (legacy major) · missing_or_unverifiable_requirement
 - Location: §1; 2.1; 12.2; 22.1 (FR-7)
@@ -695,7 +699,7 @@ SIT FABLE (#18, for the owner) accepted `research/audit/eval_data_audit.md` as t
 | `eval/synthetic/research_lakehouse/answer_key.canonical.json` | `7c92bf91252858da076636b9e70bf4623fe049df4ab3a4e894e42c591bcce52a` |
 | `spec/convert_answer_keys.py` (sets the credit-item roles) | `ce2eff3382af27950ac05c71d73e74b177160ababf6a6d63ece97c6694cd120e` |
 
-Check with `shasum -a 256 <file>` (or `sha256sum`). The converter's hash changed on 2026-10-03 (close-out pass): it now tells the spec self-test whether to include `eval/blind` (only when the blind tier is converted); the credit-item roles and the three canonical keys it produces are unchanged. Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the message of the last commit that changed this sheet (the verification pass, after it set payments F04 and F11 to the "Keep" texts verbatim) and in `docs/transcripts/session4/keys_verifier.md`.
+Check with `shasum -a 256 <file>` (or `sha256sum`). The converter's hash changed on 2026-10-03 (close-out pass): it now tells the spec self-test whether to include `eval/blind` (only when the blind tier is converted); the credit-item roles and the three canonical keys it produces are unchanged. Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the message of the last commit that changed this sheet (the close-out pass of 2026-10-03, which wrote decisions #21 and #22 here) and in `docs/transcripts/session4/keys_closeout.md`.
 
 ## 10. Signature
 
