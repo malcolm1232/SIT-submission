@@ -25,13 +25,29 @@ command contract was verified in a cloud session (Claude Code 2.1.287; ADR-010):
 Native PDF document blocks cannot be sent through the CLI: they are dropped (logged with
 ``pdf_dropped``) and the canonical text carries the document. :attr:`ClaudeCodeGateway.native_pdf`
 is ``False`` so callers can skip building the PDF block (``backend.supports_native_pdf``).
+
+Streamed output (latency redesign W1, ADR-012 draft; flags checked against ``claude --help`` of
+Claude Code 2.1.288): every call runs with ``--output-format stream-json --verbose
+--include-partial-messages`` and :func:`subprocess_runner` hands each event line to a
+:class:`~sit_review_agent.llm.partial.StreamParser` as it arrives. The answer is the last ``result``
+event, the same object ``--output-format json`` printed, so every error is raised on the same
+condition as before. While the call streams, the gateway's :class:`~sit_review_agent.progress.CallTracker`
+shows its thinking-token estimate or its finished items, and each finished item of the answer is
+shown as a draft. An attempt cut by the run deadline or a stage limit raises
+:class:`~sit_review_agent.errors.LLMDeadlineError` with the finished items (``partial``) and an
+estimated usage; its ``llm.jsonl`` entry keeps ``usage: null`` with ``usage_unrecorded`` and logs the
+estimate apart as ``usage_estimate`` (``estimated: true``) with ``salvaged_items`` and
+``salvaged_partial``. The JSON output mode is not used by the gateway any more; a single JSON object
+on stdout (``--output-format json``, as the harness judges still run it) is still read.
 """
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import contextlib
 import copy
+import inspect
 import json
 import os
 import random
@@ -75,15 +91,17 @@ from sit_review_agent.llm.gateway import (
     request_sha256,
     unrecorded_usage,
 )
+from sit_review_agent.llm.partial import StreamParser, parse_cli_stdout
 from sit_review_agent.llm.runtime import (
     FirstCallNetwork,
     RuntimeLimits,
+    announce_bound,
     attempt_timeout,
     check_context,
     retry_allowed,
 )
 from sit_review_agent.models import FallbackEvent
-from sit_review_agent.progress import ProgressSink, heartbeat
+from sit_review_agent.progress import CallTracker, NullProgress, ProgressSink, draft_line
 from sit_review_agent.rundir import RunDir
 
 #: Longest ``--system-prompt`` / ``--json-schema`` value accepted (Linux caps one argv string at 128 KiB).
@@ -93,6 +111,13 @@ MAX_ARGV_TEXT_CHARS = 100_000
 CLI_FALLBACK_MODEL = "claude-opus-5"
 #: Flags that must never reach the CLI (ADR-010, verified).
 FORBIDDEN_FLAGS = frozenset({"--bare", "--no-session-persistence"})
+#: Output flags of every call (ADR-012 draft): the event stream with the answer's partial JSON.
+#: ``--verbose`` is required by ``stream-json`` in print mode; ``--include-partial-messages`` adds
+#: the ``stream_event`` lines (``input_json_delta``, ``thinking_tokens`` estimates).
+STREAM_FLAGS = ("--output-format", "stream-json", "--verbose", "--include-partial-messages")
+#: Bytes read from the child's stdout at a time (the ``result`` event of a long answer is one line of
+#: several hundred kilobytes, above asyncio's 64 KiB line limit, so lines are split here).
+READ_CHUNK = 65_536
 #: Removed from the child environment unless ``claude_code.inherit_api_key`` (billing, ADR-010).
 API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 PREFLIGHT_TIMEOUT_S = 30.0
@@ -114,27 +139,96 @@ class CompletedRun:
     stderr: str
 
 
-Runner = Callable[[list[str], str, dict[str, str], Path, float], Awaitable[CompletedRun]]
+Runner = Callable[..., Awaitable[CompletedRun]]
+"""``(argv, stdin, env, cwd, timeout_s)`` -> :class:`CompletedRun`; a runner that also takes the
+keyword ``on_line`` gets each stdout line as it arrives (:func:`subprocess_runner` does)."""
 
 
-async def subprocess_runner(argv: list[str], stdin: str, env: dict[str, str], cwd: Path,
-                            timeout_s: float) -> CompletedRun:
-    """Default runner: ``asyncio.create_subprocess_exec``, prompt on stdin, killed on timeout or
-    cancellation. Raises ``TimeoutError`` on timeout and ``OSError`` if the executable is missing."""
+class StreamTimeout(TimeoutError):
+    """A runner's timeout that keeps what the child wrote before it was killed."""
+
+    def __init__(self, *, stdout: str, stderr: str) -> None:
+        super().__init__("claude -p was killed at its timeout")
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+async def subprocess_runner(argv: list[str], stdin: str, env: dict[str, str], cwd: Path, timeout_s: float, *,
+                            on_line: Callable[[str], None] | None = None) -> CompletedRun:
+    """Default runner: ``asyncio.create_subprocess_exec``, prompt on stdin, stdout read as it
+    arrives (each complete line goes to ``on_line``; the last line is passed on at exit even
+    without a newline), killed on timeout or cancellation. Raises :class:`StreamTimeout` (a
+    ``TimeoutError`` carrying the stdout read so far) on timeout and ``OSError`` if the executable
+    is missing."""
     proc = await asyncio.create_subprocess_exec(
         *argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         env=env, cwd=str(cwd))
+    out: list[str] = []
+    err: list[bytes] = []
+    pending = ""
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+    async def feed_stdin() -> None:
+        assert proc.stdin is not None
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            proc.stdin.write(stdin.encode("utf-8"))
+            await proc.stdin.drain()
+        with contextlib.suppress(Exception):
+            proc.stdin.close()
+
+    async def read_stdout() -> None:
+        nonlocal pending
+        assert proc.stdout is not None
+        while True:
+            chunk = await proc.stdout.read(READ_CHUNK)
+            if not chunk:
+                break
+            text = decoder.decode(chunk)
+            out.append(text)
+            if on_line is not None:
+                *lines, pending = (pending + text).split("\n")
+                for line in lines:
+                    on_line(line)
+        tail = decoder.decode(b"", final=True)
+        out.append(tail)
+        if on_line is not None and (pending + tail):
+            on_line(pending + tail)
+            pending = ""
+
+    async def read_stderr() -> None:
+        assert proc.stderr is not None
+        err.append(await proc.stderr.read())
+
+    async def run() -> int:
+        await asyncio.gather(feed_stdin(), read_stdout(), read_stderr())
+        return await proc.wait()
+
     try:
-        out, err = await asyncio.wait_for(proc.communicate(stdin.encode("utf-8")), timeout_s)
+        code = await asyncio.wait_for(run(), timeout_s)
+    except TimeoutError:
+        await _kill(proc)
+        raise StreamTimeout(stdout="".join(out), stderr=b"".join(err).decode("utf-8", "replace")) from None
     except BaseException:
-        if proc.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-            with contextlib.suppress(Exception):
-                await proc.wait()
+        await _kill(proc)
         raise
-    return CompletedRun(returncode=proc.returncode if proc.returncode is not None else -1,
-                        stdout=out.decode("utf-8", "replace"), stderr=err.decode("utf-8", "replace"))
+    return CompletedRun(returncode=code, stdout="".join(out), stderr=b"".join(err).decode("utf-8", "replace"))
+
+
+async def _kill(proc: asyncio.subprocess.Process) -> None:
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        with contextlib.suppress(Exception):
+            await proc.wait()
+
+
+def _takes_on_line(runner: Any) -> bool:
+    """Whether ``runner`` accepts the ``on_line`` keyword (live lines); injected test runners may not."""
+    try:
+        params = inspect.signature(runner).parameters
+    except (TypeError, ValueError):
+        return False
+    return "on_line" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 # ------------------------------------------------------------------------------ schemas
@@ -264,12 +358,13 @@ class _AttemptFailed(Exception):
     carries the usage or the process never started (nothing was spent)."""
 
     def __init__(self, error: LLMError, retry: bool, out: dict[str, Any] | None = None,
-                 unrecorded: str | None = None) -> None:
+                 unrecorded: str | None = None, stream: StreamParser | None = None) -> None:
         super().__init__(str(error))
         self.error = error
         self.retry = retry
         self.out = out
         self.unrecorded = unrecorded
+        self.stream = stream            # what the attempt streamed before it ended (estimate, salvage)
 
 
 _AUTH_MARKERS = ("authentication", "invalid api key", "/login", "oauth token", "not logged in", "login expired")
@@ -366,6 +461,9 @@ class ClaudeCodeGateway:
         self.clock = clock or SystemClock()
         self.progress = progress
         self.runner: Runner = runner or subprocess_runner
+        self._runner_streams = _takes_on_line(self.runner)
+        #: Open calls and their status line (design section 4); its ticker runs only with a progress sink.
+        self.tracker = CallTracker(progress or NullProgress(), self.clock)
         cc = config.agent.claude_code
         bad = sorted(FORBIDDEN_FLAGS & set(cc.extra_args))
         if bad:
@@ -452,7 +550,7 @@ class ClaudeCodeGateway:
         resume = ["--resume", resume_from, "--fork-session"] if resume_from is not None else []
         argv = [self.executable, "-p", "--model", self.model, "--system-prompt", system_text,
                 "--tools", "", "--strict-mcp-config", "--disallowedTools", "mcp__*", "--disable-slash-commands",
-                "--output-format", "json", "--effort", request.effort, "--json-schema", schema_json,
+                *STREAM_FLAGS, "--effort", request.effort, "--json-schema", schema_json,
                 *resume, "--session-id", session_uuid]
         if self.allow_fallback:
             argv += ["--fallback-model", CLI_FALLBACK_MODEL]
@@ -638,6 +736,8 @@ class ClaudeCodeGateway:
                 timeout_s, cut = attempt_timeout(self.runtime, request.phase, self.timeout_s)
             except LLMDeadlineError as exc:
                 raise _Unsent(exc, attempt) from None
+            if cut:
+                announce_bound(self.progress, self.runtime, request.phase, call_id, timeout_s)
             attempt_uuid = str(uuid.uuid4())
             argv = self.build_argv(request, system_text=system_text, schema_json=schema_json,
                                    session_uuid=attempt_uuid, resume_from=conv.session_uuid)
@@ -712,6 +812,7 @@ class ClaudeCodeGateway:
             if isinstance(out.get("total_cost_usd"), int | float) else None)}
         if not out and fail.unrecorded is not None:   # the CLI ran and was killed or crashed: unknown, not zero
             spent = unrecorded_usage(fail.unrecorded)
+            spent.update(_estimate_fields(fail.stream))
         self.log.log({**base, "model": self._served_model(self._call_model_usage(out, conv)) if out else self.model,
                       "stop_reason": out.get("stop_reason"), "outcome": type(fail.error).__name__,
                       "error": str(fail.error)[:500], **spent, "content": [],
@@ -719,12 +820,36 @@ class ClaudeCodeGateway:
                       "terminal_reason": out.get("terminal_reason"), "elapsed_s": elapsed})
 
     async def _run(self, argv: list[str], prompt: str, env: dict[str, str], phase: str,
-                   call_id: str, timeout_s: float | None = None) -> CompletedRun:
+                   call_id: str, timeout_s: float | None = None, stream: StreamParser | None = None) -> CompletedRun:
+        """One ``claude -p``. With a streaming runner each line goes to ``stream`` as it arrives;
+        otherwise the gateway reads stdout when the runner returns (or from :class:`StreamTimeout`)."""
         t = self.timeout_s if timeout_s is None else timeout_s
-        if self.progress is None:
-            return await self.runner(argv, prompt, env, self.cwd, t)
-        async with heartbeat(self.progress, phase, lambda: f"waiting on claude -p ({call_id})", clock=self.clock):
-            return await self.runner(argv, prompt, env, self.cwd, t)
+        kwargs: dict[str, Any] = {}
+        if stream is not None and self._runner_streams:
+            kwargs["on_line"] = stream.feed_line
+        if self.progress is not None:
+            self.tracker.open(call_id, phase)
+        try:
+            return await self.runner(argv, prompt, env, self.cwd, t, **kwargs)
+        finally:
+            if self.progress is not None:
+                self.tracker.close(call_id)
+
+    def _stream_parser(self, request: LLMRequest, call_id: str) -> StreamParser:
+        """The parser of one attempt: the answer's root is ``final`` inside the tool envelope; each
+        finished root-level item becomes a draft line and the tracker follows the counters."""
+        phase = request.phase.value
+
+        def on_item(key: str, index: int, item: Any) -> None:
+            if self.progress is not None and key != "tool_calls":
+                self.progress.emit(phase, draft_line(key, index, item, call_id=call_id, phase=phase), "draft")
+
+        def on_event(p: StreamParser) -> None:
+            self.tracker.update(call_id, thinking_tokens=p.thinking_tokens, items=p.item_count(),
+                              chars=p.answer_chars)
+
+        return StreamParser(root=("final",) if request.tools else (), on_item=on_item,
+                            on_event=on_event if self.progress is not None else None)
 
     async def _attempt(self, request: LLMRequest, conv: _Conversation, call_id: str, argv: list[str], prompt: str,
                        env: dict[str, str], base_entry: dict[str, Any], *, timeout_s: float | None = None,
@@ -732,14 +857,22 @@ class ClaudeCodeGateway:
         phase = request.phase.value
         t = self.timeout_s if timeout_s is None else timeout_s
         t0 = self.clock.monotonic()
+        stream = self._stream_parser(request, call_id)
         try:
-            run = await self._run(argv, prompt, env, phase, call_id, t)
-        except TimeoutError:
+            run = await self._run(argv, prompt, env, phase, call_id, t, stream)
+        except TimeoutError as exc:
+            if not self._runner_streams:
+                stream.feed_text(getattr(exc, "stdout", "") or "")
             if cut and self.runtime is not None and self.runtime.deadline is not None:
-                raise _AttemptFailed(self.runtime.deadline.cut(request.phase, t, call_id=call_id),
-                                     retry=False, unrecorded="deadline_cut") from None
+                # Salvage (design section 4): the items whose JSON closed before the cut, and an
+                # estimate of what the killed attempt used (the CLI reports nothing for it).
+                raise _AttemptFailed(self.runtime.deadline.cut(request.phase, t, call_id=call_id,
+                                                               partial=stream.partial(),
+                                                               estimated_usage=stream.estimated_usage()),
+                                     retry=False, unrecorded="deadline_cut", stream=stream) from None
             raise _AttemptFailed(LLMTimeoutError(f"claude -p exceeded {t:g} s", call_id=call_id,
-                                                 phase=phase), retry=True, unrecorded="timeout_kill") from None
+                                                 phase=phase), retry=True, unrecorded="timeout_kill",
+                                 stream=stream) from None
         except FileNotFoundError:
             raise _AttemptFailed(LLMAuthError(f"Claude Code executable {self.executable!r} not found; install "
                                               "Claude Code and log in (`claude --version`)", call_id=call_id,
@@ -747,14 +880,18 @@ class ClaudeCodeGateway:
         except OSError as exc:
             raise _AttemptFailed(LLMUnavailableError(f"could not start claude -p: {exc}", call_id=call_id,
                                                      phase=phase), retry=True) from None
-        try:
-            out = json.loads(run.stdout)
-            if not isinstance(out, dict):
-                raise ValueError("result is not a JSON object")
-        except ValueError:
+        if self._runner_streams:
+            stream.flush()
+            found, _ = parse_cli_stdout(run.stdout, stream)
+        else:
+            stream.feed_text(run.stdout)
+            stream.flush()
+            found, _ = parse_cli_stdout(run.stdout, stream)
+        if found is None:
             raise _AttemptFailed(LLMUnavailableError(
                 f"claude -p exited {run.returncode} without a JSON result; stderr: {run.stderr[:500]}",
-                call_id=call_id, phase=phase), retry=True, unrecorded="process_fault") from None
+                call_id=call_id, phase=phase), retry=True, unrecorded="process_fault", stream=stream)
+        out = found
 
         # A JSON result means the CLI ran; account for what it spent even if the answer is unusable.
         # ``usage`` is per invocation; ``total_cost_usd`` and ``modelUsage`` are cumulative over the
@@ -885,3 +1022,21 @@ class ClaudeCodeGateway:
                                f"({type(exc).__name__}); {hint}") from None
         if run.returncode != 0:
             raise LLMAuthError(f"`{self.executable} --version` exited {run.returncode}; {hint}")
+
+
+def _estimate_fields(stream: StreamParser | None) -> dict[str, Any]:
+    """``llm.jsonl`` fields of an attempt that streamed but reported no usage: the estimate, kept
+    apart from ``usage`` and marked estimated, and what was salvaged. Key names avoid ``partial`` and
+    ``estimated_usage``: ``replay.recorded_error`` passes keys named like ``LLMDeadlineError``
+    keywords straight to the rebuilt error (W0 hand-off)."""
+    if stream is None:
+        return {}
+    fields: dict[str, Any] = {}
+    est = stream.estimated_usage()
+    if est is not None:
+        fields["usage_estimate"] = {**est.__dict__, "estimated": True, "basis": stream.estimate_basis()}
+    partial = stream.partial()
+    fields["salvaged_items"] = stream.item_count()
+    if partial is not None:
+        fields["salvaged_partial"] = partial
+    return fields

@@ -70,32 +70,77 @@ def truncated_twice_event(phase: PhaseName | str) -> str:
 # ------------------------------------------------------------------------------ deadline
 
 
+#: The ``stop_rules.stage_limits_s`` key that bounds each phase's model calls (design section 4):
+#: stage 1 is understand, plan, research and the assess shards; the verify repair call and the
+#: verdict call share the last limit. Ingest makes no model call.
+STAGE_LIMIT_OF_PHASE: dict[PhaseName, str] = {
+    PhaseName.UNDERSTAND: "stage_1_end", PhaseName.PLAN: "stage_1_end", PhaseName.RESEARCH: "stage_1_end",
+    PhaseName.ASSESS: "stage_1_end", PhaseName.REFINE: "refine_end", PhaseName.VERIFY: "verdict_end",
+    PhaseName.REPORT: "verdict_end",
+}
+#: How a stage limit is named in progress lines and errors.
+STAGE_LIMIT_LABELS = {"stage_1_end": "stage 1 limit", "refine_end": "refine limit", "verdict_end": "verdict limit"}
+
+
+def _phase(phase: PhaseName | str) -> PhaseName:
+    return phase if isinstance(phase, PhaseName) else PhaseName(phase)
+
+
 @dataclass
 class RunDeadline:
     """The run deadline as seen by model calls. ``elapsed`` is the run clock (seconds since the
-    run started, resume-adjusted); ``deadline_s`` ``None`` means the run has no deadline."""
+    run started, resume-adjusted); ``deadline_s`` ``None`` means the run has no deadline.
+
+    ``stage_limits`` (latency redesign W1): the run-clock second by which each stage must end
+    (``stop_rules.stage_limits_s``, scaled by :func:`effective_stage_limits` when ``--deadline`` is
+    below them). When set, a call's budget is the lesser of the time left to the deadline and the
+    time left to its stage's limit (:data:`STAGE_LIMIT_OF_PHASE`), and the reserves are not applied
+    again (the limits already hold them: ``stage_1_end`` = deadline - both reserves on the shipped
+    profiles). ``None`` keeps the reserve rule of 2026-10-02 (tests and callers without limits)."""
 
     deadline_s: float | None
     reserve_s: float
     research_reserve_s: float
     elapsed: Callable[[], float]
     min_attempt_s: float = MIN_ATTEMPT_S
+    stage_limits: dict[str, float] | None = None
 
     def remaining(self) -> float | None:
         if self.deadline_s is None:
             return None
         return self.deadline_s - self.elapsed()
 
+    def _limit(self, phase: PhaseName | str) -> tuple[str, float] | None:
+        """``(key, run-clock second)`` of the stage limit that bounds ``phase``, if any."""
+        if self.stage_limits is None:
+            return None
+        key = STAGE_LIMIT_OF_PHASE.get(_phase(phase))
+        if key is None or key not in self.stage_limits:
+            return None
+        return key, float(self.stage_limits[key])
+
     def phase_budget(self, phase: PhaseName | str) -> float | None:
         """Seconds a model attempt of ``phase`` may still take, or ``None`` without a deadline."""
         rem = self.remaining()
         if rem is None:
             return None
-        p = PhaseName(phase) if not isinstance(phase, PhaseName) else phase
+        p = _phase(phase)
+        if self.stage_limits is not None:
+            limit = self._limit(p)
+            return rem if limit is None else min(rem, limit[1] - self.elapsed())
         if p in RESERVE_PHASES:
             return rem
         reserve = self.reserve_s + (self.research_reserve_s if p is PhaseName.RESEARCH else 0.0)
         return rem - reserve
+
+    def describe_bound(self, phase: PhaseName | str) -> str:
+        """What bounds ``phase``'s calls now, for progress lines and errors: ``"by the stage 1 limit
+        (265 s on the run clock; deadline 540 s)"`` or ``"by the run deadline (540 s ...)"``."""
+        limit = self._limit(phase)
+        if limit is not None and self.deadline_s is not None and limit[1] < self.deadline_s:
+            return (f"by the {STAGE_LIMIT_LABELS[limit[0]]} ({limit[1]:.0f} s on the run clock; deadline "
+                    f"{self.deadline_s:.0f} s)")
+        return f"by the run deadline ({self.deadline_s:.0f} s on the run clock)"
 
     def attempt_timeout(self, phase: PhaseName | str, configured_s: float) -> tuple[float, bool]:
         """``(timeout, cut)``: the attempt's timeout and whether the deadline (not ``llm.timeout_s``)
@@ -114,17 +159,32 @@ class RunDeadline:
 
     def no_time(self, phase: PhaseName | str, budget: float | None = None, *, after: str | None = None,
                 call_id: str | None = None) -> LLMDeadlineError:
-        p = str(PhaseName(phase).value if not isinstance(phase, PhaseName) else phase.value)
+        p = _phase(phase).value
         b = self.phase_budget(phase) if budget is None else budget
         why = f" after {after}" if after else ""
-        return LLMDeadlineError(f"no time left for a {p} model call{why}: {max(0.0, b or 0.0):.0f} s before this "
-                                f"stage's limit (deadline {self.deadline_s:.0f} s, reserve for verify and report "
-                                f"{self.reserve_s:.0f} s)", call_id=call_id, phase=p)
+        limit = self._limit(phase)
+        if limit is not None:
+            where = (f"the {STAGE_LIMIT_LABELS[limit[0]]} ({limit[1]:.0f} s on the run clock; deadline "
+                     f"{self.deadline_s:.0f} s)")
+        else:
+            where = (f"this stage's limit (deadline {self.deadline_s:.0f} s, reserve for verify and report "
+                     f"{self.reserve_s:.0f} s)")
+        return LLMDeadlineError(f"no time left for a {p} model call{why}: {max(0.0, b or 0.0):.0f} s before "
+                                f"{where}", call_id=call_id, phase=p)
 
-    def cut(self, phase: PhaseName | str, timeout_s: float, *, call_id: str | None = None) -> LLMDeadlineError:
-        p = str(PhaseName(phase).value if not isinstance(phase, PhaseName) else phase.value)
-        return LLMDeadlineError(f"the {p} model call was cut after {timeout_s:.0f} s by the run deadline "
-                                f"({self.deadline_s:.0f} s; not retried past it)", call_id=call_id, phase=p)
+    def cut(self, phase: PhaseName | str, timeout_s: float, *, call_id: str | None = None,
+            partial: dict[str, Any] | None = None, estimated_usage: Any = None) -> LLMDeadlineError:
+        """The error of an attempt cut at ``timeout_s`` by the deadline or its stage limit, with what
+        the gateway salvaged from the stream (``partial``) and its usage estimate."""
+        p = _phase(phase).value
+        limit = self._limit(phase)
+        if limit is not None and self.deadline_s is not None and limit[1] < self.deadline_s:
+            by = (f"the {STAGE_LIMIT_LABELS[limit[0]]} ({limit[1]:.0f} s on the run clock; deadline "
+                  f"{self.deadline_s:.0f} s")
+        else:
+            by = f"the run deadline ({self.deadline_s:.0f} s"
+        return LLMDeadlineError(f"the {p} model call was cut after {timeout_s:.0f} s by {by}; not retried past it)",
+                                call_id=call_id, phase=p, partial=partial, estimated_usage=estimated_usage)
 
 
 # ------------------------------------------------------------------------------ context size
@@ -293,31 +353,81 @@ def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window
                   pages: Callable[[], int] | None = None) -> RuntimeLimits:
     """Limits for a run with ``config`` (an ``EffectiveConfig``) and the run clock ``elapsed``."""
     sr = config.stop_rules
-    deadline = RunDeadline(deadline_s=float(sr.deadline_seconds) if "deadline" in sr.active else None,
+    active = "deadline" in sr.active
+    limits = effective_stage_limits(sr)[0] if active else None
+    deadline = RunDeadline(deadline_s=float(sr.deadline_seconds) if active else None,
                            reserve_s=float(sr.report_reserve_seconds),
-                           research_reserve_s=float(sr.refine_reserve_seconds), elapsed=elapsed)
+                           research_reserve_s=float(sr.refine_reserve_seconds), elapsed=elapsed,
+                           stage_limits=limits)
     window = context_window_for(config.agent.model, config.agent.llm.context_window_tokens, retrieved_window)
     return RuntimeLimits(deadline=deadline, context=ContextGuard(window_tokens=window, pages=pages))
 
 
+def effective_stage_limits(stop_rules: Any) -> tuple[dict[str, float], str | None]:
+    """The stage limits a run uses, and the announcement when they differ from the file's.
+
+    The limits are absolute run-clock seconds set for one run length per profile. A ``--deadline``
+    at or below ``verdict_end`` (``--profile demo --deadline 300``, runbook §4.2) is applied after
+    the file check, so the limits would end past the deadline. They are then SCALED, not refused: the
+    three limits are multiplied by ``deadline / planned``, where ``planned`` is the run length the
+    limits were set for, ``refine_end + report_reserve_seconds`` (465 + 75 = 540 s on the demo
+    profile, 3420 + 180 = 3600 s on the default; ``config/stop_rules.yaml`` derives them that way).
+    Scaling keeps every stage, and stage 1 keeps the largest share, which is where findings come
+    from (salvaged at the cut), so a short rerun still reports findings (design section 7 verifier
+    check). Refusing would end the rerun the runbook relies on before it starts."""
+    lim = stop_rules.stage_limits_s.as_dict()
+    d = int(stop_rules.deadline_seconds)
+    if lim["verdict_end"] < d:
+        return {k: float(v) for k, v in lim.items()}, None
+    planned = max(lim["refine_end"] + int(stop_rules.report_reserve_seconds), lim["verdict_end"] + 1)
+    f = d / planned
+    scaled: dict[str, float] = {k: float(max(1, int(v * f))) for k, v in lim.items()}
+    # Keep them strictly increasing and below the deadline whatever the rounding (a tiny deadline).
+    if not (scaled["stage_1_end"] < scaled["refine_end"] < scaled["verdict_end"] < d):
+        scaled = {"stage_1_end": d * 0.25, "refine_end": d * 0.5, "verdict_end": d * 0.75}
+    old = " / ".join(f"{lim[k]}" for k in ("stage_1_end", "refine_end", "verdict_end"))
+    new = " / ".join(f"{scaled[k]:g}" for k in ("stage_1_end", "refine_end", "verdict_end"))
+    note = (f"deadline {d} s is not above this profile's stage limits ({old} s for stage 1, refine and the "
+            f"verdict, set for a {planned} s run): the three limits are scaled by {d}/{planned} to {new} s; "
+            f"a model call still streaming at its limit is cut and its finished items are kept")
+    return scaled, note
+
+
 def deadline_warnings(stop_rules: Any, *, min_attempt_s: float = MIN_ATTEMPT_S) -> list[str]:
-    """What a deadline that does not fit its own reserves will do, said before the run starts
-    (``stop_rules``: the run's ``StopRules``). ``--deadline`` and a profile each set one side of the
-    sum, so the pair can be inconsistent (``--deadline 300`` against the default 180 s + 600 s
-    reserves): the run would then end "not assessed" or document-only with no hint why."""
+    """What a deadline that does not fit its own limits or reserves will do, said before the run
+    starts (``stop_rules``: the run's ``StopRules``). ``--deadline`` and a profile each set one side,
+    so the pair can be inconsistent: the stage limits are then scaled (:func:`effective_stage_limits`,
+    announced first), and a deadline below the reserves the between-phase rules keep (``--deadline
+    300`` against the default 180 s + 600 s) would end the run "not assessed" or document-only with
+    no hint why."""
     if "deadline" not in stop_rules.active:
         return []
+    out: list[str] = []
+    note = effective_stage_limits(stop_rules)[1]
+    if note is not None:
+        out.append(note)
     d, r, a = stop_rules.deadline_seconds, stop_rules.report_reserve_seconds, stop_rules.refine_reserve_seconds
-    fix = "raise --deadline, or use a profile with smaller reserves (--profile demo: 120 s and 200 s)"
+    fix = "raise --deadline, or use a profile with smaller reserves (--profile demo)"
     before_verify = d - r
     if before_verify < min_attempt_s:
-        return [f"deadline {d} s does not exceed the verify + report reserve ({r} s) by one model attempt: no "
-                f"model call can run before verify, so the report will say the design was not assessed; {fix}"]
+        return [*out, f"deadline {d} s does not exceed the verify + report reserve ({r} s) by one model attempt: "
+                      f"no model call can run before verify, so the report will say the design was not assessed; "
+                      f"{fix}"]
     if before_verify - a < min_attempt_s:
-        return [f"deadline {d} s leaves research no time: {r} s is kept for verify + report and {a} s for assess, "
-                f"so understand, plan and assess share {before_verify} s and the review will be document-only "
-                f"(not assessed if those calls need longer); {fix}"]
-    return []
+        return [*out, f"deadline {d} s leaves research no time: {r} s is kept for verify + report and {a} s for "
+                      f"assess, so understand, plan and assess share {before_verify} s and the review will be "
+                      f"document-only (not assessed if those calls need longer); {fix}"]
+    return out
+
+
+def announce_bound(progress: Any, runtime: RuntimeLimits | None, phase: PhaseName | str, call_id: str,
+                   timeout_s: float) -> None:
+    """One progress line when an attempt's timeout is set by the deadline or a stage limit (not by
+    ``llm.timeout_s``): ``llm-0003 bounded at 165 s by the stage 1 limit (265 s on the run clock; ...)``."""
+    if progress is None or runtime is None or runtime.deadline is None:
+        return
+    progress.emit(_phase(phase).value, f"{call_id} bounded at {timeout_s:.0f} s "
+                                       f"{runtime.deadline.describe_bound(phase)}", "step")
 
 
 def attempt_timeout(runtime: RuntimeLimits | None, phase: PhaseName | str, configured_s: float) -> tuple[float, bool]:

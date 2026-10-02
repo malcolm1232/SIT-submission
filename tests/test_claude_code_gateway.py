@@ -114,7 +114,9 @@ async def test_first_call_shape_and_resume(tmp_path: Path, base_cfg: EffectiveCo
     assert flag(argv, "--system-prompt") == "You are a reviewer."
     assert flag(argv, "--tools") == "" and flag(argv, "--disallowedTools") == "mcp__*"
     assert {"--strict-mcp-config", "--disable-slash-commands"} <= set(argv)
-    assert flag(argv, "--output-format") == "json" and flag(argv, "--effort") == "high"
+    assert flag(argv, "--output-format") == "stream-json" and flag(argv, "--effort") == "high"
+    assert {"--verbose", "--include-partial-messages"} <= set(argv)
+    assert flag(argv, "--setting-sources") == ""          # hermetic (claude_code.extra_args, design M3)
     assert "--bare" not in argv and "--no-session-persistence" not in argv and "--resume" not in argv
     assert "--fallback-model" not in argv and "--max-budget-usd" not in argv
     assert "DOCUMENT TEXT" not in " ".join(argv)
@@ -136,6 +138,7 @@ async def test_first_call_shape_and_resume(tmp_path: Path, base_cfg: EffectiveCo
     res2 = await gw.call(req(msgs2, schema=None))
     argv2 = runner.calls[1]["argv"]
     assert flag(argv2, "--resume") == sid and "--fork-session" in argv2
+    assert flag(argv2, "--setting-sources") == "" and flag(argv2, "--output-format") == "stream-json"
     assert flag(argv2, "--session-id") not in (sid, "--fork-session")
     assert runner.calls[1]["stdin"] == "Now say something."
     assert json.loads(flag(argv2, "--json-schema")) == TEXT_SCHEMA

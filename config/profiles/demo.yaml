@@ -25,15 +25,15 @@ agent:
 
 stop_rules:
   deadline_seconds: 540   # 9 minutes: one minute of margin in the 10-minute live run (runbook §5)
-  # Reserves (robustness LLM-05; see config/stop_rules.yaml). The defaults (180 s and 600 s) are sized
-  # from `high`; at 540 s they would leave research no time at all. Guesses at medium, UNMEASURED:
-  report_reserve_seconds: 120   # verify (~20 s) + report (~60 s) at medium, plus margin
-  refine_reserve_seconds: 200   # renamed from assess_reserve_seconds 2026-10-03 (latency redesign W0); value as
-                                # before: assess at medium was still running at 179 s (high took ~520 s)
-  # Resulting budget: every model call before verify ends by 420 s; research ends by 220 s, so it gets
-  # whatever understand and plan leave of the first 220 s (measured: nothing, they end at 241 s).
-  # The design (docs/design/latency_and_demo_design.md section 5) sizes the reserves for the concurrent
-  # design at 200 s (refine) and 75 s (verify and verdict); those values land with W1, which reads the limits.
+  # Reserves (robustness LLM-05; see config/stop_rules.yaml), sized for the concurrent design (docs/design/
+  # latency_and_demo_design.md section 5); the defaults (180 s and 600 s) are sized from `high`. UNMEASURED:
+  report_reserve_seconds: 75    # verify (~5 s, code) + the verdict call (~52 s predicted at medium) + render
+  refine_reserve_seconds: 200   # refine in revision form, ~175 s predicted at medium (renamed from
+                                # assess_reserve_seconds 2026-10-03, latency redesign W0)
+  # They match the stage limits below: stage_1_end = 540 - 75 - 200 = 265, refine_end = 540 - 75 = 465. The
+  # runtime bounds each model call by its stage limit (llm/runtime.py, W1); a --deadline at or below
+  # verdict_end scales the three limits by deadline / (refine_end + report_reserve_seconds) = deadline / 540
+  # and says so first (--deadline 300: 147 / 258 / 294 s).
   # stage_limits_s: design section 4, the run clock at 540 s. Absolute seconds, not a fraction of the
   # deadline (the thinking block per call is fixed, about 105 s per assess shard at medium), so this
   # profile sets its own three values; see config/stop_rules.yaml for the rule.
