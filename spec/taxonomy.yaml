@@ -1,0 +1,564 @@
+# Canonical review taxonomy and enum registry.
+#
+# This file is the ONLY owner of every enum used by the agent's Finding/Review output
+# (spec/finding.schema.json), the sealed answer keys (spec/answer_key.schema.json), the matcher,
+# the grader and the robustness oracles. JSON Schema enums are copies of the lists below;
+# spec/validate_examples.py fails if they drift apart.
+#
+# Resolves research/audit/research_audit.md C6-C10, C12 and missing piece M1.
+#
+# PROMPT SAFETY. Every section except `legacy_mappings` may be placed in agent, matcher or grader
+# prompts. All examples are invented (a fictional "campus room-booking service" and similar);
+# none is taken from eval/ items or the SIT sample artefact, so prompting with them does not
+# leak answer-key content (methodology R4/R5). `legacy_mappings` names eval-key labels and
+# MUST NOT be sent to any model; it exists only for the key converter.
+
+schema_version: "1.0"
+taxonomy_id: sit-design-review-taxonomy
+status: canonical
+
+# ---------------------------------------------------------------------------------------------
+# AXIS 1: finding kind (lab brief §2.3 required review categories).
+# Drives the agent's `kind` field, rubric dimension D3 (coverage of review categories) and the
+# report's section layout. Every finding has exactly one kind.
+# ---------------------------------------------------------------------------------------------
+kinds:
+  - id: strength
+    name: Strength
+    definition: >
+      A design element that is fit for its stated purpose and that the reviewer affirms with a reason
+      tied to an objective, requirement, principle or constraint of the design.
+    include: >
+      Choices whose rationale survives scrutiny (including external research); controls that already
+      mitigate a risk a weaker review would raise; areas where "no change needed" is the judgement.
+    exclude: >
+      Praise with no doc anchor or no reason ("well written"); restatement of the design without
+      assessment. A strength never carries a recommendation, a severity or a defect category.
+    example: >
+      "Booking writes use a unique constraint on (room_id, slot_start), so double-booking is prevented
+      by the database rather than by application checks (§6.2, FR-3). No change needed."
+    constraints: {severity: null, category: null, disposition: [no_change]}
+
+  - id: risk
+    name: Risk
+    definition: >
+      Something in the design, as written, that will or plausibly can cause a requirement, objective or
+      constraint to be missed: a failure mode, an incorrect claim the design relies on, a contradiction
+      that makes the build ambiguous in a harmful way, or a security/compliance exposure.
+    include: >
+      Failure under load, concurrency, partial failure or retry; violated external limits or
+      regulations; false quantitative claims the design depends on; exposures of data or safety.
+    exclude: >
+      Absent content (use gap); wording that admits several readings without a demonstrated harmful
+      reading (use ambiguity); untested-but-plausible claims whose truth is unknown (use
+      validation_need or unresolved_assumption).
+    example: >
+      "Reminder e-mails are sent by one cron worker with no lease or leader election (§9.1); if two
+      replicas run, every reminder is sent twice, contradicting FR-7 'exactly one reminder'."
+
+  - id: gap
+    name: Gap
+    definition: >
+      Something the design needs in order to meet its objectives but does not contain: a missing
+      requirement, control, mechanism, failure handling, rollback path or ownership.
+    include: >
+      Missing security or privacy controls; missing non-functional requirements; a flow with no error
+      path; a dependency with no owner.
+    exclude: >
+      Content that exists elsewhere in the document (that is a false gap and is graded as a
+      hallucination); content that is present but wrong (use risk).
+    example: >
+      "The design defines no retention period for booking audit logs, although P4 commits to 'data
+      minimisation' and the logs contain student IDs (§11)."
+
+  - id: ambiguity
+    name: Ambiguity
+    definition: >
+      A statement, requirement or interface that admits two or more materially different readings, so
+      implementers or testers could build or verify different things.
+    include: >
+      Undefined terms in requirements; percentages or thresholds with no denominator or window;
+      conflicting definitions that do not yet cause a demonstrable failure.
+    exclude: >
+      Two statements that cannot both hold (use risk, category internal_contradiction); harmless
+      stylistic vagueness with no effect on build or test.
+    example: >
+      "FR-5 'rooms shall be available 99% of the time' does not say whether maintenance closures
+      count as unavailable or over what window availability is measured."
+
+  - id: unresolved_assumption
+    name: Unresolved assumption
+    definition: >
+      A premise the design depends on that is neither verified nor tracked to closure, including
+      confirmed decisions that rest on items still listed as pending or open.
+    include: >
+      Decisions marked "confirmed" that depend on a pending backlog item; vendor capabilities assumed
+      but not checked; organisational approvals assumed to be granted.
+    exclude: >
+      Assumptions the document explicitly lists with an owner and a closure date (affirm them or rate
+      their risk instead); claims already shown false by evidence (use risk).
+    example: >
+      "Decision D-4 adopts the campus SSO groups for authorisation, but open item OI-2 ('confirm the
+      registry exposes department groups') is still pending and Phase 1 depends on it."
+
+  - id: validation_need
+    name: Validation need
+    definition: >
+      A claim, requirement or acceptance criterion that cannot be accepted on analysis alone and needs
+      a test, benchmark, prototype or measurement, or an acceptance criterion that cannot verify the
+      requirement it is traced to.
+    include: >
+      Acceptance tests run below the required load or duration; latency claims with no benchmark;
+      requirements with no acceptance criterion; criteria that test a different path than the
+      requirement.
+    exclude: >
+      Claims that external evidence already shows to be false (use risk); claims a reviewer can
+      settle by reasoning over the document (use risk or ambiguity).
+    example: >
+      "AC-3 load-tests search at 50 requests/s for 5 minutes, while NFR-2 requires p95 < 300 ms at
+      200 requests/s sustained over the exam-week peak."
+
+# ---------------------------------------------------------------------------------------------
+# AXIS 2: defect mechanism (category). Orthogonal to kind. Drives per-category recall, the
+# category confusion matrix and the taxonomy-dependence check. Strengths have category null.
+# Domain labels ("payments", "safety", ...) are NOT categories; they go in free-text `tags`.
+# ---------------------------------------------------------------------------------------------
+categories:
+  - id: internal_contradiction
+    name: Internal contradiction
+    definition: >
+      Two or more statements in the design (requirements, principles, decisions, flows, numbers,
+      tables, acceptance criteria) cannot all hold at once.
+    include: >
+      A flow that violates a stated principle; a requirement contradicted by the mechanism meant to
+      meet it; an NFR that a stated dependency's own figures make unachievable.
+    exclude: >
+      A conflict with an external fact (use unsupported_or_incorrect_claim or
+      external_constraint_violation).
+    example: "P2 says 'no synchronous calls to the timetable service', but the booking flow in §7.3 calls it synchronously."
+    default_kind: risk
+    acceptable_kinds: [risk, ambiguity, gap]
+
+  - id: unsupported_or_incorrect_claim
+    name: Unsupported or incorrect claim
+    definition: >
+      The design asserts a fact, figure, capability or compliance status (quantitative or not) that is
+      false, or that it relies on without derivation or source, and the design depends on it.
+    include: >
+      Wrong product limits stated as true; arithmetic that does not add up; "compliant with standard X"
+      when X says otherwise; capacity margins that ignore a stated reserve.
+    exclude: >
+      Configurations that break an external limit without the design asserting anything about the
+      limit (use external_constraint_violation).
+    example: "§8 states the message broker 'retains messages for 30 days by default'; the product's documented maximum is 14 days."
+    default_kind: risk
+    acceptable_kinds: [risk, unresolved_assumption, validation_need]
+
+  - id: external_constraint_violation
+    name: External constraint violation
+    definition: >
+      The design, as configured or specified, breaks an external constraint (law, regulation, standard,
+      protocol limit, platform quota or contract term) that it does not explicitly discuss.
+    include: >
+      A statutory deadline anchored to the wrong event; a protocol read larger than the protocol permits;
+      a retention setting above a platform maximum; behaviour a cited contract forbids.
+    exclude: >
+      Cases where the design states a false belief about the constraint (use
+      unsupported_or_incorrect_claim); security-control omissions (use security_privacy_gap).
+    example: "Refunds are scheduled 30 days after the request, but the applicable consumer-protection rule requires 14."
+    default_kind: risk
+    acceptable_kinds: [risk, gap]
+    note: >
+      Added beyond the synthetic set's 8 labels because 4 of the 28 blind-item flaws (protocol limits,
+      statutory rules, platform quotas) otherwise fall into `other` (see spec/README.md, deviation D3).
+
+  - id: missing_or_unverifiable_requirement
+    name: Missing or unverifiable requirement
+    definition: >
+      A requirement the objectives imply is absent, or a stated requirement has no measurable criterion,
+      owner or verification path.
+    include: >
+      An objective with no corresponding requirement; a regulatory duty with no requirement; a requirement
+      with no measurable threshold.
+    exclude: >
+      Requirements with a criterion that tests the wrong thing (use acceptance_criterion_cannot_validate).
+    example: "The goals promise accessibility for screen-reader users, but no requirement or test references any accessibility standard."
+    default_kind: gap
+    acceptable_kinds: [gap, validation_need]
+
+  - id: security_privacy_gap
+    name: Security or privacy gap
+    definition: >
+      A missing or inadequate control for confidentiality, integrity, authentication, authorisation,
+      auditability, data protection or safety-relevant access.
+    include: >
+      Unauthenticated endpoints exposing personal data; enumerable identifiers; plaintext protocols where a
+      standard mandates TLS; remote-access paths that bypass the stated control boundary; personal data
+      retained without a lawful basis.
+    exclude: >
+      Generic advice ("add encryption") where the design already justifies its controls.
+    example: "GET /bookings/{id} needs no authentication and returns the student's name and phone number; IDs are sequential."
+    default_kind: gap
+    acceptable_kinds: [gap, risk]
+
+  - id: scalability_or_failure_mode
+    name: Scalability or failure mode
+    definition: >
+      The mechanism as designed behaves incorrectly or unsafely under load, concurrency, partial failure,
+      retry, failover, rollback or numeric edge cases.
+    include: >
+      Hot partitions; serialised queues; single points of failure; dual writes without an outbox;
+      non-idempotent retries; unbounded hold-last-state behaviour; floating-point money; rollback plans that
+      strand data.
+    exclude: >
+      Capacity problems caused by a false stated limit (use unsupported_or_incorrect_claim).
+    example: "Reminder jobs retry on timeout with a new idempotency key per attempt, so a slow mail gateway produces duplicate e-mails."
+    default_kind: risk
+    acceptable_kinds: [risk, gap]
+
+  - id: ambiguous_requirement
+    name: Ambiguous requirement
+    definition: >
+      A requirement or acceptance threshold whose wording supports materially different implementations
+      or measurements.
+    include: "Undefined denominators, windows, populations or units in requirements."
+    exclude: "Contradictions between two clear statements (use internal_contradiction)."
+    example: "'Search shall return results quickly for most users' has no latency figure, percentile or load."
+    default_kind: ambiguity
+    acceptable_kinds: [ambiguity, validation_need]
+
+  - id: acceptance_criterion_cannot_validate
+    name: Acceptance criterion cannot validate
+    definition: >
+      An acceptance criterion or test traced to a requirement cannot demonstrate that the requirement is
+      met (wrong load, duration, path, environment or measurement).
+    include: "Tests at half load; tests of the planned path for an unplanned-failure requirement; manual checks for statistical claims."
+    exclude: "Requirements with no criterion at all (use missing_or_unverifiable_requirement)."
+    example: "AC-6 tests failover by stopping the service gracefully; NFR-4 concerns an abrupt host loss."
+    default_kind: validation_need
+    acceptable_kinds: [validation_need, gap]
+
+  - id: decision_depends_on_pending_item
+    name: Decision depends on pending item
+    definition: >
+      A decision marked confirmed or a build phase marked ready depends on a backlog item, open issue or
+      approval that is still pending, or that is scheduled after the work that needs it.
+    include: "Confirmed decisions resting on open items; Phase N needing an output scheduled for Phase N+1."
+    exclude: "Pending items that the plan correctly sequences before their dependants."
+    example: "Phase 1 goes live with SSO-group authorisation, but confirming the group feed is backlog item B-3 scheduled for Phase 2."
+    default_kind: unresolved_assumption
+    acceptable_kinds: [unresolved_assumption, risk]
+
+  - id: other
+    name: Other
+    definition: "A genuine defect that fits none of the mechanisms above. Use sparingly; report the share of `other`."
+    include: "Novel mechanisms, pending a taxonomy revision."
+    exclude: "Anything that fits a specific mechanism."
+    example: "A licence term of an adopted library conflicts with the stated distribution model."
+    default_kind: risk
+    acceptable_kinds: [risk, gap, ambiguity, unresolved_assumption, validation_need]
+
+# ---------------------------------------------------------------------------------------------
+# Severity: one 4-level scale for findings AND answer keys (audit C6). Strengths carry null.
+# Weights are methodology metrics.md §0 (primary geometric, sensitivity linear).
+# ---------------------------------------------------------------------------------------------
+severities:
+  - id: critical
+    rank: 4
+    weight_primary: 8
+    weight_sensitivity: 4
+    definition: >
+      If built as written, credibly causes safety harm, financial loss, data loss, a security breach or an
+      outage at expected load, or the design cannot lawfully or physically operate. Blocks build.
+    example: "Concurrent bookings can both succeed, so the same room is double-booked at peak."
+  - id: high
+    rank: 3
+    weight_primary: 4
+    weight_sensitivity: 3
+    definition: >
+      A requirement, regulatory or contractual obligation will not be met as designed, or there is a
+      significant security exposure or major functional failure. Fix before building the affected component.
+    example: "Refund timing breaches the applicable statutory deadline for every request."
+  - id: medium
+    rank: 2
+    weight_primary: 2
+    weight_sensitivity: 2
+    definition: >
+      A requirement is unmet or unverifiable, or a claim is incorrect, with bounded consequence. Fix before
+      acceptance or go-live; does not invalidate the architecture.
+    example: "The availability target is unachievable by a small margin given planned maintenance windows."
+  - id: low
+    rank: 1
+    weight_primary: 1
+    weight_sensitivity: 1
+    definition: >
+      A weakness in clarity, governance or verification that should be fixed but does not by itself cause
+      failure.
+    example: "A performance test runs for 30 minutes rather than the full peak window."
+severity_rules:
+  - "Severity is the expected impact if the design is built as written, not the effort to fix."
+  - "kind = strength -> severity = null. Every other kind requires a severity."
+  - "Grader 'materiality' (high/medium/low) is a grader-only concept; see legacy_mappings.grading_materiality."
+
+# ---------------------------------------------------------------------------------------------
+# Confidence: one number in [0, 1] per finding (used for ECE/Brier/AUROC, metrics.md §7.1),
+# plus derived verbal bands with evidence anchors. The band is computed, never emitted.
+# ---------------------------------------------------------------------------------------------
+confidence:
+  field: confidence
+  type: number
+  range: [0.0, 1.0]
+  meaning: "Agent's probability that the finding is correct and material (a TP or valid unkeyed issue)."
+  bands:
+    - id: high
+      min: 0.8
+      max: 1.0
+      anchor: >
+        Doc anchor verified AND (no external premise, OR >= 2 independent ledger sources, OR 1 primary
+        authoritative source such as the standard or official product documentation). Robustness ADV-14.
+    - id: medium
+      min: 0.5
+      max: 0.8
+      anchor: "Doc anchor verified; external premise supported by one non-primary source or by reasoning only."
+    - id: low
+      min: 0.0
+      max: 0.5
+      anchor: "Plausible concern; key premise unverified, sources conflict, or depends on an unread companion document."
+  band_boundaries: "lower bound inclusive, upper bound exclusive, except high includes 1.0"
+
+# ---------------------------------------------------------------------------------------------
+# Disposition (lab §3.2: refinement vs investigation, prototyping, testing or governance).
+# Exactly one primary disposition per finding; `secondary_dispositions` replaces grading's "mixed".
+# ---------------------------------------------------------------------------------------------
+dispositions:
+  - id: refinement_now
+    name: Design refinement
+    definition: "Fixable now by changing the design text, with no new information needed."
+    requires: [recommendation]
+    example: "Change the reminder idempotency key from per-attempt to per-reminder."
+  - id: needs_investigation
+    name: Needs investigation
+    definition: "A fact must be established (documentation, vendor confirmation, legal reading) before the right change is known."
+    requires: [recommendation, next_step]
+    example: "Confirm with the registry team whether department groups are exposed via SCIM."
+  - id: needs_prototyping
+    name: Needs prototyping or benchmark
+    definition: "Feasibility or performance can only be settled by building and measuring a spike or benchmark."
+    requires: [recommendation, next_step]
+    example: "Benchmark filtered vector search at the projected corpus size before committing to the index type."
+  - id: needs_testing
+    name: Needs testing
+    definition: "The design may be right, but an acceptance test, chaos test or load test must demonstrate it; often paired with fixing the criterion."
+    requires: [recommendation, next_step]
+    example: "Add an abrupt-host-loss failover test traced to NFR-4."
+  - id: governance_decision
+    name: Needs governance decision
+    definition: "Requires an accountable owner (DPO, architecture board, budget holder, regulator) to decide policy, risk acceptance or a trade-off."
+    requires: [recommendation, next_step]
+    example: "The data-protection officer must decide the retention period for audit logs containing student IDs."
+  - id: no_change
+    name: No change needed
+    definition: "The design is appropriate as written; the finding records why (lab §1.4, §2.3)."
+    requires: [no_change_rationale]
+    forbids: [recommendation]
+    example: "The unique constraint already prevents double-booking; no change."
+
+# ---------------------------------------------------------------------------------------------
+# Other enums shared across the pipeline.
+# ---------------------------------------------------------------------------------------------
+verdicts:                     # audit C9
+  - {id: fit, definition: "Fit for purpose as written; any findings are low severity or no-change."}
+  - {id: fit_with_conditions, definition: "Fit for purpose if the listed conditions (linked to findings) are met."}
+  - {id: not_fit, definition: "Not fit for purpose: at least one objective cannot be met without redesign."}
+
+provenance_sources:           # audit C10: every evidence item and claim is tagged with one
+  - {id: doc, definition: "Stated in the design document under review; must carry a resolvable doc anchor."}
+  - {id: external, definition: "Obtained from external research; must cite an evidence-ledger entry from a real tool call in this run."}
+  - {id: inference, definition: "The agent's own reasoning or arithmetic over doc and external evidence; must list what it is derived from."}
+
+source_authority:             # used for the confidence anchor and grader D4
+  - {id: primary_official, definition: "The standard, statute or official vendor/product documentation itself."}
+  - {id: peer_reviewed, definition: "Peer-reviewed paper or recognised technical report."}
+  - {id: secondary, definition: "Reputable secondary summary (law-firm note, regulator summary, textbook)."}
+  - {id: informal, definition: "Blog, forum, Q&A, marketing page."}
+
+stop_reasons:                 # audit C12 union; `group` per methodology L40
+  - {id: sufficient_evidence, group: decision}
+  - {id: no_marginal_gain, group: decision}
+  - {id: budget_tool_calls, group: cap}
+  - {id: budget_tokens, group: cap}
+  - {id: deadline, group: cap}
+  - {id: tool_failure, group: error}
+  - {id: error, group: error}
+
+decision_relations:           # finding.affected_decisions[].relation; robustness INV-10, BEH-12
+  - {id: preserves, definition: "Recommendation is compatible with the approved decision or constraint."}
+  - {id: refines, definition: "Recommendation adds detail within the decision without reversing it."}
+  - {id: challenges, definition: "Recommendation reverses or replaces the decision. Requires >= 2 evidence items (BEH-12)."}
+
+registry_entry_types: [approved_decision, pending_decision, constraint, requirement]
+
+phases:                       # finding.provenance.phase
+  - {id: understand, definition: "Intent, objective, constraint and decision extraction."}
+  - {id: assess, definition: "Initial analysis that raises the finding."}
+  - {id: research, definition: "Finding raised or changed by external evidence."}
+  - {id: verify, definition: "Finding raised or changed by the self-verification pass."}
+  - {id: revise, definition: "Finding revised in a later iteration after new evidence."}
+  - {id: delta_review, definition: "Finding produced while re-assessing an updated artefact (lab §1.5)."}
+
+reassessment_statuses:        # finding.reassessment.status (grading D11; metrics.md §8)
+  - {id: new_in_update, definition: "Issue introduced or first visible in the updated artefact."}
+  - {id: still_open, definition: "Prior finding persists unchanged."}
+  - {id: partially_addressed, definition: "Prior finding mitigated but not resolved."}
+  - {id: resolved, definition: "Prior finding fixed by the update (reported, not re-raised)."}
+
+# Answer-key-only enums (spec/answer_key.schema.json).
+credit_modes:
+  - {id: substance, definition: "MATCH iff the finding states the flaw's core_insight in substance (any wording) at a compatible location. credit.items are guidance; no single item is mandatory."}
+  - {id: all_of, definition: "MATCH iff every credit item with role=required is stated (paraphrase allowed) at a compatible location."}
+  - {id: any_of, definition: "MATCH iff at least credit.min_required of the role=required items are stated at a compatible location (alternative valid detections)."}
+v2_statuses:
+  - {id: fixed, definition: "Present in v1, resolved in v2. If the fix introduced a new flaw, `caused_regression_flaw_id` names it (legacy 'regressed')."}
+  - {id: partially_fixed, definition: "Mitigated in v2 but still a defect."}
+  - {id: unchanged, definition: "Present in v1 and v2."}
+  - {id: introduced, definition: "New in v2; `introduced_by_fix_of` names the v1 flaw whose fix caused it, if any."}
+  - {id: not_applicable, definition: "Item has no v2."}
+splits: [S-dev, S-heldout, Blind, Real-dev, OOD, rehearsal]
+author_types: [llm, human, mixed]
+
+# Matcher / adjudicator labels (methodology metrics.md §2.2, §2.3 step 4), listed so every
+# instrument uses the same strings.
+match_scores:
+  - {score: 3, id: MATCH}
+  - {score: 2, id: PARTIAL}
+  - {score: 1, id: RELATED}
+  - {score: 0, id: UNRELATED}
+adjudication_classes: [DUPLICATE, VALID_UNPLANTED, HALLUCINATED, NON_SPECIFIC, INVALID_OPINION, OUT_OF_SCOPE]
+
+# Structural limits the verify stage enforces (audit G1-G3).
+anchor_rules:
+  min_doc_anchors_per_finding: 1
+  max_doc_anchors_per_finding: 3
+  min_quote_tokens: 8
+  quote_match: "fuzzy ratio >= 0.90 against the canonical page-marked text (robustness INV-04), inside the cited section +/- 1 (metrics G2)"
+
+# =============================================================================================
+# LEGACY MAPPINGS. Converter-only. NEVER include in any model prompt (names eval-key labels).
+# =============================================================================================
+legacy_mappings:
+  severity:
+    synthetic3:               # payments_orchestration, clinical_rpm, research_lakehouse
+      primary: {critical: critical, major: high, minor: low}
+      sensitivity: {critical: critical, major: high, minor: medium}
+    blind4_capitalised:       # blind/item_a
+      primary: {Critical: critical, High: high, Medium: medium, Low: low}
+    blind4:                   # blind/item_b
+      primary: {critical: critical, high: high, medium: medium, low: low}
+    grading_materiality:      # grader Pass A only; not a severity. Approximate correspondence for reporting.
+      primary: {high: [critical, high], medium: [medium], low: [low]}
+
+  # Synthetic defect-type labels -> (category, kind). Same for all three synthetic keys.
+  synthetic_categories:
+    internal_contradiction: {category: internal_contradiction, kind: risk}
+    unjustified_quantitative_claim: {category: unsupported_or_incorrect_claim, kind: risk}
+    missing_or_unverifiable_requirement: {category: missing_or_unverifiable_requirement, kind: gap}
+    security_privacy_gap: {category: security_privacy_gap, kind: gap}
+    scalability_failure_mode: {category: scalability_or_failure_mode, kind: risk}
+    ambiguous_requirement: {category: ambiguous_requirement, kind: ambiguity}
+    acceptance_criterion_cannot_validate: {category: acceptance_criterion_cannot_validate, kind: validation_need}
+    decision_depends_on_pending_item: {category: decision_depends_on_pending_item, kind: unresolved_assumption}
+    decision_depends_on_pending_backlog: {category: decision_depends_on_pending_item, kind: unresolved_assumption}  # clinical spelling
+
+  # blind/item_a domain categories -> (category, kind); original label kept in `tags`.
+  blind_a_categories:
+    "Regulatory compliance": {category: external_constraint_violation, kind: risk}
+    "Functional logic / internal inconsistency": {category: internal_contradiction, kind: risk}
+    "Data model and platform limits": {category: external_constraint_violation, kind: risk}
+    "Messaging and scalability": {category: scalability_or_failure_mode, kind: risk}
+    "Consistency and reliability": {category: scalability_or_failure_mode, kind: risk}
+    "Idempotency and financial integrity": {category: scalability_or_failure_mode, kind: risk}
+    "Security": {category: security_privacy_gap, kind: gap}
+    "Privacy and data governance": {category: security_privacy_gap, kind: risk}
+    "Availability and NFR feasibility": {category: internal_contradiction, kind: risk}
+    "Rollout and rollback": {category: scalability_or_failure_mode, kind: risk}
+    "Testability and acceptance": {category: acceptance_criterion_cannot_validate, kind: validation_need}
+  blind_a_flaw_overrides:     # "Data model and platform limits" holds three different mechanisms
+    D04: {category: unsupported_or_incorrect_claim, kind: risk}   # design asserts the item fits the limit
+    D12: {category: scalability_or_failure_mode, kind: risk}      # floating-point money, no external limit
+
+  # blind/item_b free-text labels (one per defect) -> (category, kind).
+  blind_b_categories:
+    "safety / safety-function architecture": {category: scalability_or_failure_mode, kind: risk}
+    "safety / failure-mode behaviour": {category: scalability_or_failure_mode, kind: risk}
+    "external standard / grid safety": {category: unsupported_or_incorrect_claim, kind: risk}
+    "external protocol limit / interface feasibility": {category: external_constraint_violation, kind: risk}
+    "external standard / compliance": {category: unsupported_or_incorrect_claim, kind: risk}
+    "security / external standard": {category: security_privacy_gap, kind: risk}
+    "internal inconsistency / timing infeasibility": {category: internal_contradiction, kind: risk}
+    "arithmetic / capacity sizing": {category: unsupported_or_incorrect_claim, kind: risk}
+    "arithmetic / requirement not met": {category: unsupported_or_incorrect_claim, kind: risk}
+    "internal inconsistency / contractual constraint": {category: internal_contradiction, kind: risk}
+    "security architecture": {category: security_privacy_gap, kind: risk}
+    "time synchronisation / requirement not achievable": {category: unsupported_or_incorrect_claim, kind: risk}
+    "verification gap": {category: acceptance_criterion_cannot_validate, kind: validation_need}
+    "planning / dependency sequencing": {category: decision_depends_on_pending_item, kind: unresolved_assumption}
+
+  # Research-note vocabularies -> canonical.
+  methodology_codes:          # methodology/README.md §1.2, metrics.md §1 `category`
+    RISK: {kind: risk}
+    GAP: {kind: gap}
+    AMBIGUITY: {kind: ambiguity}
+    UNRESOLVED_ASSUMPTION: {kind: unresolved_assumption}
+    VALIDATION_NEED: {kind: validation_need}
+    INCONSISTENCY: {kind: risk, category: internal_contradiction}
+    UNSUPPORTED_OR_INCORRECT_CLAIM: {kind: risk, category: unsupported_or_incorrect_claim}
+    OTHER: {category: other}
+  methodology_agent_kind:     # metrics.md §1 `kind`
+    risk: {kind: risk}
+    gap: {kind: gap}
+    ambiguity: {kind: ambiguity}
+    assumption: {kind: unresolved_assumption}
+    inconsistency: {kind: risk, category: internal_contradiction}
+    incorrect_claim: {kind: risk, category: unsupported_or_incorrect_claim}
+    validation_need: {kind: validation_need}
+    strength: {kind: strength}
+  grading_pass_a_category:    # grader_prompt.md §5.1
+    strength: {kind: strength}
+    risk: {kind: risk}
+    gap: {kind: gap}
+    ambiguity: {kind: ambiguity}
+    unresolved_assumption: {kind: unresolved_assumption}
+    validation_need: {kind: validation_need}
+    no_change: {disposition: no_change}
+    other: {category: other}
+  triage:                     # grading triage, methodology action_type, robustness remedy_type
+    refinement: refinement_now
+    design_refinement: refinement_now
+    investigation: needs_investigation
+    needs_investigation: needs_investigation
+    prototyping: needs_prototyping
+    needs_prototype: needs_prototyping
+    "validation/prototype": needs_prototyping
+    testing: needs_testing
+    governance: governance_decision
+    needs_governance_decision: governance_decision
+    none: no_change
+    mixed: "primary disposition + secondary_dispositions[] (no single value)"
+  verdict:
+    yes: fit
+    partly: fit_with_conditions
+    no: not_fit
+    fit_with_refinements: fit_with_conditions
+  provenance:
+    DOC: doc
+    EXTERNAL: external
+    design: doc
+  stop_reason:
+    budget: "budget_tool_calls | budget_tokens (pick the one that fired)"
+    other: error
+    "agent decision": sufficient_evidence
+    cap: "budget_tool_calls | budget_tokens | deadline"
+  v2_status:
+    fixed: fixed
+    unchanged: unchanged
+    regressed: "fixed + caused_regression_flaw_id = new_flaw_id"
