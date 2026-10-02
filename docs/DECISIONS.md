@@ -15,6 +15,9 @@ Status values: **Accepted** (build on it), **Pending** (blocked on a named input
 | 007 | Quote anchoring: quote + page + section in the structured output, verified in code | Accepted |
 | 008 | Where things run: live on the laptop, offline fakes and fixtures in the cloud sandbox | Accepted (user decision) |
 | 009 | Durable resume: checkpoints to disk in the custom loop, not LangGraph | Accepted |
+| 010 | Dual LLM backend: Claude Code headless or Anthropic API key | Accepted (user decision) |
+| 011 | Concurrent first stage and revision-only refine (amends ADR-001's phase order) | Proposed |
+| 012 | Streamed CLI output, salvage and hermetic settings (amends ADR-010) | Proposed |
 
 ---
 
@@ -59,6 +62,8 @@ Status values: **Accepted** (build on it), **Pending** (blocked on a named input
 - **Effort switches cost cache.** The runbook's `config/agent.yaml` runs `plan` at `high`, `research` at `medium` and later stages at `high`. Each top-level effort change rewrites the whole context at the cache-write price: about +$1.20 per FULL run for two switches (`cost_model.py`, "Sensitivity"; $3.38 instead of $2.18), which `docs/BUDGET.md` does not include. Build-time choice, to be confirmed by measurement: (a) one effort level per conversation (a stage that needs another level starts a fresh conversation from the cached tools-and-system prefix plus a stage brief), or (b) the per-message effort system message (beta `mid-conversation-output-config-2026-07-01`; avoids the invalidation but puts a beta on the critical path, against ADR-001). Until decided, `config/agent.yaml` keeps per-stage keys so either works.
 
 **Status.** Accepted (user decision, 2026-10-02).
+
+**Amendment note (2026-10-03, latency redesign; ADR-011, `docs/USER_DECISIONS.md` #31).** The one-effort-level-per-conversation rule (Consequences, option (a)) stays, and it already allows a level per stage, because every model call is its own conversation. Its cache rationale does not apply to the `claude_code` backend (ADR-010): there the phases never share a prompt-cache entry, since the cache is shared only between calls with an identical schema and prefix, so an effort switch between stages costs no cache (measured 2026-10-03 on the owner's Mac; the cache is a cost lever only, about $0.40 a run). The frozen agent runs `medium` on every stage and `low` for research; `high` remains the A4b effort comparison (`docs/USER_DECISIONS.md` #5). This overrides the `high` default of `docs/USER_DECISIONS.md` #1 on the measured ground that `high` cannot fit the 540 s demo slot; the owner may reverse it. On the `anthropic_api` backend the cost of an effort switch stated above still applies.
 
 ---
 
@@ -228,3 +233,48 @@ The Anthropic Python SDK cannot use the session's credentials; it requires `ANTH
 - Consequence for the research loop: with this backend the model cannot emit native `tool_use` blocks (all CLI tools are off), so the gateway renders the request's `tools` into the system prompt and asks for the envelope above; `tool_result` user blocks are rendered as text. The native backend keeps real tool use. Both go through the same `LLMGateway` protocol, so phases do not change.
 - `max_tokens` is passed as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`; whether the CLI honours it per call is UNVERIFIED. Thinking blocks are not returned by the CLI, so `LLMResult.content` holds only the text/tool-use blocks and resume replays from the CLI's own transcript, not from `llm.jsonl`.
 
+
+---
+
+## ADR-011. Concurrent first stage and revision-only refine
+
+**Context.** ADR-001 fixed a sequential phase order, `ingest → understand → plan → research → assess → refine → verify → report`. Measured on 2026-10-03 on the owner's Mac through the `claude_code` backend (ADR-010): a model call has a fixed start-up latency before output begins (about 105 s for an assess call at `medium` effort) and then emits its structured answer at about 310 characters per second; separate CLI sessions run truly in parallel (4 and 8 at once, no rate limiting); the prompt cache is shared only between calls with an identical schema and prefix, so phases never share it (a cost lever only, about $0.40 a run). Six sequential model phases therefore cannot fit the 540 s demo deadline: a complete sequential `medium` run with refine is about 1,177 s, and the measured demo-profile run ended at 420 s with a `not_assessed` report (`docs/USER_DECISIONS.md` #27). The design is `docs/design/latency_and_demo_design.md`.
+
+**Decision.**
+- **Stage 1, concurrent.** `understand`, `plan` and four `assess` shards start together. The shards are criterion groups (`config/agent.yaml` `assess.shards`: `intent_and_fitness`, `requirements_and_consistency`, `claims_and_assumptions`, `risk_and_operations`); each shard reads only the document and its own criteria, so assess does not wait for understand and plan. A bounded `research` starts when understand and plan are both done, at effort `low`.
+- **Merge in code**, then **one global refine call** that returns one revision per finding (merge, withdraw, rank, severity, disposition, decision links, research evidence) instead of re-emitting the findings.
+- **Verify in code**, with one repair call only when more than 60 s of slack remains; then a **verdict-only model call**, and a **code-rendered report**.
+- **Stage limits** on the run clock (`stop_rules.stage_limits_s`): stage 1 ends by `stage_1_end`, refine by `refine_end`, the verdict call by `verdict_end`; demo profile 265 / 465 / 530 s on a 540 s run, base file 2820 / 3420 / 3540 s. Absolute seconds, not a fraction of the deadline, because the start-up latency per call is fixed.
+- **Cut behaviours.** A shard cut at 265 s keeps every finding it finished streaming; its criteria without a finding are marked not assessed, disclosed. A cut research stops with `stop_reason: deadline`. A cut refine falls back to the merged findings ordered by severity and confidence, disclosed. A cut verdict call falls back to the rule-based verdict. The report is `not_assessed` only when no shard finished a single finding by 265 s.
+- **Progress** comes from the CLI's event stream (ADR-012): a status line at least every 10 s, a line per draft finding as it completes (labelled draft and unverified, from about 125 s), and the stage milestones.
+- **One profile** serves the demo and the evaluation: `medium` on every stage, research `low` (ADR-002 amendment note). K = 4 shards; K = 6 is the first tuning step if stage 1 exceeds 230 s in rehearsal.
+- The document stays out of the system prompt. Evidence fields are not trimmed.
+
+**Consequences.**
+- Predicted, not measured: 443 s for a document-only run (97 s of slack, 540 - 443), 450 to 499 s with research, about $5.0 to $5.4 per run (about 165,000 output tokens). The first timed rehearsal confirms or replaces these figures.
+- A deadline cut leaves a real report with its cuts disclosed; `not_assessed` becomes the rare case.
+- Every evaluation number scored on `live_cc_opus_payments_v1` (strict recall 11 of 14, adjudicated precision 0.95, severity-weighted recall 0.73, grader S 83.8) describes the old single-call agent at `high` and is stale for this design.
+- The Tier A run count stays 132 (93 FULL-shaped, 39 single-call). FULL runs are capped at 540 s, so run time is at most 93 × 540 s + 39 × 520 s = 70,500 s = 19.6 h. The agent budget is about 93 × $5.4 + 39 × $1.6 = $565 before margin against $240 planned; the rise comes from measured prices, not from the design. `docs/BUDGET.md` is redone after the first rehearsal.
+- Re-pilot before Tier A: three timed rehearsals on payments v1 (two document-only, one with tools, about $15), and one of them scored and graded (about $15).
+- `agent/README.md` "State machine" and the runbook's live-run clock follow the stage order; `states.TRANSITIONS` and `ON_CAP` give way to the stage tables (pending integration of the W2 branch).
+
+**Status.** Proposed, to be confirmed by a timed rehearsal (`docs/USER_DECISIONS.md` #31).
+
+---
+
+## ADR-012. Streamed CLI output, salvage and hermetic settings
+
+**Context.** ADR-010 reads the `claude -p` result JSON once the call ends. A call cut by the run deadline then leaves nothing: the measured demo-profile run lost its whole assess call at 420 s (`docs/USER_DECISIONS.md` #27), and nothing showed on screen while a call was running. The owner's user-level Claude Code settings (hooks, plugins) also reach every call: measured on 2026-10-03 on the owner's Mac, they add about 7 s and 1,433 foreign input tokens per call.
+
+**Decision.** Amends ADR-010.
+- The `ClaudeCodeGateway` reads the CLI's event stream instead of waiting for the final JSON, and shows progress from it (ADR-011: status lines, draft findings, milestones).
+- When a call is cut, the gateway keeps the finished items of the partial answer (`llm/partial.py`, partial-answer parsing and salvage) and logs an estimated usage for the call. The estimate is kept apart from measured usage and never enters measured totals; the call still counts as one of unrecorded usage (`docs/USER_DECISIONS.md` #28).
+- Every CLI call passes `--setting-sources ""` (`config/agent.yaml` `claude_code.extra_args`), so no user-level hooks, plugins or settings load.
+
+**Consequences.**
+- A deadline cut leaves a real report built from the salvaged items, with the cut disclosed.
+- The prompt the model sees is the hashed prompt bundle only; nothing from the owner's settings enters it, which the reproducibility record needs.
+- The flag is UNVERIFIED in a cloud session; check it once when a cloud session next exists (`docs/USER_DECISIONS.md` #31, ruling 4).
+- Cost and token figures stay lower bounds for a run with a cut call (prereg `costs.usage_completeness`); the estimate is reported beside them, never in place of them.
+
+**Status.** Proposed (`docs/USER_DECISIONS.md` #31).

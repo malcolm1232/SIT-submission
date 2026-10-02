@@ -24,6 +24,18 @@ sit-review selftest
 `ingest -> understand -> plan -> research -> assess -> refine -> verify -> report`
 (`states.py`: `PHASE_ORDER`, `TRANSITIONS`, `ON_CAP`, `EFFORT_KEY`, `PROVENANCE_PHASE`).
 
+Latency redesign (2026-10-03, `docs/DECISIONS.md` ADR-011; pending integration of the W1 and W2
+branches, so the code in this tree still runs the sequential order above): stage 1 is concurrent.
+`understand`, `plan` and one `assess` call per criterion group (`config/agent.yaml` `assess.shards`,
+four groups) start together after `ingest`; each shard reads only the document and its own criteria,
+and a bounded `research` (effort `low`) starts when `understand` and `plan` are both done. Stage 1
+ends by `stop_rules.stage_limits_s.stage_1_end` (265 s on the demo profile). Then the shard findings
+are merged in code, one global `refine` call returns one revision per finding (ends by `refine_end`,
+465 s), `verify` runs in code with one repair call only when more than 60 s of slack remains, a
+verdict-only model call ends by `verdict_end` (530 s), and the report is rendered in code. The stage
+tables (`Stage`, `STAGE_ORDER`, `STAGE_MEMBERS`, `STAGE_TRANSITIONS`, `STAGE_ON_CAP`) replace
+`TRANSITIONS` and `ON_CAP` in W2 (pending integration).
+
 `orchestrator.Orchestrator.run` runs the phases in order. It skips phases that are disabled in
 `config/agent.yaml` (only `research` and `refine` may be disabled). Before `plan`, `research`,
 `assess` and `refine` it checks the between-phase caps (deadline and token budget); if one fires,
@@ -44,7 +56,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 |---|---|---|
 | `models.py` | Pydantic v2 copy of `spec/finding.schema.json` (Finding, DocAnchor, EvidenceItem, Recommendation, Provenance, LedgerEntry, RegistryEntry, SoundArea, Verdict, StopReason, ResearchLog / ResearchLogEntry, RunManifest, Review, plus `ManifestExtra` for REPRODUCIBILITY §8). The schema's `allOf` rules are validators | done |
 | `config.py` | Typed loader for `config/*.yaml`, CLI overrides, `EffectiveConfig.sha256()` | done |
-| `states.py`, `stop_rules.py` | Phase enum and transitions; `@register` stop-rule registry; closed `StopReasonCode` | done |
+| `states.py`, `stop_rules.py` | Phase enum and transitions, and the stage tables of the concurrent first stage (W0); `@register` stop-rule registry; closed `StopReasonCode`. The deprecated `states.TRANSITIONS` and `ON_CAP` leave the map when W2 removes them (pending integration) | done; stage tables read by W2 (pending integration) |
 | `orchestrator.py` | `Orchestrator.run`; `run_review` (missing MCP key check before anything is built (INF-08), run dir, gateways, run limits attached to the LLM stack (`llm/runtime.py`), background MCP warm-up started right after the tool stack, LLM preflight before `models.retrieve` (NET-02), the schedule's `process:` faults around phases (new runs only), exit-code mapping, `failure.json` for every failure after the run dir exists) and `resume_run` (ADR-009: drift check, ledger truncation, `SelfReplayGateway`, call IDs continued via `llm.gateway.prepare_resume` and `CallIds.advance_to`) | done |
 | `context.py` | `RunContext`: the run state plus services, passed to every phase | done |
 | `state/run_state.py` | `RunState`, the serialisable checkpoint payload | done |
@@ -52,9 +64,10 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `state/decision_registry.py` | `AD-nnn` registry, `freeze()`, hash per iteration, INV-10 checks | done |
 | `state/checkpoint.py` | Atomic per-phase checkpoints, drift check, journal truncation | done |
 | `llm/gateway.py` | `LLMGateway` protocol, `LLMRequest` / `LLMResult` / `Usage`; `LLMCallLog` (redacts secrets and canaries, flags `resumed: true`); `AnthropicGateway` (streamed `output_config.format`, gateway-owned retries, typed stop reasons, `models_retrieve`, `preflight`); `FakeGateway`; `FaultInjectingLLMGateway`; `prepare_resume` | done (A, B); Anthropic API behaviour UNVERIFIED live |
-| `llm/outputs.py` | Structured-output draft types for each phase (`UnderstandOutput` … `ReportOutput`, `FindingDraft`) and `llm_facing_schema` (the schema both backends send) | done |
+| `llm/outputs.py` | Structured-output draft types for each phase (`UnderstandOutput`, `PlanOutput`, `ResearchOutput`, `AssessOutput`, `FindingDraft`, `AnchorRepairOutput`, `RefineRevisionsOutput` with `FindingRevisionDraft`, `VerdictOutput`) and `llm_facing_schema` (the schema both backends send). The deprecated `RefineOutput`, `RevisionNote` and `ReportOutput` leave the map when W2 removes them (pending integration; in this tree they are still the types the phases use) | done |
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
 | `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done; envelope tool loop UNVERIFIED live on Opus |
+| `llm/partial.py` | Partial-answer parsing and salvage: the finished items of a cut call's streamed answer, and the call's estimated usage, kept apart from measured usage (ADR-012) | pending integration (W1) |
 | `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
 | `llm/usage_budget.py` | `add_usage`: the one way phases add a call's usage to `state.budget` (read by the `budget_tokens` stop rule), for a result (`LLMResult.usage`) and for a failed call (`LLMError.usage`, 2026-10-03) | done |
 | `llm/runtime.py` | Run limits every gateway honours (2026-10-02): `RunDeadline` (attempt timeout = min(`llm.timeout_s`, time left - reserve), LLM-05), `ContextGuard` (pre-send size estimate, LLM-10), `FirstCallNetwork` (NET-02); `attach_runtime`, `build_runtime` | done; live behaviour UNVERIFIED |
