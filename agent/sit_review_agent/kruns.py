@@ -38,6 +38,9 @@ from sit_review_agent.errors import AgentError, ExitCode
 from sit_review_agent.hashing import sha256_file
 from sit_review_agent.rundir import write_json_atomic
 
+#: The code-set verdict of a run that produced no assessment (spec VerdictLabel).
+NOT_ASSESSED = "not_assessed"
+
 
 @dataclass
 class KRun:
@@ -79,12 +82,16 @@ class KGroup:
         done = [r for r in self.runs if r.status == "completed"]
         verdicts = Counter(r.verdict for r in done if r.verdict)
         counts = [r.findings for r in done if r.findings is not None]
-        modal = verdicts.most_common(1)[0] if verdicts else None
+        # Agreement is about fitness verdicts. `not_assessed` (a run with no assessment) is not one:
+        # it never becomes the modal verdict, and it counts against agreement like any other run
+        # that did not reach that verdict (intention-to-treat).
+        fitness = Counter({v: n for v, n in verdicts.items() if v != NOT_ASSESSED})
+        modal = fitness.most_common(1)[0] if fitness else None
         return {
             "runs_planned": self.k, "completed": len(done),
             "failed": sum(1 for r in self.runs if r.status == "failed"),
             "not_started": sum(1 for r in self.runs if r.status == "not started"),
-            "verdicts": dict(verdicts),
+            "verdicts": dict(verdicts), "not_assessed": verdicts.get(NOT_ASSESSED, 0),
             "verdict_agreement": round(modal[1] / len(done), 3) if modal and done else None,
             "findings_min": min(counts) if counts else None, "findings_max": max(counts) if counts else None,
             "findings_mean": round(sum(counts) / len(counts), 2) if counts else None,
@@ -223,7 +230,8 @@ def format_group(group: KGroup) -> str:
                      f"{'-' if r.wall_s is None else f'{r.wall_s:.1f}':>8}")
     s = group.summary()
     agree = "-" if s["verdict_agreement"] is None else f"{s['verdict_agreement']:.2f}"
-    lines += ["", f"completed {s['completed']}/{s['runs_planned']}, failed {s['failed']}, not started "
+    unassessed = f", not assessed {s['not_assessed']}" if s["not_assessed"] else ""
+    lines += ["", f"completed {s['completed']}/{s['runs_planned']}{unassessed}, failed {s['failed']}, not started "
                   f"{s['not_started']}; verdict agreement {agree}; findings "
                   f"{s['findings_min']}-{s['findings_max']} (mean {s['findings_mean']}); "
                   f"cost ${s['cost_usd_total']:.2f}; wall {s['wall_s_total']:.1f} s"]

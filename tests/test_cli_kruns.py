@@ -173,6 +173,29 @@ def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path
     assert "WARN deadline 300 s leaves research no time" in res.output and "share 180 s" in res.output
 
 
+def test_not_assessed_runs_are_not_a_verdict_in_the_group_summary() -> None:
+    """A run with no assessment has no fitness verdict: it cannot be the modal verdict of a k-run
+    group, and it lowers the agreement like any run that did not reach that verdict."""
+    from sit_review_agent.kruns import KGroup, KRun, format_group
+
+    def group(*verdicts: str) -> KGroup:
+        g = KGroup(group_id="g", k=len(verdicts), input="design.pdf", input_sha256=None, created_utc="t",
+                   run_root="runs", argv=[], cli_args={}, config_sha256="0" * 64, mode="dev")
+        g.runs = [KRun(k_index=i, run_id=f"g-k{i}", status="completed", exit_code=0, verdict=v, findings=0)
+                  for i, v in enumerate(verdicts, start=1)]
+        return g
+
+    mixed = group("not_assessed", "not_assessed", "fit_with_conditions").summary()
+    assert mixed["not_assessed"] == 2 and mixed["verdict_agreement"] == round(1 / 3, 3)
+    assert mixed["verdicts"] == {"not_assessed": 2, "fit_with_conditions": 1}
+    none = group("not_assessed", "not_assessed")
+    assert none.summary()["verdict_agreement"] is None and none.summary()["not_assessed"] == 2
+    text = format_group(none)
+    assert "completed 2/2, not assessed 2, failed 0" in text and "verdict agreement -;" in text
+    clean = group("fit", "fit")
+    assert clean.summary()["verdict_agreement"] == 1.0 and "not assessed" not in format_group(clean)
+
+
 def test_profile_errors_exit_2(cfgdir: Path) -> None:
     res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "nope"])
     assert res.exit_code == 2 and "nope" in res.output
