@@ -152,8 +152,9 @@ def format_explain(record: ExplainRecord) -> str:
     out.append("")
     out.append("1. Document anchors")
     for i, a in enumerate(f.get("doc_anchors", [])):
-        row = next((r for r in record.anchors if r.get("anchor_index") == i and r.get("anchor_status") != "unresolved"
-                    and r.get("page") == a.get("page")), None)
+        cands = [r for r in record.anchors if r.get("anchor_status") != "unresolved"
+                 and r.get("page") == a.get("page") and r.get("section_ref") == a.get("section_ref")]
+        row = next((r for r in cands if r.get("anchor_index") == i), cands[0] if cands else None)
         out.append(f"  [{i + 1}] {a['doc_id']} p.{a.get('page')} §{a['section_ref']}"
                    + (f" ({', '.join(a['requirement_ids'])})" if a.get("requirement_ids") else ""))
         out.append(f"      \"{_q(a['quote'])}\"")

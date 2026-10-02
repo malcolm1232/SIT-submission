@@ -96,6 +96,7 @@ def test_cli_usage_errors_exit_2(cfgdir: Path, tmp_path: Path) -> None:
     assert invoke(["run", str(PDF), "--disable-tool", "no-such-server", "--config", str(cfgdir)]).exit_code == 2
     assert invoke(["run", str(PDF), "--mode", "party", "--config", str(cfgdir)]).exit_code == 2
     assert invoke(["run", str(PDF), "--accept-drift", "--config", str(cfgdir)]).exit_code == 2
+    assert invoke(["run", str(PDF), "--faults", "NO-SUCH-SCENARIO", "--config", str(cfgdir)]).exit_code == 2
     stop = cfgdir / "stop_rules.yaml"
     stop.write_text(stop.read_text(encoding="utf-8").replace("deadline]", "deadline, no_such_rule]"), encoding="utf-8")
     res = invoke(["run", str(PDF), *base_args(cfgdir, "bad-rule")])
@@ -148,7 +149,8 @@ def test_cli_resume_command_uses_the_runs_recorded_flags(cfgdir: Path, tmp_path:
     _patch_phase(monkeypatch, "verify", _Interrupt)
     assert invoke(["run", str(PDF), *base_args(cfgdir, "cli-res")]).exit_code == 130
     monkeypatch.undo()
-    res = invoke(["resume", str(tmp_path / "runs" / "cli-res")])
+    assert invoke(["resume", "no-such-run", "--config", str(cfgdir)]).exit_code == 2
+    res = invoke(["resume", "cli-res", "--config", str(cfgdir)])           # a run ID under run_root
     assert res.exit_code == 0, res.output
     assert (tmp_path / "runs" / "cli-res" / "report.md").is_file()
 

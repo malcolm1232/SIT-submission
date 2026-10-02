@@ -95,6 +95,21 @@ def make_pdf(pages: list[list[str]], *, title: str = "Tiny design") -> bytes:
     return bytes(out)
 
 
+def make_encrypted_pdf() -> bytes:
+    """``make_pdf`` plus an incremental update that adds a Standard security handler whose user
+    password is not empty (garbage /O and /U), so the file cannot be opened without a password."""
+    data = make_pdf([["1 Overview", "The service lets students book quiet rooms for an hour each day."]])
+    prev = int(data.rsplit(b"startxref\n", 1)[1].split(b"\n")[0])
+    off = len(data)
+    upd = (b"6 0 obj\n<< /Filter /Standard /V 1 /R 2 /O <" + b"11" * 32 + b"> /U <" + b"22" * 32
+           + b"> /P -4 >>\nendobj\n")
+    xref = off + len(upd)
+    upd += (b"xref\n6 1\n" + f"{off:010d} 00000 n \n".encode() + b"trailer\n<< /Size 7 /Root 1 0 R /Encrypt 6 0 R "
+            b"/ID [<00112233445566778899aabbccddeeff><00112233445566778899aabbccddeeff>] /Prev "
+            + str(prev).encode() + b" >>\nstartxref\n" + str(xref).encode() + b"\n%%EOF\n")
+    return data + upd
+
+
 # ============================================================================ context helper
 
 
@@ -231,7 +246,8 @@ async def test_ingest_pdf_with_text_only_backend_is_disclosed(tmp_path: Path) ->
     assert ctx.state.degradations[0].type is DegradationType.INPUT_DEGRADED
 
 
-@pytest.mark.parametrize("content", [b"not a pdf at all", make_pdf([[]]), b""])
+@pytest.mark.parametrize("content", [b"not a pdf at all", make_pdf([[]]), b"", make_encrypted_pdf()],
+                         ids=["garbage", "no-text", "empty-file", "encrypted"])
 async def test_ingest_rejects_unreadable_or_empty_input(tmp_path: Path, content: bytes) -> None:
     pdf = tmp_path / "bad.pdf"
     pdf.write_bytes(content)
@@ -517,3 +533,14 @@ async def test_explain_reads_only_the_run_directory(tmp_path: Path) -> None:
         assert needle in text, needle
     with pytest.raises(KeyError):
         explain(copy_dir, "FND-404")
+
+
+async def test_verdict_inconsistent_with_severities_is_disclosed(tmp_path: Path) -> None:
+    fit = FakeResponse(parsed={"verdict": {"label": "fit", "rationale": "Looks fine.", "confidence": 1.4,
+                                           "conditions": [], "per_objective": [], "what_would_change_it": None},
+                               "unresolved": [], "limitations": []})
+    ctx = await verified(tmp_path, {"report": [fit]})
+    ctx = await ReportPhase().run(ctx)
+    data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))
+    assert data["verdict"]["label"] == "fit" and data["verdict"]["confidence"] == 1.0
+    assert any("inconsistent with open high" in d["event"] for d in data["research_log"]["degradations"])

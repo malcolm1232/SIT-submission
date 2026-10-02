@@ -179,6 +179,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
     elif request.v1_pdf is not None:
         refs.append(placeholder_ref(request.v1_pdf, DocumentRole.PRIOR_VERSION, taken={refs[0].doc_id}))
         prior_review_id = f"none (prior version {Path(request.v1_pdf).name} supplied without a prior review)"
+    sched = _run_fault_schedule(cfg)                                # a bad schedule is a ConfigError (exit 2)
     run_id = request.run_id or new_run_id(created)
     rd = open_run_dir(cfg, run_id)
     if rd.report_json.exists() or any(rd.checkpoints.iterdir()):
@@ -192,7 +193,6 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
                      documents=refs)
-    sched = _run_fault_schedule(cfg)
     llm = _run_build_llm(cfg, rd, clk, prog, sched, llm_factory)
     tools = _run_build_tools(cfg, rd, clk, prog, sched, None, tools_factory)
     ctx = RunContext(config=cfg, run_dir=rd, state=state, llm=llm, tools=tools,
@@ -206,6 +206,10 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         await _run_close_tools(ctx)
         raise
     ctx.emit(f"run {run_id}: {rd.root}")
+    failed = await _run_llm_preflight(ctx)
+    if failed is not None:
+        await _run_close_tools(ctx)
+        return _run_fail(ctx, failed)
     return await _run_execute(ctx, phases, PhaseName.INGEST, stdin, stdout)
 
 
@@ -307,6 +311,10 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
     if start_at is None:                                            # pragma: no cover - report checkpoint w/o file
         await _run_close_tools(ctx)
         return RunOutcome(run_dir=rd.root, exit_code=0, report_md=rd.report_md if rd.report_md.exists() else None)
+    failed = await _run_llm_preflight(ctx)
+    if failed is not None:
+        await _run_close_tools(ctx)
+        return _run_fail(ctx, failed)
     return await _run_execute(ctx, phases, start_at, stdin, stdout)
 
 
@@ -468,6 +476,31 @@ async def _run_models_retrieve(ctx: RunContext) -> dict[str, object]:
             except Exception as exc:  # noqa: BLE001 - recorded, never fatal
                 return {"status": f"failed: {type(exc).__name__}"}
     return {"status": f"not available for backend {ctx.config.agent.llm.backend}"}
+
+
+async def _run_llm_preflight(ctx: RunContext) -> AgentError | None:
+    """Fail fast before ingest when the live backend is unusable (missing key or CLI; LLM-11):
+    ``preflight()`` of the first gateway layer that has one. ``transport: fake`` skips it."""
+    from sit_review_agent.config import Transport
+
+    if ctx.config.agent.transport is Transport.FAKE:
+        return None
+    for layer in _run_chain(ctx.llm):
+        fn = getattr(layer, "preflight", None)
+        if fn is None:
+            continue
+        try:
+            await fn()
+        except AgentError as exc:
+            return exc
+        except NotImplementedError:
+            ctx.emit("LLM preflight not implemented by this backend; skipped", "warn")
+        except Exception as exc:  # noqa: BLE001 - an unusable backend is reported, never a traceback
+            from sit_review_agent.errors import LLMUnavailableError
+
+            return LLMUnavailableError(f"LLM preflight failed: {type(exc).__name__}: {str(exc)[:200]}")
+        return None
+    return None
 
 
 def _run_start_warmup(ctx: RunContext) -> object:

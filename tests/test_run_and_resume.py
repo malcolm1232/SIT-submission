@@ -263,7 +263,7 @@ async def test_run_review_end_to_end_fake_transport(tmp_path: Path) -> None:
     assert len(CountingReplay.calls) >= 1
 
 
-@pytest.mark.parametrize("phase", [p for p in PHASE_ORDER if p is not PhaseName.INGEST])
+@pytest.mark.parametrize("phase", list(PHASE_ORDER))
 async def test_resume_after_each_phase_gives_identical_report(tmp_path: Path, phase: PhaseName) -> None:
     cfg = config(tmp_path)
     ref = await start(cfg, "reference")
@@ -282,7 +282,7 @@ async def test_resume_after_each_phase_gives_identical_report(tmp_path: Path, ph
         assert len(CountingReplay.calls) == before                           # research not re-run
     report = json.loads((out.run_dir / "report.json").read_text(encoding="utf-8"))
     assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []
-    assert any(d.startswith("resumed after phase") for d in report["run_manifest"]["extra"]["deviations"])
+    assert any(d.startswith("resumed") for d in report["run_manifest"]["extra"]["deviations"])
 
 
 async def test_resume_mid_research_replays_tool_calls_from_the_run(tmp_path: Path) -> None:
@@ -434,3 +434,102 @@ def test_fixture_gateway_resolves_ledger_ids(tmp_path: Path) -> None:
     rd = RunDir(tmp_path / "r").create()
     gw = fixture_gateway(rd, criteria_ids=["a", "b"])
     assert gw.remaining("research") >= 2 and gw.remaining("verify") == 1
+
+
+async def test_live_backend_preflight_failure_exits_3_before_ingest(tmp_path: Path) -> None:
+    from sit_review_agent.config import Transport
+    from sit_review_agent.errors import LLMAuthError
+
+    cfg = config(tmp_path, transport=Transport.REPLAY)
+
+    def factory(fail: bool) -> Callable[..., Any]:
+        def make(rd: RunDir, clock: Any, progress: Any) -> Any:
+            gw = fixture_gateway(rd, clock=clock)
+
+            async def preflight() -> None:
+                if fail:
+                    raise LLMAuthError("ANTHROPIC_API_KEY is not set")
+
+            gw.preflight = preflight
+            return gw
+        return make
+
+    out = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="no-key"), phases=stub_phases(),
+                           llm_factory=factory(True), tools_factory=tools_factory, clock=FakeClock(),
+                           progress=NullProgress())
+    assert out.exit_code == int(ExitCode.LLM_UNAVAILABLE)
+    rec = json.loads((out.run_dir / "failure.json").read_text(encoding="utf-8"))
+    assert rec["error"] == "LLMAuthError" and rec["completed_phases"] == []
+    assert "sk-" not in json.dumps(rec)
+    ok = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="key-ok"), phases=stub_phases(),
+                          llm_factory=factory(False), tools_factory=tools_factory, clock=FakeClock(),
+                          progress=NullProgress())
+    assert ok.exit_code == 0
+    manifest = json.loads((ok.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["extra"]["model"]["models_retrieve"]["status"].startswith("not available")
+
+
+async def test_fault_schedule_wraps_the_llm_gateway(tmp_path: Path) -> None:
+    """A persistent refusal in report (LLM-06) through the fault-injecting layer: the verdict falls
+    back to the rule, the run still reports and passes the invariants, the schedule is recorded."""
+    sched = tmp_path / "LLM-06-report.yaml"
+    sched.write_text("id: LLM-06-report\nllm:\n  - match: {stage: report}\n    fault: {type: stop_reason, "
+                     "value: refusal}\n", encoding="utf-8")
+    cfg = config(tmp_path, fault_schedule=str(sched))
+    out = await start(cfg, "faulted")
+    assert out.exit_code == 0
+    report = json.loads((out.run_dir / "report.json").read_text(encoding="utf-8"))
+    assert "derived by rule" in report["verdict"]["rationale"]
+    assert report["run_manifest"]["fault_schedule_id"] == "LLM-06-report"
+    assert report["run_manifest"]["extra"]["fault_injection"]["profile"] == "LLM-06-report"
+    assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []
+
+
+async def test_self_replay_serves_each_logged_ok_call_once(tmp_path: Path) -> None:
+    from sit_review_agent.models import ToolCallStatus
+    from sit_review_agent.tools.gateway import FakeToolGateway, ToolSpec
+
+    rd = RunDir(tmp_path / "r").create()
+    spec = ToolSpec(server="srv", name="search", description="", input_schema={})
+    live = FakeToolGateway([spec], {"srv__search": lambda a: f"live {a['q']}"})
+    logged = LoggingToolGateway(live, rd, Redactor([]))
+    await logged.call("srv__search", {"q": "a"})
+    await logged.call("srv__search", {"q": "a"})
+    failed = FakeToolGateway([spec], {})                          # unknown tool -> error result
+    await LoggingToolGateway(failed, rd, Redactor([])).call("srv__other", {"q": "b"})
+    offset = rd.tools_log.stat().st_size
+    replay = SelfReplayGateway(FakeToolGateway([spec], {"srv__search": lambda a: "new", "srv__other": lambda a: "ok"}),
+                               rd, upto_offset=offset)
+    first, second, third = [await replay.call("srv__search", {"q": "a"}) for _ in range(3)]
+    assert (first.replayed, second.replayed, third.replayed) == (True, True, False)
+    assert [first.call_id, second.call_id] == ["call-0001", "call-0002"] and third.text == "new"
+    other = await replay.call("srv__other", {"q": "b"})          # a failed call is never replayed
+    assert other.status is ToolCallStatus.OK and not other.replayed
+    assert replay.served == ["call-0001", "call-0002"]
+
+
+@pytest.mark.parametrize("how", ["v1", "previous"])
+async def test_delta_review_against_a_prior_version(tmp_path: Path, how: str) -> None:
+    cfg = config(tmp_path)
+    if how == "v1":
+        prior = tmp_path / "design_v0.pages.txt"
+        prior.write_text(PDF.read_text(encoding="utf-8"), encoding="utf-8")
+        out = await start(cfg, "delta-v1", v1_pdf=prior)
+        prior_id = "DOC-design_v0"
+    else:
+        ref = await start(cfg, "frozen-v1")
+        out = await start(cfg, "delta-prev", previous_run=ref.run_dir)
+        prior_id = "DOC-design-prior"
+    assert out.exit_code == 0, (out.run_dir / "failure.json").read_text() if (out.run_dir / "failure.json").exists() \
+        else ""
+    report = json.loads((out.run_dir / "report.json").read_text(encoding="utf-8"))
+    md = report["metadata"]
+    assert md["review_mode"] == "delta" and md["prior_review_id"]
+    assert [(d["doc_id"], d["role"]) for d in md["documents"]] == [("DOC-design", "under_review"),
+                                                                   (prior_id, "prior_version")]
+    if how == "previous":
+        assert md["prior_review_id"] == "REV-frozen-v1"
+    assert all(f["reassessment"] is not None and f["provenance"]["phase"] == "delta_review"
+               for f in report["findings"])
+    assert "## Changes since the previous version" in (out.run_dir / "report.md").read_text(encoding="utf-8")
+    assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []

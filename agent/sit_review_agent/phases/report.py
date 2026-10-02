@@ -193,6 +193,13 @@ def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, l
         what_would_change_it=v.what_would_change_it)
     for n in notes:
         ctx.state.add_degradation(DegradationType.OTHER, n, "the verdict's conditions were adjusted in code")
+    open_serious = [f.id for f in ctx.state.findings if f.disposition is not Disposition.NO_CHANGE
+                    and f.severity in (Severity.CRITICAL, Severity.HIGH)]
+    if label is VerdictLabel.FIT and open_serious:          # disclosed, not changed: the verdict is the model's
+        ctx.state.add_degradation(
+            DegradationType.OTHER,
+            f"the verdict 'fit' is inconsistent with open high or critical findings ({', '.join(open_serious)})",
+            "read the verdict together with those findings; the code check does not override the verdict")
     unresolved = []
     for u in out.unresolved:
         if not u.text.strip():

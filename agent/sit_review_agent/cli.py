@@ -106,8 +106,9 @@ def run_cmd(
                                                 help="serve tool calls from this cassette directory")] = None,
     record: Annotated[bool, typer.Option("--record", help="record redacted tool cassettes")] = False,
     transport: Annotated[Transport | None, typer.Option("--transport", help="live | record | replay | fake")] = None,
-    faults: Annotated[Path | None, typer.Option("--faults", "--fault-schedule", exists=True, dir_okay=False,
-                                                help="robustness fault schedule")] = None,
+    faults: Annotated[str | None, typer.Option("--faults", "--fault-schedule",
+                                               help="fault schedule file or scenario ID (tests/robustness/faults/"
+                                                    "<ID>.yaml)")] = None,
     deadline: Annotated[int | None, typer.Option("--deadline", help="wall-clock budget in seconds")] = None,
     max_tool_calls: Annotated[int | None, typer.Option("--max-tool-calls")] = None,
     disable_tool: Annotated[list[str] | None, typer.Option("--disable-tool", help="server name; repeatable")] = None,
@@ -119,8 +120,8 @@ def run_cmd(
                                                  help="demo only: server-side refusal fallback (recorded)")] = False,
     mode: Annotated[str, typer.Option("--mode", help="dev | eval | rehearsal | demo")] = "dev",
     run_id: Annotated[str | None, typer.Option("--run-id", help="name of the run directory")] = None,
-    resume: Annotated[Path | None, typer.Option("--resume", exists=True, file_okay=False,
-                                                help="continue this run directory instead of starting one")] = None,
+    resume: Annotated[str | None, typer.Option("--resume", help="continue this run (directory or run ID) "
+                                                                "instead of starting one")] = None,
     accept_drift: Annotated[bool, typer.Option("--accept-drift",
                                                help="with --resume: accept hash drift (recorded)")] = False,
 ) -> None:
@@ -141,17 +142,23 @@ def run_cmd(
         usage("--accept-drift only applies with --resume")
     if transport is None:
         transport = Transport.REPLAY if replay is not None else (Transport.RECORD if record else None)
+    fault_file = _resolve_faults(faults) if faults is not None else None
+    if faults is not None and fault_file is None:
+        usage(f"--faults {faults}: no such file or scenario (tests/robustness/faults/{faults}.yaml)")
     ov = ConfigOverrides(deadline_seconds=deadline, max_tool_calls=max_tool_calls,
                          disable_tools=tuple(disable_tool or ()), no_tools=no_tools,
                          allow_fallback=True if allow_fallback else None, transport=transport,
                          replay_fixtures=str(replay) if replay is not None else None,
-                         fault_schedule=str(faults) if faults is not None else None, plan_approval=plan_approval)
+                         fault_schedule=str(fault_file) if fault_file is not None else None,
+                         plan_approval=plan_approval)
     if resume is not None:
         if pdf is not None:
             usage("give a PDF or --resume <run_dir>, not both")
-        res = resume
+        res = _resolve_run_dir(resume, config)
+        if res is None:
+            usage(f"--resume {resume}: no such run directory or run ID")
         outcome = _guarded("resume", lambda: asyncio.run(resume_run(
-            res, _resume_config(res, config, ov), accept_drift=accept_drift)))
+            res, _resume_config(res, config, ov), accept_drift=accept_drift)))  # type: ignore[arg-type]
         _finish(outcome)
     if pdf is None:
         usage("missing the design artefact to review (or --resume <run_dir>)")
@@ -168,6 +175,29 @@ def run_cmd(
 
 
 app.command("review", help="Alias of run (docs/DEMO_DAY_RUNBOOK.md).")(run_cmd)
+
+
+def _resolve_faults(value: str) -> Path | None:
+    """A fault-schedule path, or a scenario ID under ``tests/robustness/faults/`` (runbook §7)."""
+    from sit_review_agent.paths import repo_root
+
+    for cand in (Path(value), repo_root() / "tests" / "robustness" / "faults" / f"{value}.yaml"):
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _resolve_run_dir(value: str, config: Path | None) -> Path | None:
+    """A run directory path, or a run ID under the configured ``run_root`` (``dra resume <run_id>``)."""
+    p = Path(value)
+    if p.is_dir():
+        return p
+    try:
+        cfg = load_config(config)
+    except AgentError:
+        return None
+    cand = cfg.resolve_repo_path(cfg.agent.run_root) / value
+    return cand if cand.is_dir() else None
 
 
 def _latest_run(config: Path | None) -> Path | None:
@@ -224,12 +254,17 @@ def selftest_cmd() -> None:
 
 
 @app.command("resume")
-def resume_cmd(run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)], config: ConfigOpt = None,
+def resume_cmd(run: Annotated[str, typer.Argument(help="run directory or run ID")], config: ConfigOpt = None,
                accept_drift: Annotated[bool, typer.Option("--accept-drift")] = False) -> None:
     """Continue a run from its last completed phase (ADR-009)."""
     from sit_review_agent.orchestrator import resume_run
 
-    outcome = _guarded("resume", lambda: asyncio.run(resume_run(run_dir, _resume_config(run_dir, config),
+    run_dir = _resolve_run_dir(run, config)
+    if run_dir is None:
+        typer.echo(f"error: no such run directory or run ID: {run}", err=True)
+        raise typer.Exit(int(ExitCode.USAGE))
+    rd = run_dir
+    outcome = _guarded("resume", lambda: asyncio.run(resume_run(rd, _resume_config(rd, config),
                                                                 accept_drift=accept_drift)))
     _finish(outcome)
 
