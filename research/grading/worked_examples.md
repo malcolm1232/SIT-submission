@@ -102,7 +102,7 @@ validation before Build Phase 5 sign-off"). Either omission would cost a point o
 
 **Grader Pass A excerpt (expected):**
 ```json
-{"finding_id":"F-07","category":"unresolved_assumption","validity":"valid","materiality":"high",
+{"finding_id":"FND-007","category":"unresolved_assumption","validity":"valid","materiality":"high","severity_assessed":"high",
  "acknowledged_by_design":false,"cites_design_acknowledgement":false,
  "doc_locations":[{"cited":"p.12 §12","check":"verified"},{"cited":"p.11 §11","check":"verified"},
    {"cited":"p.4 NFR-2","check":"verified"},{"cited":"p.27 §27 NFR-2","check":"verified"},
@@ -116,6 +116,8 @@ validation before Build Phase 5 sign-off"). Either omission would cost a point o
  "triage":{"review_label":"mixed","correct_label":"mixed","owner_or_next_step_named":true},
  "padding":false,"note":"Correctly identifies post-filtering behaviour of approximate indexes; latency-only NFR-2 test would miss recall loss."}
 ```
+
+> **Superseded (reconciliation 2026-10-02):** this excerpt was updated to the reconciled `PassAOutput` schema (`grader_prompt.md` §5.1): `finding_id` is a spec `FindingId` (was `F-07`) and `severity_assessed` uses the spec enum. The grader's `mixed` triage label corresponds to spec `disposition: needs_prototyping` with `secondary_dispositions: ["needs_testing"]` (`spec/README.md` §3 C8).
 
 ---
 
@@ -259,6 +261,8 @@ restraint. That is validation test V6 in the README.
 
 This key is **not exhaustive**. Valid findings outside it must be credited. All locations were checked against
 the PDF text. The format is defined in `grader_prompt.md` §6.
+
+> **Superseded (reconciliation 2026-10-02):** this is a legacy illustrative format for the grader's diagnostic key-aware mode, not a scoring key. Canonical keys follow `spec/answer_key.schema.json`, mapped per `spec/README.md` §2.3 (audit C32): `category` → spec `kind` (e.g. K1 "gap # internal contradiction" → `category: internal_contradiction`, whose acceptable kinds include `gap`), `materiality` → spec `severity` (high → critical or high, medium → medium, low → low; C6), `expected_triage` such as `prototyping+testing` → `expected_disposition` plus `secondary_dispositions` (C8), `traps` → `sound_sections[].trap`, `no_change_areas` → `sound_sections[]`. "Valid findings outside it must be credited" means adjudicated VALID_UNPLANTED (C26). The SIT sample is Real-dev: it may be graded qualitatively but never supports a generalisation claim (`docs/DECISIONS.md` ADR-004).
 
 ```yaml
 artefact: "SIT Institutional Memory Platform - Detailed Design v2.0 (30 pp.)"
