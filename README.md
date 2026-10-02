@@ -32,7 +32,8 @@ python3 spec/validate_examples.py      # schema + taxonomy self-tests
 python3 spec/convert_answer_keys.py    # rebuild canonical answer keys
 python3 eval/build_pdfs.py             # rebuild synthetic PDFs from markdown
 python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
-ruff check agent harness tests && pytest -q   # 865 offline tests
+make smoke                             # offline, about 10 s: selftest + config, prompt-lock, CLI and leakage tests
+make test                              # ruff check agent harness tests, then the whole offline suite (pytest -q)
 sit-review selftest                    # offline end-to-end run on a bundled fixture
 sit-eval score --help                  # score a run against an answer key (use --dry-run first)
 ```
