@@ -11,6 +11,12 @@ One :class:`Coverage` per P0 ID. ``kind``:
 
 ``decision`` is set for a scenario that fails because of an agent defect left for the owner to decide
 (left out of the passing suite, reported in the README under "Failing, needs decision").
+``awaiting`` is set for a scenario whose expectation the latency redesign of 2026-10-03 changed
+(concurrent stage 1): ``how`` states the new expectation, which runs only against the concurrent
+orchestrator (W2, not in this tree); until the integration pass the offline case, where there is
+one, still asserts the sequential design, and the results table shows the row as BLOCKED, "awaiting
+integration". :data:`CONCURRENT` holds the scenarios added for the concurrent stage
+(``faults_concurrent/``); their IDs are new (not rows of scenarios.md) and follow its numbering.
 ``schedule`` is true when ``faults/<ID>.yaml`` exists. ``test_robustness_schedules.py`` checks
 that this table, the README table, the YAML files and scenarios.md agree.
 """
@@ -36,15 +42,25 @@ class Coverage:
     laptop: str | None = None          # exact laptop command (live model / MCP)
     covered_by: str | None = None      # existing tests or procedure
     decision: str | None = None        # failing, needs decision (agent defect)
+    awaiting: str | None = None        # expectation changed by the concurrent redesign: what the offline case
+    #                                    asserts until the integration pass (README "Concurrent stage 1 scenarios")
 
 
 def _o(how: str, *, schedule: bool = False, laptop: str | None = None, covered_by: str | None = None,
-       decision: str | None = None) -> Coverage:
-    return Coverage("offline", how, schedule, laptop, covered_by, decision)
+       decision: str | None = None, awaiting: str | None = None) -> Coverage:
+    return Coverage("offline", how, schedule, laptop, covered_by, decision, awaiting)
 
 
 def _l(how: str, laptop: str, *, schedule: bool = False, covered_by: str | None = None) -> Coverage:
     return Coverage("laptop", how, schedule, laptop, covered_by)
+
+
+#: True until the concurrent orchestrator (W2) is in the tree and the integration pass has run the
+#: ``CONCURRENT`` schedules and the ``awaiting`` rows' new expectations (README.md).
+AWAITING_INTEGRATION = True
+#: What an ``awaiting`` note is prefixed with in the results table.
+AWAITING_NOTE = "awaiting integration (concurrent orchestrator, W2)"
+SEQ = "until integration the offline case asserts the sequential design: "
 
 
 def _n(how: str, covered_by: str, *, laptop: str | None = None, decision: str | None = None) -> Coverage:
@@ -257,6 +273,43 @@ COVERAGE: dict[str, Coverage] = {
                  laptop="python scripts/leakage_grep.py --sample <sit_sample.pdf> [--strict]",
                  covered_by="test_runtime_leakage.py (mechanics); test_prompts.py::test_no_eval_leakage"),
     "OVF-12": _l("tuning vs held-out gap, once at the final evaluation (ADR-004)", "sit-eval (final evaluation only)"),
+}
+
+#: Scenarios added for the concurrent stage 1 (latency redesign 2026-10-03): ``faults_concurrent/<ID>.yaml``,
+#: oracles in ``concurrent_oracles.py``. New IDs (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28).
+CONCURRENT_META: dict[str, dict[str, str]] = {
+    "LLM-13": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard hangs until the stage 1 limit"},
+    "LLM-14": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard declines twice"},
+    "LLM-15": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard is truncated twice"},
+    "LLM-16": {"sev": "S1", "tier": "P0", "level": "L0", "title": "Refine is cut at the refine limit"},
+    "LLM-17": {"sev": "S1", "tier": "P0", "level": "L0", "title": "Research is cut at the stage 1 limit"},
+    "BEH-29": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard fails with an exception"},
+}
+_AWAIT = "the schedule runs only against the concurrent orchestrator; loader and oracle tested on fixtures"
+CONCURRENT: dict[str, Coverage] = {
+    "LLM-13": _o("demo profile: assess shard 2 (claims_and_assumptions) hangs: cut at stage_limits_s.stage_1_end "
+                 "(265 s), not retried, disclosed as budget_or_deadline_hit naming the shard, its criteria not "
+                 "assessed, the findings of shards 0, 1 and 3 survive, verdict assessed, report, exit 0",
+                 schedule=True, awaiting=_AWAIT),
+    "LLM-14": _o("assess shard 0 (intent_and_fitness) refuses its call and its reframed retry (nth [0, 4]): no third "
+                 "call, 'declined' disclosed naming the shard, its criteria not assessed, the findings of shards 1, 2 "
+                 "and 3 survive, verdict assessed (partial review), report, exit 0", schedule=True, awaiting=_AWAIT),
+    "LLM-15": _o("assess shard 1 (requirements_and_consistency) truncated at max_tokens on its call and its retry "
+                 "(nth [1, 4]): no third call, 'truncated twice' disclosed naming the shard, its criteria not "
+                 "assessed, the findings of shards 0, 2 and 3 survive, verdict assessed, report, exit 0",
+                 schedule=True, awaiting=_AWAIT),
+    "LLM-16": _o("demo profile: the refine call hangs: cut at stage_limits_s.refine_end (465 s), not retried; the "
+                 "merged findings stand, ordered by severity then confidence, none revised; the fallback disclosed "
+                 "as budget_or_deadline_hit naming refine; verdict assessed, report, exit 0", schedule=True,
+                 awaiting=_AWAIT),
+    "LLM-17": _o("demo profile: research's second model call hangs: cut at stage_limits_s.stage_1_end (265 s), not "
+                 "retried; stop reason deadline; the ledger keeps the first round's external evidence and replays "
+                 "exactly; the cut disclosed as budget_or_deadline_hit naming research; the assess shards' findings "
+                 "survive, verdict assessed, report, exit 0", schedule=True, awaiting=_AWAIT),
+    "BEH-29": _o("exception at the start of assess shard 3 (risk_and_operations; process fault with a shard): a "
+                 "partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the "
+                 "failure disclosed naming the shard, its criteria not assessed, the findings of shards 0, 1 and 2 "
+                 "survive, verdict assessed", schedule=True, awaiting=_AWAIT),
 }
 
 

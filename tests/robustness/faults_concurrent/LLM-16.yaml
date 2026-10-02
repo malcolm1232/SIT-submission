@@ -1,0 +1,12 @@
+# LLM-16 (S1, P0, L0): the refine call is cut at stop_rules.stage_limits_s.refine_end (latency
+# redesign 2026-10-03; demo profile 465 s). Expected: the one refine call (RefineRevisionsOutput)
+# hangs, is cut at refine_end and not retried; the report falls back to the merged findings ordered by
+# severity then confidence, none of them revised; the fallback is a disclosed degradation naming
+# refine; the verdict is assessed; report, exit 0, no crash.
+# Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
+id: LLM-16
+description: The refine call hangs until the refine limit.
+seed: 42
+llm:
+  - match: {stage: refine, nth: [0]}
+    fault: {type: hang}

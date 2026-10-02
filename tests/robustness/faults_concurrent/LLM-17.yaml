@@ -1,0 +1,13 @@
+# LLM-17 (S1, P0, L0): research is cut at stop_rules.stage_limits_s.stage_1_end (latency redesign
+# 2026-10-03; demo profile 265 s). Expected: research's second model call (after the first tool round
+# has filled the ledger) hangs and is cut at the stage 1 end, not retried; research stops with
+# stop_reason deadline; the ledger keeps the external evidence of the first round and replays
+# exactly; the cut is a disclosed budget_or_deadline_hit degradation; the assess shards are not
+# affected (their findings survive); the verdict is assessed; report, exit 0, no crash.
+# Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
+id: LLM-17
+description: Research's second model call hangs until the stage 1 limit.
+seed: 42
+llm:
+  - match: {stage: research, nth: [1]}
+    fault: {type: hang}
