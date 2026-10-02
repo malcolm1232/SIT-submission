@@ -25,8 +25,9 @@ class PhaseName(StrEnum):
 
 PHASE_ORDER: tuple[PhaseName, ...] = tuple(PhaseName)
 
-# Deprecated (latency redesign W0, 2026-10-03): the sequential table; W2 moves orchestrator.py to
-# STAGE_TRANSITIONS / STAGE_ON_CAP and removes TRANSITIONS and ON_CAP.
+# Deprecated (latency redesign W0, 2026-10-03): the sequential table. orchestrator.py and mermaid()
+# read the stage table since W2; the last reader is tests/robustness/test_robustness_scenarios.py
+# (W3), and the two names are deleted once it moves to STAGE_TRANSITIONS / STAGE_ON_CAP.
 #: Linear happy path. ``None`` = terminal.
 TRANSITIONS: dict[PhaseName, PhaseName | None] = {
     p: (PHASE_ORDER[i + 1] if i + 1 < len(PHASE_ORDER) else None) for i, p in enumerate(PHASE_ORDER)
@@ -160,11 +161,18 @@ def stage1_close(ended: Mapping[PhaseName, MemberOutcome],
 
 
 def mermaid() -> str:
-    """Mermaid ``stateDiagram-v2`` source for the transition table (plus cap shortcuts, dashed)."""
-    lines = ["stateDiagram-v2", f"    [*] --> {PHASE_ORDER[0].value}"]
-    for src, dst in TRANSITIONS.items():
+    """Mermaid ``stateDiagram-v2`` source for the stage table: the stages in order, stage 1 as a
+    composite state whose members start together unless ``STAGE_1_DEPENDS`` makes one wait, and the
+    cap shortcuts of ``STAGE_ON_CAP``."""
+    lines = ["stateDiagram-v2", f"    [*] --> {STAGE_ORDER[0].value}"]
+    for src, dst in STAGE_TRANSITIONS.items():
         lines.append(f"    {src.value} --> {dst.value if dst else '[*]'}")
-    for src, dst in ON_CAP.items():
+    lines.append(f"    state {Stage.STAGE_1.value} {{")
+    for member, deps in STAGE_1_DEPENDS.items():
+        for dep in sorted(deps, key=PHASE_ORDER.index) or [None]:
+            lines.append(f"        {dep.value if dep else '[*]'} --> {member.value}")
+    lines.append("    }")
+    for src, dst in STAGE_ON_CAP.items():
         lines.append(f"    {src.value} --> {dst.value} : stop rule (cap)")
     return "\n".join(lines)
 

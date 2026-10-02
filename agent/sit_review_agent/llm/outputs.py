@@ -214,21 +214,6 @@ class AssessOutput(Draft):
     coverage: list[CriterionCoverage]
 
 
-# Deprecated (latency redesign W0, 2026-10-03): the refine answer that re-emits every finding.
-# W2 removes it when phases/refine.py moves to RefineRevisionsOutput.
-class RevisionNote(Draft):
-    finding_id: str
-    change: Literal["revised", "withdrawn", "merged", "added", "unchanged"]
-    reason: str
-    evidence_ids: list[str]
-
-
-# Deprecated (latency redesign W0, 2026-10-03): W2 removes it with RevisionNote.
-class RefineOutput(Draft):
-    findings: list[FindingDraft]
-    revisions: list[RevisionNote]
-
-
 class RevisionAction(StrEnum):
     """What refine does with one merged draft finding (latency redesign, design section 4)."""
 
@@ -431,26 +416,6 @@ class VerdictDraft(Draft):
     what_would_change_it: str | None
 
 
-class UnresolvedDraft(Draft):
-    text: str
-    finding_ids: list[str]
-    next_step: NextStepDraft | None
-
-
-class LimitationDraft(Draft):
-    text: str
-    degradation_ids: list[str]
-
-
-# Deprecated (latency redesign W0, 2026-10-03): the verdict call that also writes unresolved items
-# and limitations. W2 removes it (with UnresolvedDraft and LimitationDraft if unused) when
-# phases/report.py moves to VerdictOutput.
-class ReportOutput(Draft):
-    verdict: VerdictDraft
-    unresolved: list[UnresolvedDraft]
-    limitations: list[LimitationDraft]
-
-
 class VerdictOutput(Draft):
     """The verdict call of the latency redesign: the verdict only; code writes unresolved items and
     limitations (design section 9, decision 6)."""
@@ -463,9 +428,9 @@ PHASE_OUTPUT_TYPES: dict[str, type[Draft]] = {
     "plan": PlanOutput,
     "research": ResearchOutput,
     "assess": AssessOutput,
-    "refine": RefineOutput,
+    "refine": RefineRevisionsOutput,
     "verify": AnchorRepairOutput,
-    "report": ReportOutput,
+    "report": VerdictOutput,
 }
 
 
