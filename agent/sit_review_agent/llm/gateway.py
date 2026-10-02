@@ -47,9 +47,11 @@ from sit_review_agent.config import EffectiveConfig, EffortLevel
 from sit_review_agent.errors import (
     EffortChangedError,
     FakeScriptExhausted,
+    LLMDeadlineError,
     LLMError,
     LLMRefusalError,
     LLMSchemaError,
+    LLMTimeoutError,
     LLMTruncatedError,
 )
 from sit_review_agent.hashing import sha256_json, sha256_text
@@ -272,6 +274,24 @@ class LLMCallLog:
         if entry.get("phase") is not None and self.is_resumed(str(entry["phase"])):
             entry = {**entry, "resumed": True}
         return self.writer.append(redact_log_entry(entry, self.redactor))
+
+
+#: ``usage_unrecorded`` reasons in ``llm.jsonl``: an attempt was sent (so it may have been billed)
+#: but ended without a usage report. Its entry has ``usage: null``; the manifest lists it in
+#: ``extra.model.calls_with_unrecorded_usage`` and calls its cost total a lower bound.
+USAGE_UNRECORDED_REASONS = {
+    "deadline_cut": "deadline cut",        # the run deadline killed the attempt (LLM-05)
+    "timeout_kill": "timeout kill",        # the attempt hit its timeout and was killed
+    "process_fault": "process fault",      # claude -p exited without a JSON result
+    "connection_lost": "connection lost",  # the API stream failed with no HTTP status (dropped connection)
+    "interrupted": "interrupted",          # Ctrl-C or cancellation during the attempt
+}
+
+
+def unrecorded_usage(reason: str) -> dict[str, Any]:
+    """The ``llm.jsonl`` fields of a sent attempt whose usage is unknown: never a made-up zero."""
+    assert reason in USAGE_UNRECORDED_REASONS, reason
+    return {"usage": None, "usage_unrecorded": reason, "call_cost_usd": None}
 
 
 def log_unsent(log: LLMCallLog | None, request: LLMRequest, call_id: str | None, exc: BaseException, *,
@@ -671,6 +691,11 @@ class AnthropicGateway:
                                                                  timeout_s)
                 else:
                     message, request_id = await self._anthropic_stream(body, phase, call_id)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                self.log.log({**base, "model": self.model, "stop_reason": None, "outcome": "CancelledError",
+                              "error": "interrupted during the attempt", **unrecorded_usage("interrupted"),
+                              "content": [], "elapsed_s": self.clock.monotonic() - t0})
+                raise
             except Exception as exc:  # noqa: BLE001 - classified below; non-SDK exceptions re-raised
                 import anthropic
 
@@ -686,9 +711,16 @@ class AnthropicGateway:
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
                                            outcome=type(err).__name__, status_code=status, retry_after_s=retry_after))
+                # An HTTP error status means the API answered with an error, which is not billed.
+                # Without one (a cut, a timeout, a dropped stream) the attempt may have been billed
+                # and no usage arrived: unknown, never zero.
+                spent: dict[str, Any] = {"usage": Usage().__dict__}
+                if status is None:
+                    spent = unrecorded_usage("deadline_cut" if isinstance(err, LLMDeadlineError) else
+                                             "timeout_kill" if isinstance(err, LLMTimeoutError) else "connection_lost")
                 self.log.log({**base, "model": self.model, "stop_reason": None, "outcome": type(err).__name__,
                               "error": str(err)[:500], "status_code": status, "retry_after_s": retry_after,
-                              "usage": Usage().__dict__, "content": [], "elapsed_s": elapsed})
+                              **spent, "content": [], "elapsed_s": elapsed})
                 if retry and attempt < self.max_retries:
                     delay = retry_after if retry_after is not None else self._anthropic_backoff(attempt)
                     if first and self._net.give_up(err, self.clock.monotonic() - t_call, delay):
@@ -924,15 +956,19 @@ class FakeGateway:
         self._usage = self._usage + resp.usage
         self._served.add(served)
 
-        def _log(outcome: str, content: list[dict[str, Any]]) -> None:
+        def _log(outcome: str, content: list[dict[str, Any]], unrecorded: str | None = None) -> None:
             if self.log is not None:
                 self.log.log({"call_id": call_id, "phase": request.phase.value, "purpose": request.purpose,
                               "conversation_id": request.conversation_id, "request_sha256": req_hash,
                               "model": served, "stop_reason": stop, "outcome": outcome, "started_at": started,
-                              "usage": resp.usage.__dict__, "content": content, "fake": True})
+                              "usage": resp.usage.__dict__, "content": content, "fake": True,
+                              **(unrecorded_usage(unrecorded) if unrecorded else {})})
 
         if resp.raises is not None:
-            _log(type(resp.raises).__name__, [])
+            # A scripted cut or timeout stands for a killed attempt: its usage is unknown, as live.
+            killed = isinstance(resp.raises, LLMTimeoutError)
+            _log(type(resp.raises).__name__, [],
+                 ("deadline_cut" if isinstance(resp.raises, LLMDeadlineError) else "timeout_kill") if killed else None)
             raise resp.raises
         if stop == "refusal":
             self._refusals.append({"call_id": call_id, "stage": request.phase.value, "category": resp.refusal_category})

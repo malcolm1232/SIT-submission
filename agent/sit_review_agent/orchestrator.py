@@ -878,10 +878,15 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     except OSError:
         pass
     outcome = Outcome.CRASHED if code is ExitCode.STAGE_CRASH else Outcome.ABORTED_GRACEFUL
+    lower: str | None = None
     try:
-        finalise_manifest(ctx, outcome)
+        from sit_review_agent.llm.usage_budget import cost_lower_bound_line
+
+        lower = cost_lower_bound_line(finalise_manifest(ctx, outcome).model_dump(mode="json"))
     except Exception:  # noqa: BLE001 - the failure record above is what matters
         pass
+    if lower is not None:
+        ctx.progress.emit(phase or "run", lower, "warn")
     ctx.progress.emit(phase or "run", f"error ({type(exc).__name__}, exit {int(code)}): {str(exc)[:300]}; "
                       f"state saved; resume with `sit-review resume {rd.root}`", "warn")
     return RunOutcome(run_dir=rd.root, exit_code=int(code), report_md=None)

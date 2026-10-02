@@ -23,6 +23,7 @@ from typing import Any
 import jinja2
 
 from sit_review_agent.llm.outputs import CriterionCoverage
+from sit_review_agent.llm.usage_budget import describe_unrecorded
 from sit_review_agent.models import (
     SEVERITY_RANK,
     Disposition,
@@ -283,6 +284,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
             "sources": (f"{review.research_log.sources_cited} cited of "
                         f"{review.research_log.sources_retrieved} retrieved"),
             "usage": m.usage.model_dump(mode="json"),
+            "unrecorded": describe_unrecorded((extra.get("model") or {}).get("calls_with_unrecorded_usage") or []),
             "config_sha256": m.config_sha256, "prompts_sha256": m.prompts_bundle_sha256,
             "git_commit": m.git_commit, "fault_schedule": m.fault_schedule_id,
             "persona": m.review_config.persona, "criteria": ", ".join(m.review_config.criteria),

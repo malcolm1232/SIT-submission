@@ -225,6 +225,15 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   page) against 80 % of the context window; over it, `LLMContextTooLongError` (exit 2), never sent.
   Errors raised before an attempt is made are logged to `llm.jsonl` with `sent: false` (for replay).
 - **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
+- **Unknown usage is not zero (2026-10-03).** An attempt that was sent but left no usage report is logged
+  with `usage: null` and `usage_unrecorded` (`deadline_cut`, `timeout_kill`, `process_fault` for a
+  `claude -p` that exited without a JSON result, `connection_lost` for an API stream that failed with no
+  HTTP status, `interrupted`). The manifest lists these attempts in `extra.model.calls_with_unrecorded_usage`
+  (call ID, stage, purpose, attempt, wall seconds, reason) and sets `extra.model.cost_usd_lower_bound`;
+  `report.md` (Tokens row), the run's closing console lines and the `--k` summary (`>=` per run and a
+  note on the total) then call the cost a lower bound. An older `llm.jsonl` entry of a deadline cut or
+  timeout with zero usage is read the same way. A killed `claude -p` call's partial usage is not
+  recovered (see `docs/transcripts/session4/accounting_fixes.md`).
 - **Output cap (2026-10-03).** `config/agent.yaml` `max_tokens` is 128000, the model's maximum and the
   largest value `config.py` accepts. A truncated answer gets one retry: at double the cap when the
   configured value is below 128000, else at the same cap. A second truncation is never retried again and

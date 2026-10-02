@@ -73,6 +73,7 @@ from sit_review_agent.llm.gateway import (
     billed,
     log_unsent,
     request_sha256,
+    unrecorded_usage,
 )
 from sit_review_agent.llm.runtime import (
     FirstCallNetwork,
@@ -257,13 +258,18 @@ class _Unsent(Exception):
 
 
 class _AttemptFailed(Exception):
-    """Internal: one attempt failed with ``error``; ``retry`` says whether the policy retries it."""
+    """Internal: one attempt failed with ``error``; ``retry`` says whether the policy retries it.
+    ``unrecorded`` names why a ``claude -p`` that ran left no usage report (a
+    :data:`~sit_review_agent.llm.gateway.USAGE_UNRECORDED_REASONS` key); ``None`` when ``out``
+    carries the usage or the process never started (nothing was spent)."""
 
-    def __init__(self, error: LLMError, retry: bool, out: dict[str, Any] | None = None) -> None:
+    def __init__(self, error: LLMError, retry: bool, out: dict[str, Any] | None = None,
+                 unrecorded: str | None = None) -> None:
         super().__init__(str(error))
         self.error = error
         self.retry = retry
         self.out = out
+        self.unrecorded = unrecorded
 
 
 _AUTH_MARKERS = ("authentication", "invalid api key", "/login", "oauth token", "not logged in", "login expired")
@@ -650,6 +656,12 @@ class ClaudeCodeGateway:
             try:
                 result = await self._attempt(request, conv, call_id, argv, prompt, env, base_entry,
                                              timeout_s=timeout_s, cut=cut)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                # The runner kills claude -p; whatever it spent was not reported.
+                self.log.log({**base_entry, "model": self.model, "stop_reason": None, "outcome": "CancelledError",
+                              "error": "interrupted during the attempt", **unrecorded_usage("interrupted"),
+                              "content": [], "elapsed_s": self.clock.monotonic() - t0})
+                raise
             except _AttemptFailed as fail:
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
@@ -695,12 +707,15 @@ class ClaudeCodeGateway:
         if out:                                       # a JSON result: the CLI reported what the attempt cost
             cid = str(base["call_id"])
             self._spent[cid] = self._spent[cid] + u if cid in self._spent else u
+        spent: dict[str, Any] = {"usage": u.__dict__, "call_cost_usd": (
+            max(0.0, float(out["total_cost_usd"]) - conv.cost_seen)
+            if isinstance(out.get("total_cost_usd"), int | float) else None)}
+        if not out and fail.unrecorded is not None:   # the CLI ran and was killed or crashed: unknown, not zero
+            spent = unrecorded_usage(fail.unrecorded)
         self.log.log({**base, "model": self._served_model(self._call_model_usage(out, conv)) if out else self.model,
                       "stop_reason": out.get("stop_reason"), "outcome": type(fail.error).__name__,
-                      "error": str(fail.error)[:500], "usage": u.__dict__, "content": [],
+                      "error": str(fail.error)[:500], **spent, "content": [],
                       "num_turns": out.get("num_turns"), "total_cost_usd": out.get("total_cost_usd"),
-                      "call_cost_usd": (max(0.0, float(out["total_cost_usd"]) - conv.cost_seen)
-                                        if isinstance(out.get("total_cost_usd"), int | float) else None),
                       "terminal_reason": out.get("terminal_reason"), "elapsed_s": elapsed})
 
     async def _run(self, argv: list[str], prompt: str, env: dict[str, str], phase: str,
@@ -722,9 +737,9 @@ class ClaudeCodeGateway:
         except TimeoutError:
             if cut and self.runtime is not None and self.runtime.deadline is not None:
                 raise _AttemptFailed(self.runtime.deadline.cut(request.phase, t, call_id=call_id),
-                                     retry=False) from None
+                                     retry=False, unrecorded="deadline_cut") from None
             raise _AttemptFailed(LLMTimeoutError(f"claude -p exceeded {t:g} s", call_id=call_id,
-                                                 phase=phase), retry=True) from None
+                                                 phase=phase), retry=True, unrecorded="timeout_kill") from None
         except FileNotFoundError:
             raise _AttemptFailed(LLMAuthError(f"Claude Code executable {self.executable!r} not found; install "
                                               "Claude Code and log in (`claude --version`)", call_id=call_id,
@@ -739,7 +754,7 @@ class ClaudeCodeGateway:
         except ValueError:
             raise _AttemptFailed(LLMUnavailableError(
                 f"claude -p exited {run.returncode} without a JSON result; stderr: {run.stderr[:500]}",
-                call_id=call_id, phase=phase), retry=True) from None
+                call_id=call_id, phase=phase), retry=True, unrecorded="process_fault") from None
 
         # A JSON result means the CLI ran; account for what it spent even if the answer is unusable.
         # ``usage`` is per invocation; ``total_cost_usd`` and ``modelUsage`` are cumulative over the

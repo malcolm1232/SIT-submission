@@ -45,7 +45,7 @@ from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest
 from sit_review_agent.llm.outputs import ReportOutput
 from sit_review_agent.llm.prefix import start_conversation
-from sit_review_agent.llm.usage_budget import add_usage
+from sit_review_agent.llm.usage_budget import add_usage, cost_lower_bound_line
 from sit_review_agent.manifest import build_manifest, outcome_for, report_json_sha256, write_manifest
 from sit_review_agent.models import (
     NON_REFINEMENT_DISPOSITIONS,
@@ -497,6 +497,9 @@ class ReportPhase:
         ctx.emit(f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
                  f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
                  f"invariants INV-03..10 pass; wrote {rd.relative(rd.report_md)}")
+        lower = cost_lower_bound_line(data["run_manifest"])
+        if lower is not None:
+            ctx.emit(lower, "warn")
         return ctx
 
     @staticmethod
