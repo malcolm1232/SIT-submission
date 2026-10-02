@@ -712,12 +712,13 @@ async def test_finding_and_ledger_ids_do_not_depend_on_completion_order(tmp_path
 def keep(fid: str, rank: int, severity: str | None, disposition: str, reason: str = "checked",
          **kw: Any) -> dict[str, Any]:
     return {"finding_id": fid, "action": "keep", "merge_into": None, "rank": rank, "severity": severity,
-            "disposition": disposition, "affected_decisions": [], "added_evidence": [], "reason": reason, **kw}
+            "disposition": disposition, "affected_decisions": [], "added_evidence": [], "next_step": None,
+            "reason": reason, **kw}
 
 
 def gone(fid: str, action: str, into: str | None = None, reason: str = "duplicate") -> dict[str, Any]:
     return {"finding_id": fid, "action": action, "merge_into": into, "rank": None, "severity": None,
-            "disposition": None, "affected_decisions": [], "added_evidence": [], "reason": reason}
+            "disposition": None, "affected_decisions": [], "added_evidence": [], "next_step": None, "reason": reason}
 
 
 async def _merged(tmp_path: Path, cfg: EffectiveConfig, refine: list[FakeResponse]) -> RunContext:

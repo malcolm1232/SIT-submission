@@ -247,7 +247,8 @@ def refine_answer(ledger: list[dict[str, object]], request: object) -> dict[str,
                   FND_STRENGTH: "Preserves the approved design-system decision D-3."}.get(role or "", "Still accurate.")
         revisions.append({"finding_id": f["id"], "action": "keep", "merge_into": None, "rank": rank,
                           "severity": f.get("severity"), "disposition": f.get("disposition"),
-                          "affected_decisions": links, "added_evidence": added, "reason": reason})
+                          "affected_decisions": links, "added_evidence": added, "next_step": None,
+                          "reason": reason})
     return {"revisions": revisions}
 
 

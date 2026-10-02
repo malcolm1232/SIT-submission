@@ -6,7 +6,8 @@ merged findings, the intent and the frozen registry (from understand), the plan 
 research) and the evidence register. Revisions (``llm.outputs.FindingRevisionDraft``):
 
 * ``keep`` with the final rank (1..n over the kept findings), severity and disposition, the registry
-  links (``affected_decisions``, which assess no longer makes) and research evidence to append;
+  links (``affected_decisions``, which assess no longer makes), research evidence to append, and a
+  ``next_step`` when the new disposition needs one the finding lacks;
 * ``merge`` into a kept finding (a duplicate; its criteria move to the target, nothing else);
 * ``withdraw`` (unsupported, generic, or covered elsewhere).
 
@@ -93,12 +94,17 @@ def unexplained_changes(r: FindingRevisionDraft, draft: FindingDraft) -> list[st
 
 
 def without_unexplained_changes(out: RefineRevisionsOutput, by_id: dict[str, FindingDraft]) -> RefineRevisionsOutput:
-    """``out`` with every unexplained conclusion change (BEH-10) set back to the draft's value."""
+    """``out`` with every unexplained conclusion change (BEH-10) set back to the draft's value. A
+    next step given with an unexplained disposition change goes with it (the draft's disposition
+    needs no new one)."""
     revs = []
     for r in out.revisions:
         d = by_id.get(r.finding_id)
         if d is not None and unexplained_changes(r, d):
-            r = r.model_copy(update={name: getattr(d, name) for name in CONCLUSION_FIELDS})
+            back: dict[str, object] = {name: getattr(d, name) for name in CONCLUSION_FIELDS}
+            if r.disposition != d.disposition:
+                back["next_step"] = None
+            r = r.model_copy(update=back)
         revs.append(r)
     return RefineRevisionsOutput(revisions=revs)
 

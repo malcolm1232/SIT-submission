@@ -90,10 +90,11 @@ Questions research could not answer (treat their premises as unverified): {{ una
    - `no_change` only for a finding drafted without a recommendation; a finding with a
      recommendation keeps a disposition other than `no_change`;
    - `needs_investigation`, `needs_prototyping`, `needs_testing` and `governance_decision` need a
-     `next_step`: choose them only for a finding whose `next_step` is not null;
+     `next_step`: for a finding whose `next_step` is null, give one in the revision's `next_step`
+     (who owns it and what they do); a finding that already has one keeps it;
    - never a disposition already listed in the finding's `secondary_dispositions`.
-   When the right disposition would need a field the finding lacks, keep the drafted disposition and
-   say in `reason` what should change.
+   When the right disposition would need another field the finding lacks (a recommendation), keep
+   the drafted disposition and say in `reason` what should change.
 4. Decisions. Link every kept finding to each registry entry it or its recommendation touches, with
    the relation and a one-sentence justification. A `challenges` relation needs at least two
    evidence items on the finding (after any you add) and a disposition other than `no_change`;
@@ -122,8 +123,9 @@ other. Each revision has an `action` and a one-sentence `reason`:
 - `keep`: the finding stays. Give its final `rank`, `severity` and `disposition` (the values after
   your review, also when unchanged; `severity` is `null` only for a strength), the complete list of
   `affected_decisions` (it replaces the finding's list), and in `added_evidence` the register items
-  to append to the finding's evidence (none it already cites, none twice). `merge_into` is `null`.
-  The ranks of the kept findings are 1, 2, 3, ... with no gaps or repeats.
+  to append to the finding's evidence (none it already cites, none twice). `next_step` is set only
+  as rule 3 says, otherwise `null`. `merge_into` is `null`. The ranks of the kept findings are 1,
+  2, 3, ... with no gaps or repeats.
 - `merge`: the finding duplicates another one. `merge_into` names that finding, which must itself
   be kept (never a finding you merge or withdraw, never the finding itself). Every other field is
   `null` or empty. Only its criteria move to the kept finding; if the kept finding should cite

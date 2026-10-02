@@ -247,6 +247,21 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
       validates under `EffectiveConfig` (old key, missing blocks), so `dra replay` refuses it by name with exit
       2, as it refuses a run whose prompts changed; it replays at its own commit `2d84f59`
       (`tests/test_cli_replay.py`). The demo backup run is recorded with the final code (design section 8).
+- 2026-10-03, latency integration pass (planner ruling on W2's live Haiku check, which moved a finding to
+  `needs_investigation`, a disposition that needs a next step a revision could not carry):
+  `llm/outputs.FindingRevisionDraft` gained `next_step` (`NextStepDraft | None`, required and nullable like
+  every other key of the revision). On a `keep` it is given exactly when the new disposition needs a next
+  step (`models.NON_REFINEMENT_DISPOSITIONS`) and the draft has none; it is null on any other `keep`, on a
+  `merge` and on a `withdraw`. `revision_problems` reports a step the disposition does not need, a step for
+  a draft that already has one, and a step on merge or withdraw; a missing step stays the spec rule's problem
+  ("requires next_step"). `apply_revisions` sets the draft's `next_step` from it; `phases/refine.py`
+  `without_unexplained_changes` drops it with a reverted disposition change (BEH-10). A `recommendation` and
+  a `no_change_rationale` are not added: a move to `no_change` would also need the recommendation removed,
+  and a move from it a whole recommendation, which is finding text a revision does not carry; the prompt
+  keeps telling the model to hold the drafted disposition then. Writers: `prompts/refine.md` (rule 3 and the
+  keep rule; lock regenerated), `selftest.refine_answer`, the scripted revisions in `tests/test_llm_phases.py`,
+  `tests/test_e2e_synthetic.py`, `tests/test_interfaces_w0.py`. Readers: `revision_problems`,
+  `apply_revisions`, `phases/refine.py`. Tests: `tests/test_refine_next_step.py`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

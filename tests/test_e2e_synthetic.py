@@ -213,7 +213,8 @@ def build_script(shards: list[Any]) -> dict[str, list[Any]]:
 
     def keep(fx: str, rank: int, severity: str | None, disposition: str, **kw: Any) -> dict[str, Any]:
         return {"finding_id": MERGED_ID[fx], "action": "keep", "merge_into": None, "rank": rank, "severity": severity,
-                "disposition": disposition, "affected_decisions": [], "added_evidence": [], "reason": "Checked.", **kw}
+                "disposition": disposition, "affected_decisions": [], "added_evidence": [], "next_step": None,
+                "reason": "Checked.", **kw}
 
     refine = FakeResponse(parsed={"revisions": [
         keep("F1", 1, "critical", "refinement_now", reason="NFR-5's wording confirms the conflict with AD-001.",

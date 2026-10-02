@@ -59,7 +59,8 @@ from sit_review_agent.states import (
 def _keep(fid: str, rank: int | None, **kw: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "finding_id": fid, "action": "keep", "merge_into": None, "rank": rank, "severity": "high",
-        "disposition": "refinement_now", "affected_decisions": [], "added_evidence": [], "reason": "kept",
+        "disposition": "refinement_now", "affected_decisions": [], "added_evidence": [], "next_step": None,
+        "reason": "kept",
     }
     base.update(kw)
     return base
@@ -68,7 +69,7 @@ def _keep(fid: str, rank: int | None, **kw: Any) -> dict[str, Any]:
 def _gone(fid: str, action: str, into: str | None = None, **kw: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "finding_id": fid, "action": action, "merge_into": into, "rank": None, "severity": None,
-        "disposition": None, "affected_decisions": [], "added_evidence": [], "reason": action,
+        "disposition": None, "affected_decisions": [], "added_evidence": [], "next_step": None, "reason": action,
     }
     base.update(kw)
     return base

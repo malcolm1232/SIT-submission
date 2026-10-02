@@ -22,6 +22,7 @@ from typing import Any, Literal, cast
 from pydantic import BaseModel, ConfigDict
 
 from sit_review_agent.models import (
+    NON_REFINEMENT_DISPOSITIONS,
     Category,
     DecisionRelation,
     Disposition,
@@ -238,6 +239,9 @@ class FindingRevisionDraft(Draft):
       without a severity, never "unchanged") and disposition are the finding's values after refine;
       affected_decisions replaces the draft's list (registry links, which assess no longer makes);
       added_evidence is appended to the draft's evidence (research results); merge_into is null.
+      next_step (an owner and an action) is given only when the new disposition needs one
+      (needs_investigation, needs_prototyping, needs_testing, governance_decision) and the finding
+      has none; otherwise it is null.
     * merge: the finding is folded into merge_into, which must be a kept finding; every other field
       is null or empty. It leaves the review; its criteria count for the kept finding; nothing else
       moves (evidence the kept finding should gain goes in that finding's added_evidence).
@@ -252,6 +256,7 @@ class FindingRevisionDraft(Draft):
     disposition: Disposition | None
     affected_decisions: list[AffectedDecisionDraft]
     added_evidence: list[EvidenceCitation]
+    next_step: NextStepDraft | None
     reason: str
 
 
@@ -266,11 +271,13 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
     """Every rule of :class:`FindingRevisionDraft` that ``out`` breaks against the merged draft
     findings ``finding_ids``; empty when code can apply it exactly. Checks: one revision per known
     finding, per-action field rules, merges only into a known kept finding (which also rules out a
-    merge into itself, chains and cycles), kept ranks forming 1..n, and no evidence ID added twice.
+    merge into itself, chains and cycles), kept ranks forming 1..n, no evidence ID added twice, and a
+    ``next_step`` only on a ``keep`` whose disposition needs one.
 
     With ``drafts`` (the merged drafts by ID; the refine phase always passes them) each kept finding
     is also checked as it will be after the revision: evidence it already cites is not added again,
-    and the finding rules of the spec (``models.finding_rule_violations``) hold, so a null severity on
+    a ``next_step`` is not given to a draft that has one (a revision adds a step, it never replaces
+    one), and the finding rules of the spec (``models.finding_rule_violations``) hold, so a null severity on
     a finding that needs one, a disposition the draft's recommendation, rationale or next step cannot
     support, or a ``challenges`` link with fewer than two evidence items is a problem here, not a
     finding dropped later in verify. Registry IDs are not checked here: verify drops a link to an
@@ -304,11 +311,15 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
                 ranks.append(r.rank)
             if r.disposition is None:
                 problems.append(f"{r.finding_id} is keep without disposition")
+            elif r.next_step is not None and r.disposition not in NON_REFINEMENT_DISPOSITIONS:
+                problems.append(f"{r.finding_id} sets next_step, but {r.disposition.value} needs none")
             added = [e.evidence_id for e in r.added_evidence]
             twice = sorted({e for e in added if added.count(e) > 1})
             if twice:
                 problems.append(f"{r.finding_id} adds evidence {', '.join(twice)} more than once")
             draft = drafts.get(r.finding_id) if drafts is not None else None
+            if draft is not None and r.next_step is not None and draft.next_step is not None:
+                problems.append(f"{r.finding_id} sets next_step, but the draft already has one")
             if draft is not None and r.disposition is not None:
                 cited = sorted({e.evidence_id for e in draft.evidence} & set(added))
                 if cited:
@@ -316,7 +327,7 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
                 problems += [f"{r.finding_id} after keep: {p}"
                              for p in finding_rule_violations(cast(Any, _kept_draft(draft, r)))]
             continue
-        for field in ("rank", "severity", "disposition"):
+        for field in ("rank", "severity", "disposition", "next_step"):
             if getattr(r, field) is not None:
                 problems.append(f"{r.finding_id} is {a} but sets {field}")
         for field in ("affected_decisions", "added_evidence"):
@@ -340,22 +351,24 @@ def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
 
 def _kept_draft(draft: FindingDraft, r: FindingRevisionDraft) -> FindingDraft:
     """``draft`` after the ``keep`` revision ``r``: rank, severity, disposition and the decision links
-    replaced, the added evidence appended, every other field as the draft had it."""
+    replaced, the added evidence appended, the revision's next step set when it gives one, every
+    other field as the draft had it."""
     return draft.model_copy(deep=True, update={
         "rank": r.rank, "severity": r.severity, "disposition": r.disposition,
         "affected_decisions": [a.model_copy() for a in r.affected_decisions],
         "evidence": [*draft.evidence, *(e.model_copy() for e in r.added_evidence)],
+        **({"next_step": r.next_step.model_copy()} if r.next_step is not None else {}),
     })
 
 
 def apply_revisions(drafts: Sequence[FindingDraft], out: RefineRevisionsOutput) -> list[FindingDraft]:
-    """The kept findings after ``out``, in rank order: the one exact meaning of a revision set.
-
-    ``keep`` replaces rank, severity, disposition and ``affected_decisions`` with the revision's
-    values and appends ``added_evidence`` to the draft's evidence; ``merge`` removes the finding and
-    appends its ``criterion_ids`` (those the target lacks, in draft order) to the target's, so coverage
-    still credits its criterion; ``withdraw`` removes the finding. ``drafts`` are not changed. Raises
-    ``ValueError`` listing :func:`revision_problems` (with ``drafts``) when there are any."""
+    """The kept findings after ``out``, in rank order: the one exact meaning of a revision set. ``keep``
+    replaces rank, severity, disposition and ``affected_decisions`` with the revision's values,
+    appends ``added_evidence`` to the draft's evidence and sets ``next_step`` when given; ``merge``
+    removes the finding and appends its ``criterion_ids`` (those the target lacks, in draft order)
+    to the target's, so coverage still credits its criterion; ``withdraw`` removes the finding.
+    ``drafts`` are not changed. Raises ``ValueError`` listing :func:`revision_problems` (with
+    ``drafts``) when there are any."""
     by_id = {d.id: d for d in drafts}
     problems = revision_problems(out, [d.id for d in drafts], drafts=by_id)
     if problems:
