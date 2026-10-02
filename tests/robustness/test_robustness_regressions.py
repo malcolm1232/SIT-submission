@@ -161,12 +161,12 @@ def test_real_text_is_not_hollow() -> None:
 @pytest.mark.parametrize("field", ["recommendation.rationale", "title"])
 def test_hollow_finding_is_dropped_and_disclosed(field: str, tmp_path: Path) -> None:
     def tbd(p: dict[str, Any]) -> None:
-        if field == "title":                    # FND-002, a strength: no length floor caught this before
-            next(f for f in p["findings"] if f["id"] == "FND-002")["title"] = "TBD"
+        if field == "title":                    # FND-001, a strength: no length floor caught this before
+            next(f for f in p["findings"] if f["id"] == "FND-001")["title"] = "TBD"
         else:                                   # also below MIN_TEXT_CHARS, so it was dropped before too
             p["findings"][0]["recommendation"]["rationale"] = "TBD"
 
-    rec = run(Scenario(id="REG-5", patches={"assess": tbd, "refine": tbd}), tmp_path)
+    rec = run(Scenario(id="REG-5", patches={"assess": tbd}), tmp_path)   # a refine revision carries no text
     assert "TBD" not in rec.run_dir.report_json.read_text(encoding="utf-8")
     assert any(f"placeholder text in {field}" in d["event"] for d in rec.report["research_log"]["degradations"])
 
@@ -178,10 +178,11 @@ def test_doc_citation_with_a_quote_not_in_the_document_is_not_recorded_as_doc_te
     external_text = "Higher plans allow 10,000 or more messages per day."
 
     def mislabel(p: dict[str, Any]) -> None:
-        p["findings"][2]["evidence"].append({"evidence_id": "NEW-9", "source_type": "doc", "quote": external_text,
-                                             "supports_claim": True, "derived_from": []})
+        next(f for f in p["findings"] if f["id"] == "FND-002")["evidence"].append(
+            {"evidence_id": "NEW-9", "source_type": "doc", "quote": external_text, "supports_claim": True,
+             "derived_from": []})
 
-    rec = run(Scenario(id="REG-6", patches={"assess": mislabel, "refine": mislabel}), tmp_path)
+    rec = run(Scenario(id="REG-6", patches={"assess": mislabel}), tmp_path)
     for e in json.loads(rec.run_dir.ledger.read_text(encoding="utf-8")):
         if e["source_type"] == "doc":
             assert external_text not in (e["excerpt"] or ""), e
@@ -302,16 +303,13 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
 @pytest.mark.parametrize("reason, kept", [("", "high"), ("Downgraded: section 6.2 already caps reminders.", "low")])
 def test_severity_change_needs_a_reason_or_new_evidence(reason: str, kept: str, tmp_path: Path) -> None:
     def flip(p: dict[str, Any]) -> None:
-        next(f for f in p["findings"] if f["id"] == "FND-001")["severity"] = "low"
-        p["revisions"] = [r for r in p["revisions"] if r["finding_id"] != "FND-001"]
-        if reason:
-            p["revisions"].append({"finding_id": "FND-001", "change": "revised", "reason": reason,
-                                   "evidence_ids": []})
+        r = next(r for r in p["revisions"] if r["finding_id"] == "FND-004")     # the e-mail quota finding
+        r["severity"], r["added_evidence"], r["reason"] = "low", [], reason
 
     rec = run(Scenario(id="REG-8", patches={"refine": flip}), tmp_path)
-    f1 = next(f for f in rec.report["findings"] if f["id"] == "FND-001")
+    f1 = next(f for f in rec.report["findings"] if f["id"] == "FND-004")
     assert f1["severity"] == kept
-    notes = [h["note"] for h in rec.state["finding_meta"]["FND-001"]["history"] if h["phase"] == "refine"]
+    notes = [h["note"] for h in rec.state["finding_meta"]["FND-004"]["history"] if h["phase"] == "refine"]
     assert any(n.startswith("rejected: severity high -> low") for n in notes) == (not reason), notes
 
 

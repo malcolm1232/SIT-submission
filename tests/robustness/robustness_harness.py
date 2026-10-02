@@ -53,7 +53,10 @@ from sit_review_agent.selftest import (
     FIXTURE_QUERY,
     FIXTURE_TOOL,
     FIXTURE_URL,
+    assess_answer,
     fixture_script,
+    request_shard,
+    shard_answer,
 )
 from sit_review_agent.states import PhaseName
 from sit_review_agent.tools.faults import FaultSchedule, load_fault_schedule
@@ -198,7 +201,7 @@ def plan_two_sources(base: FakeResponse) -> FakeResponse:
 
 
 def only_fixture_page(fn: Callable[..., FakeResponse]) -> Callable[..., FakeResponse]:
-    """The fixture's assess/refine answers cite the first read external entry; show them only the
+    """The fixture's refine answer adds the first read external entry; show it only the
     fetched fixture page so the quotes they carry are in the cited excerpt (INV-05)."""
     def wrapped(ledger: list[dict[str, Any]], req: LLMRequest) -> FakeResponse:
         keep = [e for e in ledger if e.get("source_type") != "external" or e.get("url_or_citation") == FIXTURE_URL]
@@ -206,13 +209,16 @@ def only_fixture_page(fn: Callable[..., FakeResponse]) -> Callable[..., FakeResp
     return wrapped
 
 
-def build_script(criteria: list[str], research: list[ScriptEntry] | None) -> dict[str, list[ScriptEntry]]:
-    base = fixture_script(criteria)
+def build_script(criteria: list[str], research: list[ScriptEntry] | None,
+                 shards: list[list[str]] | None = None) -> dict[str, list[ScriptEntry]]:
+    """The fixture script for a scenario: ``shards`` are the run's assess criterion groups in launch
+    order (each shard answers its own group; two answers per shard for retries and resumes)."""
+    base = fixture_script(criteria, shards)
     s: dict[str, list[ScriptEntry]] = {
         "understand": [base["understand"][0]] * 3,
         "plan": [plan_two_sources(base["plan"][0])] * 3,                       # type: ignore[arg-type]
         "research": list(research) if research is not None else two_source_research(),
-        "assess": [only_fixture_page(base["assess"][0])] * 4,                  # type: ignore[arg-type]
+        "assess": [base["assess"][0]] * (2 * max(4, len(shards or []))),       # type: ignore[list-item]
         "refine": [only_fixture_page(base["refine"][0])] * 4,                  # type: ignore[arg-type]
         "verify": [base["verify"][0]] * 3,
         "report": [base["report"][0]] * 3,
@@ -223,13 +229,17 @@ def build_script(criteria: list[str], research: list[ScriptEntry] | None) -> dic
 class ScenarioGateway(FakeGateway):
     """``FakeGateway`` over :func:`build_script`. Callable entries are resolved against the run's
     ledger journal when their turn comes; ``patches[phase]`` then mutates a deep copy of the
-    structured answer (the model's adversarial, hollow or flipping output)."""
+    structured answer (the model's adversarial, hollow or flipping output). An ``assess`` patch
+    mutates the whole assessment, and each shard then answers its own part of it (``shards``, the
+    run's criterion groups in launch order), so a patch names a finding by the ID the merge gives it."""
 
     def __init__(self, rd: RunDir, clock: Any, script: dict[str, list[ScriptEntry]], *, model: str,
-                 patches: Mapping[str, Patch] | None = None) -> None:
+                 patches: Mapping[str, Patch] | None = None, criteria: list[str] | None = None,
+                 shards: list[list[str]] | None = None) -> None:
         super().__init__(script, run_dir=rd, clock=clock, model=model)     # type: ignore[arg-type]
         self.rd = rd
         self.patches = dict(patches or {})
+        self.criteria, self.shards = list(criteria or []), [list(g) for g in shards or []]
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         phase = str(request.phase)
@@ -238,7 +248,12 @@ class ScenarioGateway(FakeGateway):
             resp = q[0]
             if callable(resp):
                 resp = resp(JsonlWriter(self.rd.ledger_journal).read(), request)
-            if phase in self.patches and isinstance(resp.parsed, dict):
+            if phase == "assess" and phase in self.patches:
+                whole = assess_answer(self.criteria)
+                self.patches[phase](whole)
+                group = request_shard(request, self.shards)
+                resp = FakeResponse(parsed=whole if group is None else shard_answer(whole, group))
+            elif phase in self.patches and isinstance(resp.parsed, dict):
                 parsed = copy.deepcopy(resp.parsed)
                 self.patches[phase](parsed)
                 resp = FakeResponse(parsed=parsed)
@@ -401,8 +416,10 @@ class _Env:
 def _factories(sc: Scenario, cfg: EffectiveConfig, sched: FaultSchedule | None, outbound: list[dict[str, Any]],
                holder: dict[str, Any]) -> tuple[Any, Any]:
     def llm_factory(rd: RunDir, clock: Any, progress: Any) -> ScenarioGateway:
-        gw = ScenarioGateway(rd, clock, build_script(cfg.criteria.ids(), sc.research), model=cfg.agent.model,
-                             patches=sc.patches)
+        criteria = cfg.criteria.ids()
+        shards = [list(g.criteria) for g in cfg.agent.assess.shards_for(criteria)]
+        gw = ScenarioGateway(rd, clock, build_script(criteria, sc.research, shards), model=cfg.agent.model,
+                             patches=sc.patches, criteria=criteria, shards=shards)
         gw.progress = progress                       # type: ignore[attr-defined]  (retry lines of the fault layer)
         holder["llm"] = gw
         return gw

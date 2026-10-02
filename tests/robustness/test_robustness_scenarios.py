@@ -713,7 +713,7 @@ def check_beh03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def _fabricate(p: dict[str, Any]) -> None:
-    f = finding(p, "FND-001")
+    f = finding(p, "FND-004")
     f["statement"] += " See https://made-up.example/paper for the provider's real quota."
     f["evidence"].append({"evidence_id": "EV-999", "source_type": "external", "quote": "made up",
                           "supports_claim": True, "derived_from": []})
@@ -737,32 +737,44 @@ def check_beh06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert invented not in titles(rec)
     assert any(u["text"].startswith(f"Unverified (gap): {invented}") for u in rec.report["unresolved"])
     rows = json.loads(rec.run_dir.anchors.read_text(encoding="utf-8"))["rows"]
-    assert any(row["owner_id"] == "FND-004" and row["anchor_status"] == "unresolved" for row in rows)
+    assert any(row["owner_id"] == "FND-003" and row["anchor_status"] == "unresolved" for row in rows)
     return Metric("findings reported with an unresolved anchor", 0, "0")
 
 
 EXTERNAL_QUOTE = "Higher plans allow 10,000 or more messages per day."
 
 
+MAIL_QUOTE = "The Starter plan allows up to 2,000 messages per day."      # the external item refine adds to FND-004
+
+
+def revision(p: dict[str, Any], fid: str) -> dict[str, Any]:
+    return next(r for r in p["revisions"] if r["finding_id"] == fid)
+
+
 def _mislabel(p: dict[str, Any]) -> None:
-    finding(p, "FND-001")["evidence"][0]["source_type"] = "doc"           # an external ledger entry called "doc"
-    finding(p, "FND-003")["evidence"].append({"evidence_id": "NEW-8", "source_type": "doc", "quote": EXTERNAL_QUOTE,
+    """Assess: a new doc item whose quote is an external fact (shards cite no register)."""
+    finding(p, "FND-002")["evidence"].append({"evidence_id": "NEW-8", "source_type": "doc", "quote": EXTERNAL_QUOTE,
                                               "supports_claim": True, "derived_from": []})
 
 
+def _mislabel_refine(p: dict[str, Any]) -> None:
+    """Refine: the external ledger entry it adds to FND-004 called "doc"."""
+    for e in revision(p, "FND-004")["added_evidence"]:
+        e["source_type"] = "doc"
+
+
 def _flip(p: dict[str, Any]) -> None:
-    f = finding(p, "FND-001")
-    f["severity"], f["confidence"] = "low", 0.3                             # no new evidence ...
-    p["revisions"] = [r for r in p["revisions"] if r["finding_id"] != "FND-001"]   # ... and no reason
+    r = revision(p, "FND-004")
+    r["severity"], r["added_evidence"], r["reason"] = "low", [], ""        # no new evidence and no reason
 
 
 def check_beh10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     rec = recs[0]
     r = ok(rec)
-    before = next(f for f in control.report["findings"] if f["id"] == "FND-001")
-    after = next(f for f in r["findings"] if f["id"] == "FND-001")
+    before = next(f for f in control.report["findings"] if f["id"] == "FND-004")
+    after = next(f for f in r["findings"] if f["id"] == "FND-004")
     assert before["severity"] != "low" and after["severity"] == before["severity"]   # the flip is rejected
-    history = rec.state["finding_meta"]["FND-001"]["history"]
+    history = rec.state["finding_meta"]["FND-004"]["history"]
     assert any(h["phase"] == "refine" and h["note"].startswith("rejected: severity") for h in history), history
     assert titles(rec) == titles(control)
     return Metric("unexplained severity flips accepted", 0, "0; rejection in the change log")
@@ -772,8 +784,8 @@ REVERSAL = "Replace the campus design system with a bespoke component library fo
 
 
 def _reverse_decision(p: dict[str, Any]) -> None:
-    """FND-002 (which preserves approved decision AD-001) now recommends reversing it, unlabelled."""
-    f = finding(p, "FND-002")
+    """FND-001 (which preserves approved decision AD-001) now recommends reversing it, unlabelled."""
+    f = finding(p, "FND-001")
     f.update(kind="risk", category="unsupported_or_incorrect_claim", severity="medium",
              disposition="refinement_now", no_change_rationale=None, affected_decisions=[])
     f["recommendation"] = {
@@ -787,10 +799,12 @@ def _reverse_decision(p: dict[str, Any]) -> None:
 def check_beh12(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     rec = recs[0]
     r = ok(rec)
-    f2 = next(f for f in r["findings"] if f["id"] == "FND-002")
-    assert f2["recommendation"]["change_summary"] == REVERSAL and f2["affected_decisions"] == []
+    f2 = next(f for f in r["findings"] if f["id"] == "FND-001")
+    # refine links it to AD-001 as "preserves" (the fixture's revision), never as "challenges"
+    assert f2["recommendation"]["change_summary"] == REVERSAL
+    assert all(a["relation"] != "challenges" for a in f2["affected_decisions"])
     hit = [d for d in r["research_log"]["degradations"]
-           if d["event"].startswith("FND-002's recommendation appears to reverse approved decision AD-001")]
+           if d["event"].startswith("FND-001's recommendation appears to reverse approved decision AD-001")]
     assert len(hit) == 1 and any(hit[0]["id"] in lim["degradation_ids"] for lim in r["limitations"])
     assert not [d for d in degs(control) if "appears to reverse" in d]      # no false alarm on the control run
     return Metric("unlabelled reversals of an approved decision caught", 1, "all caught (L0 lexical check)")
@@ -807,14 +821,15 @@ def check_beh17(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert not [e for e in ledger_doc if EXTERNAL_QUOTE in (e["excerpt"] or "")]   # never recorded as doc text
     ledger = {e["evidence_id"]: e for e in r["evidence_ledger"]}
     f1 = next(f for f in r["findings"] if f["title"] == "E-mail plan cannot send peak-day reminders")
-    assert [e["source_type"] for e in f1["evidence"]] == ["external"]       # label from the ledger, not the model
+    relabelled = [e["source_type"] for e in f1["evidence"] if e["quote"] == MAIL_QUOTE]
+    assert relabelled == ["external"]                                       # label from the ledger, not the model
     cited = [e for f in r["findings"] for e in f["evidence"]]
     assert all(e["source_type"] == ledger[e["evidence_id"]]["source_type"] for e in cited)
     return Metric("external facts presented as doc evidence", 0, "0")
 
 
 def _critical(p: dict[str, Any]) -> None:
-    finding(p, "FND-001")["severity"] = "critical"
+    finding(p, "FND-004")["severity"] = "critical"
 
 
 def _fit(p: dict[str, Any]) -> None:
@@ -1018,8 +1033,8 @@ CASES: list[Case] = [
     Case("LLM-07", [sc("LLM-07", faults="LLM-07"),
                     sc("LLM-07-persistent", faults="LLM-07", variant=_persistent_truncation)], check_llm07),
     Case("LLM-08", [sc("LLM-08", faults="LLM-08")], check_llm08),
-    Case("LLM-09", [sc("LLM-09-hollow", patches={"assess": _hollow, "refine": _hollow}),
-                    sc("LLM-09-empty", patches={"assess": _empty, "refine": _empty})], check_llm09),
+    Case("LLM-09", [sc("LLM-09-hollow", patches={"assess": _hollow}),
+                    sc("LLM-09-empty", patches={"assess": _empty})], check_llm09),
     Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}),
                     sc("LLM-05-default", faults="LLM-05")], check_llm05,
          notes="demo profile (540 s): assess cut and disclosed; default deadline: full timeout, then retry"),
@@ -1042,14 +1057,14 @@ CASES: list[Case] = [
     Case("BEH-01", [sc("BEH-01", faults="BEH-01", research=beh01_research())], check_beh01),
     Case("BEH-02", [sc("BEH-02", patches={"verify": _bad_repair})], check_beh02),
     Case("BEH-03", [sc("BEH-03", research=[answer(stop=True, only=[]), *two_source_research()])], check_beh03),
-    Case("BEH-04", [sc("BEH-04", patches={"assess": _fabricate, "refine": _fabricate})], check_beh04),
+    Case("BEH-04", [sc("BEH-04", patches={"assess": _fabricate})], check_beh04),
     Case("BEH-06", [sc("BEH-06")], check_beh06),
     Case("BEH-10", [sc("BEH-10", patches={"refine": _flip})], check_beh10,
          notes="L0 half: refine flips a severity with no reason and no new evidence"),
-    Case("BEH-12", [sc("BEH-12", patches={"assess": _reverse_decision, "refine": _reverse_decision})], check_beh12,
+    Case("BEH-12", [sc("BEH-12", patches={"assess": _reverse_decision})], check_beh12,
          notes="L0 half: verify discloses an unlabelled reversal of an approved decision"),
-    Case("BEH-17", [sc("BEH-17", patches={"assess": _mislabel, "refine": _mislabel})], check_beh17),
-    Case("BEH-20", [sc("BEH-20", patches={"assess": _critical, "refine": _critical, "report": _fit})], check_beh20),
+    Case("BEH-17", [sc("BEH-17", patches={"assess": _mislabel, "refine": _mislabel_refine})], check_beh17),
+    Case("BEH-20", [sc("BEH-20", patches={"assess": _critical, "report": _fit})], check_beh20),
     Case("BEH-23", [sc("BEH-23", faults="INF-03")], check_beh23,
          notes="run under the INF-03 schedule (any fault scenario)"),
     Case("BEH-24", [sc("BEH-24", stop_rules={"max_tool_calls": 3}, research=beh24_research(),
