@@ -95,7 +95,7 @@ See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom lo
 19. **A cost estimate is a hypothesis; a capped pilot is the measurement.** The dry run priced matcher calls at $0.05-0.15 and 20-60 s; the live pilot measured $0.06-0.11 and 6-17 s for pair and shortlist calls but $0.33 for whole-document adjudication calls. Run the cheapest faithful configuration once, with a hard cap, before any budget decision.
 20. **Ask verifiers to mutation-test, not just re-run.** The robustness verifier found a scenario test that still passed with its main claim removed.
 
-## 6. What is next, in order (updated at the end of the third session)
+## 6. What is next, in order (superseded by §10 at the end of the third session)
 
 Owner decisions first; each is written up with options in §9 and in the reports in
 `docs/transcripts/session3_coordinator.md`.
@@ -130,8 +130,14 @@ Owner decisions first; each is written up with options in §9 and in the reports
 ## 7. How to resume in a new session
 
 ```
-Read docs/HANDOFF.md and docs/HANDOVER_FULL.md, then docs/transcripts/README.md.
-Continue from HANDOVER_FULL.md section 6 (read sections 8 and 9 first). Spawn all subagents on Opus with the brief pattern in docs/transcripts/session2_coordinator.md. Verify every deliverable with a separate subagent. Commit and push after each one lands.
+Read docs/HANDOFF.md, then docs/HANDOVER_FULL.md sections 10, 9 and 6 (in that order), then
+docs/transcripts/session3_coordinator.md (the last three sections first). Work on branch
+claude/happy-darwin-d0bl94. Continue from HANDOVER_FULL.md section 10 "Next steps", in order.
+Spawn all subagents on Opus with the brief pattern in docs/transcripts/session2_coordinator.md and
+session3_coordinator.md. Verify every deliverable with a separate subagent. Commit and push after each
+one lands. Judgement calls go to the SIT FABLE session (session_01XFmYhcJBBHVd1QkUXyauBg) via the
+claude-code-remote send_message tool; the owner has delegated decisions to it, but the answer-key
+signature stays the owner's.
 ```
 
 ## 8. First live run through the Claude Code backend (2026-10-02)
@@ -205,8 +211,8 @@ Pilot scores (exploratory only: prereg unfrozen, key not `scored_run_ready`; art
 `docs/live_runs/live_cc_opus_payments_v1/eval_pilot/`): strict recall 10/14, lenient 14/14, adjudicated
 precision 0.95, severity-weighted recall 0.72, critical recall 0.75, severity agreement QWK 0.38. The
 four partial matches are F04, F06, F07 and F12; the matcher agrees with the by-eye reading in §8. Open
-question for the owner: findings that partially match a planted flaw are adjudicated VALID_UNPLANTED,
-which keeps adjudicated precision high; decide whether that is the intended reading of metrics.md.
+question, since decided (USER_DECISIONS #14): such findings are now labelled PARTIAL_KEY_MATCH, count as
+correct for adjudicated precision, and never enter the pooled key G+.
 
 Grader pilot (unvalidated tier, same-family grader; artefacts in `.../grade_pilot/`): S = 83.8, grade B,
 PASS, all gates pass. D8 research sufficiency 1 (expected: the run was doc-only), D9 output integrity 2,
@@ -214,3 +220,66 @@ D4 evidence 3, everything else 3.5-4; samples agreed within one point per dimens
 flags: two verified wrong document locations (FND-004 cites p1/s12.4, the same defect the matcher found
 in EV-016; FND-006 cites p13/s3) and four suspected misreadings (FND-013 material) that need a human
 check (GR §4.3). Live spend this session on model calls was about $13.3, on top of the subagents.
+
+## 10. State at the end of the third session, and next steps (2026-10-02, evening)
+
+Branch `claude/happy-darwin-d0bl94`, all pushed. The session ended on a context limit, mid-wave.
+
+**Done and verified this session (details §9 and `docs/transcripts/session3_coordinator.md`):** evaluation
+harness (matcher, metrics, statistics, grader); robustness P0 suite (49 offline pass, 28 laptop-only, 4
+covered by tests, 0 awaiting decision); matcher rule "the shortlist bounds pairwise scoring" (owner #10);
+PARTIAL_KEY_MATCH, adaptive third sample, no second-provider judge, Anthropic-only (owner #14-#16); config
+profiles; demo CLI (`--profile`, `--k`, `dra coverage`, `dra replay`); runtime policies (deadline inside
+model calls, default deadline 3600 s, demo profile 540 s, NET-02, INF-08, LLM-10, OVF-07, `process:`
+faults, ingest heading fix, replay logging); answer-key drafts for all 45 synthetic flaws plus 57 approved
+decisions, verified (`eval/KEY_SIGNOFF.md`); prereg amendments logged in `eval/prereg_deviations.md`
+(entries 1-7).
+
+**Measured live this session (Opus 5.5 high, `claude -p`):**
+
+| Run | Calls | Cost | Result |
+|---|---|---|---|
+| Pilot scoring, old union rule, per-flaw batch, judges off | 57 | $6.89 | strict recall 10/14 |
+| Grader, key-blind, 2 samples | 4 (+1 capped) | $4.85 (+~$1) | S 83.8, grade B |
+| Re-score, pre-registered setup (bounded, pairwise, adaptive, judges on) | 98 | $10.36 | strict 11/14, lenient 14/14, P_adj 0.95, SWR 0.73, HFR 0.0 |
+
+Per call: shortlist $0.11, pair $0.033, adjudication $0.33, premise judge $0.22, citation judge $0.06,
+grader Pass A $1.07-1.15, Pass B $1.30-1.32. So scoring plus grading one run costs about $15. Artefacts
+under `docs/live_runs/live_cc_opus_payments_v1/` (`eval_pilot/`, `eval_pilot2_bounded/`, `grade_pilot/`).
+
+**In flight when the session ended (check first):**
+- The runtime + demo-CLI integration verifier (one Opus subagent) was still running. Its brief: verify W1
+  and W2 together, plus five coordinator decisions: a `not_assessed` verdict in the spec, models and
+  harness (instead of `not_fit` at confidence 0); remove `stripe.com` and `confluent.io` from the authority
+  lists; runbook fixes (`--profile demo` in §5, reserve wording, §4.1 lines 4-5, `FND-007` example);
+  a `Makefile` with `smoke` and `test`; EVAL_PLAN timing from the measurement; and raise
+  `config/agent.yaml` line 10 `max_tokens` from 64000 to 128000 (Opus 5.5 allows 128K output; the live
+  assess used 63,392 of 64,000), with the claude_code pass-through marked UNVERIFIED. Its log, if it got
+  that far, is `research/audit/verify_runtime_cli_editlog.md`. Any of its uncommitted edits were pushed in
+  the final WIP commit of this session. **Next session: check `git log` and that edit log; whatever of the
+  list is missing, finish it with one Opus agent and a separate verifier, then run `ruff check agent
+  harness tests`, `pytest -q` and `sit-review selftest`.**
+
+### Next steps, in order
+
+1. **Finish and verify the integration items above.**
+2. **Apply the SIT FABLE key decisions** (verbatim in the session record, section "SIT FABLE decisions";
+   not yet applied): edit the drafts in the three `answer_key.json` files and `eval/KEY_SIGNOFF.md`
+   (payments F04, F11; clinical F09; lakehouse F01; lakehouse F05 and F06 credit-item roles via
+   `role_of()` in `spec/convert_answer_keys.py`); key-only canary for S-dev, noted for the LC10/LC11 scans;
+   accept the eval-data audit for the 20 external facts; link payments F15 to AD-004 and write the linking
+   rule next to item 7; record them in `docs/USER_DECISIONS.md` as #17-#20 attributed "SIT FABLE for the
+   owner, 2026-10-02"; re-run `python3 spec/convert_answer_keys.py --tier synthetic --check
+   --verify-anchors`; verify with a separate agent. Then tell the owner that only their signature remains.
+3. **Demo measurement run** (owner approved, about $3-4): `sit-review review
+   eval/synthetic/payments_orchestration/design_v1.pdf --profile demo --no-tools --run-id
+   demo_profile_measure_1` in the cloud sandbox (MCP hosts are unreachable here); record per-phase wall,
+   tokens and cost; check it fits 540 s; adjust `config/profiles/demo.yaml` reserves from the numbers.
+   Commit the run dir under `docs/live_runs/` so `dra replay` works on it (it keeps `llm.jsonl`).
+4. **Redo `docs/BUDGET.md`** from measured numbers: agent run (the §8 run plus the demo measurement),
+   scoring about $10.4 and grading about $4.9 per run, the k and Tier A run counts from `eval/EVAL_PLAN.md`;
+   present Tier A to the owner for approval (owner task).
+5. **Owner tasks:** sign the keys (`eval/KEY_SIGNOFF.md`), MCP probe on the Mac, the SIT answer key before
+   any run on the SIT PDF, the SIT questions (slot length, PDF hand-over, venue network, GitHub IDs).
+6. **Then:** a live run with tools from the laptop; the demo stopwatch rehearsal; the submission documents
+   per `docs/DOCUMENTATION_MAP.md`; one Fable fresh-eyes audit; freeze prompts and prereg; Tier A.

@@ -474,3 +474,38 @@ All three keys are drafted and validate, and all stay at `scored_run_ready: fals
 
 ---
 
+## Live re-score under the shortlist-bounded rule (coordinator)
+
+Pre-registered setup (pairwise, shortlist bounded, adaptive third sample, grounding judges on), Opus 5.5 high via `claude -p`: 98 calls, 0 failed, $10.36. Strict recall 11/14 (0.786; F12 now matched strictly), lenient 14/14, adjudicated precision 0.95, severity-weighted recall 0.73, hallucinated-finding rate 0.0, partial_key_match_count 3. Per call: shortlist $0.112/6 s, pair $0.033/7 s, adjudication $0.332/13 s, premise judge $0.215/10 s, citation judge $0.063/14 s. Artefacts: `docs/live_runs/live_cc_opus_payments_v1/eval_pilot2_bounded/`.
+
+## SIT FABLE decisions on the key sign-off sheet (received 2026-10-02 18:47 UTC; NOT YET APPLIED at session end)
+
+The owner said the SIT FABLE session (session_01XFmYhcJBBHVd1QkUXyauBg, Claude Fable 5.1) decides on their behalf. Its message, verbatim:
+
+> SIT FABLE decisions on the key sign-off sheet (eval/KEY_SIGNOFF.md), made on the owner's behalf. I read the sheet (sections 1-6, the "look at these first" list including the verifier's items 10-15, and the flaw entries for payments F01-F15, clinical F03/F05/F09, lakehouse F01) and docs/SEALING.md. Record these in docs/USER_DECISIONS.md on your branch as rows #11-#14, attributed "SIT FABLE for the owner, 2026-10-02"; the owner's signature step stays theirs.
+>
+> 1. Canary: key-only for S-dev. Do not touch design_v*.md or the PDFs: the live run and both pilots cite those hashes and anchor pages, and S-dev is the open development set, so an embedded canary there protects nothing. Record "key-only canary, S-dev" in the LC10/LC11 scan notes. Embed the canary in every future held-out item before its first run; that is the rule going forward.
+>
+> 2. External facts: option (b). Accept research/audit/eval_data_audit.md as the verification for all 20 S-dev entries; `verified` stays false with the audit note, `external_fact_verification` goes in `accepted`. Owner re-check with network access is required only for held-out keys, and before Tier A for any S-dev fact that a graded finding's credit turns on (the harness can list those from the pilot).
+>
+> 3. Core insights. Rule for substance mode: the core insight states the defect and why it is a defect, nothing else; numbers, parentheticals and secondary consequences are supporting detail and come out unless a credit item requires them. Applying it:
+>    - payments F04: edit. Delete "(and 3,000 RCU)", "at least 1,800 WCU", and "even on the document's own two-writes count". Keep: the 10,000 WCU per-partition claim is wrong (the limit is 1,000 WCU), so keying the idempotency table by merchant_id puts the largest merchant's peak writes on one partition key that will be throttled.
+>    - payments F11: edit. Delete the 1,500 TPS trigger clause. Keep: every card authorization needs an HSM unwrap with no DEK caching, and the cluster has one HSM in one AZ, so losing it stops all card payments, contrary to NFR-3.
+>    - clinical F03: accept as drafted (dropping c4 is right).
+>    - clinical F05: accept as drafted; "up to" stands and c4 (push latency) is not required.
+>    - clinical F09: edit to the verifier's proposed text in item 12 (postal code identifies a building, plus demographics or timestamps, so still personal data, so the PDPA claim and the sharing are unjustified). Do not require the full list of quasi-identifiers.
+>    - lakehouse F01: edit. Delete the zero-data-retention clause.
+>    - lakehouse F04: accept as drafted; the NFR-9 cost breach stays supporting (c3), not in the core insight.
+>    - lakehouse F05: make c2 (the HNSW formula) supporting in role_of(); required = memory understated about 4x because float32 is 4 bytes per dimension, so the domain is too small.
+>    - lakehouse F06: make c2 (naming 3.13.16 / 3.13.11) supporting in role_of(); required = 3.1.1 is an access-control requirement, not encryption, so the citation does not support the claim.
+>    - Dispositions (item 6): accept all drafts, including governance_decision for the three pending-item flaws with refinement_now acceptable.
+>    - Items 7 and 8: leave as they are. Item 9: accept the v2.changed_sections additions.
+>
+> 4. payments F15 to AD-004: yes, link it. The key's own rule (item 7) links a decision row when the flaw's location cites the section that row governs, and F15 cites §20.2, which is the DR row; the fix for F15 can change the two-region write topology, so a finding that challenges AD-004 is a legitimate affected decision. Write that linking rule down next to item 7 so the three keys apply it the same way.
+>
+> After applying: re-run `python3 spec/convert_answer_keys.py --tier synthetic --verify-anchors`, re-hash the sheet, leave the signature for the owner, and tell them in one line that only the signature remains. Reply here only if something in the above cannot be applied as written.
+
+Note for whoever applies it: USER_DECISIONS rows #11-#16 already exist, so record these as #17-#20.
+
+---
+
