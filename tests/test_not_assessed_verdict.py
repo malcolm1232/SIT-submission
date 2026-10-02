@@ -21,9 +21,10 @@ import pytest
 from pydantic import ValidationError
 
 from sit_review_agent import models as m
+from sit_review_agent.errors import LLMDeadlineError
 from sit_review_agent.invariants import check_all, spec_validator
 from sit_review_agent.llm.gateway import FakeResponse
-from sit_review_agent.llm.outputs import PHASE_OUTPUT_TYPES, AssessedVerdictLabel, ReportOutput, llm_facing_schema
+from sit_review_agent.llm.outputs import PHASE_OUTPUT_TYPES, AssessedVerdictLabel, VerdictOutput, llm_facing_schema
 from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT, truncated_twice_event
 from sit_review_agent.manifest import start_manifest
 from sit_review_agent.models import DegradationType, Review, VerdictLabel
@@ -121,19 +122,19 @@ def test_no_llm_facing_schema_offers_not_assessed() -> None:
     for phase, out in PHASE_OUTPUT_TYPES.items():
         assert NOT_ASSESSED not in json.dumps(llm_facing_schema(out)), phase
         assert NOT_ASSESSED not in json.dumps(out.model_json_schema()), phase
-    labels = llm_facing_schema(ReportOutput)["$defs"]["AssessedVerdictLabel"]["enum"]
+    labels = llm_facing_schema(VerdictOutput)["$defs"]["AssessedVerdictLabel"]["enum"]
     assert labels == ["fit", "fit_with_conditions", "not_fit"]
 
 
 @pytest.mark.parametrize("where", ["verdict", "per_objective"])
 def test_a_draft_that_says_not_assessed_is_refused(where: str) -> None:
-    draft = copy.deepcopy(REPORT_OK.parsed)
+    draft = {"verdict": copy.deepcopy(REPORT_OK.parsed["verdict"])}
     if where == "verdict":
         draft["verdict"]["label"] = NOT_ASSESSED
     else:
         draft["verdict"]["per_objective"] = [{"objective_ref": "FR-9", "label": NOT_ASSESSED, "finding_ids": []}]
     with pytest.raises(ValidationError):
-        ReportOutput.model_validate(draft)
+        VerdictOutput.model_validate(draft)
 
 
 # ============================================================================ report phase
@@ -167,8 +168,7 @@ async def test_report_sets_not_assessed_in_code_without_a_verdict_call(tmp_path:
                                                                        shown: str) -> None:
     # The scripted verdict would certify the design; it must never be asked for.
     fit = FakeResponse(parsed={"verdict": {"label": "fit", "rationale": "Looks fine.", "confidence": 0.9,
-                                           "conditions": [], "per_objective": [], "what_would_change_it": None},
-                               "unresolved": [], "limitations": []})
+                                           "conditions": [], "per_objective": [], "what_would_change_it": None}})
     ctx = await unassessed(tmp_path, {"report": [fit]}, reason=reason)
     ctx = await ReportPhase().run(ctx)
     data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))
@@ -199,13 +199,53 @@ async def test_a_model_verdict_of_not_assessed_never_reaches_the_report(tmp_path
     the rule over the findings, never from the model's label."""
     from test_ingest_verify_report import verified
 
-    bad = copy.deepcopy(REPORT_OK.parsed)
+    bad = {"verdict": copy.deepcopy(REPORT_OK.parsed["verdict"])}
     bad["verdict"].update(label=NOT_ASSESSED, confidence=0, conditions=[])
     ctx = await verified(tmp_path, {"report": [FakeResponse(text=json.dumps(bad))]})
     ctx = await ReportPhase().run(ctx)
     data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))
     assert data["findings"] and data["verdict"]["label"] == "fit_with_conditions"
     assert "derived by rule" in data["verdict"]["rationale"]
+
+
+# ============================================================================ verdict only (latency redesign)
+
+
+VERDICT_OK = FakeResponse(parsed={"verdict": REPORT_OK.parsed["verdict"]})
+
+
+async def test_unresolved_items_and_limitations_are_written_by_code(tmp_path: Path) -> None:
+    """The verdict call returns the verdict only (VerdictOutput): every non-refinement finding gets
+    an unresolved item and every degradation a limitation, from the run record."""
+    from test_ingest_verify_report import verified
+
+    ctx = await verified(tmp_path, {"report": [VERDICT_OK]})
+    ctx.state.add_degradation(DegradationType.OTHER, "a test degradation", "none")
+    ctx = await ReportPhase().run(ctx)
+    [req] = [c for c in ctx.llm.calls if c.phase is PhaseName.REPORT]
+    assert req.output_schema is VerdictOutput
+    brief = req.messages[0]["content"][-1]["text"]
+    assert "List the unresolved" not in brief and "Write one limitation" not in brief
+    data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))
+    deg_ids = [d["id"] for d in data["research_log"]["degradations"]]
+    assert sorted(x for lim in data["limitations"] for x in lim["degradation_ids"]) == sorted(deg_ids)
+    assert all(len(lim["degradation_ids"]) == 1 for lim in data["limitations"])        # one per degradation
+    open_ = [f["id"] for f in data["findings"] if f["disposition"] in
+             {d.value for d in m.NON_REFINEMENT_DISPOSITIONS}]
+    assert set(open_) <= {x for u in data["unresolved"] for x in u["finding_ids"]}
+    assert [r.inv_id for r in check_all(data, ctx.run_dir.root) if not r.passed] == []
+
+
+async def test_a_cut_verdict_call_falls_back_to_the_rule_based_verdict(tmp_path: Path) -> None:
+    from test_ingest_verify_report import verified
+
+    cut = FakeResponse(raises=LLMDeadlineError("cut at verdict_end"))
+    ctx = await verified(tmp_path, {"report": [cut]})
+    ctx = await ReportPhase().run(ctx)
+    data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))
+    assert data["verdict"]["label"] == "fit_with_conditions" and "derived by rule" in data["verdict"]["rationale"]
+    [d] = [d for d in data["research_log"]["degradations"] if d["event"].startswith("verdict call failed")]
+    assert d["type"] == "budget_or_deadline_hit" and "LLMDeadlineError" in d["event"]
 
 
 # ============================================================================ harness

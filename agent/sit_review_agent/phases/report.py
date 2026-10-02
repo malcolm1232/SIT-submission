@@ -1,5 +1,5 @@
-"""``report`` (LLM for verdict/unresolved/limitations text, then code; workstream C).
-Prompt: ``prompts/report.md``. Output: ``ReportOutput``.
+"""``report`` (LLM for the verdict, then code; workstream C, latency redesign W2).
+Prompt: ``prompts/report.md``. Output: ``VerdictOutput`` (the verdict only).
 
 Assembles the :class:`~sit_review_agent.models.Review` (:func:`assemble_review`), validates it
 against the spec (INV-03) and the invariants, writes ``report.json``, ``ledger.json``, renders
@@ -12,10 +12,15 @@ verdict call: its verdict is ``not_assessed``.
 
 What assembly guarantees by construction (each is disclosed, never hidden):
 
-* the model's verdict, unresolved items and limitations may cite only known finding and
-  degradation IDs (others are removed); every non-refinement finding gets an ``unresolved[]``
-  entry; every degradation gets a limitation (the model's text if it cited it, else the
-  degradation's own event and impact);
+* the model's verdict may cite only known finding IDs (others are removed);
+* unresolved items and limitations are written by code, never by the model (latency redesign,
+  design section 9 decision 6): verify's unverified points, then one item per non-refinement
+  finding; one limitation per degradation (its own event and impact). Open questions not tied to a
+  finding (unanswered research questions) are not repeated as unresolved items: they are listed in
+  ``research_log.unanswered_questions``. Prose limitations that grouped several degradations are
+  dropped: each degradation has its own limitation;
+* the verdict call is cut at ``stage_limits_s.verdict_end`` (llm.runtime); a cut, failed or
+  declined verdict call gives the verdict by rule (:func:`fallback_verdict`), disclosed;
 * failed tool calls, cap stops and model fallbacks that no phase recorded as a degradation get
   one (INV-07);
 * a URL or DOI in free text that is not a ledger ``url_or_citation`` is replaced by
@@ -33,6 +38,7 @@ from sit_review_agent.clock import isoformat_z
 from sit_review_agent.context import RunContext
 from sit_review_agent.errors import (
     ExitCode,
+    LLMDeadlineError,
     LLMError,
     LLMRefusalError,
     LLMSchemaError,
@@ -43,7 +49,7 @@ from sit_review_agent.hashing import sha256_file
 from sit_review_agent.invariants import URL_RE, check_all, spec_validator
 from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest
-from sit_review_agent.llm.outputs import ReportOutput
+from sit_review_agent.llm.outputs import VerdictOutput
 from sit_review_agent.llm.prefix import start_conversation
 from sit_review_agent.llm.usage_budget import add_usage, cost_lower_bound_line
 from sit_review_agent.manifest import build_manifest, outcome_for, report_json_sha256, write_manifest
@@ -56,8 +62,6 @@ from sit_review_agent.models import (
     Finding,
     IntentSummary,
     Kind,
-    Limitation,
-    NextStep,
     ObjectiveVerdict,
     RegistryHash,
     ResearchLogEntry,
@@ -78,7 +82,7 @@ from sit_review_agent.states import PhaseName
 CONVERSATION_ID = "report"
 LINK_REMOVED = "[link removed: not in the evidence register]"
 _RETRYABLE = (LLMRefusalError,)
-_FALLBACK = (LLMRefusalError, LLMSchemaError, LLMTruncatedError)
+_FALLBACK = (LLMRefusalError, LLMSchemaError, LLMTruncatedError, LLMDeadlineError)
 
 
 class InvariantViolation(Exception):
@@ -104,7 +108,7 @@ def _brief_vars(ctx: RunContext, *, refusal_retry: bool) -> dict[str, Any]:
     }
 
 
-async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | None]:
+async def _verdict_call(ctx: RunContext) -> tuple[VerdictOutput | None, str | None]:
     """The single verdict call (plus one refusal retry with professional-review framing, LLM-06).
     Returns ``(None, reason)`` when the model's answer cannot be used."""
     persona = ctx.config.persona()
@@ -117,7 +121,7 @@ async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | Non
         req = LLMRequest(phase=PhaseName.REPORT, conversation_id=f"{CONVERSATION_ID}-{attempt}" if attempt
                          else CONVERSATION_ID, system=system.text, messages=messages,
                          effort=ctx.config.effort_for(PhaseName.REPORT), max_tokens=ctx.config.agent.max_tokens,
-                         output_schema=ReportOutput, cache_breakpoints=(bp,),
+                         output_schema=VerdictOutput, cache_breakpoints=(bp,),
                          thinking_display=ctx.config.agent.thinking_display,
                          purpose="refusal_retry" if attempt else "verdict")
         try:
@@ -223,11 +227,11 @@ def not_assessed_verdict(reason: str = "deadline") -> Verdict:
                    what_would_change_it=then)
 
 
-def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, list[UnresolvedItem], list[Limitation]]:
-    """Canonical verdict, unresolved items and limitations from the model's draft: unknown finding
-    and degradation IDs removed, empty items dropped, confidence clamped to [0, 1]."""
+def settle_report_output(ctx: RunContext, out: VerdictOutput) -> Verdict:
+    """Canonical verdict from the model's draft: unknown finding IDs removed, empty conditions
+    dropped, confidence clamped to [0, 1]. Unresolved items and limitations are not the model's
+    (module docstring)."""
     known = {f.id for f in ctx.state.findings}
-    degs = {d.id for d in ctx.state.degradations}
     v = out.verdict
     conditions: list[VerdictCondition] = []
     for c in v.conditions:
@@ -260,18 +264,7 @@ def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, l
             DegradationType.OTHER,
             f"the verdict 'fit' is inconsistent with open high or critical findings ({', '.join(open_serious)})",
             "read the verdict together with those findings; the code check does not override the verdict")
-    unresolved = []
-    for u in out.unresolved:
-        if not u.text.strip():
-            continue
-        nxt = (NextStep(owner=u.next_step.owner.strip(), action=u.next_step.action.strip())
-               if u.next_step and u.next_step.owner.strip() and u.next_step.action.strip() else None)
-        unresolved.append(UnresolvedItem(text=u.text.strip(), finding_ids=[x for x in dict.fromkeys(u.finding_ids)
-                                                                          if x in known], next_step=nxt))
-    limitations = [Limitation(text=lim.text.strip(), degradation_ids=[x for x in dict.fromkeys(lim.degradation_ids)
-                                                                       if x in degs])
-                   for lim in out.limitations if lim.text.strip()]
-    return verdict, unresolved, limitations
+    return verdict
 
 
 # =============================================================================== assembly
@@ -442,7 +435,6 @@ class ReportPhase:
         st = ctx.state
         if not ctx.documents:
             raise StageCrash(PhaseName.REPORT.value, InvariantViolation("no documents loaded"))
-        model_unresolved: list[UnresolvedItem] = []
         missing = assessment_missing([d.event for d in st.degradations], st.declined_sections)
         if missing is not None and not st.findings and not st.sound_areas:
             # No assessment (out of time, robustness LLM-05; truncated twice, LLM-07; declined, LLM-06):
@@ -454,14 +446,13 @@ class ReportPhase:
         else:
             out, reason = await _verdict_call(ctx)
             if out is None:
-                st.add_degradation(DegradationType.OTHER, f"verdict call failed: {reason}",
-                                   "the verdict was derived by rule from the findings (no model judgement); "
-                                   "unresolved items and limitations were generated from the run record")
+                st.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT if reason and reason.startswith(
+                    LLMDeadlineError.__name__) else DegradationType.OTHER, f"verdict call failed: {reason}",
+                    "the verdict was derived by rule from the findings (no model judgement)")
                 st.verdict = fallback_verdict(st.findings, reason or "unavailable")
-                st.limitations = []
             else:
-                st.verdict, model_unresolved, st.limitations = settle_report_output(ctx, out)
-        st.unresolved = list(st.unresolved) + model_unresolved      # verify's unverified items first
+                st.verdict = settle_report_output(ctx, out)
+            st.limitations = []                                     # one per degradation, by assemble_review
 
         try:
             review = assemble_review(ctx)

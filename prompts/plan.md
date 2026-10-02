@@ -2,9 +2,8 @@
    Variables: criteria (list of {id, question, kinds, research_hints}), capabilities (list of str:
    enabled research capabilities), max_tool_calls (int, configured budget), time_budget_minutes
    (int, configured deadline; not the time remaining, which would make the prompt volatile),
-   registry (list of {registry_id, type, doc_ref, statement}), intent ({statement, objectives,
-   constraints, key_assumptions}), review_inputs (list of str), review_mode, reframed (bool),
-   schema_error (str). Owner: workstream A. #}
+   review_mode, reframed (bool), schema_error (str). No intent, registry or review inputs: plan runs
+   beside understand (latency redesign, lever 8). Owner: workstream A (W2). #}
 {% if reframed %}
 ## Context of this request
 
@@ -29,37 +28,11 @@ Return the complete answer again, in the required structure, with every field pr
 # Phase: plan the review
 
 Decide what the review must check for each criterion, and which questions need external research
-before conclusions are drawn. Research happens in the next phase with the capabilities listed below;
-the document itself is always available.
-
-## Design intent (from the understand phase)
-
-{{ intent.statement }}
-{% for o in intent.objectives %}
-- Objective{% if o.ref %} {{ o.ref }}{% endif %}: {{ o.text }}
-{% endfor %}
-{% for c in intent.constraints %}
-- Constraint{% if c.ref %} {{ c.ref }}{% endif %}: {{ c.text }}
-{% endfor %}
-{% for a in intent.key_assumptions %}
-- Assumption{% if a.ref %} {{ a.ref }}{% endif %}: {{ a.text }}
-{% endfor %}
-
-## Decision registry (frozen; preserve unless strong evidence says otherwise)
-
-{% for r in registry %}
-- {{ r.registry_id }} [{{ r.type }}] ({{ r.doc_ref }}): {{ r.statement }}
-{% else %}
-- (no entries)
-{% endfor %}
-{% if review_inputs %}
-
-## Claims by other reviewers found in the document (to be checked, not trusted)
-
-{% for x in review_inputs %}
-- {{ x }}
-{% endfor %}
-{% endif %}
+before conclusions are drawn. Research happens next with the capabilities listed below; the document
+itself is always available. Work from the document: its objectives, requirements, constraints and
+approved decisions are in the text (they are extracted separately at the same time, so they are not
+summarised here). Claims by other reviewers that the document contains (comments, claimed fixes) are
+claims to check, not facts.
 
 ## Task
 
@@ -88,7 +61,8 @@ the document itself is always available.
 
 ## Required content rules
 
-- Do not plan to reverse an approved decision; a question may test whether one still holds.
+- Do not plan to reverse a decision the document records as approved; a question may test whether
+  one still holds.
 - A question about something the document already acknowledges as open (a backlog, risk or open-item
   list) asks what the review can add (priority, feasibility, evidence), not whether it is missing.
 - Do not write URLs.

@@ -2,8 +2,10 @@
 Prompt: ``prompts/verify.md``. Output of the repair call: ``AnchorRepairOutput``.
 
 1. Verify every anchor (findings, sound areas, registry, intent) with
-   ``ingest.anchor.verify_finding_anchors``; one repair turn for failures; rows into
-   ``state.anchor_table`` and ``anchors.json`` (resolved / repaired / unresolved).
+   ``ingest.anchor.verify_finding_anchors``; one repair turn for failures, only when more than
+   60 s of slack remain before the verify and verdict reserve (latency redesign; otherwise skipped
+   and disclosed); rows into ``state.anchor_table`` and ``anchors.json`` (resolved / repaired /
+   unresolved).
 2. Hydrate drafts into canonical ``Finding`` objects (:func:`hydrate_finding`): evidence from the
    ledger, provenance from ``finding_meta``; drop anchors beyond 3.
 3. Code checks (fresh_eyes §1.6 "complete, consistent, accurate, traceable"): unknown evidence IDs,
@@ -96,6 +98,14 @@ from sit_review_agent.states import PROVENANCE_PHASE, PhaseName
 
 CONVERSATION_ID = "verify"
 REPAIR_PURPOSE = "anchor_repair"
+#: The one repair call runs only with more slack than this (latency redesign, design section 4).
+REPAIR_MIN_SLACK_S = 60.0
+
+
+def repair_slack_s(ctx: RunContext) -> float:
+    """Seconds left before the verify and verdict reserve (``stop_rules.report_reserve_seconds``)
+    begins: what the anchor repair call may use without taking time from the verdict call."""
+    return ctx.remaining_s() - ctx.config.stop_rules.report_reserve_seconds
 #: Failures listed in the single repair turn (the rest stay unresolved).
 MAX_REPAIRS_PER_CALL = 60
 INTENT_OWNER = "intent"
@@ -588,6 +598,13 @@ class VerifyPhase:
         if not failures:
             return None
         failures = failures[:MAX_REPAIRS_PER_CALL]
+        slack = repair_slack_s(ctx)
+        if slack <= REPAIR_MIN_SLACK_S:
+            _degrade(ctx, f"anchor repair call skipped: {slack:.0f} s of slack left before the verify and verdict "
+                          f"reserve (the call needs more than {REPAIR_MIN_SLACK_S:.0f} s)",
+                     "unresolved anchors were not re-quoted; affected findings may be listed as unverified")
+            ctx.emit(f"{len(failures)} anchor(s) unresolved; no repair turn ({slack:.0f} s of slack)", "warn")
+            return None
         listed = [{"owner_id": o.owner_id, "anchor_index": i, "section_ref": o.anchors[i].section_ref,
                    "page": o.anchors[i].page, "quote": o.anchors[i].quote,
                    "reason": ", ".join(o.results[i].reasons) or "not found"} for o, i in failures]

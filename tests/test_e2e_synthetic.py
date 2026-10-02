@@ -13,8 +13,12 @@ What it pins down (integration verifier, cross-workstream seams):
 * a registry entry whose anchor cites the wrong page is re-anchored right after ``understand``
   (seam found here: ``understand`` records the iteration-0 registry hash, which used to turn the
   settlement into a no-op and fail INV-04 at report);
-* assess turns the model's ``NEW-n`` doc/inference evidence into ledger entries without a tool
-  reference, a short verbatim quote is extended to 8 words, and one anchor is repaired in verify;
+* assess runs as four concurrent shards (one per criterion group of ``config/agent.yaml``), the
+  merge numbers the findings in shard order and ranks them by severity, and turns the model's
+  ``NEW-n`` doc/inference evidence into ledger entries without a tool reference; a short verbatim
+  quote is extended to 8 words, and one anchor is repaired in verify;
+* refine answers with revisions (keep, merge, withdraw) and links the registry decision assess no
+  longer links; the verdict call returns the verdict only;
 * ``explain`` works for every finding;
 * a run interrupted inside ``refine`` (after its model call) resumes from the ``assess`` checkpoint
   and reproduces the same ``report.json`` (ADR-009), with the re-issued call logged
@@ -157,7 +161,13 @@ def assess_findings(ev: dict[str, str] | None = None, *, refined: bool = False) 
     ]
 
 
-def build_script(criteria: list[str]) -> dict[str, list[Any]]:
+#: Which finding each assess shard drafts (the shards are the four groups of config/agent.yaml).
+SHARD_FINDINGS = {1: ["F3"], 2: ["F1", "F4", "F5"], 3: [], 4: ["F2"]}
+#: The IDs the merge gives them: shard order, then each shard's own rank order.
+MERGED_ID = {"F3": "FND-001", "F1": "FND-002", "F4": "FND-003", "F5": "FND-004", "F2": "FND-005"}
+
+
+def build_script(shards: list[Any]) -> dict[str, list[Any]]:
     understand = FakeResponse(parsed={
         "intent_summary": {
             "statement": "A governed, multi-tenant research lakehouse with project-scoped access, embargo and DSA "
@@ -187,51 +197,51 @@ def build_script(criteria: list[str]) -> dict[str, list[Any]]:
              "section_refs": ["20"]}],
         "criteria_skipped": [{"criterion_id": "operability_and_governance", "reason": "Out of scope for this pass."}]})
 
-    def assess(_ledger: list[dict[str, Any]], _req: LLMRequest) -> FakeResponse:
-        coverage = [{"criterion_id": c, "outcome": "no_issue", "finding_ids": [], "note": "e2e"} for c in criteria]
-        return FakeResponse(parsed={
-            "findings": assess_findings(),
-            "sound_areas": [{"section_refs": ["20"], "why_sound": "The audit store is write-once for seven years.",
-                             "doc_anchors": [anchor("20", 17, Q_AUDIT)], "evidence_ids": [],
-                             "related_finding_ids": ["F3"]}],
-            "coverage": coverage})
+    by_title = {f["id"]: f for f in assess_findings()}
 
-    def refine(ledger: list[dict[str, Any]], _req: LLMRequest) -> FakeResponse:
-        by_excerpt = {e["excerpt"]: e["evidence_id"] for e in ledger}
-        ev = {"NEW-1": by_excerpt[Q_NFR5], "NEW-3": by_excerpt[Q_FR4], "NEW-5": by_excerpt[Q_RTO],
-              "NEW-2": by_excerpt["Sending Restricted content to a vendor API breaks NFR-5."]}
-        findings = assess_findings(ev, refined=True)
-        for f, fid in zip(findings, ["FND-001", "FND-002", "FND-003", "FND-004", "FND-005"], strict=True):
-            f["id"] = fid
-        findings[3]["doc_anchors"] = [anchor("20", 17, "Answer cache ElastiCache, faculty-scoped, cosine ≥ 0.97, "
-                                                       "24 h TTL")]
-        return FakeResponse(parsed={"findings": findings, "revisions": [
-            {"finding_id": "FND-001", "change": "revised", "reason": "Severity confirmed by NFR-5's wording.",
-             "evidence_ids": [ev["NEW-1"]]}]})
+    def shard(i: int) -> FakeResponse:
+        mine = [by_title[x] for x in SHARD_FINDINGS[i]]
+        for f in mine:
+            f["affected_decisions"] = []                          # assess shards link no decisions
+        cited = {c for f in mine for c in f["criterion_ids"]}
+        coverage = [{"criterion_id": c, "outcome": "findings" if c in cited else "no_issue", "finding_ids": [],
+                     "note": "e2e"} for c in shards[i - 1].criteria]
+        areas = ([{"section_refs": ["20"], "why_sound": "The audit store is write-once for seven years.",
+                   "doc_anchors": [anchor("20", 17, Q_AUDIT)], "evidence_ids": [], "related_finding_ids": ["F3"]}]
+                 if i == 1 else [])
+        return FakeResponse(parsed={"findings": mine, "sound_areas": areas, "coverage": coverage})
 
-    verify = FakeResponse(parsed={"repairs": [{"owner_id": "FND-005", "anchor_index": 0,
+    def keep(fx: str, rank: int, severity: str | None, disposition: str, **kw: Any) -> dict[str, Any]:
+        return {"finding_id": MERGED_ID[fx], "action": "keep", "merge_into": None, "rank": rank, "severity": severity,
+                "disposition": disposition, "affected_decisions": [], "added_evidence": [], "reason": "Checked.", **kw}
+
+    refine = FakeResponse(parsed={"revisions": [
+        keep("F1", 1, "critical", "refinement_now", reason="NFR-5's wording confirms the conflict with AD-001.",
+             affected_decisions=[{"registry_id": "AD-001", "relation": "challenges",
+                                  "justification": "The confirmed generation model breaks NFR-5."}]),
+        keep("F2", 2, "high", "needs_investigation"), keep("F4", 3, "medium", "refinement_now"),
+        keep("F5", 4, "medium", "needs_testing"), keep("F3", 5, None, "no_change")]})
+
+    verify = FakeResponse(parsed={"repairs": [{"owner_id": MERGED_ID["F5"], "anchor_index": 0,
                                                "doc_anchor": anchor("2.2", 3, Q_RTO, ["NFR-11"])}]})
     report = FakeResponse(parsed={
         "verdict": {"label": "not_fit", "rationale": "Restricted content would leave Westmoor accounts through the "
                     "confirmed generation model, which NFR-5 forbids.", "confidence": 0.8,
                     "conditions": [{"text": "Resolve the generation-model conflict with NFR-5.",
-                                    "finding_ids": ["FND-001"]}],
+                                    "finding_ids": [MERGED_ID["F1"]]}],
                     "per_objective": [{"objective_ref": "Governed multi-tenant research platform",
-                                       "label": "not_fit", "finding_ids": ["FND-001", "FND-002"]}],
-                    "what_would_change_it": "A Westmoor-hosted model for Restricted content."},
-        "unresolved": [{"text": "Whether faculty service principals can read other projects' data.",
-                        "finding_ids": ["FND-002"], "next_step": None}],
-        "limitations": []})
-    return {"understand": [understand], "plan": [plan], "assess": [assess], "refine": [refine],
-            "verify": [verify], "report": [report]}
+                                       "label": "not_fit", "finding_ids": [MERGED_ID["F1"], MERGED_ID["F2"]]}],
+                    "what_would_change_it": "A Westmoor-hosted model for Restricted content."}})
+    return {"understand": [understand], "plan": [plan], "assess": [shard(i) for i in range(1, len(shards) + 1)],
+            "refine": [refine], "verify": [verify], "report": [report]}
 
 
 class ScriptedGateway(FakeGateway):
     """``FakeGateway`` whose script entries may be callables ``(ledger_entries, request)`` resolved
     when their turn comes (the model cites the ``EV-`` IDs that exist at that point)."""
 
-    def __init__(self, rd: RunDir, clock: Any, criteria: list[str]) -> None:
-        super().__init__(build_script(criteria), run_dir=rd, clock=clock)
+    def __init__(self, rd: RunDir, clock: Any, shards: list[Any]) -> None:
+        super().__init__(build_script(shards), run_dir=rd, clock=clock)
         self.rd = rd
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
@@ -249,7 +259,9 @@ def config(tmp_path: Path) -> EffectiveConfig:
 
 
 def factory(cfg: EffectiveConfig) -> Any:
-    return lambda rd, clock, progress: ScriptedGateway(rd, clock, cfg.criteria.ids())
+    shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
+    assert [len(SHARD_FINDINGS)] == [len(shards)]
+    return lambda rd, clock, progress: ScriptedGateway(rd, clock, shards)
 
 
 class RefineThenInterrupt:
@@ -306,25 +318,34 @@ async def test_e2e_synthetic_pdf_doc_only_then_resume_after_assess(tmp_path: Pat
     nfr11 = next(e for e in report["decision_registry"] if e["doc_ref"] == "NFR-11")
     assert nfr11["doc_anchor"]["page"] == 3
     assert {h["iteration"] for h in report["research_log"]["registry_sha256_by_iteration"]} == {0}
-    # findings: renumbered FND-, short quote extended, anchor repaired, inference derived from a doc entry
-    fids = [f["id"] for f in report["findings"]]
-    assert fids == ["FND-001", "FND-002", "FND-003", "FND-004", "FND-005"]
-    f4 = report["findings"][3]
+    # findings: numbered in shard order, ranked by refine, short quote extended, anchor repaired,
+    # inference derived from a doc entry
+    by_id = {f["id"]: f for f in report["findings"]}
+    assert sorted(by_id) == sorted(MERGED_ID.values())
+    assert [f["id"] for f in sorted(report["findings"], key=lambda f: f["rank"])] == [
+        MERGED_ID[x] for x in ("F1", "F2", "F4", "F5", "F3")]
+    f4 = by_id[MERGED_ID["F4"]]
     assert len(f4["doc_anchors"][0]["quote"].split()) >= 8
-    assert report["findings"][4]["doc_anchors"][0]["page"] == 3
+    assert by_id[MERGED_ID["F5"]]["doc_anchors"][0]["page"] == 3
     anchors = json.loads(rd.anchors.read_text(encoding="utf-8"))
     assert anchors["summary"]["repaired"] == 1 and anchors["summary"]["unresolved"] == 0
-    f1 = report["findings"][0]
+    f1 = by_id[MERGED_ID["F1"]]
     assert [e["source_type"] for e in f1["evidence"]] == ["doc", "inference"]
-    assert f1["affected_decisions"][0]["relation"] == "challenges"
-    assert f1["provenance"]["phase"] == "revise" and f1["confidence"] == 0.95
+    assert f1["affected_decisions"][0]["relation"] == "challenges"                # linked by refine
+    assert f1["provenance"]["phase"] == "revise" and f1["confidence"] == 0.85     # a revision keeps confidence
+    assert by_id[MERGED_ID["F3"]]["provenance"]["phase"] == "assess"             # unchanged by refine
     assert report["verdict"]["label"] == "not_fit"
+    assert sorted(p.name for p in (rd.root / "shards").iterdir()) == [
+        "01-intent_and_fitness.json", "02-requirements_and_consistency.json", "03-claims_and_assumptions.json",
+        "04-risk_and_operations.json"]
     # explain works for every finding
-    for fid in fids:
+    for fid in by_id:
         text = format_explain(explain(rd.root, fid))
         assert fid in text and "NOT IN LEDGER" not in text
     llm_ids = [e["call_id"] for e in JsonlWriter(rd.llm_log).read()]
-    assert llm_ids == [f"llm-{i:04d}" for i in range(1, 7)]                   # research made no model call
+    assert llm_ids == [f"llm-{i:04d}" for i in range(1, 10)]                  # research made no model call
+    convs = [e["conversation_id"] for e in JsonlWriter(rd.llm_log).read() if e["phase"] == "assess"]
+    assert convs == [f"assess-0-s{i}" for i in range(1, 5)]
 
     # ---- run B: dies inside refine after its model call, resumes from the assess checkpoint
     phases = {**default_phases(), PhaseName.REFINE: RefineThenInterrupt()}
@@ -338,7 +359,7 @@ async def test_e2e_synthetic_pdf_doc_only_then_resume_after_assess(tmp_path: Pat
     assert comparable(rdb.root) == comparable(rd.root)                        # ADR-009: same report
     entries = JsonlWriter(rdb.llm_log).read()
     ids = [e["call_id"] for e in entries]
-    assert len(ids) == len(set(ids)) == 7                                     # refine re-issued under a new ID
+    assert len(ids) == len(set(ids)) == 10                                    # refine re-issued under a new ID
     refine = [e for e in entries if e["phase"] == "refine"]
     assert [e.get("resumed", False) for e in refine] == [False, True]
     assert not any(e.get("resumed") for e in entries if e["phase"] != "refine")

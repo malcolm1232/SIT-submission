@@ -4,9 +4,10 @@
 The phase contract (``phases/base.py``, agent/README.md) as implemented here:
 
 * **Conversation IDs.** A phase's call uses ``"<phase>-<iteration>"`` (``understand-0``,
-  ``plan-0``, ``assess-<n>``, ``refine-<n>`` where ``n`` is the number of completed research
-  iterations). A retry of that call (refusal reframing, schema repair, larger ``max_tokens``) is a
-  fresh conversation ``"<phase>-<iteration>-r<k>"``: the failed turn is never appended to history
+  ``plan-0``, ``refine-<n>`` where ``n`` is the number of completed research iterations); an assess
+  shard uses ``assess-0-s<k>`` (``conversation=``; latency redesign). A retry of that call
+  (refusal reframing, schema repair, larger ``max_tokens``) is a fresh conversation
+  ``"<conversation>-r<k>"``: the failed turn is never appended to history
   (its output is discarded, ADR-009 item 3), and with ``ClaudeCodeGateway`` a fresh conversation is
   a fresh CLI session. Every conversation of a phase uses ``config.effort_for(phase)``.
 * **Prefix.** Every conversation starts with :func:`llm.prefix.start_conversation` over the
@@ -28,8 +29,9 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   (Session 4 ruling). A call cut by the run deadline (:class:`LLMDeadlineError`, robustness LLM-05)
   is not retried: it is disclosed as a ``budget_or_deadline_hit`` degradation and the phase
   continues with its code fallback (understand: no intent or registry; plan: one document-only
-  question per criterion; assess: "out of time before assessment", no findings; refine: the
-  assess drafts unchanged). Other :class:`LLMError`\\ s propagate.
+  question per criterion; refine: the merged findings in severity and confidence order). An assess
+  shard (``disclose=False``) discloses its own cut, keeping the findings the stream had finished
+  (``PhaseCall.partial``). Other :class:`LLMError`\\ s propagate.
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
@@ -105,10 +107,14 @@ class PhaseCall:
     refusal_category: str | None = None
     cut: bool = False                    # the run deadline cut the call (robustness LLM-05)
     truncated: bool = False              # the answer was cut off at max_tokens twice (LLM-07)
+    #: What a cut stream had finished (``LLMDeadlineError.partial``; latency redesign), else ``None``.
+    partial: dict[str, Any] | None = None
+    #: Problems ``check`` still found after the one repair call (the answer is not used).
+    invalid: tuple[str, ...] = ()
 
     @property
     def declined(self) -> bool:
-        return self.result is None and not self.cut and not self.truncated
+        return self.result is None and not self.cut and not self.truncated and not self.invalid
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -218,6 +224,12 @@ def record_result(ctx: RunContext, phase: PhaseName, result: LLMResult[Any]) -> 
                                   "part of this review was produced by another model; the run is not eval evidence")
 
 
+#: Impact of every refine fallback (cut, truncated twice, declined, revisions that cannot be applied).
+REFINE_FALLBACK_IMPACT = ("the merged assess findings are reported in severity and confidence order, without the "
+                          "global refine pass (no duplicates merged, no registry decisions linked, no research "
+                          "evidence attached)")
+
+
 def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
     """Disclose a model call the run deadline cut (robustness LLM-05; INV-07)."""
     from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
@@ -228,7 +240,7 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
                   "the design; rerun with a longer deadline")
     elif phase is PhaseName.REFINE:
         event = f"the refine call was cut by the run deadline ({exc})"
-        impact = "the assess findings are reported as drafted, without the self-critique pass"
+        impact = REFINE_FALLBACK_IMPACT
     else:
         event = f"the {phase.value} call was cut by the run deadline ({exc})"
         impact = f"the {phase.value} step was completed by code without model output"
@@ -249,7 +261,7 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
         impact = ("the design was not assessed: the report has no findings and its verdict is not a judgement of "
                   "the design; rerun the review (answer length varies between calls)")
     elif phase is PhaseName.REFINE:
-        impact = "the assess findings are reported as drafted, without the self-critique pass"
+        impact = REFINE_FALLBACK_IMPACT
     else:
         impact = f"the {phase.value} step was completed by code without model output"
     ctx.state.add_degradation(DegradationType.OTHER, event, impact)
@@ -257,9 +269,18 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
 
 
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
-                     iteration: int = 0, purpose: str | None = None) -> PhaseCall:
+                     iteration: int = 0, purpose: str | None = None, conversation: str | None = None,
+                     disclose: bool = True, check: Callable[[Any], list[str]] | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
-    docstring. Returns the result, or a declined :class:`PhaseCall` after a persistent refusal."""
+    docstring. Returns the result, or a declined :class:`PhaseCall` after a persistent refusal.
+
+    ``conversation`` replaces the conversation ID ``<phase>-<iteration>`` (an assess shard uses
+    ``assess-<n>-s<k>``). With ``disclose=False`` (assess shards) a deadline cut, a second truncation
+    or a persistent refusal is returned without the phase-level degradation, ``declined_sections``
+    entry or deadline text, because the caller discloses it in its own terms; call IDs, usage and
+    refusals are recorded either way. ``check`` (refine) lists what makes a parsed answer unusable;
+    a non-empty list is treated like a schema error: one repair call with the list as
+    ``schema_error``, then the call returns with ``invalid`` set (never raises)."""
     effort = ctx.config.effort_for(phase)
     system = system_prompt(ctx).text
     docs = ordered_documents(ctx)
@@ -267,7 +288,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
         raise ValueError(f"{phase.value}: no documents in the run context")
     native = supports_native_pdf(ctx.llm)
     max_tokens = ctx.config.agent.max_tokens
-    base_conv = f"{phase.value}-{iteration}"
+    base_conv = conversation or f"{phase.value}-{iteration}"
     label = purpose or phase.value
     reframed, schema_error = False, ""
     refusals_left = ctx.config.agent.llm.refusal_retries
@@ -298,6 +319,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                 ctx.emit(f"model declined ({exc.category or 'no category'}); retrying once with professional-review "
                          "framing", "warn")
                 continue
+            if not disclose:
+                return PhaseCall(result=None, brief=brief, refusal_category=exc.category)
             ctx.state.add_degradation(
                 DegradationType.OTHER,
                 f"the model declined the {phase.value} call after a reframed retry (refusal category: "
@@ -318,15 +341,17 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             continue
         except LLMDeadlineError as exc:
             _note_call(ctx, phase, exc.call_id)
-            add_usage(ctx.state.budget, exc.usage)
-            deadline_cut(ctx, phase, exc)
-            return PhaseCall(result=None, brief=brief, cut=True)
+            add_usage(ctx.state.budget, exc.usage)       # measured usage only; never estimated_usage
+            if disclose:
+                deadline_cut(ctx, phase, exc)
+            return PhaseCall(result=None, brief=brief, cut=True, partial=getattr(exc, "partial", None))
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
             add_usage(ctx.state.budget, exc.usage)
             truncated_ids.append(exc.call_id)
             if widened:                     # second truncation: degrade like a deadline cut, no third call
-                truncated_twice(ctx, phase, max_tokens, truncated_ids)
+                if disclose:
+                    truncated_twice(ctx, phase, max_tokens, truncated_ids)
                 return PhaseCall(result=None, brief=brief, truncated=True)
             wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
             how = (f"with max_tokens={wider}" if wider > max_tokens
@@ -336,6 +361,17 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             ctx.emit(f"answer truncated at max_tokens; retrying once {how}", "warn")
             continue
         record_result(ctx, phase, result)
+        problems = check(result.parsed) if check is not None and result.parsed is not None else []
+        if problems:
+            if repaired:
+                ctx.emit(f"{phase.value} answer still unusable after one repair call: {'; '.join(problems)[:300]}",
+                         "warn")
+                return PhaseCall(result=None, brief=brief, invalid=tuple(problems))
+            repaired, k, reason = True, k + 1, "schema_repair"
+            schema_error = ("The answer had the required structure but broke these rules:\n"
+                            + "\n".join(f"- {p}" for p in problems))[:4000]
+            ctx.emit(f"{phase.value} answer broke {len(problems)} rule(s); one repair call", "warn")
+            continue
         return PhaseCall(result=result, brief=brief)
 
 
@@ -519,11 +555,12 @@ def normalise_sound_areas(ctx: RunContext, areas: Sequence[SoundAreaDraft], id_m
 
 
 def reconcile_coverage(ctx: RunContext, rows: Sequence[CriterionCoverage], findings: Sequence[FindingDraft],
-                       id_map: dict[str, str] | None = None) -> list[CriterionCoverage]:
-    """One coverage row per configured criterion, in config order, consistent with the findings'
-    ``criterion_ids``. Rows for unknown criteria are dropped; a missing row is added as
-    ``not_applicable`` with a note saying the model did not report it (or ``findings`` if a
-    finding cites the criterion)."""
+                       id_map: dict[str, str] | None = None, *,
+                       criteria: Sequence[str] | None = None) -> list[CriterionCoverage]:
+    """One coverage row per configured criterion (or per criterion of ``criteria``, an assess
+    shard's group), in config order, consistent with the findings' ``criterion_ids``. Rows for
+    unknown criteria are dropped; a missing row is added as ``not_applicable`` with a note saying
+    the model did not report it (or ``findings`` if a finding cites the criterion)."""
     id_map = id_map or {}
     by_criterion: dict[str, list[str]] = {}
     for f in findings:
@@ -534,7 +571,10 @@ def reconcile_coverage(ctx: RunContext, rows: Sequence[CriterionCoverage], findi
     for r in rows:
         given.setdefault(r.criterion_id, r)
     out = []
+    wanted = set(criteria) if criteria is not None else None
     for cid in known_criteria(ctx):
+        if wanted is not None and cid not in wanted:
+            continue
         cited = by_criterion.get(cid, [])
         row = given.get(cid)
         if row is None:
@@ -584,7 +624,7 @@ class EvidenceStats:
 class _EvidenceResolver:
     """Turns the model's evidence citations into ledger-backed ones (see :func:`resolve_evidence`)."""
 
-    def __init__(self, ctx: RunContext) -> None:
+    def __init__(self, ctx: RunContext, shown: Iterable[str] | None = None) -> None:
         self.ctx = ctx
         self.ledger = ctx.ledger
         self.map: dict[str, str] = {}
@@ -592,7 +632,8 @@ class _EvidenceResolver:
         self._doc_index: dict[tuple[str, str], str] = {
             (e.url_or_citation, e.excerpt or ""): e.evidence_id for e in self.ledger if e.source_type is SourceType.DOC}
         #: Ledger IDs that existed when the model answered: the only register IDs it can have meant.
-        self._shown: set[str] = {e.evidence_id for e in self.ledger}
+        self._shown: set[str] = ({e.evidence_id for e in self.ledger} if shown is None
+                                 else set(shown) & {e.evidence_id for e in self.ledger})
 
     def resolve_id(self, model_id: str) -> str | None:
         """The ledger entry an ID written by the model stands for: the entry created here for one
@@ -714,8 +755,9 @@ class _EvidenceResolver:
 
 
 def resolve_evidence(ctx: RunContext, findings: Sequence[FindingDraft],
-                     sound_areas: Sequence[SoundAreaDraft] = ()) -> tuple[list[FindingDraft], list[SoundAreaDraft],
-                                                                         EvidenceStats]:
+                     sound_areas: Sequence[SoundAreaDraft] = (), *,
+                     shown: Iterable[str] | None = None) -> tuple[list[FindingDraft], list[SoundAreaDraft],
+                                                                  EvidenceStats]:
     """Make every evidence citation ledger-backed, so ``verify`` can hydrate it.
 
     The model cites register IDs, and gives *new* ``doc`` and ``inference`` items temporary IDs
@@ -728,8 +770,12 @@ def resolve_evidence(ctx: RunContext, findings: Sequence[FindingDraft],
     ``evidence``, ``derived_from``, ``recommendation.supporting_evidence_ids`` and sound areas'
     ``evidence_ids``, aligns each citation's ``source_type`` with its ledger entry, fills a missing
     quote from the ledger excerpt, and drops citations of unknown external IDs (INV-05). A
-    recommendation left with no supporting evidence cites a doc entry for its first anchor."""
-    r = _EvidenceResolver(ctx)
+    recommendation left with no supporting evidence cites a doc entry for its first anchor.
+
+    ``shown`` is the set of register IDs the model was shown (default: the whole ledger now). An assess
+    shard is shown none (it runs beside research), so every ``EV-`` ID it writes is treated as
+    invented, even when research has since added an entry of that name."""
+    r = _EvidenceResolver(ctx, shown)
     r.resolve(findings)
     out = [r.rewrite(f) for f in findings]
     areas = [a.model_copy(update={"evidence_ids": [i for i in dict.fromkeys(r.resolve_id(x) for x in a.evidence_ids)

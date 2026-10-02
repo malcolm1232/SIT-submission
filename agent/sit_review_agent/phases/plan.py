@@ -1,7 +1,9 @@
 """``plan`` (LLM, workstream A). Prompt: ``prompts/plan.md``. Output: ``PlanOutput``.
 
-Reads: intent summary, frozen registry, every configured criterion, enabled capabilities
-(``config.tools.capabilities`` of enabled servers), remaining time and tool-call budget.
+Reads: every configured criterion, enabled capabilities (``config.tools.capabilities`` of enabled
+servers), the configured tool-call budget and deadline. Not the intent summary, the registry or the
+review inputs found by understand: plan runs beside understand in stage 1 (latency redesign, design
+section 4, lever 8), so its brief carries the document and the criteria only.
 Writes: ``ctx.state.plan`` (ResearchPlan; one or more questions per applicable criterion, each with
 a fixed capability). ``--plan-only`` prints the plan and the orchestrator stops after this phase.
 With ``plan_approval: true`` the plan is printed and the run waits for approval before research.
@@ -26,13 +28,7 @@ from __future__ import annotations
 
 from sit_review_agent.context import RunContext
 from sit_review_agent.llm.outputs import CriterionSkip, PlanOutput, ResearchQuestionDraft
-from sit_review_agent.phases._model_calls import (
-    call_model,
-    criteria_vars,
-    intent_vars,
-    known_criteria,
-    registry_vars,
-)
+from sit_review_agent.phases._model_calls import call_model, criteria_vars, known_criteria
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.state.run_state import ResearchPlan, ResearchQuestion
 from sit_review_agent.states import PhaseName
@@ -117,9 +113,8 @@ class PlanPhase:
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
             return ctx.prompts.render(
                 "plan.md", criteria=criteria_vars(ctx), capabilities=caps, max_tool_calls=stop.max_tool_calls,
-                time_budget_minutes=max(1, stop.deadline_seconds // 60), registry=registry_vars(ctx),
-                intent=intent_vars(ctx), review_inputs=list(ctx.state.review_inputs_found),
-                review_mode=ctx.state.review_mode.value, reframed=reframed, schema_error=schema_error)
+                time_budget_minutes=max(1, stop.deadline_seconds // 60), review_mode=ctx.state.review_mode.value,
+                reframed=reframed, schema_error=schema_error)
 
         call = await call_model(ctx, phase, render, PlanOutput, iteration=0, purpose="plan")
         out = call.result.parsed if call.result is not None and isinstance(call.result.parsed, PlanOutput) else None

@@ -9,8 +9,11 @@ completeness, ledger-backed evidence, and an orchestrator run that checkpoints t
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import itertools
 import json
+import re
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -18,9 +21,9 @@ from typing import Any
 import pytest
 
 from sit_review_agent.clock import FakeClock, isoformat_z
-from sit_review_agent.config import EffectiveConfig, load_config
+from sit_review_agent.config import AssessSettings, AssessShard, EffectiveConfig, load_config
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMSchemaError, RegistryFrozenError
+from sit_review_agent.errors import LLMDeadlineError, LLMOverloadedError, LLMSchemaError, RegistryFrozenError
 from sit_review_agent.hashing import sha256_text
 from sit_review_agent.ingest.pdf import Document
 from sit_review_agent.ingest.text import flatten_for_match
@@ -405,63 +408,230 @@ async def test_plan_declined_falls_back_to_document_questions(tmp_path: Path, cf
     assert ctx.state.declined_sections == ["plan"]
 
 
-# ------------------------------------------------------------------------------ assess
+# ------------------------------------------------------------------------------ assess shards
 
 
-async def test_assess_writes_drafts_meta_coverage_and_ledger(tmp_path: Path, cfg: EffectiveConfig) -> None:
-    ctx = make_ctx(tmp_path, cfg, {PhaseName.ASSESS: [FakeResponse(parsed=assess_output())]})
+def shard_cfg(cfg: EffectiveConfig, groups: dict[str, list[str]]) -> EffectiveConfig:
+    """``cfg`` with ``assess.shards`` replaced by ``groups`` and the run's criteria cut to theirs (a
+    criterion in no group would form a shard of its own)."""
+    settings = AssessSettings(shards=[AssessShard(name=n, criteria=c) for n, c in groups.items()])
+    wanted = {c for cs in groups.values() for c in cs}
+    criteria = cfg.criteria.model_copy(update={"criteria": [c for c in cfg.criteria.criteria if c.id in wanted]})
+    return cfg.model_copy(update={"agent": cfg.agent.model_copy(update={"assess": settings}), "criteria": criteria})
+
+
+def one_shard(cfg: EffectiveConfig) -> EffectiveConfig:
+    return shard_cfg(cfg, {"all": cfg.criteria.ids()})
+
+
+class ShardGateway(FakeGateway):
+    """Answers each conversation from its own queue (``assess-0-s2`` and its retries ``-r1``...),
+    optionally only once the test opens that conversation's gate (to fix the completion order)."""
+
+    def __init__(self, answers: dict[str, list[FakeResponse]], *, gates: dict[str, asyncio.Event] | None = None,
+                 **kw: Any) -> None:
+        super().__init__({}, **kw)
+        self.answers = {k: deque(v) for k, v in answers.items()}
+        self.gates = gates or {}
+        self.ended: list[str] = []
+
+    async def call(self, request: LLMRequest) -> LLMResult[Any]:
+        base = re.sub(r"-r\d+$", "", request.conversation_id)
+        if base in self.gates:
+            await self.gates[base].wait()
+        queue = self.answers.get(base) or self.answers.get(str(request.phase)) or deque()
+        self.script[str(request.phase)] = deque([queue.popleft()]) if queue else deque()
+        try:
+            return await super().call(request)
+        finally:
+            self.ended.append(base)
+
+
+def shard_finding(fid: str, rank: int, quote: str, page: int, section: str, criterion: str, n: int = 1,
+                  **kw: Any) -> dict[str, Any]:
+    """A doc-only finding (assess shards see no register): one ``NEW-`` doc item and an inference
+    (temporary IDs ``NEW-<2n-1>`` and ``NEW-<2n>``, unique within one shard's answer)."""
+    doc, inf = f"NEW-{2 * n - 1}", f"NEW-{2 * n}"
+    return finding(fid, rank, doc_anchors=[anchor(quote, page, section)], criterion_ids=[criterion],
+                   evidence=[{"evidence_id": doc, "source_type": "doc", "quote": quote, "supports_claim": True,
+                              "derived_from": []},
+                             {"evidence_id": inf, "source_type": "inference", "quote": f"Inference on {section}.",
+                              "supports_claim": True, "derived_from": [doc]}],
+                   recommendation={"issue": "x", "rationale": "y", "expected_benefit": "z", "change_summary": "c",
+                                   "objective_refs": [], "supporting_evidence_ids": [inf], "verification": None},
+                   **kw)
+
+
+async def test_assess_shard_writes_drafts_meta_coverage_and_ledger(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ctx = make_ctx(tmp_path, one_shard(cfg), {PhaseName.ASSESS: [FakeResponse(parsed=assess_output())]})
     pre = ctx.ledger.add_doc(doc_id=DOC_ID, page=6, section_ref="4.1", excerpt=Q_LOAD)       # EV-001
     ctx.state.budget.research_iterations = 2
     await AssessPhase().run(ctx)
     s = ctx.state
 
-    risk, good = s.finding_drafts
-    assert [f.id for f in s.finding_drafts] == ["FND-001", "FND-002"]           # renumbered
-    assert (risk.rank, good.rank) == (2, 1) and good.confidence == 1.0
+    risk, good = s.finding_drafts                     # listed in rank order; IDs in the shard's own rank order
+    assert [f.id for f in s.finding_drafts] == ["FND-002", "FND-001"]
+    assert (risk.rank, good.rank) == (1, 2) and good.confidence == 1.0         # merged rank: severity first
     assert risk.criterion_ids == ["claims_and_external_constraints"]
-    # evidence: EV-001 kept, NEW-1 (doc) and NEW-2 (inference) added to the ledger, EV-404 dropped
+    # The shard saw no register: "EV-001" is an invented ID; its doc quote is located in the text and
+    # reuses the identical entry; NEW-1 (doc) and NEW-2 (inference) are added; EV-404 is dropped.
     assert [c.evidence_id for c in risk.evidence] == [pre.evidence_id, "EV-002", "EV-003"]
     assert [c.source_type for c in risk.evidence] == [SourceType.DOC, SourceType.DOC, SourceType.INFERENCE]
-    inference = ctx.ledger.get("EV-003")
-    assert inference.derived_from == ["EV-001", "EV-002"] and risk.evidence[2].derived_from == ["EV-001", "EV-002"]
-    assert ctx.ledger.get("EV-002").url_or_citation == f"doc:{DOC_ID}#p11/s6.2"
+    assert ctx.ledger.get("EV-003").derived_from == ["EV-001", "EV-002"]
     assert risk.recommendation is not None and risk.recommendation.supporting_evidence_ids == ["EV-003"]
     assert {e.evidence_id for e in EvidenceLedger.load(ctx.run_dir)} == {"EV-001", "EV-002", "EV-003"}  # journaled
     for draft in s.finding_drafts:                                             # verify can hydrate them
         f = hydrate(ctx, draft)
         assert all(isinstance(e, EvidenceItem) for e in f.evidence)
 
-    meta = s.finding_meta["FND-001"]
+    meta = s.finding_meta["FND-002"]
     [req] = ctx.llm.calls
-    assert meta.created_phase is PhaseName.ASSESS and meta.last_call_id == "llm-0001" and meta.iteration == 2
+    # A shard sees no research: iteration 0 whatever research has done (conversation assess-0-s<k>).
+    assert meta.created_phase is PhaseName.ASSESS and meta.last_call_id == "llm-0001" and meta.iteration == 0
     assert meta.model == "claude-opus-5-5" and meta.prompt_hash == sha256_text(brief_of(req))
-    assert req.conversation_id == "assess-2" and req.effort == cfg.effort_for(PhaseName.ASSESS)
-    assert "EV-001 [doc]" in brief_of(req) and "http" not in brief_of(req)
+    assert req.conversation_id == "assess-0-s1" and req.effort == cfg.effort_for(PhaseName.ASSESS)
+    assert req.purpose == "assess" and "http" not in brief_of(req)
 
-    [area] = s.sound_area_drafts
+    [area] = s.sound_area_drafts                      # the duplicated model ID "F-1": first in rank order wins
     assert area.related_finding_ids == ["FND-001"] and area.evidence_ids == ["EV-002"]
     cov = {c.criterion_id: c for c in s.coverage}
     assert list(cov) == cfg.criteria.ids()                                     # one row per criterion, in order
-    assert cov["claims_and_external_constraints"].finding_ids == ["FND-001"]
+    # The row's "F-1" maps to FND-001 (as above); FND-002 cites the criterion itself.
+    assert cov["claims_and_external_constraints"].finding_ids == ["FND-001", "FND-002"]
     assert cov["security_and_privacy"].outcome == "no_issue"                   # "findings" with none attached
-    assert cov["verifiability"].outcome == "findings" and cov["verifiability"].finding_ids == ["FND-002"]
+    assert cov["verifiability"].outcome == "findings" and cov["verifiability"].finding_ids == ["FND-001"]
     assert cov["design_intent"].outcome == "not_applicable" and "no coverage row" in cov["design_intent"].note
     assert any("dropped" in e.message for e in ctx.progress.events)
 
 
+async def test_shard_briefs_carry_scope_and_group_only(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """Lever 8: a shard's brief has the document, its criterion group and the scope paragraph; no
+    intent, registry, plan answers or evidence register, even when they exist."""
+    shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
+    empty = {"findings": [], "sound_areas": [], "coverage": []}
+    ctx = make_ctx(tmp_path, cfg, {PhaseName.ASSESS: [FakeResponse(parsed=empty) for _ in shards]})
+    ctx.ledger.add_doc(doc_id=DOC_ID, page=6, section_ref="4.1", excerpt=Q_LOAD)
+    ctx.state.review_inputs_found = ["a reviewer comment"]
+    await AssessPhase().run(ctx)
+    assert [r.conversation_id for r in ctx.llm.calls] == [f"assess-0-s{i}" for i in range(1, len(shards) + 1)]
+    for req, shard in zip(ctx.llm.calls, shards, strict=True):
+        brief = brief_of(req)
+        assert "## Scope of this assessment" in brief and f"`{shard.name}`" in brief
+        listed = brief.split("## Criteria of this assessment")[1]
+        assert all(f"`{c}`" in listed for c in shard.criteria)
+        assert not [c for c in cfg.criteria.ids() if c not in shard.criteria and f"`{c}`:" in listed]
+        for absent in ("Design intent", "Decision registry", "Research questions", "Evidence register", "EV-001",
+                       "a reviewer comment"):
+            assert absent not in brief
+    assert [c.outcome for c in ctx.state.coverage] == ["not_applicable"] * len(cfg.criteria.ids())
+
+
 async def test_assess_persistent_refusal_completes(tmp_path: Path, cfg: EffectiveConfig) -> None:
-    ctx = make_ctx(tmp_path, cfg, {PhaseName.ASSESS: [FakeResponse(stop_reason="refusal", refusal_category="bio"),
-                                                      FakeResponse(stop_reason="refusal", refusal_category="bio")]})
+    ctx = make_ctx(tmp_path, one_shard(cfg), {PhaseName.ASSESS: [
+        FakeResponse(stop_reason="refusal", refusal_category="bio"),
+        FakeResponse(stop_reason="refusal", refusal_category="bio")]})
     await AssessPhase().run(ctx)
     assert ctx.state.declined_sections == ["assess"] and ctx.state.finding_drafts == []
     assert [c.criterion_id for c in ctx.state.coverage] == cfg.criteria.ids()
     assert all("declined" in c.note for c in ctx.state.coverage)
-    assert "bio" in ctx.state.degradations[0].event
-    assert [c.conversation_id for c in ctx.llm.calls] == ["assess-0", "assess-0-r1"]
+    assert "bio" in ctx.state.degradations[0].event and "assess shard 1/1 (all)" in ctx.state.degradations[0].event
+    assert [c.conversation_id for c in ctx.llm.calls] == ["assess-0-s1", "assess-0-s1-r1"]
+
+
+async def test_one_failed_shard_leaves_a_partial_review(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """Shard 1 answers; shard 2 is declined twice, shard 3 truncated twice, shard 4 fails with a model
+    error: a partial review with every failure disclosed, never a crash and never not_assessed."""
+    groups = {"a": ["claims_and_external_constraints", "verifiability"], "b": ["design_intent"],
+              "c": ["internal_consistency"], "d": ["security_and_privacy"]}
+    c2 = shard_cfg(cfg, groups)
+    script = {PhaseName.ASSESS: [
+        FakeResponse(parsed=assess_output()),
+        FakeResponse(stop_reason="refusal"), FakeResponse(stop_reason="refusal"),
+        FakeResponse(stop_reason="max_tokens"), FakeResponse(stop_reason="max_tokens"),
+        FakeResponse(raises=LLMOverloadedError("529 after retries"))]}
+    ctx = make_ctx(tmp_path, c2, script)
+    await AssessPhase().run(ctx)
+    s = ctx.state
+    assert len(s.finding_drafts) == 2 and s.declined_sections == []            # partial review, not "declined"
+    cov = {c.criterion_id: c for c in s.coverage}
+    assert cov["design_intent"].note == "not assessed: the model declined the assess call"
+    assert cov["internal_consistency"].note.startswith("not assessed: the assess answer was truncated twice")
+    assert cov["security_and_privacy"].note == "not assessed: the assess call failed"
+    events = [d.event for d in s.degradations]
+    assert any(e.startswith("the model declined assess shard 2/") for e in events)
+    assert any(e.startswith("assess shard 3/") and "truncated twice" in e for e in events)
+    assert any(e.startswith("assess shard 4/") and "LLMOverloadedError" in e for e in events)
+    from sit_review_agent.phases.report import assessment_missing
+
+    assert not [e for e in events if e.startswith("out of time before assessment")]
+    assert s.finding_drafts and assessment_missing(events, s.declined_sections) in (None, "truncated")
+
+
+async def test_a_cut_shard_keeps_its_finished_findings(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """W1's runtime raises LLMDeadlineError with the finished items at the stage limit: each item is
+    validated on its own; the shard's criteria without a finding are not assessed; disclosed."""
+    c2 = shard_cfg(cfg, {"a": ["claims_and_external_constraints", "verifiability", "security_and_privacy"]})
+    kept = finding("FND-001", 1, criterion_ids=["claims_and_external_constraints"])
+    cut = LLMDeadlineError("cut at the stage 1 limit", partial={"findings": [kept, {"id": "FND-002", "rank": 2}]})
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(raises=cut)]})
+    await AssessPhase().run(ctx)
+    s = ctx.state
+    assert [f.title for f in s.finding_drafts] == [kept["title"]]
+    cov = {c.criterion_id: c for c in s.coverage}
+    assert cov["claims_and_external_constraints"].outcome == "findings"
+    assert cov["verifiability"].note == cov["security_and_privacy"].note == \
+        "not assessed: out of time before assessment (stage 1 limit)"
+    [d] = s.degradations
+    assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT and "1 finished finding(s) kept" in d.event
+    assert "verifiability, security_and_privacy" in d.impact
+    assert not d.event.startswith("out of time before assessment")           # the design was assessed
+
+
+def _failing(reason: str) -> list[FakeResponse]:
+    """The answers that leave one shard without an assessment for ``reason``."""
+    if reason == "deadline":
+        return [FakeResponse(raises=LLMDeadlineError("cut at the stage 1 limit"))]
+    stop = "max_tokens" if reason == "truncated" else "refusal"
+    return [FakeResponse(stop_reason=stop), FakeResponse(stop_reason=stop)]
+
+
+@pytest.mark.parametrize("reason", ["deadline", "truncated", "declined"])
+async def test_not_assessed_only_when_no_shard_assessed(tmp_path: Path, cfg: EffectiveConfig, reason: str) -> None:
+    """The three not-assessed reasons, now when every shard failed that way (one stage-level disclosure)."""
+    from sit_review_agent.phases.report import assessment_missing
+
+    c2 = shard_cfg(cfg, {"a": ["design_intent"], "b": ["verifiability"]})
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [*_failing(reason), *_failing(reason)]})
+    await AssessPhase().run(ctx)
+    events = [d.event for d in ctx.state.degradations]
+    assert assessment_missing(events, ctx.state.declined_sections) == reason
+    assert ctx.state.finding_drafts == [] and len(events) == 3            # one per shard, one for the stage
+
+
+async def test_one_assessed_shard_is_enough_to_assess(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """A shard that checked its criteria and found nothing is an assessment: no not-assessed disclosure."""
+    from sit_review_agent.phases.report import assessment_missing
+
+    c2 = shard_cfg(cfg, {"a": ["design_intent"], "b": ["verifiability"]})
+    nothing = {"findings": [], "sound_areas": [], "coverage": [{"criterion_id": "design_intent", "outcome": "no_issue",
+                                                                "finding_ids": [], "note": "checked"}]}
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(parsed=nothing), *_failing("deadline")]})
+    await AssessPhase().run(ctx)
+    events = [d.event for d in ctx.state.degradations]
+    assert not [e for e in events if e.startswith("out of time before assessment")]
+    assert assessment_missing(events, ctx.state.declined_sections) is None
+
+
+async def test_every_shard_failing_with_a_model_error_stops_the_run(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    c2 = shard_cfg(cfg, {"a": ["design_intent"], "b": ["verifiability"]})
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(raises=LLMOverloadedError("529")),
+                                                     FakeResponse(raises=LLMOverloadedError("529"))]})
+    with pytest.raises(LLMOverloadedError):
+        await AssessPhase().run(ctx)
 
 
 async def test_delta_mode_sets_reassessment(tmp_path: Path, cfg: EffectiveConfig) -> None:
-    ctx = make_ctx(tmp_path, cfg, {PhaseName.ASSESS: [FakeResponse(parsed=assess_output())]},
+    ctx = make_ctx(tmp_path, one_shard(cfg), {PhaseName.ASSESS: [FakeResponse(parsed=assess_output())]},
                    review_mode=ReviewMode.DELTA)
     await AssessPhase().run(ctx)
     assert all(f.reassessment is not None and f.reassessment.status.value == "new_in_update"
@@ -469,46 +639,182 @@ async def test_delta_mode_sets_reassessment(tmp_path: Path, cfg: EffectiveConfig
     assert "Re-review of an updated document" in brief_of(ctx.llm.calls[0])
 
 
+# ------------------------------------------------------------------------------ determinism
+
+
+GROUPS = {"g1": ["claims_and_external_constraints"], "g2": ["verifiability"], "g3": ["internal_consistency"]}
+SHARD_ANSWERS = {
+    "assess-0-s1": {"findings": [shard_finding("FND-001", 1, Q_NOTIFY, 11, "6.2", "claims_and_external_constraints",
+                                               title="Quota")], "sound_areas": [], "coverage": []},
+    "assess-0-s2": {"findings": [shard_finding("FND-001", 1, Q_A11Y, 18, "11.3", "verifiability", title="A11y",
+                                               severity="medium")], "sound_areas": [], "coverage": []},
+    "assess-0-s3": {"findings": [shard_finding("FND-001", 2, Q_LOAD, 6, "4.1", "internal_consistency", title="Load",
+                                               severity="low"),
+                                 shard_finding("FND-002", 1, Q_OVERVIEW, 2, "1", "internal_consistency", n=2,
+                                               title="Overview", severity="critical")],
+                    "sound_areas": [], "coverage": []},
+}
+
+
+class LedgerResearch:
+    """Research that writes two ledger entries while the shards are still running."""
+
+    name = PhaseName.RESEARCH
+
+    async def run(self, ctx: RunContext) -> RunContext:
+        ctx.ledger.add_doc(doc_id=DOC_ID, page=19, section_ref="20", excerpt=Q_D3)
+        await asyncio.sleep(0)
+        ctx.ledger.add_doc(doc_id=DOC_ID, page=6, section_ref="4.1", excerpt="research saw this")
+        return ctx
+
+
+def _orders() -> list[tuple[str, ...]]:
+    convs = ["understand-0", "plan-0", "assess-0-s1", "assess-0-s2", "assess-0-s3"]
+    return list(itertools.permutations(convs))
+
+
+@pytest.mark.parametrize("order", _orders(), ids=lambda o: ">".join(c[-2:] for c in o))
+async def test_finding_and_ledger_ids_do_not_depend_on_completion_order(tmp_path: Path, cfg: EffectiveConfig,
+                                                                        order: tuple[str, ...]) -> None:
+    c3 = shard_cfg(cfg, GROUPS)
+    gates = {c: asyncio.Event() for c in order}
+    answers = {"understand-0": [FakeResponse(parsed=understand_output())],
+               "plan-0": [FakeResponse(parsed=plan_output(cfg.criteria.ids()))],
+               **{k: [FakeResponse(parsed=v)] for k, v in SHARD_ANSWERS.items()}}
+    ctx = make_ctx(tmp_path / "-".join(order), c3, {})
+    gw = ShardGateway(answers, gates=gates, run_dir=ctx.run_dir, clock=ctx.clock)
+    ctx.llm = gw
+    phases: dict[PhaseName, Any] = {p: _Noop(p) for p in PHASE_ORDER}
+    phases.update({PhaseName.UNDERSTAND: UnderstandPhase(), PhaseName.PLAN: PlanPhase(),
+                   PhaseName.RESEARCH: LedgerResearch(), PhaseName.ASSESS: AssessPhase()})
+    run = asyncio.create_task(Orchestrator(phases).run(ctx))
+    for conv in order:                                       # each call ends only after the previous one
+        gates[conv].set()
+        for _ in range(200):
+            await asyncio.sleep(0)
+            if conv in gw.ended:
+                break
+        assert conv in gw.ended, f"{conv} did not end"
+    ctx = await run
+    assert gw.ended == list(order)
+    got = {f.id: (f.title, f.rank, [c.evidence_id for c in f.evidence]) for f in ctx.state.finding_drafts}
+    assert got == {"FND-001": ("Quota", 2, ["EV-003", "EV-004"]), "FND-002": ("A11y", 3, ["EV-005", "EV-006"]),
+                   "FND-003": ("Overview", 1, ["EV-007", "EV-009"]), "FND-004": ("Load", 4, ["EV-008", "EV-010"])}
+    ledger = [(e.evidence_id, e.excerpt or e.statement) for e in ctx.ledger]
+    assert [x[0] for x in ledger] == [f"EV-{i:03d}" for i in range(1, 11)]
+    assert ledger[:2] == [("EV-001", Q_D3), ("EV-002", "research saw this")]  # research first, then shards in order
+    assert ledger[2][1] == Q_NOTIFY and ledger[4][1] == Q_A11Y and ledger[6][1] == Q_OVERVIEW
+
+
 # ------------------------------------------------------------------------------ refine
 
 
-async def test_refine_revises_adds_withdraws_with_history(tmp_path: Path, cfg: EffectiveConfig) -> None:
-    ctx = make_ctx(tmp_path, cfg, {PhaseName.ASSESS: [FakeResponse(parsed=assess_output())]})
-    ctx.ledger.add_doc(doc_id=DOC_ID, page=6, section_ref="4.1", excerpt=Q_LOAD)
+def keep(fid: str, rank: int, severity: str | None, disposition: str, reason: str = "checked",
+         **kw: Any) -> dict[str, Any]:
+    return {"finding_id": fid, "action": "keep", "merge_into": None, "rank": rank, "severity": severity,
+            "disposition": disposition, "affected_decisions": [], "added_evidence": [], "reason": reason, **kw}
+
+
+def gone(fid: str, action: str, into: str | None = None, reason: str = "duplicate") -> dict[str, Any]:
+    return {"finding_id": fid, "action": action, "merge_into": into, "rank": None, "severity": None,
+            "disposition": None, "affected_decisions": [], "added_evidence": [], "reason": reason}
+
+
+async def _merged(tmp_path: Path, cfg: EffectiveConfig, refine: list[FakeResponse]) -> RunContext:
+    """Three merged findings (two shards) ready for refine: FND-001 risk (high), FND-002 strength,
+    FND-003 a second risk (medium, criterion security_and_privacy)."""
+    c2 = shard_cfg(cfg, {"a": ["claims_and_external_constraints", "verifiability"], "b": ["security_and_privacy"]})
+    second = {"findings": [shard_finding("X", 1, Q_LOAD, 6, "4.1", "security_and_privacy", title="Second issue",
+                                         severity="medium")], "sound_areas": [], "coverage": []}
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(parsed=assess_output()), FakeResponse(parsed=second)],
+                                  PhaseName.REFINE: refine})
     await AssessPhase().run(ctx)
-    before = {f.id: f for f in ctx.state.finding_drafts}
-    revised = before["FND-001"].model_dump(mode="json") | {"severity": "medium", "secondary_dispositions": []}
-    added = finding("FND-001", 2, title="Second, distinct issue", kind="gap", category="security_privacy_gap",
-                    evidence=[], criterion_ids=["security_and_privacy"],
-                    disposition="needs_investigation", next_step={"owner": "Security lead", "action": "Check."})
-    out = {"findings": [revised, added],          # FND-002 (the strength) is withdrawn; "FND-001" twice
-           "revisions": [{"finding_id": "FND-001", "change": "revised", "reason": "impact is bounded",
-                          "evidence_ids": []},
-                         {"finding_id": "FND-002", "change": "withdrawn", "reason": "covered elsewhere",
-                          "evidence_ids": []}]}
-    ctx.llm.script[str(PhaseName.REFINE)] = deque([FakeResponse(parsed=out)])
+    assert [(f.id, f.kind.value) for f in ctx.state.finding_drafts] == [
+        ("FND-002", "risk"), ("FND-003", "risk"), ("FND-001", "strength")]
+    return ctx
+
+
+async def test_refine_applies_keep_merge_withdraw_with_history(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ev = "EV-001"
+    out = {"revisions": [
+        keep("FND-002", 1, "medium", "refinement_now", reason="impact is bounded by the retry queue",
+             affected_decisions=[{"registry_id": "AD-001", "relation": "refines", "justification": "j"}]),
+        gone("FND-003", "merge", "FND-002", reason="same quota issue"),
+        gone("FND-001", "withdraw", reason="covered elsewhere")]}
+    ctx = await _merged(tmp_path, cfg, [FakeResponse(parsed=out)])
+    ctx.state.plan = None
     await RefinePhase().run(ctx)
     s = ctx.state
-
-    assert [f.id for f in s.finding_drafts] == ["FND-001", "FND-003"]          # never reuses withdrawn FND-002
-    m1 = s.finding_meta["FND-001"]
-    assert m1.created_phase is PhaseName.ASSESS and m1.last_phase is PhaseName.REFINE
-    assert PROVENANCE_PHASE[m1.last_phase].value == "revise"
-    [rev] = m1.history
-    assert rev.changed_fields["severity"] == ["high", "medium"] and rev.note == "revised: impact is bounded"
-    m3 = s.finding_meta["FND-003"]
-    assert m3.created_phase is PhaseName.REFINE and m3.created_call_id == "llm-0002"
-    assert s.finding_meta["FND-002"].history[-1].note == "withdrawn: covered elsewhere"
-    new = s.finding_drafts[1]
-    assert new.recommendation.supporting_evidence_ids and new.evidence[0].source_type is SourceType.DOC
-    hydrate(ctx, new)
+    [f] = s.finding_drafts
+    assert f.id == "FND-002" and f.rank == 1 and f.severity.value == "medium"
+    assert f.affected_decisions[0].registry_id == "AD-001"
+    assert f.criterion_ids == ["claims_and_external_constraints", "security_and_privacy"]   # merge moves criteria
+    m = s.finding_meta["FND-002"]
+    assert m.last_phase is PhaseName.REFINE and PROVENANCE_PHASE[m.last_phase].value == "revise"
+    assert m.history[-1].changed_fields["severity"] == ["high", "medium"]
+    assert m.history[-1].note == "revised: impact is bounded by the retry queue"
+    assert s.finding_meta["FND-003"].history[-1].note == "merged into FND-002: same quota issue"
+    assert s.finding_meta["FND-001"].history[-1].note == "withdrawn: covered elsewhere"
     cov = {c.criterion_id: c for c in s.coverage}
-    assert cov["verifiability"].outcome == "no_issue" and cov["verifiability"].finding_ids == []
-    assert cov["security_and_privacy"].finding_ids == ["FND-003"]
-    assert s.sound_area_drafts[0].related_finding_ids == ["FND-001"]
+    assert cov["security_and_privacy"].finding_ids == ["FND-002"]             # the merged finding's criterion
+    assert cov["verifiability"].outcome == "no_issue"                         # its only finding was withdrawn
+    assert s.sound_area_drafts[0].related_finding_ids == []                   # FND-001 withdrawn
     req = ctx.llm.calls[-1]
-    assert req.conversation_id == "refine-0" and req.effort == cfg.effort_for(PhaseName.REFINE)
-    assert '"id": "FND-002"' in brief_of(req) and s.llm_calls["refine"] == ["llm-0002"]
+    assert req.conversation_id == "refine-0" and req.purpose == "refine"
+    brief = brief_of(req)
+    assert '"id": "FND-003"' in brief and "## Revision rules" in brief and "## Design intent" in brief
+    assert "## Research questions and answers" in brief and f"{ev} [doc]" in brief
+    assert len(s.llm_calls["refine"]) == 1
+
+
+async def test_refine_rejects_an_unexplained_conclusion_change(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """BEH-10: a keep that changes severity with no reason and no added evidence keeps the draft's value."""
+    out = {"revisions": [keep("FND-002", 1, "low", "refinement_now", reason=""),
+                         keep("FND-003", 2, "medium", "refinement_now"),
+                         keep("FND-001", 3, None, "no_change")]}
+    ctx = await _merged(tmp_path, cfg, [FakeResponse(parsed=out)])
+    await RefinePhase().run(ctx)
+    f = next(x for x in ctx.state.finding_drafts if x.id == "FND-002")
+    assert f.severity.value == "high"
+    assert any("rejected" in h.note and "BEH-10" in h.note for h in ctx.state.finding_meta["FND-002"].history)
+    assert any("rejected (no revision reason" in e.message for e in ctx.progress.events)
+
+
+async def test_refine_revisions_that_break_the_rules_get_one_repair_then_the_fallback(
+        tmp_path: Path, cfg: EffectiveConfig) -> None:
+    bad = {"revisions": [keep("FND-002", 1, "high", "refinement_now"), gone("FND-003", "merge", "FND-001"),
+                         gone("FND-001", "withdraw")]}          # merge into a withdrawn finding, twice
+    ctx = await _merged(tmp_path, cfg, [FakeResponse(parsed=bad), FakeResponse(parsed=bad)])
+    before = [f.model_dump() for f in ctx.state.finding_drafts]
+    await RefinePhase().run(ctx)
+    first, repair = ctx.llm.calls[-2:]
+    assert repair.conversation_id == "refine-0-r1" and repair.purpose == "refine:schema_repair"
+    assert "merge into FND-001, which is not kept" in brief_of(repair)
+    assert [f.model_dump() for f in ctx.state.finding_drafts] == before     # merged findings stand, severity order
+    [d] = [d for d in ctx.state.degradations if "refine revisions could not be applied" in d.event]
+    assert "severity and confidence order" in d.impact
+    assert len(ctx.state.llm_calls["refine"]) == 2
+
+
+async def test_refine_repaired_answer_is_applied(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    bad = {"revisions": [keep("FND-002", 1, "high", "refinement_now")]}       # two findings without a revision
+    good = {"revisions": [keep("FND-002", 1, "high", "refinement_now"), keep("FND-003", 2, "medium",
+                                                                             "refinement_now"),
+                          keep("FND-001", 3, None, "no_change")]}
+    ctx = await _merged(tmp_path, cfg, [FakeResponse(parsed=bad), FakeResponse(parsed=good)])
+    await RefinePhase().run(ctx)
+    assert [f.id for f in ctx.state.finding_drafts] == ["FND-002", "FND-003", "FND-001"]
+    assert not [d for d in ctx.state.degradations if "refine" in d.event]
+
+
+async def test_refine_cut_keeps_the_merged_findings_in_severity_order(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ctx = await _merged(tmp_path, cfg, [FakeResponse(raises=LLMDeadlineError("cut at refine_end"))])
+    before = [f.model_dump() for f in ctx.state.finding_drafts]
+    await RefinePhase().run(ctx)
+    assert [f.model_dump() for f in ctx.state.finding_drafts] == before
+    assert [f.rank for f in ctx.state.finding_drafts] == [1, 2, 3]
+    [d] = [d for d in ctx.state.degradations if d.event.startswith("the refine call was cut")]
+    assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT and "severity and confidence order" in d.impact
 
 
 async def test_refine_without_drafts_makes_no_call(tmp_path: Path, cfg: EffectiveConfig) -> None:
@@ -542,8 +848,9 @@ async def test_orchestrator_runs_model_phases_and_checkpoints(tmp_path: Path, cf
     script = {PhaseName.UNDERSTAND: [FakeResponse(parsed=understand_output())],
               PhaseName.PLAN: [FakeResponse(parsed=plan_output(cfg.criteria.ids()))],
               PhaseName.ASSESS: [FakeResponse(parsed=assess_output())],
-              PhaseName.REFINE: [FakeResponse(parsed={"findings": [], "revisions": []})]}
-    ctx = make_ctx(tmp_path, cfg, script)
+              PhaseName.REFINE: [FakeResponse(parsed={"revisions": [gone("FND-001", "withdraw"),
+                                                                    gone("FND-002", "withdraw")]})]}
+    ctx = make_ctx(tmp_path, one_shard(cfg), script)
     phases: dict[PhaseName, Any] = {p: _Noop(p) for p in PHASE_ORDER}
     phases.update({PhaseName.UNDERSTAND: UnderstandPhase(), PhaseName.PLAN: PlanPhase(),
                    PhaseName.ASSESS: AssessPhase(), PhaseName.REFINE: RefinePhase()})
@@ -555,6 +862,8 @@ async def test_orchestrator_runs_model_phases_and_checkpoints(tmp_path: Path, cf
     assert ckpt is not None and ckpt.state.registry_frozen and ckpt.state.plan is not None
     reloaded = RunState.model_validate(json.loads(ckpt.state.model_dump_json()))
     assert reloaded.model_dump(exclude={"current_phase"}) == ctx.state.model_dump(exclude={"current_phase"})
+    stored = sorted(p.name for p in (ctx.run_dir.root / "shards").iterdir())
+    assert stored == ["01-all.json"]                                           # the finished shard, for resume
 
 
 def test_llm_result_type_is_what_phases_consume() -> None:

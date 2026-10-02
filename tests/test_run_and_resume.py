@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ConfigDict
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.config import EffectiveConfig
@@ -28,10 +29,20 @@ from sit_review_agent.context import RunContext
 from sit_review_agent.errors import ExitCode, LLMOverloadedError, ResumeDriftError
 from sit_review_agent.hashing import sha256_text
 from sit_review_agent.invariants import check_all
-from sit_review_agent.llm.gateway import LLMRequest
-from sit_review_agent.llm.outputs import AssessOutput, PlanOutput, RefineOutput, ResearchOutput, UnderstandOutput
+from sit_review_agent.llm.gateway import FakeResponse, LLMRequest
+from sit_review_agent.llm.outputs import (
+    AssessOutput,
+    Draft,
+    FindingDraft,
+    PlanOutput,
+    RefineRevisionsOutput,
+    ResearchOutput,
+    UnderstandOutput,
+    apply_revisions,
+)
 from sit_review_agent.models import DegradationType, IntentSummary, SourceAuthority, StopReason, StopReasonCode
 from sit_review_agent.orchestrator import RunRequest, resume_run, run_review
+from sit_review_agent.phases.assess import AssessPhase
 from sit_review_agent.phases.ingest import IngestPhase
 from sit_review_agent.phases.report import ReportPhase
 from sit_review_agent.phases.verify import VerifyPhase
@@ -161,14 +172,29 @@ class StubAssess:
         return ctx
 
 
+class _AnyRefineAnswer(Draft):
+    """What the stand-in refine accepts from the fixture script: revisions (the latency redesign's
+    answer) or, until the selftest fixture is regenerated (W3), the full revised set it scripts."""
+
+    model_config = ConfigDict(extra="allow")
+
+    revisions: list[Any] = []
+    findings: list[FindingDraft] | None = None
+
+
 class StubRefine:
     name = PhaseName.REFINE
 
     async def run(self, ctx: RunContext) -> RunContext:
-        res = await _call(ctx, self.name, RefineOutput)
-        out: RefineOutput = res.parsed
-        ctx.state.finding_drafts = list(out.findings)
-        _metas(ctx, out.findings, self.name, res)
+        res = await _call(ctx, self.name, _AnyRefineAnswer)
+        out: _AnyRefineAnswer = res.parsed
+        if out.findings is not None:
+            drafts = list(out.findings)
+        else:
+            drafts = apply_revisions(ctx.state.finding_drafts, RefineRevisionsOutput.model_validate(
+                {"revisions": out.revisions}))
+        ctx.state.finding_drafts = drafts
+        _metas(ctx, drafts, self.name, res)
         return ctx
 
 
@@ -278,7 +304,7 @@ async def test_resume_after_each_phase_gives_identical_report(tmp_path: Path, ph
     res = await resume(cfg, out.run_dir)
     assert res.exit_code == 0
     assert comparable(out.run_dir) == comparable(ref.run_dir)
-    if PHASE_ORDER.index(phase) > PHASE_ORDER.index(PhaseName.RESEARCH):
+    if phase in (PhaseName.REFINE, PhaseName.VERIFY, PhaseName.REPORT):
         assert len(CountingReplay.calls) == before                           # research not re-run
     report = json.loads((out.run_dir / "report.json").read_text(encoding="utf-8"))
     assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []
@@ -366,7 +392,9 @@ async def test_exit_code_mapping_and_failure_record(tmp_path: Path, exc: BaseExc
     out = await start(cfg, "fail", phases=stub_phases(assess=Boom(PhaseName.ASSESS, exc)))
     assert out.exit_code == code and out.report_md is None
     rec = json.loads((out.run_dir / "failure.json").read_text(encoding="utf-8"))
-    assert rec["exit_code"] == code and rec["phase"] == "assess" and rec["completed_phases"][-1] == "research"
+    # assess starts beside understand and plan: they ended (and checkpointed); research never started.
+    assert rec["exit_code"] == code and rec["phase"] == "assess" and rec["completed_phases"] == ["ingest", "understand",
+                                                                                                 "plan"]
     assert json.loads((out.run_dir / "manifest.json").read_text(encoding="utf-8"))["outcome"] == outcome
     assert (out.run_dir / "state.json").is_file()
     res = await resume(cfg, out.run_dir)
@@ -533,3 +561,116 @@ async def test_delta_review_against_a_prior_version(tmp_path: Path, how: str) ->
                for f in report["findings"])
     assert "## Changes since the previous version" in (out.run_dir / "report.md").read_text(encoding="utf-8")
     assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []
+
+
+# ============================================================================ stage 1 resume (ADR-009)
+
+
+Q_OVERVIEW = "The service lets students reserve study rooms for one-hour slots across campus."
+Q_LOAD = "Peak exam-week days generate about 5,000 bookings, each with one reminder."
+
+
+def _shard_answer(i: int, criteria: list[str]) -> dict[str, Any]:
+    quote, page, section = (Q_OVERVIEW, 2, "1") if i % 2 else (Q_LOAD, 6, "4.1")
+    return {"findings": [{
+        "id": "FND-001", "rank": 1, "kind": "gap", "category": "missing_or_unverifiable_requirement",
+        "severity": "medium", "confidence": 0.6, "disposition": "needs_investigation", "secondary_dispositions": [],
+        "title": f"Shard {i} finding", "statement": f"Shard {i} statement about section {section}.",
+        "doc_anchors": [{"doc_id": "DOC-design", "section_ref": section, "requirement_ids": [], "quote": quote,
+                         "page": page}],
+        "evidence": [{"evidence_id": "NEW-1", "source_type": "doc", "quote": quote, "supports_claim": True,
+                      "derived_from": []}],
+        "recommendation": {"issue": "i", "rationale": "r", "expected_benefit": "b", "change_summary": "c",
+                           "objective_refs": [], "supporting_evidence_ids": ["NEW-1"], "verification": None},
+        "no_change_rationale": None, "next_step": {"owner": "Design owner", "action": f"Check section {section}."},
+        "affected_decisions": [], "acknowledged_in_doc": False, "tags": [], "reassessment": None,
+        "criterion_ids": [criteria[0]]}],
+        "sound_areas": [],
+        "coverage": [{"criterion_id": c, "outcome": "no_issue", "finding_ids": [], "note": "checked"}
+                     for c in criteria[1:]]}
+
+
+class ShardScript:
+    """The fixture gateway for every other phase; the assess shards answered per conversation,
+    and a conversation in ``interrupt`` raises Ctrl-C instead of answering."""
+
+    def __init__(self, cfg: EffectiveConfig, interrupt: set[str] | None = None) -> None:
+        self.shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
+        self.interrupt = interrupt or set()
+        self.assess_calls: list[str] = []
+
+    def __call__(self, rd: Any, clock: Any, progress: Any) -> Any:
+        gw = fixture_gateway(rd, clock=clock)
+        inner_call = gw.call
+        script = self
+
+        async def call(request: LLMRequest) -> Any:
+            if request.phase is PhaseName.ASSESS:
+                script.assess_calls.append(request.conversation_id)
+                if request.conversation_id in script.interrupt:
+                    raise KeyboardInterrupt
+                i = int(request.conversation_id.rsplit("-s", 1)[1])
+                gw.script["assess"].appendleft(FakeResponse(parsed=_shard_answer(i, script.shards[i - 1].criteria)))
+            return await inner_call(request)
+
+        gw.call = call  # type: ignore[method-assign]
+        return gw
+
+
+def shard_phases() -> dict[PhaseName, Any]:
+    return stub_phases(assess=AssessPhase())
+
+
+async def test_resume_after_two_of_four_shards_runs_exactly_the_other_two(tmp_path: Path) -> None:
+    cfg = config(tmp_path)
+    assert len(cfg.agent.assess.shards_for(cfg.criteria.ids())) == 4
+    ref_script = ShardScript(cfg)
+    ref = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="ref4"), phases=shard_phases(),
+                           llm_factory=ref_script, tools_factory=tools_factory, clock=FakeClock(),
+                           progress=NullProgress())
+    assert ref.exit_code == 0 and ref_script.assess_calls == [f"assess-0-s{i}" for i in range(1, 5)]
+
+    cut = ShardScript(cfg, interrupt={"assess-0-s3", "assess-0-s4"})
+    out = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="cut4"), phases=shard_phases(), llm_factory=cut,
+                           tools_factory=tools_factory, clock=FakeClock(), progress=NullProgress())
+    assert out.exit_code == int(ExitCode.SIGINT)
+    stored = sorted(p.name for p in (out.run_dir / "shards").iterdir())
+    assert stored == ["01-intent_and_fitness.json", "02-requirements_and_consistency.json"]
+
+    again = ShardScript(cfg)
+    res = await resume_run(out.run_dir, cfg, phases=shard_phases(), llm_factory=again, tools_factory=tools_factory,
+                           clock=FakeClock(), progress=NullProgress())
+    assert res.exit_code == 0
+    assert again.assess_calls == ["assess-0-s3", "assess-0-s4"]             # exactly the unfinished shards
+    assert comparable(out.run_dir) == comparable(ref.run_dir)              # same IDs, ledger and report
+    entries = JsonlWriter(RunDir(out.run_dir).llm_log).read()
+    assert not [e for e in entries if e.get("phase") in ("understand", "plan") and e.get("resumed")]
+
+
+class _Slow:
+    """A stand-in that moves the run clock forward while it works."""
+
+    def __init__(self, inner: Any, seconds: float) -> None:
+        self.inner, self.name, self.seconds = inner, inner.name, seconds
+
+    async def run(self, ctx: RunContext) -> RunContext:
+        ctx.clock.advance(self.seconds)  # type: ignore[attr-defined]
+        return await self.inner.run(ctx)
+
+
+async def test_resume_restores_the_clock_from_elapsed_seconds(tmp_path: Path) -> None:
+    """Stage 1 members overlap, so their seconds do not sum to the run's: resume restores the clock
+    from the checkpoint's budget.elapsed_s (100 + 50 s here), never from the sum (100 + 150 s)."""
+    cfg = config(tmp_path)
+    phases = stub_phases(understand=_Slow(StubUnderstand(), 100), plan=_Slow(StubPlan(), 50),
+                         research=Interrupt(PhaseName.RESEARCH))
+    out = await start(cfg, "clock", phases=phases)
+    assert out.exit_code == 130
+    ckpt = latest_checkpoint(RunDir(out.run_dir))
+    assert ckpt is not None and ckpt.state.budget.elapsed_s == 150.0
+    assert sum(ckpt.state.budget.phase_seconds.values()) == 250.0            # understand 100 + plan 150 (overlap)
+    assert ckpt.state.budget.phase_seconds["plan"] == 150.0
+    res = await resume(cfg, out.run_dir)
+    assert res.exit_code == 0
+    final = latest_checkpoint(RunDir(out.run_dir))
+    assert final is not None and final.phase is PhaseName.REPORT and final.state.budget.elapsed_s == 150.0

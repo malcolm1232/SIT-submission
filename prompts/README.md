@@ -10,10 +10,10 @@ prompt strings in Python code.
 | `understand.md` | understand | `UnderstandOutput` | A |
 | `plan.md` | plan | `PlanOutput` | A |
 | `research.md` | research (tool loop) | `ResearchOutput` | B |
-| `assess.md` | assess | `AssessOutput` | A |
-| `refine.md` | refine | `RefineOutput` | A |
+| `assess.md` | assess (one call per shard) | `AssessOutput` | A |
+| `refine.md` | refine (revisions only) | `RefineRevisionsOutput` | A |
 | `verify.md` | verify (anchor repair) | `AnchorRepairOutput` | C |
-| `report.md` | report | `ReportOutput` | C |
+| `report.md` | report (verdict only) | `VerdictOutput` | C |
 
 ## Leakage rule (methodology R4/R5, docs/SEALING.md)
 
