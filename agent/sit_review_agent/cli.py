@@ -2,21 +2,28 @@
 
 Commands::
 
-    sit-review run <pdf> [--v1 <pdf>] [--previous <run_dir>] [--config <agent.yaml|dir>]
+    sit-review run <pdf> [--v1 <pdf>] [--previous <run_dir>] [--config <agent.yaml|dir>] [--profile NAME]
                          [--replay <fixtures>] [--record] [--transport T] [--faults|--fault-schedule <yaml>]
                          [--deadline S] [--max-tool-calls N] [--disable-tool NAME]... [--no-tools]
                          [--plan-only] [--plan-approval] [--allow-fallback] [--mode dev|eval|rehearsal|demo]
-                         [--run-id ID]
+                         [--run-id ID] [--k N]
     sit-review run --resume <run_dir> [--accept-drift]
     sit-review review ...                      (alias of run; the runbook's name)
     sit-review explain <run_dir> <finding_id>  (or: explain <finding_id> [--run <run_dir>], default latest run)
+    sit-review coverage [<run_dir>|--run <run_dir>] [--depth N] [--json]   (default latest run)
+    sit-review replay <run_dir> [--pdf <pdf>] [--v1 <pdf>] [--previous <run_dir>] [--run-id ID]
     sit-review selftest
     sit-review resume <run_dir> [--accept-drift]
-    sit-review preflight [--warm] [--keep-warm S]
+    sit-review preflight [--warm/--no-warm] [--keep-warm S] [--profile NAME]
     sit-review states                          (print the state machine as Mermaid)
 
+``--k N`` runs the review N times as independent runs (``kruns``); ``replay`` re-runs a recorded
+run offline from its logs (``replay``); ``coverage`` prints the criteria x sections map
+(``report.coverage``).
+
 Exit codes: :class:`~sit_review_agent.errors.ExitCode` (0 ok, 2 usage, 3 LLM unavailable,
-4 stage crash, 5 resume drift, 130 interrupted).
+4 stage crash, 5 resume drift, 130 interrupted). ``replay`` exits 4 when the replay diverges
+from the recording.
 """
 
 from __future__ import annotations
@@ -50,6 +57,8 @@ def _not_built(what: str, exc: NotImplementedError) -> None:
 
 
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="config/agent.yaml or its directory")]
+ProfileOpt = Annotated[str | None, typer.Option("--profile", help="overlay config/profiles/<NAME>.yaml (e.g. demo); "
+                                                                  "recorded in the manifest, reused by resume")]
 
 
 def _guarded(what: str, fn: Callable[[], T]) -> T:
@@ -124,6 +133,9 @@ def run_cmd(
                                                                 "instead of starting one")] = None,
     accept_drift: Annotated[bool, typer.Option("--accept-drift",
                                                help="with --resume: accept hash drift (recorded)")] = False,
+    profile: ProfileOpt = None,
+    k: Annotated[int | None, typer.Option("--k", help="run the review K times as independent runs (stability; "
+                                                      "run IDs <group>-k1..kK, --run-id names the group)")] = None,
 ) -> None:
     """Review a design artefact and write runs/<run_id>/report.{json,md}."""
     from sit_review_agent.orchestrator import RunRequest, resume_run, run_review
@@ -140,6 +152,12 @@ def run_cmd(
         usage(f"--mode {mode!r}: expected dev | eval | rehearsal | demo")
     if accept_drift and resume is None:
         usage("--accept-drift only applies with --resume")
+    if k is not None and k < 1:
+        usage(f"--k {k}: expected a number of runs >= 1")
+    if k is not None and resume is not None:
+        usage("--k starts new runs; it cannot be combined with --resume")
+    if k is not None and plan_only:
+        usage("--k repeats complete reviews; it cannot be combined with --plan-only")
     if transport is None:
         transport = Transport.REPLAY if replay is not None else (Transport.RECORD if record else None)
     fault_file = _resolve_faults(faults) if faults is not None else None
@@ -150,7 +168,7 @@ def run_cmd(
                          allow_fallback=True if allow_fallback else None, transport=transport,
                          replay_fixtures=str(replay) if replay is not None else None,
                          fault_schedule=str(fault_file) if fault_file is not None else None,
-                         plan_approval=plan_approval)
+                         plan_approval=plan_approval, profile=profile)
     if resume is not None:
         if pdf is not None:
             usage("give a PDF or --resume <run_dir>, not both")
@@ -166,12 +184,17 @@ def run_cmd(
         usage(f"input not found: {pdf}")
     doc = pdf
 
-    def go() -> Any:
-        cfg = load_config(config, ov)
-        return asyncio.run(run_review(RunRequest(pdf=doc, config=cfg, v1_pdf=v1, previous_run=previous,  # type: ignore[arg-type]
-                                                 mode=mode, plan_only=plan_only, run_id=run_id)))  # type: ignore[arg-type]
+    def request() -> Any:
+        return RunRequest(pdf=doc, config=load_config(config, ov), v1_pdf=v1, previous_run=previous,  # type: ignore[arg-type]
+                          mode=mode, plan_only=plan_only, run_id=run_id)  # type: ignore[arg-type]
 
-    _finish(_guarded("run", go))
+    if k is not None:
+        from sit_review_agent.kruns import format_group, group_exit_code, run_group
+
+        group = _guarded("run --k", lambda: run_group(request(), k, group_id=run_id))
+        typer.echo(format_group(group))
+        raise typer.Exit(group_exit_code(group))
+    _finish(_guarded("run", lambda: asyncio.run(run_review(request()))))
 
 
 app.command("review", help="Alias of run (docs/DEMO_DAY_RUNBOOK.md).")(run_cmd)
@@ -235,6 +258,75 @@ def explain_cmd(target: Annotated[str, typer.Argument(help="run directory, or th
     typer.echo(_guarded("explain", go))
 
 
+@app.command("coverage")
+def coverage_cmd(target: Annotated[str | None, typer.Argument(help="run directory or run ID (default: latest run)")]
+                 = None,
+                 run: Annotated[Path | None, typer.Option("--run", help="run directory (default: latest)")] = None,
+                 depth: Annotated[int, typer.Option("--depth", help="section-number levels per row (0: every "
+                                                                    "section)")] = 1,
+                 as_json: Annotated[bool, typer.Option("--json", help="print the map as JSON")] = False,
+                 config: ConfigOpt = None) -> None:
+    """Criteria x sections coverage map of a run, including "checked, no issue" (reads the run dir only)."""
+    from sit_review_agent.report.coverage import build_coverage, format_coverage
+
+    if target is not None and run is not None:
+        typer.echo("error: give the run as an argument or with --run, not both", err=True)
+        raise typer.Exit(int(ExitCode.USAGE))
+    if depth < 0:
+        typer.echo(f"error: --depth {depth}: expected 0 or more", err=True)
+        raise typer.Exit(int(ExitCode.USAGE))
+    if target is not None:
+        run_dir = _resolve_run_dir(target, config)
+    else:
+        run_dir = run or _guarded("coverage", lambda: _latest_run(config))
+    if run_dir is None or not Path(run_dir).is_dir() or not (Path(run_dir) / "report.json").is_file():
+        typer.echo(f"error: no run with a report.json: {run_dir or target or '(no run with a report)'}", err=True)
+        raise typer.Exit(int(ExitCode.USAGE))
+    rd = Path(run_dir)
+
+    def go() -> str:
+        cm = build_coverage(rd, depth=depth)
+        return json.dumps(cm.as_dict(), indent=1, ensure_ascii=False) if as_json else format_coverage(cm)
+
+    typer.echo(_guarded("coverage", go))
+
+
+@app.command("replay")
+def replay_cmd(run: Annotated[str, typer.Argument(help="recorded run directory or run ID")],
+               pdf: Annotated[Path | None, typer.Option("--pdf", dir_okay=False,
+                                                        help="the reviewed document, when it is no longer at "
+                                                             "the recorded path (checked by SHA-256)")] = None,
+               v1: Annotated[Path | None, typer.Option("--v1", dir_okay=False,
+                                                       help="delta runs: the prior version, if moved")] = None,
+               previous: Annotated[Path | None, typer.Option("--previous", file_okay=False,
+                                                             help="delta runs: the previous run, if moved")] = None,
+               run_id: Annotated[str | None, typer.Option("--run-id", help="name of the replay's run directory")]
+               = None,
+               config: ConfigOpt = None) -> None:
+    """Re-run a recorded run offline from its llm.jsonl and tools.jsonl; stamped "replayed evidence"."""
+    from sit_review_agent.replay import replay_run
+
+    src = _resolve_run_dir(run, config)
+    if src is None:
+        typer.echo(f"error: no such run directory or run ID: {run}", err=True)
+        raise typer.Exit(int(ExitCode.USAGE))
+
+    def go() -> Any:
+        try:
+            root: str | None = load_config(config).agent.run_root
+        except AgentError:
+            root = None
+        return asyncio.run(replay_run(src, run_root=root, run_id=run_id, pdf=pdf, v1=v1, previous=previous))
+
+    outcome = _guarded("replay", go)
+    typer.echo(f"replayed {outcome.model_calls} model call(s) and {outcome.tool_calls} tool call(s) from {src}")
+    typer.echo(outcome.message)
+    for d in outcome.differences[1:10]:
+        typer.echo(f"  differs: {d}")
+    typer.echo(str(outcome.report_md or outcome.run_dir))
+    raise typer.Exit(outcome.exit_code)
+
+
 @app.command("selftest")
 def selftest_cmd() -> None:
     """Run the pipeline offline (FakeGateway + ReplayGateway on a built-in fixture) and assert
@@ -272,12 +364,13 @@ def resume_cmd(run: Annotated[str, typer.Argument(help="run directory or run ID"
 @app.command("preflight")
 def preflight_cmd(config: ConfigOpt = None, warm: Annotated[bool, typer.Option("--warm/--no-warm")] = False,
                   keep_warm: Annotated[int | None, typer.Option("--keep-warm", help="ping every S seconds")] = None,
-                  ) -> None:
+                  profile: ProfileOpt = None) -> None:
     """Check keys (by name), the model, each enabled MCP server, and fallback data (runbook §2-§3)."""
     from sit_review_agent.selftest import run_preflight
 
     try:
-        ok = asyncio.run(run_preflight(load_config(config), warm=warm, keep_warm_s=keep_warm))
+        ok = asyncio.run(run_preflight(load_config(config, ConfigOverrides(profile=profile)), warm=warm,
+                                       keep_warm_s=keep_warm))
     except AgentError as exc:
         _fail(exc)
     except NotImplementedError as exc:

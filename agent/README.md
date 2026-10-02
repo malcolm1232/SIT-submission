@@ -10,6 +10,9 @@ ruff check agent tests && pytest              # offline: no key, no network (ADR
 sit-review states                             # state machine as Mermaid
 sit-review run design.pdf [--v1 old.pdf] [--replay fixtures/] [--record] [--plan-only] ...
 sit-review explain runs/<run_id> FND-003
+sit-review coverage [--run runs/<run_id>]     # criteria x sections map (default: latest run)
+sit-review run design.pdf --k 3 [--profile demo]   # 3 independent runs + runs/<group>.kgroup.json
+sit-review replay runs/<run_id>               # offline re-run from llm.jsonl + tools.jsonl
 sit-review selftest
 ```
 
@@ -68,7 +71,10 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `invariants.py` | `check_INV_03` … `check_INV_10`, `check_all` (ports `spec/validate_examples.py`) | done; the outbound-request half of INV-08 runs in the harness |
 | `prompts.py` | Prompt bundle, `PROMPTS.lock`, StrictUndefined rendering | done |
 | `rundir.py`, `progress.py`, `clock.py`, `hashing.py`, `errors.py`, `paths.py` | Run-directory layout and JSONL journal; progress lines and heartbeat; `FakeClock`; hashes; typed errors and exit codes | done |
-| `cli.py` | `sit-review` / `dra`: `run` (`review`), `resume`, `explain`, `selftest`, `preflight`, `states`; typed errors to exit codes, never a traceback (INV-11) | done (C) |
+| `cli.py` | `sit-review` / `dra`: `run` (`review`, with `--k` and `--profile`), `resume`, `explain`, `coverage`, `replay`, `selftest`, `preflight` (`--profile`), `states`; typed errors to exit codes, never a traceback (INV-11) | done (C, W2) |
+| `kruns.py` | `--k N`: N independent sequential runs `<group>-k1..kN`, intention-to-treat (failures counted, never rerun; Ctrl-C or a setup error stops the group), `extra.k_index` and `k_group.json` per run, group manifest `<run_root>/<group>.kgroup.json` with per-run outcome, verdict, findings, cost and wall time | done (W2) |
+| `report/coverage.py` | `dra coverage`: criteria x sections map from the run directory (`nX` findings with worst severity, `ok` = checked, no issue, `-` = not applicable or not reported, sound areas); falls back to the `report.md` coverage table for report-only run directories | done (W2) |
+| `replay.py` | `dra replay`: re-runs a recorded run through the real phases with `ReplayLLMGateway` (recorded `llm.jsonl` outputs, request hash checked per backend) and `JournalReplayToolGateway` (recorded `tools.jsonl` results, strict), on a `ReplayClock` that follows the recorded timeline; compares the new `report.json` with the recorded one and stamps the output "replayed evidence" | done (W2); replay of a live `claude_code` run with live tools needs the logging below |
 
 ## The phase contract
 
@@ -158,6 +164,31 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   per-client isolation (fresh_eyes N15).
 - **Config paths:** paths in `config/` are relative to the `agent.yaml` directory; run, cassette
   and fixture paths are repo-relative.
+
+### Replay (`dra replay`)
+
+`dra replay <run_dir>` re-runs a **completed** run into `<run_root>/<id>-replay-<hex>` (`mode: replay`)
+with no network. Model calls are served in order from the run's `llm.jsonl` (the call IDs the final
+`state.json` lists per phase, so a stage re-run by `resume` is served from its re-run); each request
+must match the recorded phase, purpose and request hash, or the replay stops (exit 4, never an
+invented answer). Recorded failures (refusal, truncation, schema error, injected faults) are raised
+again. Tool calls are served once each from `tools.jsonl`. The replayed `report.json` must equal the
+recorded one apart from run IDs, times and the run manifest (else exit 4, differences in
+`replay.json`); `report.md` gets a "Replayed evidence" banner and the manifest a deviation.
+
+Needs, in the run directory: `report.json`, `effective_config.json`, `llm.jsonl` with response
+`content`, `state.json` or `checkpoints/`, `tools.jsonl` if tools were called, and the input document
+at its recorded path (or `--pdf`; a moved text input is rebuilt from `text/`). The prompts bundle
+must be the one the run used. A directory that lacks any of these is refused with exit 2.
+
+**Tool catalogue (open logging gap).** Research offers the model the tool list from
+`list_tools()`; replay must offer the same list. It is recovered from the Anthropic request body in
+`llm.jsonl`, or from the cassette directory of a `replay`/`fake`/`record` run. A `live` run on the
+`claude_code` backend records neither, so its research stage cannot be replayed until the gateways
+log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entry of
+`ClaudeCodeGateway.call`, or one line per `list_tools()` call in `runs/<id>/tools_list.jsonl`
+(`{"listed_at", "tools": [{server, name, description, input_schema, capability}]}`, written by
+`LoggingToolGateway.list_tools`). Replay already reads both.
 
 ### LLM backends (ADR-010)
 

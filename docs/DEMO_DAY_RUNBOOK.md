@@ -6,7 +6,7 @@ The session has four parts (lab §5.4): (a) explain the design; (b) run on a lap
 
 Unknowns to settle with SIT beforehand: slot length (assumed: 10-minute live run inside a longer interview; audit U4), how the PDF is handed over (USB, email, shared drive), and whether venue Wi-Fi allows outbound HTTPS to `*.azurecontainerapps.io` and `api.anthropic.com`.
 
-Planned CLI (one entry point, `dra`): `dra preflight`, `dra review`, `dra explain`, `dra coverage`, `dra resume`, `dra replay`; `make smoke` runs the offline L0 subset.
+CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`): `dra preflight`, `dra review` (`--k N` runs N independent runs plus a group manifest; `--profile NAME` overlays `config/profiles/NAME.yaml`), `dra explain`, `dra coverage`, `dra resume`, `dra replay`; `make smoke` runs the offline L0 subset (**not built yet**: no `Makefile`).
 
 ---
 
@@ -15,7 +15,7 @@ Planned CLI (one entry point, `dra`): `dra preflight`, `dra review`, `dra explai
 - [ ] Code freeze: tag `demo-freeze`. After this, only the live modifications in §4 are made, and only during the session.
 - [ ] `make smoke` passes offline in ≤ 60 s (robustness DEMO-13).
 - [ ] Frozen v1 review of the SIT sample by the final agent exists at `runs/sit_v1_frozen/` (needed for `--previous`; audit M9).
-- [ ] Backup recorded runs exist for the offline fallback (§6): `runs/demo_backup_sit_v1/` and `runs/demo_backup_delta/` (a synthetic v1→v2 pair), each with `llm.jsonl` and `tools.jsonl` so `dra replay` works with no network.
+- [ ] Backup recorded runs exist for the offline fallback (§6): `runs/demo_backup_sit_v1/` and `runs/demo_backup_delta/` (a synthetic v1→v2 pair), each a complete run directory (`llm.jsonl`, `tools.jsonl`, `state.json`, `checkpoints/`, `effective_config.json`, `text/`) so `dra replay` works with no network; try `dra replay` on each the day before (it refuses, exit 2, a directory that lacks what it needs and names it; see `agent/README.md` "Replay").
 - [ ] Fresh tool cassettes recorded on the laptop within the last 7 days for the SIT sample (`--transport record`, servers warm).
 - [ ] Rehearsal log shows the last 3 rehearsals (robustness DEMO-05 on the rehearsal pool, never on Blind) finished inside 10 minutes, and each §4 modification was timed (≤ 3 min config, ≤ 5 min code; audit C23).
 - [ ] Printed one-page cheat sheet: §4 table, §5 command, §7 drills.
@@ -185,7 +185,7 @@ Verified on 2026-10-02 by walking the runbook as the participant (`research/audi
 
 | Needed | Used by | Defined in |
 |---|---|---|
-| `dra` CLI entry point with `preflight` (`--no-warm`, `--warm`, `--keep-warm`), `review` (`--deadline`, `--previous`, `--plan-only`, `--max-tool-calls`, `--disable-tool`, `--no-tools`, `--transport`, `--faults`, `--allow-fallback`, `--k`), `explain` (`--run`), `coverage`, `resume`, `replay` | §2-§7 | this runbook; `docs/REPRODUCIBILITY.md` §6-§7 |
+| `dra` CLI entry point with `preflight` (`--no-warm`, `--warm`, `--keep-warm`), `review` (`--deadline`, `--previous`, `--plan-only`, `--max-tool-calls`, `--disable-tool`, `--no-tools`, `--transport`, `--faults`, `--allow-fallback`, `--k`), `explain` (`--run`), `coverage`, `resume`, `replay`. **Built** (2026-10-02; also `--profile`, `coverage --run/--depth/--json`, `replay --pdf/--v1/--previous`); `dra replay` of a live run on the `claude_code` backend with live tools still needs the tool-catalogue logging named in `agent/README.md` "Replay" | §2-§7 | this runbook; `docs/REPRODUCIBILITY.md` §6-§7 |
 | `config/agent.yaml`, `stop_rules.yaml`, `tools.yaml` with the exact line layout of §4.1; `criteria.yaml`, `endpoints.yaml`, `url_policy.yaml`, `persona.yaml` (with `generalist_architect` and `security_architect`) | §2, §4 | §4.1; ADR-001; `docs/SEALING.md` §5 |
 | `tests/test_config_layout.py` pinning §4.1 line numbers | Header contract | this runbook |
 | `agent/stop_rules.py` registry with `@register`; `agent/states.py`; `agent/templates/report.md.j2` with a commented `executive_summary` block | §4.2, §8 | ADR-001; §4.1 |
