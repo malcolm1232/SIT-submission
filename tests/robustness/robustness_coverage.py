@@ -139,7 +139,7 @@ COVERAGE: dict[str, Coverage] = {
     "OPS-02": _n("static scan of the repository and its git history (git is not run here)",
                  "test_tool_gateways.py::test_policy_module_has_no_secret_values; "
                  "test_robustness_schedules.py::test_fixtures_hold_no_secret",
-                 laptop="gitleaks detect && git log -p | grep -c <key prefix>"),
+                 laptop="gitleaks detect; then grep the full history (git log -p) for the key prefix"),
     "OPS-03": _o("every scenario runs with canary keys in the environment; INV-08 greps every run directory and "
                  "the outbound log; ADV-05 tries to exfiltrate them"),
     "OPS-04": _o("SIGINT at the end of research (process fault applied by the harness): exit 130, state flushed, "
