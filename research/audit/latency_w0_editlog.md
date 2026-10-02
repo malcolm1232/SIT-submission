@@ -133,3 +133,36 @@ See the report section "Gates at the config commit" in `docs/transcripts/session
 | M14 | hermetic `extra_args` in `agent.yaml` | caught |
 
 `config.py` and `agent.yaml` had the same md5 before and after the run.
+
+# Session 4 verifier
+
+Date: 2026-10-03.
+Worker: a fresh-context verifier session on `claude-opus-5-5`, same branch and worktree.
+Isolation: nothing under `eval/blind/` was opened or listed; `docs/transcripts/session3_coordinator.md` was not read; no `llm.jsonl` was printed; no model call was made.
+
+## Merge
+
+`origin/claude/happy-darwin-d0bl94` (`33e37f1`) merged as `5c9d67f` with no conflict.
+
+## Edits
+
+| # | File | What changed | Why |
+|---|---|---|---|
+| 1 | `agent/sit_review_agent/llm/outputs.py` | `revision_problems(..., drafts=)` checks each kept finding after the patch (spec finding rules, evidence not added twice or already cited); new `apply_revisions`, the one exact application (merge moves criteria to the target); evidence twice in one revision refused. | A null severity on a risk, an unsupported disposition or a challenge without two evidence items passed validation and would have been dropped later in verify; merge semantics were undefined. |
+| 2 | `agent/sit_review_agent/state/checkpoint.py`, `report/coverage.py` | `checkpoint_file_order`; coverage sorts by it. | Coverage took the latest checkpoint by file name. |
+| 3 | `agent/sit_review_agent/replay.py` | Message only: the refusal names the commit the record replays at. | Brief item 8; decision #30. |
+| 4 | `agent/README.md` | Readers the W0 note missed. | Freeze rule. |
+| 5 | `agent/sit_review_agent/config.py` | Docstring spacing. | Typo. |
+| 6 | `tests/test_interfaces_w0.py`, `tests/test_cli_replay.py` | 19 tests: adversarial revisions, apply exactness and isolation, estimated usage through the manifest, harness and budget, overlapping members and the resume clock, coverage by ordinal, exhaustive stage 1 enumeration; replay refusal names 2d84f59. | Regression tests for each edit. |
+| 7 | `docs/USER_DECISIONS.md` #30, `docs/design/latency_w0_handoff.md` | Decision row and hand-off. | Brief items 8 and 10. |
+
+## Mutations (cp backup, restore checked by cmp)
+
+Builder guards re-run: criterion in two groups, limits increasing, limits below the deadline, old key refused (model), merge into a not-kept finding, latest checkpoint by ordinal: all caught.
+Verifier guards: patched-finding rules, evidence already cited, evidence twice, merge moves criteria, apply refuses problems, coverage by ordinal, replay names the commit, research depends on plan, close cuts running members: all caught.
+The deep copy in `apply_revisions` survived at first; the isolation test was added and then caught it.
+
+## Gates
+
+`ruff check agent harness tests` exit 0 at `54b1a23`.
+The full gate run at `54b1a23` was stopped by the tool layer after ruff; it was not resent, so the suite, selftest, `make smoke`, `make test` and the answer-key check are not confirmed at the final HEAD and the branch was not pushed.
