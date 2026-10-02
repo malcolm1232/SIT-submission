@@ -25,23 +25,6 @@ class PhaseName(StrEnum):
 
 PHASE_ORDER: tuple[PhaseName, ...] = tuple(PhaseName)
 
-# Deprecated (latency redesign W0, 2026-10-03): the sequential table. orchestrator.py and mermaid()
-# read the stage table since W2; the last reader is tests/robustness/test_robustness_scenarios.py
-# (W3), and the two names are deleted once it moves to STAGE_TRANSITIONS / STAGE_ON_CAP.
-#: Linear happy path. ``None`` = terminal.
-TRANSITIONS: dict[PhaseName, PhaseName | None] = {
-    p: (PHASE_ORDER[i + 1] if i + 1 < len(PHASE_ORDER) else None) for i, p in enumerate(PHASE_ORDER)
-}
-
-#: Where the orchestrator jumps when a cap stop rule (deadline, token budget) fires before a phase:
-#: verify is code-only and cheap, so a capped run still verifies anchors and then reports (BEH-24).
-ON_CAP: dict[PhaseName, PhaseName] = {
-    PhaseName.PLAN: PhaseName.VERIFY,
-    PhaseName.RESEARCH: PhaseName.ASSESS,   # findings from the document alone are still worth having
-    PhaseName.ASSESS: PhaseName.VERIFY,
-    PhaseName.REFINE: PhaseName.VERIFY,
-}
-
 #: Phases that may be disabled in ``config/agent.yaml`` ``phases:`` (all others are mandatory).
 OPTIONAL_PHASES: frozenset[PhaseName] = frozenset({PhaseName.RESEARCH, PhaseName.REFINE})
 

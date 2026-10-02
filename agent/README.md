@@ -22,7 +22,7 @@ sit-review selftest
 ## State machine
 
 `ingest -> understand -> plan -> research -> assess -> refine -> verify -> report`
-(`states.py`: `PHASE_ORDER`, `TRANSITIONS`, `ON_CAP`, `EFFORT_KEY`, `PROVENANCE_PHASE`).
+(`states.py`: `PHASE_ORDER`, `EFFORT_KEY`, `PROVENANCE_PHASE`, and the stage tables below).
 
 Latency redesign (2026-10-03, `docs/DECISIONS.md` ADR-011; pending integration of the W1 and W2
 branches, so the code in this tree still runs the sequential order above): stage 1 is concurrent.
@@ -34,7 +34,7 @@ are merged in code, one global `refine` call returns one revision per finding (e
 465 s), `verify` runs in code with one repair call only when more than 60 s of slack remains, a
 verdict-only model call ends by `verdict_end` (530 s), and the report is rendered in code. The stage
 tables (`Stage`, `STAGE_ORDER`, `STAGE_MEMBERS`, `STAGE_TRANSITIONS`, `STAGE_ON_CAP`) replace
-`TRANSITIONS` and `ON_CAP` in W2 (pending integration).
+`TRANSITIONS` and `ON_CAP`, which the integration pass deleted.
 
 `orchestrator.Orchestrator.run` runs the phases in order. It skips phases that are disabled in
 `config/agent.yaml` (only `research` and `refine` may be disabled). Before `plan`, `research`,
@@ -56,7 +56,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 |---|---|---|
 | `models.py` | Pydantic v2 copy of `spec/finding.schema.json` (Finding, DocAnchor, EvidenceItem, Recommendation, Provenance, LedgerEntry, RegistryEntry, SoundArea, Verdict, StopReason, ResearchLog / ResearchLogEntry, RunManifest, Review, plus `ManifestExtra` for REPRODUCIBILITY §8). The schema's `allOf` rules are validators | done |
 | `config.py` | Typed loader for `config/*.yaml`, CLI overrides, `EffectiveConfig.sha256()` | done |
-| `states.py`, `stop_rules.py` | Phase enum and transitions, and the stage tables of the concurrent first stage (W0); `@register` stop-rule registry; closed `StopReasonCode`. The deprecated `states.TRANSITIONS` and `ON_CAP` leave the map when W2 removes them (pending integration) | done; stage tables read by W2 (pending integration) |
+| `states.py`, `stop_rules.py` | Phase enum and transitions, and the stage tables of the concurrent first stage (W0); `@register` stop-rule registry; closed `StopReasonCode`. The deprecated `states.TRANSITIONS` and `ON_CAP` were deleted in the integration pass | done |
 | `orchestrator.py` | `Orchestrator.run`; `run_review` (missing MCP key check before anything is built (INF-08), run dir, gateways, run limits attached to the LLM stack (`llm/runtime.py`), background MCP warm-up started right after the tool stack, LLM preflight before `models.retrieve` (NET-02), the schedule's `process:` faults around phases (new runs only), exit-code mapping, `failure.json` for every failure after the run dir exists) and `resume_run` (ADR-009: drift check, ledger truncation, `SelfReplayGateway`, call IDs continued via `llm.gateway.prepare_resume` and `CallIds.advance_to`) | done |
 | `context.py` | `RunContext`: the run state plus services, passed to every phase | done |
 | `state/run_state.py` | `RunState`, the serialisable checkpoint payload | done |
@@ -198,7 +198,7 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     manifest's unrecorded-usage rule and must keep reading `usage` only.
   - `states.py`: new `Stage`, `STAGE_ORDER`, `STAGE_MEMBERS`, `STAGE_TRANSITIONS`, `STAGE_ON_CAP`,
     `STAGE_1_DEPENDS`, `MemberOutcome`, `stage_of`, `stage1_ready`, `stage1_close`. Readers: none yet
-    (W2: `orchestrator.py`). Deprecated, removed by W2: `TRANSITIONS` and `ON_CAP` (readers:
+    (W2: `orchestrator.py`). Deprecated, deleted in the integration pass: `TRANSITIONS` and `ON_CAP` (readers:
     `orchestrator.py`, `states.mermaid` and through it the `cli.py` `states` command,
     `tests/robustness/test_robustness_scenarios.py`, the text of `tests/robustness/robustness_coverage.py`
     and of `tests/robustness/README.md`).

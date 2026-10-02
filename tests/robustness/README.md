@@ -293,7 +293,7 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
    ADV-04 (a scripted model obeys the injected page); BEH-03 and BEH-20 run their L0 halves. Their
    L1 halves stay laptop-only.
 6. **BEH-02 deviation.** "Exactly 2 refine cycles" assumes a verify -> refine loop; this state
-   machine has no such edge (`states.TRANSITIONS`). The suite asserts the bounded behaviour that
+   machine has no such edge (`states.STAGE_TRANSITIONS`). The suite asserts the bounded behaviour that
    exists: one verify pass with one repair turn, report produced, the unresolved issue listed.
 7. **BEH-17 deviation.** "Caught because the anchor does not resolve": the agent instead takes each
    citation's `source_type` from the ledger (a relabelled external ID is shown as external) and, with

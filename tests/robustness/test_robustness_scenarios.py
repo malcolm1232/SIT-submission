@@ -48,7 +48,7 @@ from sit_review_agent.config import LLMSettings, Transport
 from sit_review_agent.paths import config_dir
 from sit_review_agent.phases.research import MAX_TOOL_TEXT_CHARS
 from sit_review_agent.selftest import FIXTURE_QUERY, FIXTURE_URL
-from sit_review_agent.states import ON_CAP, PHASE_ORDER, TRANSITIONS
+from sit_review_agent.states import STAGE_ON_CAP, STAGE_ORDER, STAGE_TRANSITIONS
 from sit_review_agent.tools.gateway import PolicyToolGateway
 from sit_review_agent.tools.mcp_client import find_layer
 
@@ -874,8 +874,8 @@ def check_beh25(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert "Completed stages: ingest, understand, plan, research" in partial and "Crashed stage: assess" in partial
     assert "not a review" in partial and not [t for t in titles(control) if t in partial]   # no unverified finding
     # The transition table only moves forward: no edge such as report -> research exists to take.
-    assert all(PHASE_ORDER.index(b) == PHASE_ORDER.index(a) + 1 for a, b in TRANSITIONS.items() if b is not None)
-    assert all(PHASE_ORDER.index(b) > PHASE_ORDER.index(a) for a, b in ON_CAP.items())
+    assert all(STAGE_ORDER.index(b) == STAGE_ORDER.index(a) + 1 for a, b in STAGE_TRANSITIONS.items() if b is not None)
+    assert all(STAGE_ORDER.index(b) > STAGE_ORDER.index(a) for a, b in STAGE_ON_CAP.items())
     again = resume(rec)                                                     # process faults are not re-applied
     oracles.assert_oracles(again)
     assert oracles.exit_code(again) == 0 and titles(again) == titles(control)
