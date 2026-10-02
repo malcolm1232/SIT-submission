@@ -19,6 +19,11 @@ Decisions taken here:
   never counted as zero: it is listed in ``extra.model.calls_with_unrecorded_usage`` and
   ``extra.model.cost_usd_lower_bound`` is true, so ``usage.cost_usd`` and the token totals are a
   lower bound (``report.md``, the console and the ``--k`` summary say so).
+* A cut attempt may log an estimate of its usage (latency redesign). The estimate sits beside the
+  measured-null record, never in it: ``extra.model.estimated_usage_of_unrecorded_calls`` has one row
+  per such attempt (``estimated: true``, call ID, stage, purpose, attempt, reason, the four token
+  fields) and ``extra.model.estimated_usage_totals`` sums them with a price-table cost. The measured
+  totals, ``usage.cost_usd``, the unrecorded list and the lower-bound flag are unchanged by it.
 * ``git_dirty`` is ``const false`` in the spec. Outside eval mode the tree is not inspected (no
   ``git`` subprocess): the commit is read from ``.git`` files and ``extra.code.git_dirty`` is
   ``null`` ("not checked"). Eval mode runs ``git status --porcelain`` and refuses a dirty tree.
@@ -155,11 +160,60 @@ def unrecorded_reason(entry: dict[str, Any]) -> str | None:
     return None
 
 
+USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _count(value: Any) -> int | None:
+    """A non-negative integer count, or ``None`` (bools, floats, negatives and text are not counts)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def logged_estimate(entry: dict[str, Any]) -> dict[str, int] | None:
+    """The estimated usage logged for a cut attempt, or ``None``. Read under ``estimated_usage`` (the
+    key ``replay.recorded_error`` maps, commit 87a0634) or ``usage_estimate`` (the key the streaming
+    gateway logs, latency W1); every ``Usage`` field present must be a non-negative integer."""
+    for key in ("estimated_usage", "usage_estimate"):
+        raw = entry.get(key)
+        if isinstance(raw, dict):
+            counts = {k: _count(raw.get(k, 0)) for k in USAGE_FIELDS}
+            if all(v is not None for v in counts.values()):
+                return {k: int(v or 0) for k, v in counts.items()}
+    return None
+
+
+def logged_salvage(entry: dict[str, Any]) -> int:
+    """Finished items an attempt salvaged before its cut: the list fields of ``partial`` (or
+    ``salvaged_partial``), as ``LLMDeadlineError.salvaged_items`` counts them, else a logged
+    ``salvaged_items`` count; 0 when nothing was salvaged."""
+    for key in ("partial", "salvaged_partial"):
+        raw = entry.get(key)
+        if isinstance(raw, dict):
+            return sum(len(v) for v in raw.values() if isinstance(v, list))
+    return _count(entry.get("salvaged_items")) or 0
+
+
+def _estimate_cost(tot: dict[str, int]) -> float:
+    p = PRICE_TABLE["usd_per_mtok"]
+    return (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
+            + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
+
+
 def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     """Usage, served models, truncated calls and cost summed over every entry of ``llm.jsonl``,
     and the attempts whose usage is unknown (``calls_with_unrecorded_usage``: call ID, stage,
-    purpose, attempt, wall seconds, reason). When any exist, the totals are a lower bound."""
+    purpose, attempt, wall seconds, reason). When any exist, the totals are a lower bound.
+
+    Latency redesign: a cut attempt may log an estimate of its usage. Each one is listed in
+    ``estimated_usage_of_unrecorded_calls`` (``estimated: true``) and summed in ``estimated_totals``,
+    never in the measured totals, which sum logged ``usage`` only. ``salvaged_calls`` and
+    ``salvaged_items`` count the attempts that kept finished items of a cut answer, and
+    ``assess_shards`` the distinct assess conversations that ran."""
     tot = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    est_rows: list[dict[str, Any]] = []
+    est_tot = dict.fromkeys(USAGE_FIELDS, 0)
+    salvaged_calls = 0
+    salvaged_items = 0
+    assess_conversations: set[str] = set()
     served: set[str] = set()
     cost_logged = 0.0
     have_cost = False
@@ -177,6 +231,18 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
                                "attempt": e.get("attempt"),
                                "wall_s": round(float(wall), 3) if isinstance(wall, int | float) else None,
                                "reason": reason})
+            est = logged_estimate(e)
+            if est is not None:
+                est_rows.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose"),
+                                 "attempt": e.get("attempt"), "reason": reason, "estimated": True, **est})
+                for k in USAGE_FIELDS:
+                    est_tot[k] += est[k]
+        items = logged_salvage(e)
+        if items:
+            salvaged_calls += 1
+            salvaged_items += items
+        if e.get("phase") == "assess" and e.get("conversation_id"):
+            assess_conversations.add(str(e["conversation_id"]))
         for k in tot:
             tot[k] += int((e.get("usage") or {}).get(k) or 0)
         if e.get("outcome", "ok") == "ok" and e.get("model"):
@@ -185,11 +251,14 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
         if isinstance(c, int | float):
             cost_logged += float(c)
             have_cost = True
-    p = PRICE_TABLE["usd_per_mtok"]
-    estimate = (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
-                + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
+    estimate = _estimate_cost(tot)
     return {**tot, "calls": calls, "served_models": sorted(served), "truncations": truncations,
             "calls_with_unrecorded_usage": unrecorded,
+            "estimated_usage_of_unrecorded_calls": est_rows,
+            "estimated_totals": {"estimated": True, "calls": len(est_rows), **est_tot,
+                                 "cost_usd": round(_estimate_cost(est_tot), 6), "cost_source": "price table estimate"},
+            "salvaged_calls": salvaged_calls, "salvaged_items": salvaged_items,
+            "assess_shards": len(assess_conversations),
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
 
@@ -378,6 +447,8 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "refusals": refusals, "truncations": usage["truncations"],
                "calls_with_unrecorded_usage": usage["calls_with_unrecorded_usage"],
                "cost_usd_lower_bound": bool(usage["calls_with_unrecorded_usage"]),
+               "estimated_usage_of_unrecorded_calls": usage["estimated_usage_of_unrecorded_calls"],
+               "estimated_usage_totals": usage["estimated_totals"],
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
                "calls_logged": usage["calls"]},
