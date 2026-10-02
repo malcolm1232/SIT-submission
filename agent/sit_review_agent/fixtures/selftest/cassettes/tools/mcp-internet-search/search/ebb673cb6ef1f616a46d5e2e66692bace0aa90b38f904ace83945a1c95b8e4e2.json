@@ -1,0 +1,33 @@
+{
+ "args": {
+  "query": "transactional e-mail service plan daily sending limit"
+ },
+ "key": "ebb673cb6ef1f616a46d5e2e66692bace0aa90b38f904ace83945a1c95b8e4e2",
+ "latency_ms": 120,
+ "notes": "selftest fixture (invented, prompt-safe; result shape UNVERIFIED until the laptop probe)",
+ "recorded_at": "2026-10-02T09:00:00Z",
+ "result": {
+  "content": [
+   {
+    "text": "{\"query\": \"transactional e-mail service plan daily sending limit\", \"results\": [{\"content\": \"The Starter plan allows up to 2,000 messages per day. Higher plans allow 10,000 or more messages per day.\", \"title\": \"Plans and sending limits\", \"url\": \"https://docs.example-mail.invalid/plans\"}]}",
+    "type": "text"
+   }
+  ],
+  "isError": false,
+  "structuredContent": {
+   "query": "transactional e-mail service plan daily sending limit",
+   "results": [
+    {
+     "content": "The Starter plan allows up to 2,000 messages per day. Higher plans allow 10,000 or more messages per day.",
+     "title": "Plans and sending limits",
+     "url": "https://docs.example-mail.invalid/plans"
+    }
+   ]
+  }
+ },
+ "server": "mcp-internet-search",
+ "tool": "search",
+ "transport": {
+  "status": 200
+ }
+}

@@ -44,7 +44,8 @@ def doc_id_for(path: str | Path, role: DocumentRole = DocumentRole.UNDER_REVIEW,
     for suffix in _ID_SUFFIXES:
         if stem.endswith(suffix):
             stem = stem[: -len(suffix)]
-    did = "DOC-" + (re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip("-.") or "document")
+    clean = re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip("-.") or "document"
+    did = clean if clean.startswith("DOC-") else "DOC-" + clean
     taken = taken or set()
     if did in taken:
         did += "-prior" if role is DocumentRole.PRIOR_VERSION else "-2"

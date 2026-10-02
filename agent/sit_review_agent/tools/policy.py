@@ -68,7 +68,8 @@ def sanitise_args(args: dict[str, Any], redactor: Redactor) -> str | None:
             if pat.search(value):
                 return f"argument {key!r} contains a {label.replace('_', ' ')}-shaped value"
         if len(value) > MAX_ARG_CHARS:
-            return f"argument {key!r} is {len(value)} characters (limit {MAX_ARG_CHARS}; possible document exfiltration)"
+            return (f"argument {key!r} is {len(value)} characters (limit {MAX_ARG_CHARS}; possible document "
+                    "exfiltration)")
         for m in BLOB_RE.finditer(value):
             if not URL_RE.fullmatch(m.group(0)):
                 return f"argument {key!r} carries a {len(m.group(0))}-character encoded blob"

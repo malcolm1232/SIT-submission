@@ -1,4 +1,289 @@
-{# Report template (workstream C fills this in). Sections follow render.SECTION_ORDER (lab §2.3). #}
-{# Optional executive summary (runbook DEMO-08): rendered from verdict + top-ranked findings only. #}
-{# executive_summary #}
-# Design review: {{ review.metadata.documents[0].title }}
+{#- Report template (workstream C). Sections follow render.SECTION_ORDER (lab §2.3).
+    Rendered by report/render.py from the Review only (StrictUndefined); the model never writes
+    report structure. Layouts: template == "standard" | "risk_register". Never print
+    run_manifest.extra.outputs here: the manifest stores the hash of this file's output. -#}
+{%- macro anchor_line(a) -%}
+p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{% if a.req %} ({{ a.req | join(", ") }}){% endif %}: "{{ a.quote }}"
+{%- endmacro -%}
+{%- macro finding_block(f) %}
+### {{ f.id }} {{ f.title }}
+
+- **{{ f.kind | replace("_", " ") }}**{% if f.category %} · {{ f.category | replace("_", " ") }}{% endif %}{% if f.severity %} · severity **{{ f.severity }}**{% endif %} · confidence {{ f.confidence }} ({{ f.band }}) · rank {{ f.rank }}
+- Disposition: **{{ f.disposition | replace("_", " ") }}**{% if f.secondary %} (also: {{ f.secondary | join(", ") | replace("_", " ") }}){% endif %}{% if f.acknowledged %} · already acknowledged in the document{% endif %}
+
+
+{{ f.statement }}
+
+{% for a in f.anchors %}
+- Where: {{ anchor_line(a) }}
+{% endfor %}
+{% for e in f.evidence %}
+- Evidence {{ e.id }} ({{ e.source_type }}, {{ "supports" if e.supports else "contrary" }}){% if e.quote %}: "{{ e.quote }}"{% endif %} [{{ e.citation }}]{% if e.derived_from %} derived from {{ e.derived_from | join(", ") }}{% endif %}
+
+{% endfor %}
+{% if f.recommendation %}
+- Recommendation: {{ f.recommendation.change }}
+  - Issue: {{ f.recommendation.issue }}
+  - Rationale: {{ f.recommendation.rationale }}
+  - Expected benefit: {{ f.recommendation.benefit }} (objectives: {{ f.recommendation.objectives | join(", ") }})
+  - Supporting evidence: {{ f.recommendation.evidence_ids | join(", ") }}
+{% if f.recommendation.verification %}
+  - Verification: {{ f.recommendation.verification }}
+{% endif %}
+{% endif %}
+{% if f.no_change_rationale %}
+- Why no change is needed: {{ f.no_change_rationale }}
+{% endif %}
+{% if f.next_step %}
+- Next step: {{ f.next_step.owner }}: {{ f.next_step.action }}
+{% endif %}
+{% for d in f.decisions %}
+- Decision {{ d.id }}{% if d.doc_ref %} ({{ d.doc_ref }}){% endif %}: {{ d.relation }}. {{ d.justification }}
+{% endfor %}
+{% if f.reassessment %}
+- Since the previous version: {{ f.reassessment.status | replace("_", " ") }}{% if f.reassessment.prior %} (was {{ f.reassessment.prior }}){% endif %}{% if f.reassessment.note %}. {{ f.reassessment.note }}{% endif %}
+
+{% endif %}
+{% endmacro -%}
+{%- macro register_table(items) %}
+| ID | Finding | Kind | Impact (severity) | Likelihood (confidence) | Disposition | Owner |
+|---|---|---|---|---|---|---|
+{% for f in items %}
+| {{ f.id }} | {{ f.title_cell }} | {{ f.kind | replace("_", " ") }} | {{ f.severity if f.severity else "n/a" }} | {{ f.band }} ({{ f.confidence }}) | {{ f.disposition | replace("_", " ") }} | {{ f.owner_cell }} |
+{% endfor %}
+{% endmacro -%}
+# {{ headings["header"] }}: {{ title }}
+
+| | |
+|---|---|
+| Review | {{ review_id }} ({{ review_mode }} review) |
+{% for d in documents %}
+| {{ d.role | replace("_", " ") | capitalize }} | {{ d.doc_id }}: {{ d.title }}{% if d.version %} v{{ d.version }}{% endif %}{% if d.pages %}, {{ d.pages }} pages{% endif %} |
+{% endfor %}
+| Verdict | **{{ verdict.label_text }}** (confidence {{ verdict.confidence }}, {{ verdict.band }}) |
+| Tools used | {{ enabled_tools | join(", ") if enabled_tools else "none" }} |
+| Tools disabled | {{ disabled_tools | join(", ") if disabled_tools else "none" }} |
+| Reporting threshold | severity {{ min_severity }} and above ({{ appendix | length }} finding(s) in the appendix) |
+{% if no_external %}
+
+> No external research was possible or used in this run: every finding rests on the document alone.
+{% endif %}
+
+{# executive_summary (runbook DEMO-08): uncomment to show a summary of at most 150 words, built
+   from the verdict and the top-ranked findings only.
+## Executive summary
+
+{{ executive_summary }}
+
+#}
+
+## {{ headings["intent"] }}
+
+{{ intent.statement }}
+
+{% if intent.objectives %}
+Objectives:
+{% for o in intent.objectives %}
+- {% if o.ref %}{{ o.ref }}: {% endif %}{{ o.text }}
+{% endfor %}
+
+{% endif %}
+{% if intent.constraints %}
+Constraints:
+{% for o in intent.constraints %}
+- {% if o.ref %}{{ o.ref }}: {% endif %}{{ o.text }}
+{% endfor %}
+
+{% endif %}
+{% if intent.assumptions %}
+Key assumptions:
+{% for o in intent.assumptions %}
+- {% if o.ref %}{{ o.ref }}: {% endif %}{{ o.text }}
+{% endfor %}
+
+{% endif %}
+Located at: {% for a in intent.anchors %}p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{{ ", " if not loop.last }}{% endfor %}.
+
+## {{ headings["verdict"] }}
+
+**{{ verdict.label_text | capitalize }}** (confidence {{ verdict.confidence }}). {{ verdict.rationale }}
+
+{% if verdict.conditions %}
+Conditions:
+{% for c in verdict.conditions %}
+- {{ c.text }} ({{ c.ids | join(", ") }})
+{% endfor %}
+
+{% endif %}
+{% if verdict.per_objective %}
+| Objective | Verdict | Findings |
+|---|---|---|
+{% for o in verdict.per_objective %}
+| {{ o.ref }} | {{ o.label | replace("_", " ") }} | {{ o.ids | join(", ") if o.ids else "-" }} |
+{% endfor %}
+
+{% endif %}
+{% if verdict.what_would_change_it %}
+What would change this verdict: {{ verdict.what_would_change_it }}
+
+{% endif %}
+{% if template == "risk_register" %}
+## Risk register
+
+{% if main %}
+{{ register_table(main) }}
+{% else %}
+None found.
+{% endif %}
+
+{% endif %}
+{% for k in kinds %}
+## {{ k.heading }}
+
+{% if k.findings %}
+{% for f in k.findings %}
+{{ finding_block(f) }}
+{% endfor %}
+{% else %}
+None found.{% if checked %} Criteria checked: {{ checked | join(", ") }}.{% endif %}
+
+
+{% endif %}
+{% endfor %}
+## {{ headings["recommendations"] }}
+
+{% if recommendations %}
+| Finding | Change | Expected benefit |
+|---|---|---|
+{% for f in recommendations %}
+| {{ f.id }} | {{ f.recommendation.change_cell }} | {{ f.recommendation.benefit_cell }} |
+{% endfor %}
+{% else %}
+No refinement is recommended.
+{% endif %}
+
+## {{ headings["no_change"] }}
+
+{% if no_change or sound_areas %}
+{% for f in no_change %}
+- {{ f.id }} {{ f.title }}: {{ f.no_change_rationale }}
+{% endfor %}
+{% for s in sound_areas %}
+- {{ s.id }} (sections {{ s.sections }}): {{ s.why }}{% if s.related %} (see {{ s.related | join(", ") }}){% endif %}
+
+{% for a in s.anchors %}
+  - p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}: "{{ a.quote }}"
+{% endfor %}
+{% endfor %}
+{% else %}
+None recorded.
+{% endif %}
+
+## {{ headings["unresolved"] }}
+
+{% if unresolved %}
+{% for u in unresolved %}
+- {{ u.text }}{% if u.ids %} ({{ u.ids | join(", ") }}){% endif %}{% if u.owner %}. Next step ({{ u.owner }}): {{ u.action }}{% endif %}
+
+{% endfor %}
+{% else %}
+None.
+{% endif %}
+{% if unanswered %}
+
+Research questions left unanswered:
+{% for q in unanswered %}
+- {{ q }}
+{% endfor %}
+{% endif %}
+
+{% if delta is not none %}
+## {{ headings["delta"] }}
+
+Prior review: {{ prior_review_id }}
+
+{% for g in delta %}
+### {{ g.label | capitalize }}
+
+{% for f in g.findings %}
+- {{ f.id }} {{ f.title }}{% if f.reassessment and f.reassessment.prior %} (was {{ f.reassessment.prior }}){% endif %}
+
+{% endfor %}
+
+{% endfor %}
+{% endif %}
+## {{ headings["limitations"] }}
+
+{% if limitations %}
+{% for lim in limitations %}
+- {{ lim.text }}{% if lim.ids %} ({{ lim.ids | join(", ") }}){% endif %}
+
+{% endfor %}
+{% else %}
+None: no tool, model or input degradation was recorded in this run.
+{% endif %}
+
+## {{ headings["evidence"] }}
+
+{% if evidence %}
+| ID | Type | Source | Retrieved | Cited |
+|---|---|---|---|---|
+{% for e in evidence %}
+| {{ e.id }} | {{ e.source_type }}{% if e.authority %} ({{ e.authority | replace("_", " ") }}){% endif %} | {% if e.is_url %}[{{ e.title or e.citation }}]({{ e.citation }}){% else %}{{ e.citation }}{% endif %}{% if e.tool %} via {{ e.tool }}{% endif %}{% if e.derived_from %} from {{ e.derived_from | join(", ") }}{% endif %} | {{ e.retrieved_at or "-" }} | {{ "yes" if e.cited else "no" }} |
+{% endfor %}
+{% else %}
+The evidence register is empty.
+{% endif %}
+
+## {{ headings["coverage"] }}
+
+{% if coverage %}
+| Criterion | Outcome | Findings | Note |
+|---|---|---|---|
+{% for c in coverage %}
+| {{ c.id }} | {{ c.outcome }} | {{ c.ids | join(", ") if c.ids else "-" }} | {{ c.note }} |
+{% endfor %}
+{% else %}
+No coverage map was recorded. Criteria configured: {{ run.criteria }}.
+{% endif %}
+
+## {{ headings["run"] }}
+
+| | |
+|---|---|
+| Run | {{ run_id }} (started {{ run.start }}) |
+| Outcome | {{ run.outcome }} |
+| Model | requested {{ run.requested_model }}; served {{ run.served_models }}; effort {{ run.effort }} |
+| Persona | {{ run.persona }} |
+| Tool transport | {{ run.transport }} |
+| Research stop | {{ run.stop }}; {{ run.iterations }} iteration(s); {{ run.sources }} |
+| Tool calls | {% for k, v in run.tool_calls | dictsort %}{{ k }}: {{ v }}{{ ", " if not loop.last }}{% else %}none{% endfor %} |
+| Tokens | input {{ run.usage.input_tokens }}, cached {{ run.usage.cached_tokens }}, output {{ run.usage.output_tokens }}; cost ~${{ "%.2f" | format(run.usage.cost_usd) }} (price table {{ run.usage.price_table_date }}) |
+| Extractor | {{ run.extractor }} |
+| Config sha256 | {{ run.config_sha256 }} |
+| Prompt bundle sha256 | {{ run.prompts_sha256 }} |
+| Git commit | {{ run.git_commit }} |
+| Fault schedule | {{ run.fault_schedule or "none" }} |
+| Model fallbacks | {{ run.fallbacks }} |
+{% for d in documents %}
+| Canonical text {{ d.doc_id }} | sha256 {{ d.sha256_text }} |
+{% endfor %}
+{% if run.deviations %}
+
+Deviations recorded in the manifest:
+{% for d in run.deviations %}
+- {{ d }}
+{% endfor %}
+{% endif %}
+{% if appendix %}
+
+## {{ appendix_heading }} ({{ min_severity }})
+
+{% if template == "risk_register" %}
+{{ register_table(appendix) }}
+{% else %}
+{% for f in appendix %}
+{{ finding_block(f) }}
+{% endfor %}
+{% endif %}
+{% endif %}

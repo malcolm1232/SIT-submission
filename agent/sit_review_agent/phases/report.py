@@ -7,22 +7,430 @@ against the spec (INV-03) and the invariants, writes ``report.json``, ``ledger.j
 degradation is cited by a limitation (INV-07). A capped run (deadline) still reports, with a
 partial-evidence caveat; if the model is unavailable the verdict text falls back to an LLM-free
 template that says so (fresh_eyes N3).
+
+What assembly guarantees by construction (each is disclosed, never hidden):
+
+* the model's verdict, unresolved items and limitations may cite only known finding and
+  degradation IDs (others are removed); every non-refinement finding gets an ``unresolved[]``
+  entry; every degradation gets a limitation (the model's text if it cited it, else the
+  degradation's own event and impact);
+* failed tool calls, cap stops and model fallbacks that no phase recorded as a degradation get
+  one (INV-07);
+* a URL or DOI in free text that is not a ledger ``url_or_citation`` is replaced by
+  ``[link removed: not in the evidence register]`` and disclosed as a degradation (INV-05).
+
+Anything the invariants still reject after that is a bug: the phase writes ``failure.json`` and
+``report.invalid.json`` and raises :class:`~sit_review_agent.errors.StageCrash` (exit 4).
 """
 
 from __future__ import annotations
 
+from typing import Any
+
+from sit_review_agent.clock import isoformat_z
 from sit_review_agent.context import RunContext
-from sit_review_agent.models import Review
+from sit_review_agent.errors import (
+    ExitCode,
+    LLMError,
+    LLMRefusalError,
+    LLMSchemaError,
+    LLMTruncatedError,
+    StageCrash,
+)
+from sit_review_agent.hashing import sha256_file
+from sit_review_agent.invariants import URL_RE, check_all, spec_validator
+from sit_review_agent.llm.backend import supports_native_pdf
+from sit_review_agent.llm.gateway import LLMRequest
+from sit_review_agent.llm.outputs import ReportOutput
+from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.manifest import build_manifest, outcome_for, report_json_sha256, write_manifest
+from sit_review_agent.models import (
+    NON_REFINEMENT_DISPOSITIONS,
+    DegradationType,
+    Disposition,
+    DocumentMeta,
+    DocumentRole,
+    Finding,
+    IntentSummary,
+    Kind,
+    Limitation,
+    NextStep,
+    ObjectiveVerdict,
+    RegistryHash,
+    ResearchLogEntry,
+    Review,
+    ReviewMode,
+    Severity,
+    StopReason,
+    StopReasonCode,
+    ToolCallStatus,
+    UnresolvedItem,
+    Verdict,
+    VerdictCondition,
+    VerdictLabel,
+)
+from sit_review_agent.rundir import JsonlWriter, write_json_atomic
 from sit_review_agent.states import PhaseName
+
+CONVERSATION_ID = "report"
+LINK_REMOVED = "[link removed: not in the evidence register]"
+_RETRYABLE = (LLMRefusalError,)
+_FALLBACK = (LLMRefusalError, LLMSchemaError, LLMTruncatedError)
+
+
+class InvariantViolation(Exception):
+    """The assembled Review breaks an invariant: a bug upstream, never silently fixed."""
+
+
+# =============================================================================== verdict call
+
+
+def _brief_vars(ctx: RunContext, *, refusal_retry: bool) -> dict[str, Any]:
+    st = ctx.state
+    return {
+        "findings": [{"id": f.id, "rank": f.rank, "kind": f.kind.value,
+                      "severity": f.severity.value if f.severity else None, "disposition": f.disposition.value,
+                      "title": f.title, "statement": f.statement} for f in st.findings],
+        "objectives": [{"ref": o.ref, "text": o.text} for o in (st.intent_summary.objectives if st.intent_summary
+                                                                  else [])],
+        "degradations": [{"id": d.id, "type": d.type.value, "event": d.event, "impact": d.impact}
+                         for d in st.degradations],
+        "stop_reason": {"code": st.stop_reason.code.value, "detail": st.stop_reason.detail} if st.stop_reason else None,
+        "unverified": [u.text for u in st.unresolved],
+        "refusal_retry": refusal_retry,
+    }
+
+
+async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | None]:
+    """The single verdict call (plus one refusal retry with professional-review framing, LLM-06).
+    Returns ``(None, reason)`` when the model's answer cannot be used."""
+    persona = ctx.config.persona()
+    system = ctx.prompts.render("system.md", persona_title=persona.title, persona_emphasis=persona.emphasis)
+    docs = [ctx.doc_under_review()] + [d for d in ctx.documents.values() if d.role is not DocumentRole.UNDER_REVIEW]
+    retries = ctx.config.agent.llm.refusal_retries
+    for attempt in range(retries + 1):
+        brief = ctx.prompts.render("report.md", **_brief_vars(ctx, refusal_retry=attempt > 0))
+        messages, bp = start_conversation(docs, brief.text, native_pdf=supports_native_pdf(ctx.llm))
+        req = LLMRequest(phase=PhaseName.REPORT, conversation_id=f"{CONVERSATION_ID}-{attempt}" if attempt
+                         else CONVERSATION_ID, system=system.text, messages=messages,
+                         effort=ctx.config.effort_for(PhaseName.REPORT), max_tokens=ctx.config.agent.max_tokens,
+                         output_schema=ReportOutput, cache_breakpoints=(bp,),
+                         thinking_display=ctx.config.agent.thinking_display,
+                         purpose="refusal_retry" if attempt else "verdict")
+        try:
+            res = await ctx.llm.call(req)
+        except LLMError as exc:
+            if not isinstance(exc, _FALLBACK) and exc.exit_code is not ExitCode.LLM_UNAVAILABLE:
+                raise                       # bugs (bad request, effort change, exhausted fake script)
+            if exc.call_id:
+                ctx.state.llm_calls.setdefault(PhaseName.REPORT.value, []).append(exc.call_id)
+            if isinstance(exc, _RETRYABLE) and attempt < retries:
+                cat = getattr(exc, "category", None) or "none given"
+                ctx.emit(f"model declined the verdict (category: {cat}); retrying with review framing", "warn")
+                continue
+            return None, f"{type(exc).__name__}: {str(exc)[:160]}"
+        ctx.state.llm_calls.setdefault(PhaseName.REPORT.value, []).append(res.call_id)
+        b = ctx.state.budget
+        b.input_tokens += res.usage.total_input_tokens
+        b.output_tokens += res.usage.output_tokens
+        b.cache_read_input_tokens += res.usage.cache_read_input_tokens
+        b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+        if res.fallback is not None:
+            ctx.state.fallback_events.append(res.fallback)
+        if res.parsed is None:
+            return None, "the verdict call returned no structured output"
+        return res.parsed, None
+    return None, "the model declined the verdict"
+
+
+def fallback_verdict(findings: list[Finding], reason: str) -> Verdict:
+    """LLM-free verdict by rule (fresh_eyes N3): any open critical finding -> not_fit; any other
+    open finding -> fit_with_conditions (conditions = the five highest-ranked); else fit."""
+    open_ = [f for f in findings if f.disposition is not Disposition.NO_CHANGE and f.kind is not Kind.STRENGTH]
+    critical = [f for f in open_ if f.severity is Severity.CRITICAL]
+    why = (f"Verdict derived by rule from the severities and dispositions of the verified findings, because no "
+           f"model verdict was available ({reason}). See the limitations.")
+    if critical:
+        return Verdict(label=VerdictLabel.NOT_FIT, rationale=why, confidence=0.5,
+                       conditions=[VerdictCondition(text=f"Resolve {f.id}: {f.title}", finding_ids=[f.id])
+                                   for f in critical[:5]], per_objective=[], what_would_change_it=None)
+    if open_:
+        top = sorted(open_, key=lambda f: f.rank)[:5]
+        return Verdict(label=VerdictLabel.FIT_WITH_CONDITIONS, rationale=why, confidence=0.5,
+                       conditions=[VerdictCondition(text=f"Address {f.id}: {f.title}", finding_ids=[f.id])
+                                   for f in top], per_objective=[], what_would_change_it=None)
+    return Verdict(label=VerdictLabel.FIT, rationale=why, confidence=0.5, conditions=[], per_objective=[],
+                   what_would_change_it=None)
+
+
+def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, list[UnresolvedItem], list[Limitation]]:
+    """Canonical verdict, unresolved items and limitations from the model's draft: unknown finding
+    and degradation IDs removed, empty items dropped, confidence clamped to [0, 1]."""
+    known = {f.id for f in ctx.state.findings}
+    degs = {d.id for d in ctx.state.degradations}
+    v = out.verdict
+    conditions = [VerdictCondition(text=c.text.strip(), finding_ids=list(dict.fromkeys(x for x in c.finding_ids
+                                                                                      if x in known)))
+                  for c in v.conditions if c.text.strip()]
+    conditions = [c for c in conditions if c.finding_ids]
+    label = v.label
+    notes: list[str] = []
+    if label is VerdictLabel.FIT_WITH_CONDITIONS and not conditions:
+        rule = fallback_verdict(ctx.state.findings, "conditions cited no verified finding")
+        conditions = rule.conditions
+        if not conditions:
+            label = VerdictLabel.FIT
+            notes.append("verdict fit_with_conditions had no condition linked to a verified finding; reported as fit")
+        else:
+            notes.append("verdict conditions cited no verified finding; conditions derived from the open findings")
+    verdict = Verdict(
+        label=label, rationale=v.rationale.strip() or "No rationale was given.",
+        confidence=min(1.0, max(0.0, float(v.confidence))), conditions=conditions,
+        per_objective=[ObjectiveVerdict(objective_ref=o.objective_ref.strip(), label=o.label,
+                                        finding_ids=[x for x in dict.fromkeys(o.finding_ids) if x in known])
+                       for o in v.per_objective if o.objective_ref.strip()],
+        what_would_change_it=v.what_would_change_it)
+    for n in notes:
+        ctx.state.add_degradation(DegradationType.OTHER, n, "the verdict's conditions were adjusted in code")
+    unresolved = []
+    for u in out.unresolved:
+        if not u.text.strip():
+            continue
+        nxt = (NextStep(owner=u.next_step.owner.strip(), action=u.next_step.action.strip())
+               if u.next_step and u.next_step.owner.strip() and u.next_step.action.strip() else None)
+        unresolved.append(UnresolvedItem(text=u.text.strip(), finding_ids=[x for x in dict.fromkeys(u.finding_ids)
+                                                                          if x in known], next_step=nxt))
+    limitations = [Limitation(text=lim.text.strip(), degradation_ids=[x for x in dict.fromkeys(lim.degradation_ids)
+                                                                       if x in degs])
+                   for lim in out.limitations if lim.text.strip()]
+    return verdict, unresolved, limitations
+
+
+# =============================================================================== assembly
+
+
+def _research_log_calls(ctx: RunContext) -> list[ResearchLogEntry]:
+    calls: dict[str, ResearchLogEntry] = {c.call_id: c for c in ctx.state.tool_calls}
+    for e in JsonlWriter(ctx.run_dir.tools_log).read():
+        cid = e.get("call_id")
+        if not cid or cid in calls:
+            continue
+        try:
+            status = ToolCallStatus(e.get("status", "error"))
+        except ValueError:
+            status = ToolCallStatus.ERROR
+        calls[cid] = ResearchLogEntry(call_id=cid, server=e.get("server") or "unknown",
+                                      tool_name=e.get("tool") or "unknown", status=status,
+                                      started_at=e.get("started_at") or ctx.state.created_utc)
+    return list(calls.values())
+
+
+def _ensure_disclosures(ctx: RunContext, calls: list[ResearchLogEntry], stop: StopReason) -> None:
+    """INV-07 by construction: failed tool calls, cap stops and fallbacks become degradations."""
+    st = ctx.state
+    types = {d.type for d in st.degradations}
+    failed = [c for c in calls if c.status in (ToolCallStatus.ERROR, ToolCallStatus.TIMEOUT)]
+    if failed and not types & {DegradationType.TOOL_ERROR, DegradationType.TOOL_UNAVAILABLE}:
+        st.add_degradation(DegradationType.TOOL_ERROR, f"{len(failed)} tool call(s) failed: "
+                           + ", ".join(f"{c.server}/{c.tool_name} {c.status.value}" for c in failed[:5]),
+                           "evidence those calls would have returned is missing")
+    if stop.group.value == "cap" and DegradationType.BUDGET_OR_DEADLINE_HIT not in types:
+        st.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
+                           f"research stopped by a cap: {stop.code.value} ({stop.detail or 'no detail'})",
+                           "research ended before every question was answered; evidence may be partial")
+    if stop.code is StopReasonCode.TOOL_FAILURE and not {d.type for d in st.degradations} & {
+            DegradationType.TOOL_ERROR, DegradationType.TOOL_UNAVAILABLE}:
+        st.add_degradation(DegradationType.TOOL_UNAVAILABLE, "research stopped because tools failed",
+                           "external evidence is missing or partial")
+    fb = list(st.fallback_events) or list(ctx.llm.fallback_events())
+    have = sum(1 for d in st.degradations if d.type is DegradationType.MODEL_FALLBACK)
+    for ev in fb[have:]:
+        st.add_degradation(DegradationType.MODEL_FALLBACK, f"{ev.role}: {ev.from_model} -> {ev.to_model} ({ev.reason})",
+                           "part of the review was produced by another model; the run is not eval evidence")
+
+
+def _redact(node: Any, allowed: set[str], counter: list[int]) -> Any:
+    if isinstance(node, str):
+        def sub(m: Any) -> str:
+            url = m.group(0)
+            if url.rstrip(".,;:") in allowed:
+                return url
+            counter[0] += 1
+            return LINK_REMOVED
+        return URL_RE.sub(sub, node)
+    if isinstance(node, list):
+        return [_redact(x, allowed, counter) for x in node]
+    if isinstance(node, dict):
+        return {k: (v if k == "url_or_citation" else _redact(v, allowed, counter)) for k, v in node.items()}
+    return node
+
+
+def _default_stop_reason(ctx: RunContext) -> StopReason:
+    if ctx.state.stop_reason is not None:
+        return ctx.state.stop_reason
+    ran = PhaseName.RESEARCH in ctx.state.completed_phases
+    return StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "research_completed" if ran else "research_not_run")
+
+
+def _intent(ctx: RunContext) -> IntentSummary:
+    if ctx.state.intent_summary is not None:
+        return ctx.state.intent_summary
+    from sit_review_agent.phases.verify import intent_fallback_anchor
+
+    anchor = intent_fallback_anchor(ctx.doc_under_review())
+    if anchor is None:
+        raise InvariantViolation("no intent summary and no verifiable passage to anchor one")
+    ctx.state.add_degradation(DegradationType.OTHER, "no design-intent summary was produced",
+                              "the review states no design intent; objectives were not checked one by one")
+    return IntentSummary(statement="The design intent could not be summarised in this run; see the document's "
+                                   "opening section.", objectives=[], constraints=[], key_assumptions=[],
+                         doc_anchors=[anchor])
 
 
 def assemble_review(ctx: RunContext) -> Review:
     """Build the Review envelope from ``ctx.state``, the ledger, the registry and the manifest."""
-    raise NotImplementedError("phase 3: assemble_review (workstream C)")
+    st = ctx.state
+    intent = _intent(ctx)
+    findings = list(st.findings)
+    verdict = st.verdict or fallback_verdict(findings, "no verdict was produced")
+
+    unresolved = list(st.unresolved)
+    listed = {x for u in unresolved for x in u.finding_ids}
+    for f in sorted(findings, key=lambda f: f.rank):
+        if f.disposition in NON_REFINEMENT_DISPOSITIONS and f.id not in listed:
+            unresolved.append(UnresolvedItem(text=f"{f.id} ({f.disposition.value.replace('_', ' ')}): {f.title}",
+                                             finding_ids=[f.id], next_step=f.next_step))
+
+    calls = _research_log_calls(ctx)
+    stop = _default_stop_reason(ctx)
+    _ensure_disclosures(ctx, calls, stop)
+    ledger = ctx.ledger.entries()
+    external = [e for e in ledger if e.source_type.value == "external"]
+    cited = {e.evidence_id for f in findings for e in f.evidence} | {x for s in st.sound_areas for x in s.evidence_ids}
+    by_server: dict[str, int] = {}
+    for c in calls:
+        by_server[c.server] = by_server.get(c.server, 0) + 1
+    hashes = list(ctx.registry.hashes()) or [RegistryHash(iteration=0, sha256=ctx.registry.sha256())]
+
+    documents = [DocumentMeta(doc_id=d.doc_id, title=d.title, version=d.version, role=d.role, sha256_pdf=d.sha256_pdf,
+                              sha256_text=d.sha256_text, text_path=d.text_path, page_count=d.page_count)
+                 for d in st.documents]
+    body: dict[str, Any] = {
+        "schema_version": "1.0",
+        "metadata": {"review_id": f"REV-{st.run_id}", "run_id": st.run_id, "created_at": st.created_utc,
+                     "review_mode": st.review_mode.value, "documents": [d.model_dump(mode="json") for d in documents],
+                     "prior_review_id": st.prior_review_id if st.review_mode is ReviewMode.DELTA else None,
+                     "taxonomy_version": "1.0"},
+        "intent_summary": intent.model_dump(mode="json"),
+        "verdict": verdict.model_dump(mode="json"),
+        "findings": [f.model_dump(mode="json") for f in findings],
+        "sound_areas": [s.model_dump(mode="json") for s in st.sound_areas],
+        "unresolved": [u.model_dump(mode="json") for u in unresolved],
+        "decision_registry": [e.model_dump(mode="json") for e in ctx.registry.entries()],
+        "evidence_ledger": [e.model_dump(mode="json") for e in ledger],
+        "research_log": {
+            "iterations": st.budget.research_iterations, "tool_calls_by_tool": by_server,
+            "tool_calls": [c.model_dump(mode="json") for c in calls],
+            "queries_issued": st.queries_issued, "sources_retrieved": len(external),
+            "sources_cited": len({e.evidence_id for e in external} & cited),
+            "unanswered_questions": list(st.unanswered_questions),
+            "degradations": [d.model_dump(mode="json") for d in st.degradations],
+            "registry_sha256_by_iteration": [h.model_dump(mode="json") for h in hashes]},
+        "limitations": [lim.model_dump(mode="json") for lim in st.limitations],
+        "stop_reason": stop.model_dump(mode="json"),
+    }
+    allowed = {e.url_or_citation for e in ledger}
+    counter = [0]
+    redacted = {k: (v if k in ("evidence_ledger", "metadata") else _redact(v, allowed, counter))
+                for k, v in body.items()}
+    if counter[0]:
+        event = f"{counter[0]} URL(s) or DOI(s) in model-written text were not in the evidence register"
+        if not any(d.event == event for d in st.degradations):
+            d = st.add_degradation(DegradationType.OTHER, event,
+                                   f"they were replaced by '{LINK_REMOVED}'; only ledger sources are cited")
+            redacted["research_log"]["degradations"].append(d.model_dump(mode="json"))
+    deg_ids = [d["id"] for d in redacted["research_log"]["degradations"]]
+    lims = [lim for lim in redacted["limitations"] if lim["degradation_ids"] or lim["text"]]
+    covered = {x for lim in lims for x in lim["degradation_ids"]}
+    for d in redacted["research_log"]["degradations"]:
+        if d["id"] not in covered:
+            lims.append({"text": f"{d['event']}. Impact: {d['impact']}", "degradation_ids": [d["id"]]})
+    lims = [lim for lim in lims if all(x in deg_ids for x in lim["degradation_ids"])]
+    redacted["limitations"] = lims
+    manifest = build_manifest(ctx, outcome_for(ctx), end_utc=isoformat_z(ctx.clock.now_utc()))
+    redacted["run_manifest"] = manifest.model_dump(mode="json")
+    return Review.model_validate(redacted)
+
+
+# =============================================================================== phase
 
 
 class ReportPhase:
     name = PhaseName.REPORT
 
     async def run(self, ctx: RunContext) -> RunContext:
-        raise NotImplementedError("phase 3: ReportPhase.run (workstream C)")
+        st = ctx.state
+        if not ctx.documents:
+            raise StageCrash(PhaseName.REPORT.value, InvariantViolation("no documents loaded"))
+        out, reason = await _verdict_call(ctx)
+        if out is None:
+            st.add_degradation(DegradationType.OTHER, f"verdict call failed: {reason}",
+                               "the verdict was derived by rule from the findings (no model judgement); "
+                               "unresolved items and limitations were generated from the run record")
+            st.verdict = fallback_verdict(st.findings, reason or "unavailable")
+            model_unresolved: list[UnresolvedItem] = []
+            st.limitations = []
+        else:
+            st.verdict, model_unresolved, st.limitations = settle_report_output(ctx, out)
+        st.unresolved = list(st.unresolved) + model_unresolved      # verify's unverified items first
+
+        try:
+            review = assemble_review(ctx)
+        except InvariantViolation as exc:
+            raise StageCrash(PhaseName.REPORT.value, exc) from exc
+        ctx.ledger.write_snapshot()
+        md = self._render(ctx, review)
+        rd = ctx.run_dir
+        outputs = {"ledger_sha256": sha256_file(rd.ledger),
+                   "llm_jsonl_sha256": sha256_file(rd.llm_log) if rd.llm_log.exists() else None,
+                   "tools_jsonl_sha256": sha256_file(rd.tools_log) if rd.tools_log.exists() else None,
+                   "anchors_sha256": sha256_file(rd.anchors) if rd.anchors.exists() else None,
+                   "report_md_sha256": _sha_text(md), "report_json_sha256": None}
+        review.run_manifest.extra["outputs"] = outputs
+        data = review.model_dump(mode="json")
+        outputs["report_json_sha256"] = report_json_sha256(data)
+        data = review.model_dump(mode="json")
+        if self._render(ctx, review) != md:
+            raise StageCrash(PhaseName.REPORT.value, InvariantViolation("report.md depends on extra.outputs"))
+        write_manifest(rd, review.run_manifest)
+
+        problems = [f"schema: {'/'.join(map(str, e.absolute_path))}: {e.message}"
+                    for e in spec_validator("Review").iter_errors(data)]
+        results = check_all(review, rd.root)
+        problems += [f"{r.inv_id}: {p}" for r in results if not r.passed for p in r.problems]
+        if problems:
+            write_json_atomic(rd.root / "report.invalid.json", data)
+            write_json_atomic(rd.failure, {"phase": "report", "error": "InvariantViolation", "problems": problems,
+                                           "partial_report": "report.invalid.json"})
+            raise StageCrash(PhaseName.REPORT.value, InvariantViolation("; ".join(problems)[:2000]))
+        write_json_atomic(rd.report_json, data)
+        rd.report_md.write_text(md, encoding="utf-8")
+        ctx.emit(f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
+                 f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
+                 f"invariants INV-03..10 pass; wrote {rd.relative(rd.report_md)}")
+        return ctx
+
+    @staticmethod
+    def _render(ctx: RunContext, review: Review) -> str:
+        from sit_review_agent.report.render import render_markdown
+
+        rep = ctx.config.agent.report
+        return render_markdown(review, template=rep.template, min_severity=rep.min_severity,
+                               coverage=list(ctx.state.coverage))
+
+
+def _sha_text(text: str) -> str:
+    from sit_review_agent.hashing import sha256_text
+
+    return sha256_text(text)
+
