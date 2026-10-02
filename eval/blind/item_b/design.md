@@ -10,7 +10,7 @@
 | Date | 2026-09-14 |
 | Supersedes | Rev B (2026-07-30) |
 
-**Revision summary.** Rev C incorporates the BESS supplier's final interface maps (PCS and EBMS), the utility's preliminary comments on the interconnection amendment, the revised design-day load profile from the 2025 summer metering campaign, and the outcome of the hazard identification workshop held 2026-08-21. Rev B comments not addressed here are tracked in Section 13.
+**Revision summary.** Rev C incorporates the supplier's final PCS and EBMS interface maps, the utility's preliminary comments on the interconnection amendment, the revised design-day profile and the hazard identification workshop outcome.
 
 ---
 
@@ -18,9 +18,7 @@
 
 ### 1.1 Purpose
 
-This document defines the design of the Site Energy Management System (SEMS) and the associated battery energy storage system (BESS) controls for the Fenwick Cold-Chain Distribution Centre (FDC). It is the baseline against which the controls integrator, the BESS supplier, the electrical contractor and the OT security team will build, and against which site acceptance testing will be performed.
-
-The document covers the control functions that coordinate the BESS, the existing rooftop photovoltaic (PV) array, site loads and the utility interface; the interfaces among those elements; the safety and security measures that apply to them; and how the system will be operated, maintained, governed and accepted.
+This document defines the design of the Site Energy Management System (SEMS) and the associated battery energy storage system (BESS) controls for the Fenwick Cold-Chain Distribution Centre (FDC). It is the baseline against which the controls integrator, BESS supplier, electrical contractor and OT security team will build, and against which site acceptance will be performed. It covers the control functions coordinating the BESS, the existing rooftop photovoltaic (PV) array, site loads and the utility interface; their interfaces; the applicable safety and security measures; and operation, governance and acceptance.
 
 The project has five business objectives:
 
@@ -32,23 +30,19 @@ The project has five business objectives:
 
 ### 1.2 In scope
 
-- The SEMS site controller pair, local HMI, supervisory servers and their software.
-- Control integration of the new BESS: four battery enclosures, two power conversion systems (PCS), the enclosure battery management systems (EBMS) and enclosure auxiliary systems.
-- Control integration of the existing PV inverters (power limiting and grid-support settings only).
-- Integration with the new MV switchgear position for the BESS, the existing MV main and feeder breakers, and their protection relays.
-- The utility communications gateway and the DER control interface to the utility's DER management system (DERMS).
-- Safety-related interfaces: emergency stop, fire alarm, gas detection and explosion control interlocks for the BESS yard.
-- OT network, cybersecurity controls, time synchronisation, data historian and enterprise data export.
-- Commissioning, acceptance and the phased delivery plan.
+- SEMS site controllers, HMI, supervisory servers and software.
+- Control integration of the new BESS (four enclosures, two power conversion systems (PCS), enclosure battery management systems (EBMS), auxiliaries) and of the existing PV inverters (power limiting and grid-support settings only).
+- Integration with the new BESS switchgear position, the existing MV main and feeder breakers, and their relays.
+- The utility communications gateway and DER control interface to the utility's DER management system (DERMS).
+- BESS-yard safety interfaces: emergency stop, fire alarm, gas detection and explosion control.
+- OT network, cybersecurity, time synchronisation, historian and enterprise data export; commissioning, acceptance and phased delivery.
 
 ### 1.3 Out of scope
 
-- Life-safety systems (building fire alarm, emergency lighting, egress) other than the BESS-yard interfaces listed above.
-- The existing 500 kW standby diesel generator and its automatic transfer switch (ATS), which continue to serve the life-safety panel. SEMS monitors their status only.
-- The facility control system (FCS) that runs refrigeration, HVAC and dock equipment, other than the load-shed interface.
-- Utility-owned equipment, including the revenue meter M-0.
-- Tariff selection and the financial model, which are owned by Finance and referenced where they constrain the design.
-- Physical modification of the PV array.
+- Building life-safety systems other than the BESS-yard interfaces above.
+- The existing 500 kW diesel generator and automatic transfer switch (ATS) serving the life-safety panel (status monitoring only).
+- The facility control system (FCS) for refrigeration, HVAC and docks, other than the load-shed interface.
+- Utility-owned equipment, including revenue meter M-0; tariff selection and the financial model; PV array modifications.
 
 ### 1.4 Terminology
 
@@ -68,21 +62,21 @@ The project has five business objectives:
 
 | Ref | Title |
 |---|---|
-| R1 | IEEE 1547-2018, Standard for Interconnection and Interoperability of DER with Associated Electric Power Systems Interfaces (incl. 1547a-2020) |
-| R2 | IEEE 1547.1-2020, Conformance Test Procedures |
+| R1 | IEEE 1547-2018 (incl. 1547a-2020), DER interconnection and interoperability |
+| R2 | IEEE 1547.1-2020, conformance test procedures |
 | R3 | UL 1741, Third Edition, including Supplement SB |
 | R4 | UL 9540, Energy Storage Systems and Equipment |
-| R5 | UL 9540A, Test Method for Evaluating Thermal Runaway Fire Propagation in BESS |
-| R6 | UL 1973, Batteries for Use in Stationary and Motive Auxiliary Power Applications |
-| R7 | NFPA 855 (2023), Standard for the Installation of Stationary Energy Storage Systems |
+| R5 | UL 9540A, thermal runaway fire propagation test method |
+| R6 | UL 1973, batteries for stationary applications |
+| R7 | NFPA 855 (2023), installation of stationary ESS |
 | R8 | NFPA 70 (NEC 2023), Articles 480, 705 and 706 |
-| R9 | NFPA 69, Standard on Explosion Prevention Systems; NFPA 72, National Fire Alarm and Signaling Code |
+| R9 | NFPA 69 (explosion prevention); NFPA 72 (fire alarm) |
 | R10 | IEC 62443-3-3, System security requirements and security levels |
-| R11 | IEEE 2030.5-2018, Smart Energy Profile Application Protocol; utility CSIP implementation guide |
+| R11 | IEEE 2030.5-2018; utility CSIP implementation guide |
 | R12 | Modbus Application Protocol Specification V1.1b3; SunSpec DER Information Model Specification |
 | R13 | IEC 62439-3, Parallel Redundancy Protocol (PRP) |
 | R14 | ANSI/ISA-18.2, Management of Alarm Systems for the Process Industries |
-| R15 | Utility Interconnection Handbook (current edition) and FDC interconnection agreement, amendment 2 (draft) |
+| R15 | Utility interconnection handbook; FDC interconnection agreement amendment 2 (draft) |
 | R16 | BESS supplier documents: PCS Modbus map v3.2, EBMS Modbus map v2.7, warranty terms WT-2026-04 |
 
 ---
@@ -91,7 +85,7 @@ The project has five business objectives:
 
 ### 2.1 Site description
 
-FDC is a 42,000 m² cold-chain distribution centre operating 24 hours a day, seven days a week. It has a freezer zone held at −25 °C, a chilled zone at +2 °C, an ambient zone and a dock area with 60 doors. Refrigeration is the dominant load and is weather-sensitive; the annual peak (3.4 MW) occurs on hot weekday evenings when outbound loading coincides with high condenser temperatures. The minimum load (about 1.1 MW) occurs at midday on weekends and holidays.
+FDC is a 42,000 m² cold-chain distribution centre operating around the clock, with freezer (−25 °C), chilled (+2 °C) and ambient zones. Refrigeration dominates the load; the annual peak (3.4 MW) occurs on hot weekday evenings, and the minimum (about 1.1 MW) at midday on weekends and holidays.
 
 The site is supplied from a single 12.47 kV utility distribution feeder. The customer-owned MV switchgear SWG-1 contains the main breaker 52-PCC and four feeder breakers:
 
@@ -106,23 +100,13 @@ A new switchgear section adds breaker 52-B for the BESS, with its own protection
 
 ### 2.2 Tariff and interconnection context
 
-The site is on a time-of-use tariff with an on-peak window of 16:00 to 21:00 on weekdays, part-peak windows of 06:00 to 09:00 and 21:00 to 23:00, and a demand charge assessed on the maximum 15-minute average import during on-peak hours in each billing month. The demand charge represents roughly 38% of the annual electricity bill.
+The site is on a time-of-use tariff with an on-peak window of 16:00 to 21:00 on weekdays, part-peak windows of 06:00 to 09:00 and 21:00 to 23:00, and a demand charge assessed on the maximum 15-minute average import during on-peak hours in each billing month.
 
 The existing PV interconnection permits a maximum export of 500 kW at the PCC. The draft amendment for the BESS keeps this limit and adds two conditions: an exceedance of the export limit shall not persist for more than 2 seconds, and the BESS shall not be a net source of energy exported to the Area EPS. The utility will issue a DER settings file specifying the IEEE 1547 performance categories, voltage and frequency trip settings, ride-through settings and default grid-support functions for both the PV inverters and the PCS.
 
 ### 2.3 Stakeholders
 
-| Stakeholder | Interest | Role in this design |
-|---|---|---|
-| Site General Manager | Cost, product protection | Approves operating policy and DR opt-out rules |
-| Facilities Operations | Day-to-day operation | Operates HMI, first-line response, maintenance windows |
-| Site Energy Engineering | Performance, M&V | Document owner, optimiser configuration |
-| EHS | Personnel and fire safety | Owns hazard log, emergency response plan, AHJ liaison |
-| Corporate OT Security | Cyber risk | Approves zones, conduits and remote access |
-| BESS supplier | Warranty, performance | Supplies BESS, PCS, EBMS; 10-year service agreement |
-| Controls integrator | Delivery | Builds SC, HMI, supervisory software; performs FAT/SAT |
-| Utility | Grid safety, programme | Approves interconnection, issues settings, operates DERMS |
-| Fire marshal (AHJ) | Code compliance | Approves BESS installation and emergency response plan |
+Site management approves operating policy and DR opt-out rules; Facilities Operations operates the system; Site Energy Engineering owns this document and the optimiser; EHS owns the hazard log and AHJ liaison; Corporate OT Security approves zones, conduits and remote access; the BESS supplier supplies the BESS under a 10-year service agreement; the controls integrator builds and tests the SEMS; the utility approves interconnection, issues settings and operates the DERMS; and the fire marshal (AHJ) approves the installation and emergency response plan.
 
 ### 2.4 Constraints
 
@@ -130,7 +114,7 @@ The existing PV interconnection permits a maximum export of 500 kW at the PCC. T
 - **C-02** Settings that affect grid protection or interconnection performance may only be changed with the utility's written approval.
 - **C-03** BESS enclosures are installed outdoors in the north yard, at least 3 m (10 ft) from the building, lot lines and stored combustibles, subject to final AHJ approval.
 - **C-04** The capital budget is fixed. Augmentation of battery capacity is provisioned for in year 8 of operation in the financial model.
-- **C-05** The site has no on-site controls engineer outside business hours; out-of-hours response is by the facilities on-call technician with remote support from the integrator and the BESS supplier.
+- **C-05** Out of hours, response is by the facilities on-call technician with remote support.
 
 ### 2.5 Assumptions
 
@@ -196,8 +180,8 @@ Requirements use "shall" for mandatory items. Each requirement is traced to acce
 
 #### Monitoring and reporting
 
-- **FR-MON-01** The HMI shall display PCC power, feeder loads, PV output, BESS SoC and power, enclosure status, alarms and the active operating mode.
-- **FR-MON-02** Alarms shall be rationalised and prioritised following ANSI/ISA-18.2, with no more than one priority-1 alarm per credible single initiating event.
+- **FR-MON-01** The HMI shall display PCC, feeder, PV and BESS power, SoC, enclosure status, alarms and operating mode.
+- **FR-MON-02** Alarms shall be rationalised and prioritised following ANSI/ISA-18.2.
 - **FR-MON-03** The SEMS shall produce a monthly M&V report comparing actual demand and energy cost with a modelled no-BESS baseline.
 
 ### 3.2 Non-functional requirements
@@ -248,11 +232,11 @@ Requirements use "shall" for mandatory items. Each requirement is traced to acce
 
 - **P-01 Safety independent of optimisation software.** Protective functions that prevent harm to people or damage to equipment are implemented in certified device-level protection (rack BMS, EBMS, PCS, protection relays) and in hardwired interlocks. SEMS software optimises within the envelope those protections enforce and never needs to act for the site to be safe.
 - **P-02 Fail to a known, conservative state.** On loss of supervisory control or communication, every device reverts to a predefined conservative behaviour that keeps the site within its interconnection and safety limits.
-- **P-03 Time-scale separation.** Each control layer operates on a distinct time scale and owns a distinct concern, so faster layers never wait on slower ones (Section 5.3).
+- **P-03 Time-scale separation.** Each control layer owns one concern at one time scale; faster layers never wait on slower ones (Section 5.3).
 - **P-04 Defence in depth through zones and conduits.** Communication between zones passes only through defined conduits with firewalls. No connection initiated from outside the OT DMZ may reach the control zone or the device zone.
 - **P-05 Utility settings authority.** The utility settings file is the master for grid-protective and grid-support settings. The SEMS reads and verifies these settings but cannot write them.
-- **P-06 Measure what you bill.** Control decisions on import and export are made from measurements at the PCC, not from inferred quantities.
-- **P-07 One source of truth for configuration.** Every setting has exactly one authoritative store, recorded in the configuration register (Section 10.3).
+- **P-06 Measure what you bill.** Import and export control uses measurements at the PCC, not inferred quantities.
+- **P-07 One source of truth.** Every setting has exactly one authoritative store (Section 10.3).
 
 ---
 
@@ -262,9 +246,9 @@ Requirements use "shall" for mandatory items. Each requirement is traced to acce
 
 The SEMS is a layered control system aligned with the Purdue reference model:
 
-- **Device layer (Zone 1).** PCS-A and PCS-B; EBMS-1 to EBMS-4 and their rack BMS units; protection relays R-PCC, R-B and R-F1 to R-F4; meter gateway G-1 with check meter M-1 and sub-meters M-2 to M-9; PV gateway PVG-1 fronting the PV string inverters; gas detection controller GDC-1; the BESS-yard fire alarm control panel FACP-B (monitoring interface only); enclosure HVAC controllers.
+- **Device layer (Zone 1).** PCS-A/B; EBMS-1 to 4 with their rack BMS units; relays R-PCC, R-B, R-F1 to R-F4; meter gateway G-1 (check meter M-1, sub-meters M-2 to M-9); PV gateway PVG-1; gas detection controller GDC-1; yard fire alarm panel FACP-B (monitoring interface); enclosure HVAC controllers.
 - **Control layer (Zone 2).** Site controllers SC-A and SC-B, a redundant hot-standby pair of PLC-class controllers; a local operator panel in the MV switchroom.
-- **Supervisory layer (Zone 3).** A two-host virtualisation cluster running the optimiser, historian, HMI server, alarm server and engineering workstation virtual machines.
+- **Supervisory layer (Zone 3).** A two-host virtualisation cluster for the optimiser, historian, HMI, alarm server and engineering workstation.
 - **OT DMZ.** Historian replica, utility communications gateway UCG-1 (IEEE 2030.5 client), remote access jump host, patch and antivirus staging server.
 - **Enterprise (Level 4).** Enterprise analytics and forecasting platform, corporate SIEM, corporate identity provider.
 
@@ -303,14 +287,13 @@ Firewall FW-1 separates Zone 3 from the OT DMZ and FW-2 separates the OT DMZ fro
 
 ### 5.5 Redundancy and failover
 
-- SC-A and SC-B operate as a hot-standby pair with a dedicated fibre synchronisation link. The active controller transfers its state to the standby every scan. The standby monitors a 50 ms heartbeat and takes over after three missed heartbeats. Measured switchover in the integrator's reference system is under 300 ms, and the design target is 500 ms, which meets NFR-AV-02.
+- SC-A and SC-B are a hot-standby pair with a dedicated fibre synchronisation link and state transfer every scan. The standby takes over after three missed 50 ms heartbeats. Measured switchover on the integrator's reference system is under 300 ms against a 500 ms design target, meeting NFR-AV-02.
 - Each site controller has dual power supplies fed from UPS-1 (fed from F-4) and UPS-2 (fed from F-3), so control power survives the loss of either feeder or either UPS.
-- The supervisory cluster runs on two hosts with automatic VM restart. Loss of the supervisory layer causes loss of optimisation and historian functions only; the site controllers buffer 72 hours of data.
-- The relays, PCS and EBMS each retain their own protection functions independent of the SEMS.
+- The supervisory cluster has two hosts with automatic VM restart. Its loss affects only optimisation and historian functions; the site controllers buffer 72 hours of data.
 
 ### 5.6 Physical placement
 
-The site controllers, PRP switches and UPS-2 are in a dedicated control cabinet in the MV switchroom. The supervisory hosts are in the site IT room in a separate rack fed from F-3. The BESS yard contains the four enclosures, two PCS skids with their transformers, the yard fire alarm panel FACP-B and a yard network cabinet housing a pair of PRP switches connected to the switchroom by two diverse fibre routes.
+The site controllers, PRP switches and UPS-2 are in a control cabinet in the MV switchroom; the supervisory hosts are in the site IT room on F-3 supply. The BESS yard network cabinet connects to the switchroom by two diverse fibre routes.
 
 ---
 
@@ -356,23 +339,23 @@ Each EBMS presents an enclosure summary block (64 registers) and, for each of it
 
 Modbus TCP is used without encryption within Zone 1. The EBMS and PCS do not support Modbus/TCP Security (TLS), and the compensating controls are described in Section 9.4 and decision D-03.
 
-The EBMS acts autonomously on cell over-voltage, under-voltage, over-temperature, over-current and insulation faults by opening the affected rack contactors. The site controller does not participate in these protections; it reacts to the reduced power limits that result.
+The EBMS opens rack contactors autonomously on cell voltage, temperature, current and insulation faults; the site controller only reacts to the resulting power limits.
 
 ### 6.4 Metering (IF-MTR-01)
 
 M-1 is a customer-owned class 0.2S check meter on the 12.47 kV side of 52-PCC, using the same instrument transformers as R-PCC through separate cores. M-1 and the feeder sub-meters M-2 to M-9 share an RS-485 Modbus RTU segment at 19,200 baud polled by gateway G-1. G-1 presents the latest values to the site controller over Modbus TCP. Because of the RS-485 segment loading, G-1 refreshes all values on a 5-second cycle.
 
-M-1 is the measurement of record for the SEMS. It is used for PCC import tracking (peak shaving), export control (Section 7.3) and M&V. The utility revenue meter M-0 remains the billing meter; a monthly reconciliation between M-0 billing data and M-1 data is performed as part of M&V (FR-MON-03).
+M-1 is the SEMS measurement of record for import tracking, export control (Section 7.3) and M&V; it is reconciled monthly against billing data from the utility meter M-0.
 
 ### 6.5 Protection relays (IF-RLY-01)
 
-R-PCC provides functions 25 (sync-check), 27/59 (under/over-voltage), 81O/U (over/under-frequency), 32 (directional power), 50/51 and 67, and acts as the MID protection for the site. R-B protects the BESS bus section. Relay settings are issued by the utility (for R-PCC) and by the site protection engineer (for R-B and feeder relays), and are not writable by the SEMS.
+R-PCC provides functions 25, 27/59, 81O/U, 32, 50/51 and 67 and acts as the site MID protection; R-B protects the BESS bus section. Relay settings are issued by the utility (R-PCC) or the site protection engineer and are not writable by the SEMS.
 
 The site controller subscribes to GOOSE messages for breaker status and trip events from all relays and publishes GOOSE open and close commands to 52-F1 to 52-F4 for load shedding and restoration. Closing of 52-PCC is always supervised by R-PCC function 25. MMS reports deliver measurements and settings group status every second.
 
 ### 6.6 Utility DER control interface (IF-UTL-01)
 
-UCG-1 runs an IEEE 2030.5 client that registers with the utility's DERMS server as an aggregated site DER. It retrieves DERProgram and DERControl resources, posts DERStatus, DERAvailability and DERCapability, and posts telemetry (MirrorUsagePoint) at the programme interval of 5 minutes. Events received are translated into a constraint set (for example, maximum import, maximum export, or fixed active power at the PCC) and passed through FW-1 to the supervisory optimiser and to the site controller.
+UCG-1 runs an IEEE 2030.5 client registered with the utility DERMS as an aggregated site DER. It retrieves DERProgram and DERControl resources, posts status, capability and 5-minute telemetry, and translates events into constraints (maximum import, maximum export, or fixed PCC power) passed through FW-1 to the optimiser and site controller.
 
 The link uses a private APN provisioned by the cellular carrier for the utility's DER programme. Because the APN is a closed network accessible only to programme participants and the utility, the IEEE 2030.5 client is configured to use HTTP on port 80, with TLS disabled. This avoids the certificate provisioning and renewal process for the client device certificate, which the utility's onboarding portal does not yet automate. The router enforces an allow-list containing only the DERMS server address.
 
@@ -386,11 +369,11 @@ The site controller receives the status of FACP-B and GDC-1 over Modbus for disp
 
 ### 6.8 Facility control system (IF-FCS-01)
 
-The site controller sends load-shed requests to the FCS over BACnet/IP: stage 1 sheds non-essential refrigeration in plant A, stage 2 sheds chilled-zone compressors (F-2), and in island mode stages 3 and 4 shed lower-priority freezer compressors on F-3. The FCS acknowledges each request and may decline a stage if product temperature limits would be violated, in which case the site controller escalates to the operator.
+The site controller sends staged load-shed requests to the FCS over BACnet/IP (stages 1 and 2 on F-2; stages 3 and 4 on F-3 in island mode). The FCS may decline a stage if product temperature limits would be violated, in which case the site controller escalates to the operator.
 
 ### 6.9 Enterprise (IF-ENT-01)
 
-The historian replica in the OT DMZ pushes data to the enterprise analytics platform over HTTPS with mutual TLS. Forecasts flow in the other direction: the enterprise platform publishes them to a file share in the OT DMZ, from which the optimiser pulls them. No enterprise system initiates a connection into Zone 3.
+The historian replica pushes data to the enterprise platform over HTTPS with mutual TLS. Forecasts are published by the enterprise platform to a file share in the OT DMZ, from which the optimiser pulls them. No enterprise system initiates a connection into Zone 3.
 
 ### 6.10 Time synchronisation (IF-TIME-01)
 
@@ -411,7 +394,7 @@ All Zone 1 and Zone 2 devices (site controllers, PCS, EBMS, relays, meter gatewa
 | Maintenance | SEMS outputs disabled; PCS in standby; devices under local control for maintenance | Operator with permit |
 | Safe stop | PCS stopped, all DC contactors open | E-stop, fire alarm, or critical fault |
 
-Transitions are managed by a mode state machine in the site controller. Each transition records the initiator, reason and preconditions checked.
+A mode state machine in the site controller records the initiator, reason and preconditions of each transition.
 
 ### 7.2 Peak shaving and the energy budget
 
@@ -449,7 +432,7 @@ As a backstop, R-PCC function 32 is set to trip 52-F1 and 52-F4 (the PV feeders)
 
 ### 7.4 Grid support functions
 
-The PCS and PV inverters are configured by the utility settings file for normal performance Category B and abnormal performance Category III (FR-GRID-01). Volt-var is enabled with the Category B default curve unless the utility specifies otherwise. The site controller's active power setpoints do not interfere with these functions: the PCS gives precedence to its local volt-var and frequency-droop responses over the remote active and reactive power setpoints, and reserves 100 kVA of reactive headroom at full active power because each PCS is rated 1,100 kVA for 1,000 kW.
+The PCS and PV inverters are configured by the utility settings file for normal performance Category B and abnormal performance Category III (FR-GRID-01). Volt-var is enabled with the Category B default curve unless the utility specifies otherwise. The site controller's active power setpoints do not interfere with these functions: the PCS gives precedence to its local volt-var and frequency-droop responses over remote setpoints, and the reactive power priority setting follows the utility settings file. The site controller does not command active power beyond what the PCS reports as available after its reactive power response.
 
 ### 7.5 Unplanned loss of utility supply
 
@@ -465,11 +448,11 @@ The PCS and PV inverters are configured by the utility settings file for normal 
 
 The total time from loss of supply to F-3 restoration is at most 9 seconds, which meets FR-BK-01. During the island, the site controller enforces FR-BK-05 and records an event log.
 
-**Return to grid (FR-BK-04).** When R-PCC reports utility voltage and frequency within the enter-service range for 300 s, the operator is prompted to return to grid. The site controller adjusts the island frequency and phase through PCS-A until R-PCC function 25 permits closing; 52-PCC closes, PCS-A transfers to grid-following, and feeders are restored in sequence F-2, F-1, F-4 with 30-second intervals. Automatic return is configurable but disabled at go-live.
+**Return to grid (FR-BK-04).** After utility voltage and frequency have been within the enter-service range for 300 s, the operator is prompted. The site controller trims island frequency and phase through PCS-A until R-PCC function 25 permits closing; 52-PCC closes, PCS-A transfers to grid-following and feeders are restored at 30-second intervals. Automatic return is disabled at go-live.
 
 ### 7.6 Planned island transition (FR-BK-03)
 
-On operator command, the site controller (1) requests stage 1 and 2 load shedding from the FCS; (2) opens 52-F1, 52-F2 and 52-F4 in turn while increasing BESS discharge to hold PCC flow near zero; (3) when PCC flow is within ±50 kW, places PCS-A in grid-forming-ready mode and opens 52-PCC; (4) PCS-A takes over voltage and frequency regulation without interruption to F-3. The utility is notified through the operator procedure before a planned island.
+On operator command, the site controller requests stage 1 and 2 load shedding, opens 52-F1, 52-F2 and 52-F4 in turn while increasing discharge to hold PCC flow near zero, and, with PCC flow within ±50 kW, places PCS-A in grid-forming-ready mode and opens 52-PCC. PCS-A then regulates voltage and frequency without interruption to F-3.
 
 ### 7.7 Demand response event flow
 
@@ -479,7 +462,7 @@ On operator command, the site controller (1) requests stage 1 and 2 load sheddin
 4. If an operator opts out (FR-DR-03), UCG-1 posts an opt-out response to the DERMS with the reason code.
 5. UCG-1 posts event status (received, started, completed) and 5-minute telemetry.
 
-DR constraints never override the reserve (FR-BK-02), the export constraints, or any protection. If a DR event cannot be met without breaching the reserve, the site controller meets it as far as possible and records a partial-performance event.
+DR constraints never override the reserve (FR-BK-02), export constraints or protections; an event that cannot be fully met is recorded as partial performance.
 
 ### 7.8 Optimiser and throughput management
 
@@ -509,7 +492,7 @@ Throughput is tracked against the 4,000 EFC lifetime warranty limit with a pro-r
 2. The EBMS reduces the enclosure power limits; the site controller redistributes power to the remaining enclosures.
 3. If off-gas reaches 10% LFL, GDC-1 starts exhaust by hardwired output and signals FACP-B.
 4. If FACP-B goes into alarm (smoke, heat, or 25% LFL), it trips the associated PCS and opens all DC contactors in the enclosure by hardwired outputs, notifies the monitoring station and the building fire alarm panel, and the site controller places the BESS in safe stop.
-5. The emergency response plan (Section 8.3) governs subsequent actions by site staff and the fire service.
+5. Subsequent actions follow the emergency response plan (Section 8.3).
 
 ---
 
@@ -525,8 +508,6 @@ The hazard identification workshop (2026-08-21) produced the hazard log FDC-SEMS
 | Flammable gas accumulation and deflagration | Gas detection; explosion control exhaust per NFPA 69; deflagration vent panels on enclosures |
 | Electric shock and arc flash (DC and AC) | Arc-flash study and labelling; DC disconnects lockable; LOTO procedures; restricted yard access |
 | Unintended energisation of the Area EPS | IEEE 1547 anti-islanding in PCS and PV inverters; R-PCC protection |
-| Back-feed into de-energised site circuits during maintenance | Lockout points include 52-B and PCS DC disconnects; maintenance mode procedure |
-| Loss of refrigeration and product temperature | Backup power to F-3; FCS temperature alarms |
 
 ### 8.2 Emergency stop
 
@@ -538,15 +519,15 @@ Routing the E-stop through the redundant controller pair gives it the same redun
 
 The enclosures are equipped with an automatic water-based sprinkler system (dry-pipe, for freeze protection) designed in accordance with NFPA 855 and the UL 9540A large-scale test results. A gaseous clean-agent system was considered and rejected (decision D-04) because clean agents do not provide cooling and cannot stop thermal runaway propagation in LFP modules.
 
-The emergency response plan, prepared with the fire marshal, covers: notification and monitoring station procedure; the fire service's access route and standoff positions; the location of the remote status display at the yard gate showing enclosure gas, temperature and alarm status; a defensive firefighting strategy (no enclosure door opening while gas is present); and the post-incident procedure for stranded energy. Site staff are trained annually, and the fire service is offered a site familiarisation visit before energisation.
+The emergency response plan, prepared with the fire marshal, covers notification, fire service access and standoff positions, a remote status display at the yard gate, a defensive strategy (no door opening while gas is present) and stranded-energy handling after an incident.
 
 ### 8.4 Electrical protection and arc flash
 
-The protection study covers 52-PCC, 52-B, the feeder breakers and the PCS AC and DC protection. Fault current contribution from the PCS (limited to about 1.2 times rated current) is included in the coordination study for both grid-parallel and island configurations. In island mode the fault current available from PCS-A and PCS-B is low, so feeder protection on F-3 uses a settings group with reduced pickup, selected automatically by GOOSE when 52-PCC is open. The arc-flash study covers grid-parallel and island configurations, and labels show the higher of the two incident energies.
+The protection and arc-flash studies cover grid-parallel and island configurations. PCS fault current is limited to about 1.2 times rated current, so in island mode F-3 protection uses a reduced-pickup settings group selected automatically by GOOSE when 52-PCC is open. Arc-flash labels show the higher incident energy of the two configurations.
 
 ### 8.5 Safety lifecycle and management of change
 
-EHS owns the hazard log. Any change to protection settings, interlocks, E-stop logic, fire or gas systems, or operating modes requires a management-of-change (MOC) review that includes EHS and, where grid settings are affected, the utility. The hazard log is reviewed at each design review gate, before energisation, and annually during operation.
+Any change to protection settings, interlocks, E-stop logic, fire or gas systems or operating modes requires a management-of-change (MOC) review including EHS and, where grid settings are affected, the utility. The hazard log is reviewed at each design gate, before energisation and annually.
 
 ---
 
@@ -571,7 +552,7 @@ EHS owns the hazard log. Any change to protection settings, interlocks, E-stop l
 
 ### 9.2 Identity and access
 
-OT accounts are managed in a dedicated OT directory in Zone 3, separate from the corporate directory, with a one-way synchronisation of user identities from corporate HR data for joiners and leavers. Roles are viewer, operator, privileged operator (manual mode, DR opt-out), engineer and administrator. Shared accounts are not permitted except for device-local break-glass accounts, whose credentials are held in a sealed envelope in the control room safe and rotated after each use.
+OT accounts live in a dedicated OT directory in Zone 3, with one-way joiner/leaver synchronisation from corporate HR data. Roles are viewer, operator, privileged operator, engineer and administrator. Shared accounts are not permitted except device-local break-glass accounts, sealed in the control room safe and rotated after each use.
 
 ### 9.3 Remote access
 
@@ -585,7 +566,7 @@ Modbus TCP, IEC 61850 GOOSE and BACnet/IP do not offer authentication or encrypt
 
 ### 9.5 Monitoring and patching
 
-Firewalls, the jump host, supervisory servers and the OT network monitoring sensor forward logs to the corporate SIEM through a log collector in the OT DMZ. Patching follows NFR-SEC-05. Patches are staged in the OT DMZ, tested on the integrator's reference system, and installed in the monthly maintenance window (Section 11.2). Controller firmware is updated only in the maintenance window and only after FAT-equivalent regression testing on the reference system.
+Firewalls, the jump host, servers and the OT monitoring sensor forward logs to the corporate SIEM through a collector in the OT DMZ. Patches (NFR-SEC-05) are staged in the DMZ, regression-tested on the integrator's reference system and installed in the monthly maintenance window (Section 11.2).
 
 ---
 
@@ -604,11 +585,11 @@ Firewalls, the jump host, supervisory servers and the OT network monitoring sens
 
 ### 10.2 Data ownership and retention
 
-FDC owns all operational data. The BESS supplier receives the data needed for warranty administration under the service agreement. The utility receives DR telemetry and event data as required by the programme. Historian data is retained in line with NFR-OBS-03, with the enterprise platform holding the long-term archive. M&V reports are retained for the life of the asset.
+FDC owns all operational data. The BESS supplier receives warranty data under the service agreement and the utility receives programme telemetry. Retention follows NFR-OBS-03, with the enterprise platform holding the long-term archive.
 
 ### 10.3 Configuration and change management
 
-All configuration items (controller programs, HMI projects, device settings files, firewall rule sets, network configurations, optimiser models) are held in the OT configuration repository in Zone 3, with a baseline per release (NFR-MNT-01). Each production change has an MOC record, a tested rollback, and post-change verification. The configuration register maps every setting to its authority (Table in 10.1) and is the reference for the hourly settings verification (Section 6.2).
+All configuration items are held in the OT configuration repository in Zone 3 with a baseline per release (NFR-MNT-01). Each change has an MOC record, tested rollback and post-change verification. The configuration register maps every setting to its authority and drives the hourly settings verification (Section 6.2).
 
 ---
 
@@ -616,7 +597,7 @@ All configuration items (controller programs, HMI projects, device settings file
 
 ### 11.1 Monitoring and response
 
-During business hours, the facilities control room monitors the HMI. Out of hours, priority-1 and priority-2 alarms are sent to the on-call technician by SMS and voice call through the alarm server. The integrator provides remote support during the 2-year defects period, and the BESS supplier provides 24/7 support for BESS faults. Response targets: priority-1 acknowledged in 15 minutes and on site in 60 minutes; priority-2 acknowledged in 1 hour.
+The facilities control room monitors the HMI in business hours; out of hours, priority-1 and priority-2 alarms go to the on-call technician by SMS and voice. Priority-1 alarms are acknowledged within 15 minutes with attendance within 60 minutes. The integrator supports remotely during the 2-year defects period and the BESS supplier provides 24/7 support.
 
 ### 11.2 Maintenance windows
 
@@ -628,15 +609,11 @@ Annual maintenance of the BESS (thermal imaging, torque checks, filter replaceme
 
 ### 11.3 Spares
 
-Spares held on site: one PCS power module, one rack BMS unit, two battery modules, one EBMS controller, one site controller CPU and I/O card set, one PRP switch, one RedBox and gas detector heads. The supplier holds further spares regionally with a 48-hour delivery commitment.
+On-site spares cover one of each PCS power module, rack BMS, EBMS controller, site controller CPU and I/O set, PRP switch and RedBox, plus two battery modules and gas detector heads. Further spares are held regionally with 48-hour delivery.
 
 ### 11.4 Procedures and training
 
-Procedures required before energisation: normal operation, E-stop and reset, island and return-to-grid, DR opt-out, maintenance mode and LOTO, alarm response for each priority-1 alarm, emergency response (with the fire marshal), and cybersecurity incident response. Operators complete classroom and simulator training on the integrator's reference system, and competence is recorded before HMI accounts are granted operator or higher roles.
-
-### 11.5 Performance monitoring
-
-Site Energy Engineering reviews a weekly dashboard covering peak shaving performance against target, export compliance, SoC and reserve compliance, throughput against warranty budget, availability, and alarm rates per ISA-18.2 key performance indicators.
+Procedures for normal operation, E-stop reset, islanding, maintenance and LOTO, priority-1 alarm response, emergency response and cyber incident response are required before energisation. Operator competence is recorded before HMI operator roles are granted.
 
 ---
 
@@ -644,11 +621,11 @@ Site Energy Engineering reviews a weekly dashboard covering peak shaving perform
 
 | ID | Decision | Alternatives considered | Rationale |
 |---|---|---|---|
-| D-01 | LFP chemistry | NMC | Higher thermal runaway onset temperature and lower heat release; cycle life suits daily cycling; preferred by AHJ |
+| D-01 | LFP chemistry | NMC | Higher thermal runaway onset temperature, lower heat release, long cycle life |
 | D-02 | Redundant hot-standby PLC-class site controllers for fast control | Single controller; VM-based controller on supervisory cluster | Deterministic 100 ms cycle; independence from virtualisation layer; meets NFR-AV-02 |
-| D-03 | Plain Modbus TCP and GOOSE inside Zones 1 and 2 with compensating controls | Encrypted protocols; serial links | Devices do not support secure variants; compensating controls (Section 9.4) are proportionate to SL-T 2 |
-| D-04 | Water-based sprinkler system with explosion control exhaust; no clean-agent system | Clean agent (gaseous) suppression; no suppression with defensive strategy only | Clean agents do not stop thermal runaway propagation; water provides cooling; consistent with NFPA 855 and UL 9540A results; supported by AHJ |
-| D-05 | Life-safety loads remain on the diesel generator and ATS; not served by the BESS | Serve life-safety from BESS island | Keeps the existing, listed emergency system unchanged; avoids NEC Article 700 requirements applying to the BESS |
+| D-03 | Plain Modbus TCP and GOOSE inside Zones 1 and 2 | Encrypted protocols; serial links | Devices lack secure variants; compensating controls (Section 9.4) are proportionate to SL-T 2 |
+| D-04 | Water-based sprinkler with explosion control exhaust; no clean agent | Clean agent; no suppression | Clean agents do not stop propagation; water cools; consistent with NFPA 855 and UL 9540A results |
+| D-05 | Life-safety loads remain on the diesel generator and ATS, not the BESS | Serve life-safety from BESS island | Keeps the existing emergency system unchanged; avoids bringing the BESS under NEC Article 700 |
 | D-06 | IEEE 2030.5 for the utility interface | DNP3; OpenADR | Utility programme mandate |
 | D-07 | PV on shed feeders only; no PV in island | Keep PV in island with frequency-watt control | Simpler island control; island duration bounded by reserve energy |
 | D-08 | M-1 check meter as the control measurement for import and export | Use PCS-internal measurements; use utility meter M-0 pulses | P-06; M-1 measures the actual PCC quantity |
@@ -665,15 +642,13 @@ Site Energy Engineering reviews a weekly dashboard covering peak shaving perform
 | OI-02 | Utility DER settings file and final R-PCC protection settings, following the utility's system impact study for amendment 2 | Electrical Engineering / Utility | Phase 3 |
 | OI-03 | Utility onboarding of UCG-1 to the DERMS (registration, programme enrolment) | Site Energy Engineering | Phase 3 |
 | OI-04 | Confirmation from the FCS vendor that BACnet load-shed objects support acknowledgement and decline responses | Controls Engineering | Phase 2 |
-| OI-05 | Final supplier loss data for transformer no-load losses in standby | BESS supplier | Phase 1 FAT |
-| OI-06 | Operator HMI style guide alignment with corporate standard | Controls integrator | Phase 1 FAT |
-| OI-07 | Decision on whether to enable automatic return-to-grid after one year of operation | Site Energy Engineering / Operations | Post-Phase 3 |
+| OI-05 | Decision on whether to enable automatic return-to-grid after one year of operation | Site Energy Engineering / Operations | Post-Phase 3 |
 
 ---
 
 ## 14. Acceptance Criteria
 
-Acceptance is performed in three stages: factory acceptance testing (FAT) of the site controller and supervisory software on the integrator's reference system with simulated devices; site acceptance testing (SAT) with live equipment; and a 30-day performance verification period. Unless stated otherwise, measurements are taken from the historian and verified against a temporary power quality analyser at the PCC sampling at 10 samples per second or faster.
+Acceptance has three stages: factory acceptance testing (FAT) on the integrator's reference system with simulated devices, site acceptance testing (SAT) with live equipment, and a 30-day performance verification. Measurements are verified against a temporary power quality analyser at the PCC sampling at 10 samples per second or faster.
 
 | ID | Requirement(s) | Test | Pass criterion |
 |---|---|---|---|
@@ -687,13 +662,13 @@ Acceptance is performed in three stages: factory acceptance testing (FAT) of the
 | AC-08 | FR-BK-01, FR-BK-03 | SAT: operator-commanded planned island from HMI with site importing 1.5 MW, followed by return to grid | F-3 uninterrupted during planned transition; island stable for 30 min with F-3 load; return to grid per AC-06 |
 | AC-09 | FR-BK-05 | FAT: simulated island with SoC falling through 15% and 5% | Load-shed requests issued at 15%; orderly PCS stop at 5% |
 | AC-10 | FR-DR-01, FR-DR-02, FR-DR-03 | SAT: utility test event via DERMS test server; operator opt-out test | Event executed within 60 s of start; status and telemetry posted; opt-out posted with reason |
-| AC-11 | FR-OPT-01, FR-OPT-02, FR-OPT-03 | FAT: optimiser runs over 30 simulated days; stop optimiser VM for 26 h | All constraints respected; last schedule used for 24 h, then rule-based default |
+| AC-11 | FR-OPT-01 to FR-OPT-03 | FAT: 30 simulated days; stop optimiser VM for 26 h | Constraints respected; last schedule for 24 h, then default |
 | AC-12 | NFR-PERF-01 to NFR-PERF-04 | FAT and SAT timing measurements | All timing requirements met at the 99th percentile |
 | AC-13 | NFR-AV-02, NFR-AV-03 | SAT: power-off active SC; disconnect one PRP LAN; stop both supervisory hosts | Control function restored within 2 s for each single failure; fast loop unaffected by supervisory loss |
 | AC-14 | NFR-SAF-01, NFR-SAF-02 | Document review: UL 9540A certificate for racks and enclosures, UL 1973 and UL 1741 SB certificates; AHJ inspection sign-off | Certificates present and current; AHJ sign-off obtained |
 | AC-15 | NFR-SAF-03 | SAT: activate each E-stop station with BESS at 1,000 kW discharge | Safe state reached within 500 ms per SoE log; reset requires station reset and HMI acknowledgement |
 | AC-16 | NFR-SAF-04, Section 6.7 | SAT: inject test gas at each detector; trigger FACP-B alarm inputs | Exhaust starts at 10% LFL; FACP-B alarm trips PCS and opens DC contactors by hardwired path |
-| AC-17 | NFR-SEC-01 to NFR-SEC-05 | Independent OT security assessment against IEC 62443-3-3 SL-T 2; firewall rule review; remote access test | No high findings open; all conduits as Section 9.1 |
+| AC-17 | NFR-SEC-01 to NFR-SEC-05 | Independent IEC 62443-3-3 assessment; firewall rule review | No high findings open |
 | AC-18 | NFR-OBS-01 to NFR-OBS-03 | SAT: injected events at relays, PCS and SC; check historian resolution and retention configuration | SoE alignment within ±1 ms; resolution and retention as specified |
 | AC-19 | NFR-AV-01 | First 12 months of operation | Availability ≥ 99.95% |
 
@@ -703,25 +678,11 @@ Acceptance is performed in three stages: factory acceptance testing (FAT) of the
 
 | Phase | Months | Scope | Exit criteria |
 |---|---|---|---|
-| Phase 0: Detailed design | 1 to 2 | Close DR-2 comments; finalise interface control documents; protection and arc-flash studies; FAT plan | DR-3 approval; IFC drawings issued |
-| Phase 1: Grid-parallel BESS | 3 to 7 | Civil works, enclosure and PCS installation, 52-B switchgear section, SC and network installation, FAT, energisation of the BESS in grid-parallel operation, peak shaving and export control, historian and HMI | AC-01 (FAT part), AC-02, AC-03, AC-04, AC-07, AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17; peak shaving in service |
-| Phase 2: Backup power | 8 to 10 | PCS-A grid-forming licence activation, island sequencing, F-3 settings groups, FCS load-shed integration, planned island tests | AC-05, AC-06, AC-08, AC-09; procedures and training complete |
-| Phase 3: Utility programme and optimisation | 11 to 13 | Utility settings file implementation and verification, UCG-1 onboarding, DR integration, optimiser tuning, 30-day performance verification | AC-10, AC-18, AC-01 (30-day), AC-07 (30-day); programme enrolment confirmed |
+| Phase 0: Detailed design | 1 to 2 | Close DR-2 comments; interface control documents; protection and arc-flash studies | DR-3 approval |
+| Phase 1: Grid-parallel BESS | 3 to 7 | Installation of enclosures, PCS, 52-B section, SC and network; FAT; energisation in grid-parallel operation; peak shaving and export control | AC-01 (FAT part), AC-02, AC-03, AC-04, AC-07, AC-11, AC-12, AC-13, AC-14, AC-15, AC-16, AC-17; peak shaving in service |
+| Phase 2: Backup power | 8 to 10 | Grid-forming activation, island sequencing, F-3 settings groups, FCS load-shed integration | AC-05, AC-06, AC-08, AC-09; procedures and training complete |
+| Phase 3: Utility programme and optimisation | 11 to 13 | Utility settings file implementation, UCG-1 onboarding, DR integration, optimiser tuning, 30-day verification | AC-10, AC-18, AC-01 (30-day), AC-07 (30-day); programme enrolment confirmed |
 | Operation | 14 onward | Normal operation, annual hazard log review, availability measurement | AC-19 at month 26 |
 
-**Dependencies.** Phase 1 energisation depends on AHJ approval (OI-01) and completion of FAT. Phase 2 depends on OI-04. Phase 3 depends on OI-02 and OI-03. The BESS supplier's commissioning team is booked for Phase 1 months 6 and 7 and Phase 2 month 9.
+**Dependencies.** Phase 1 energisation depends on AHJ approval (OI-01) and completion of FAT. Phase 2 depends on OI-04. Phase 3 depends on OI-02 and OI-03.
 
-**Key risks.**
-
-| Risk | Mitigation |
-|---|---|
-| Supply delays for MV switchgear section | Order placed at DR-2; factory witness test scheduled |
-| Utility study timelines | Early engagement; settings file requested at DR-2 |
-| Weekend outage window constraints (C-01) | Integration steps rehearsed on reference system; outage plans reviewed by Operations |
-| FCS integration complexity | OI-04 tracked; manual load-shed fallback procedure |
-
----
-
-## Appendix A. Abbreviations
-
-AHJ: authority having jurisdiction. ATS: automatic transfer switch. CSIP: Common Smart Inverter Profile. DERMS: distributed energy resource management system. EFC: equivalent full cycle. FAT/SAT: factory/site acceptance test. GOOSE: Generic Object Oriented Substation Event. HMI: human-machine interface. LFL: lower flammable limit. LOTO: lockout/tagout. MID: microgrid interconnect device. MMS: Manufacturing Message Specification. MOC: management of change. NOC: network operations centre. PRP: Parallel Redundancy Protocol. SIEM: security information and event management. SL-T: target security level. SoE: sequence of events. UPS: uninterruptible power supply.

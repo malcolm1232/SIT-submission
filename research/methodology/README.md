@@ -54,6 +54,7 @@ Rules:
 Each key MUST contain:
 - `flaws[]`: `id`, `category` (taxonomy), `severity` ∈ {critical, high, medium, low} with written anchors, `location` (one or more section or requirement ids plus a quoted anchor span), `description`, **`core_insight`** (the one proposition a finding must contain to count as detecting this flaw), `needs_external_research` (bool), `acceptable_evidence` (what a correct justification would cite), `planted` (bool; `false` means a natural flaw found during the base-doc audit).
 - `sound_units[]`: sections or decisions that are deliberately **fit for purpose**, each with a `why_sound` note. A subset are **bait** units: unusual-looking but justified within the doc (e.g. a surprising technology choice with a documented rationale). These units drive the correctly-declined metric.
+- **Fully sound control docs:** at least 10% of docs in each split SHOULD contain **no** planted flaw (after the base audit), so that "this design is fit for purpose, no change recommended" is a scoreable outcome (PROPOSED DEFAULT).
 - `approved_decisions[]`: decisions the doc marks as confirmed (cf. "Confirmed Decisions" tables in real artefacts). Used for the approved-decision violation rate.
 - For v2 docs: `diff_key` with `resolved[]`, `persisted[]`, `introduced[]` flaw ids and `changed_sections[]`.
 
@@ -123,7 +124,7 @@ All conditions MUST use **the same output schema** (so the matcher sees comparab
 | **H** | Human expert (subset, at least 10 docs) | Independent qualified reviewer, same schema | Ceiling and realism anchor | Human P/R also bound how good the keys are |
 
 Interpretation rules:
-- An ablation "shows a component contributes" only if the paired difference's CI excludes 0 after the family-wise correction (§4.4 / `metrics.md` §11). A null result means "no evidence at this sample size". Report the minimum detectable effect at the achieved n.
+- An ablation "shows a component contributes" only if the paired difference's CI excludes 0 after the family-wise correction (§4b item 5 / `metrics.md` §12). A null result means "no evidence at this sample size". Report the minimum detectable effect at the achieved n.
 - Category-specific predictions (last column) MUST be written in `prereg.yaml` beforehand. A predicted pattern that holds is much stronger evidence than an overall drop alone.
 - Treat ablation runs as interleaved and randomised in time (alternate conditions per doc), so that silent API model drift does not line up with the conditions.
 

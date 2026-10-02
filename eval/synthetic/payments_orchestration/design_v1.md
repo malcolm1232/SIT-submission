@@ -53,17 +53,7 @@ This document describes the architecture of the Serindit Pay Merchant Payment Or
 
 MPOP replaces the current arrangement in which each market (Singapore, Malaysia, Indonesia, Thailand, Philippines) runs its own integration stack against one or two acquirers with no shared routing, no shared ledger, and market-specific reconciliation spreadsheets. It is not a merchant-facing checkout product; checkout UIs, hosted payment pages, and mobile SDKs consume MPOP's API and are specified separately.
 
-MPOP provides:
-
-- One merchant API for card, e-wallet and bank-transfer payments across five markets.
-- Rule-based routing across multiple acquirers per market, with cascading on retryable failures.
-- Idempotent request handling on every mutating call.
-- A tokenising card vault that confines PCI DSS scope to a small, separately operated enclave.
-- A synchronous fraud-scoring hook ahead of authorization.
-- A double-entry ledger that is the single financial record of every payment, refund, fee and payout.
-- Daily reconciliation against acquirer, wallet and bank settlement files.
-- Signed webhooks to merchants on every state change.
-- A merchant admin plane (portal and admin API) for users, keys, refunds, reports and payout settings.
+MPOP provides one merchant API across five markets; rule-based routing with cascading on retryable failures; idempotent handling of every mutating call; a tokenising card vault that confines PCI DSS scope to a small enclave; a synchronous fraud-scoring hook; a double-entry ledger; daily reconciliation against settlement files; signed merchant webhooks; and a merchant admin plane.
 
 ### In scope
 
@@ -84,9 +74,7 @@ Payment acceptance, routing, retries, idempotency, vaulting, fraud-scoring integ
 | Payment attempts per day (average) | 5.1 M | 10.5 M |
 | Average TPS | 59 | 122 |
 | Peak TPS (campaign events: 9.9, 11.11, 12.12) | 1,140 | 2,000 |
-| Card share of attempts | 54% | 55% |
-| E-wallet share | 31% | 30% |
-| Bank transfer share | 15% | 15% |
+| Card share of attempts (e-wallet ~30%, bank transfer ~15%) | 54% | 55% |
 | Largest single merchant share at peak | 41% | 45% |
 
 ---
@@ -206,16 +194,14 @@ Every payment, from every merchant, flows through the same governed path. No ser
 
 ### Layer responsibilities
 
-- **Edge** — AWS WAF, TLS termination, coarse IP and geo controls, request size limits.
+- **Edge** — AWS WAF, TLS termination, request size limits.
 - **Payments API** — merchant authentication by secret API key, per-merchant rate limits (token bucket, configurable per merchant tier), request validation, idempotency (Section 9).
 - **Payment Orchestrator** — owns the payment state machine (Section 7), invokes the Fraud Hook (Section 13), the Routing Engine (Section 10) and the Retry Engine (Section 11), and writes state transitions and ledger journals in one database transaction with a transactional outbox.
 - **Card Vault** — tokenises PAN on capture from hosted fields or the server-to-server card endpoint; stores encrypted card data; detokenises only for the Card Adapter (Section 12).
 - **Adapters** — one per provider family. Translate the common Connector interface to provider protocols, map response codes into MPOP's outcome classes, and normalise amounts (Section 15).
 - **Ledger Service** — double-entry journals and balances (Section 14).
 - **Event Bus** — Amazon MSK (Kafka). Topics per domain event; outbox relay publishes committed events.
-- **Webhook Dispatcher** — signed, retried delivery to merchant endpoints (Section 17).
-- **Reconciliation and Payout Services** — Section 16.
-- **Merchant Admin Plane** — Section 18. **Back-office Console** — internal operations tooling with read access to masked data and audited write actions.
+- **Webhook Dispatcher, Reconciliation, Payouts, Admin Plane** — Sections 16–18.
 
 All workloads run on Amazon EKS in ap-southeast-1 (Singapore) across three Availability Zones. The CDE runs in a dedicated AWS account and VPC with its own EKS cluster, connected to the core VPC only through a private endpoint exposing the Vault's tokenise, detokenise-for-adapter and card-metadata operations.
 
@@ -501,7 +487,8 @@ Payout:      Dr merchant_payable[M-1234,SGD]           9720
 
 - Postings are never updated or deleted. A correction is a new journal that references the journal it corrects (`reverses_journal_id` or `adjusts_journal_id`) and carries a reason code and the identity that approved it.
 - Journals are written in the same PostgreSQL transaction as the payment state transition that causes them, together with an outbox row. There is no dual write between the payment store and the ledger.
-- Balances are a projection maintained by the same transaction (row per account with an optimistic version). The nightly recomputation from postings must equal the projection exactly; any difference pages the on-call engineer and freezes payouts for the affected merchant accounts.
+- Balances are a projection maintained asynchronously by the Balance Projector, which consumes posting events from the outbox and applies them in per-account micro-batches (at most one balance update per account per second). No payment-path transaction updates a balance row, which avoids hot-row contention on high-volume accounts such as `fee_revenue` or a large marketplace's `merchant_payable`. Projection lag is exported as a metric, and the Payout Service reads a balance only after the projector has passed the payout cut-off.
+- The nightly recomputation from postings must equal the projection exactly; any difference pages the on-call engineer and freezes payouts for the affected merchant accounts.
 - The ledger holds identifiers and amounts only — no customer personal data — so data-subject deletion requests never require modifying it.
 - Authorization holds are recorded as memo entries in a separate memo ledger, not in the financial ledger, because no money moves at authorization.
 
@@ -552,9 +539,9 @@ The Payout Service computes each merchant account's payable balance after settle
 
 - **Events.** One event per state change, with a globally unique `event_id`, `type` (for example `payment.captured`), `created_at`, and a snapshot of the object including its `version`. Merchants deduplicate on `event_id` and order by object `version`; delivery order is not guaranteed.
 - **Signing.** Each endpoint has its own signing secret, distinct from API keys and shown once at creation. The signature header carries a timestamp and `HMAC-SHA256(secret, timestamp + "." + raw_body)`. Merchant libraries reject signatures older than five minutes. Secrets can be rolled with a 24-hour overlap during which both are valid.
-- **Delivery.** At-least-once. A delivery succeeds on any 2xx within 10 seconds. Failures are retried with jittered exponential backoff at approximately 1 min, 5 min, 15 min, 1 h, 3 h, 6 h, then every 12 h, up to 72 hours from first attempt (11 attempts). After that the event is moved to a per-merchant dead-letter store, visible in the admin plane and replayable by API.
+- **Delivery.** At-least-once. A delivery succeeds on any 2xx within 10 seconds. Failures are retried with jittered exponential backoff at approximately 1 min, 5 min, 15 min, 1 h, 3 h, 6 h, then every 12 h, up to 72 hours from first attempt (12 attempts including the first). After that the event is moved to a per-merchant dead-letter store, visible in the admin plane and replayable by API.
 - **Isolation.** Each endpoint has a concurrency cap of 20 in-flight deliveries and its own circuit breaker; a slow or failing merchant endpoint cannot consume dispatcher capacity needed by other merchants.
-- **Endpoint safety.** Endpoints must be HTTPS on port 443. The dispatcher resolves the hostname at send time and refuses private, loopback, link-local and cloud-metadata addresses, which prevents server-side request forgery and DNS-rebinding against internal services.
+- **Endpoint safety.** Endpoints must be HTTPS on port 443. The dispatcher resolves the hostname once at send time, refuses private, loopback, link-local and cloud-metadata addresses, and connects to the validated address for that delivery, which prevents server-side request forgery and DNS-rebinding against internal services.
 - **Recovery.** Merchants can list and replay events for the past 30 days, so a merchant that misses webhooks can always reconstruct state through the API.
 
 ---
@@ -589,13 +576,13 @@ A Finance or Owner user can change the payout bank account in the portal. The ch
 
 ### 18.5 Back-office console
 
-Internal operations staff use a separate back-office console authenticated through corporate SSO with hardware-key MFA. Console access is read-only to masked data by default; write actions (manual refunds, payout holds, merchant suspension) require just-in-time elevation approved by a second staff member and are audit-logged with a mandatory reason.
+Internal staff use a separate console behind corporate SSO with hardware-key MFA. Access is read-only to masked data by default; write actions (manual refunds, payout holds, merchant suspension) require just-in-time elevation approved by a second staff member, with a mandatory audit reason.
 
 ---
 
 ## 19. Data Model
 
-Core tables in Aurora PostgreSQL (schema `payments`). The CDE's vault tables are specified in the Vault design document and are not reproduced here.
+Core tables in Aurora PostgreSQL (schema `payments`). Vault and `settlement_line` tables are specified in their component documents.
 
 ```sql
 CREATE TABLE payment (
@@ -662,18 +649,6 @@ CREATE TABLE outbox (
     created_at            TIMESTAMPTZ NOT NULL,
     published_at          TIMESTAMPTZ
 );
-
-CREATE TABLE settlement_line (
-    line_id               TEXT PRIMARY KEY,
-    provider_id           TEXT NOT NULL,
-    business_date         DATE NOT NULL,
-    provider_reference    TEXT,
-    gross_minor           BIGINT NOT NULL,
-    fee_minor             BIGINT NOT NULL,
-    currency              CHAR(3) NOT NULL,
-    matched_attempt_id    TEXT REFERENCES payment_attempt(attempt_id),
-    match_status          TEXT NOT NULL                -- MATCHED | UNMATCHED | MISMATCH
-);
 ```
 
 `journal` and `posting` have `UPDATE` and `DELETE` revoked from every application role; the migration role is the only role with DDL rights and is used only by the deployment pipeline.
@@ -709,11 +684,9 @@ Every 60 seconds, the Orchestrator's sweeper finds payments in AUTHORISING for m
 | Dependency failure | Behaviour |
 |---|---|
 | One acquirer down | Circuit breaker opens; traffic routes to remaining eligible acquirers |
-| All acquirers for a market down | Card payments in that market fail with `provider_unavailable`; wallets and bank transfers unaffected |
 | Fraud vendor down | Default decisions per risk tier (Section 13.2) |
 | Redis down | Fast path skipped; DynamoDB path serves all idempotency checks |
 | MSK down | Outbox accumulates in Aurora; relay drains on recovery; webhooks delayed, payments unaffected |
-| WAG-1 down | E-wallet payments fail fast with `provider_unavailable` |
 
 ---
 
@@ -741,7 +714,6 @@ Summing component p99s gives a conservative 1,338 ms against the 1,500 ms target
 - **Payments API and Orchestrator.** Stateless; horizontally scaled on CPU with a floor sized for 1,000 TPS and a pre-scaled campaign profile for 2,500 TPS applied 24 hours before known campaign events.
 - **Aurora.** Each card payment produces roughly nine row writes (payment, attempt, two state updates, journal, two to three postings, outbox). At 2,000 TPS that is about 18,000 row writes per second. A spike on `db.r7g.8xlarge` sustained 2,600 TPS of the full write mix for two hours at 58% writer CPU with commit latency p99 of 11 ms. Production uses `db.r7g.12xlarge` for headroom.
 - **MSK.** Average event size 1.8 KB, roughly six events per payment; 2,000 TPS ≈ 21.6 MB/s ingress, well within three `kafka.m7g.xlarge` brokers.
-- **Webhooks.** About four deliveries per payment at peak, 8,000 deliveries per second; the dispatcher scales on queue lag.
 
 ---
 
@@ -750,27 +722,20 @@ Summing component p99s gives a conservative 1,338 ms against the 1,500 ms target
 - **Tracing.** OpenTelemetry across all services; `payment_id` and `merchant_id` are attached as span attributes; traces sampled at 100% for failed payments and 10% for successful ones; all payment events are additionally written to the event bus, which is the basis for NFR-11.
 - **Logging.** Structured JSON logs. A logging library shared by all services drops any field on a deny-list (card_number, cvc, password, secret, authorization header) and applies a Luhn-pattern scrubber to free-text fields; the CDE has its own log pipeline that never leaves the CDE account.
 - **Audit.** Audit records (actor, actor type, action, target, before/after for configuration, request ID, source IP, timestamp) are written to an append-only table and streamed to an S3 bucket with Object Lock in compliance mode for five years (NFR-12).
-- **Metrics and alerts.** Authorization rate by (merchant, acquirer, scheme), latency percentiles per step, cascade rate, circuit breaker state, outbox lag, webhook backlog, reconciliation exception counts.
 
 ---
 
 ## 23. Prior Art and Reference Architecture
 
-Payment orchestration is a mature product category; MPOP is deliberately conventional in its core and borrows heavily from published practice.
+MPOP is deliberately conventional in its core and borrows from published practice.
 
 | Reference | What it does | What we take | Why not adopt wholesale |
 |---|---|---|---|
 | Juspay Hyperswitch (open source) | Full payment orchestrator: connectors, routing, retries, vault | Connector interface shape; outcome classification taxonomy; routing rule DSL concepts | Connector coverage for SEA wallets and bank rails is thinner than our existing integrations; our ledger and reconciliation requirements exceed its scope; operating it inside our PCI boundary would still require us to own its security posture. |
-| Commercial orchestrators (Spreedly, Primer, Gr4vy) | Hosted vault and routing | Vault-first PCI scoping pattern | Per-transaction fees at our volume exceed the cost of building; data residency and acquirer coverage gaps in ID/TH/PH. |
-| Stripe API design (public documentation) | Idempotency keys, webhook signing, object versioning | Idempotency-Key semantics (24-hour retention, 409 on in-flight, 422 on body mismatch); timestamped HMAC webhook signatures | — (design pattern, not a product) |
+| Commercial orchestrators (Spreedly, Primer, Gr4vy) | Hosted vault and routing | Vault-first PCI scoping pattern | Per-transaction pricing compared unfavourably with build cost in the Conceptual Design's five-year cost model; acquirer and local-rail coverage gaps in ID, TH and PH. |
+| Stripe API documentation; IETF HTTPAPI draft "The Idempotency-Key HTTP Header Field" | Idempotency keys, webhook signing, object versioning | Idempotency-Key semantics (24-hour retention; 409 on an in-flight duplicate and 422 on payload mismatch, per the IETF draft); timestamped HMAC webhook signatures | — (design pattern, not a product) |
 | Modern Treasury / Formance ledger designs | Double-entry ledgers for payments companies | Journal/posting model; append-only with reversing entries; balance projections verified against postings | We need the ledger in the same transaction as payment state, which rules out an external ledger service. |
 | Transactional outbox (Richardson, Microservices Patterns) | Atomic state change plus event publication | Outbox table relayed to Kafka | — |
-
-### What is genuinely specific to MPOP
-
-- A single routing and cascading layer across five markets' acquirers with a regional secondary acquirer as universal fallback.
-- Reconciliation that spans card acquirers, a wallet aggregator and five domestic real-time rails in one three-way match.
-- Market-specific amount normalisation in adapters (Section 15) behind a single integer-minor-unit core.
 
 ---
 
@@ -808,11 +773,9 @@ Items confirmed as in scope but not yet fully designed:
 2. **Token Requestor onboarding** — Visa VTS and Mastercard MDES token-requestor registration (TRID) and the commercial agreement with a token service provider; certification test plan. Application not yet submitted.
 3. **Smart-routing model** — replace static 28-day approval priors with a per-transaction approval-probability model; requires six months of attempt-level data from MPOP.
 4. **FRV-1 contract** — data processing agreement and SLA finalisation.
-5. **ACQ-PH1 API v3** — the acquirer is retiring its v2 API in Q3 2027; adapter migration.
-6. **Multi-currency payouts** — paying out in a currency other than the merchant account's settlement currency.
-7. **Sub-merchant split settlement rules** — marketplace commission and split-payout configuration beyond a single fixed percentage.
-8. **Real-time reconciliation** — for providers that offer intraday settlement APIs.
-9. **Admin API request/response schemas** — endpoint list is fixed; JSON Schemas and error catalogue to be written.
+5. **ACQ-PH1 API v3** — adapter migration before the v2 retirement in Q3 2027.
+6. **Multi-currency payouts and marketplace split rules** — beyond a single settlement currency and fixed commission.
+7. **Admin API request/response schemas** — endpoint list is fixed; JSON Schemas and error catalogue to be written.
 
 ---
 
@@ -878,12 +841,12 @@ This section answers a direct question: could an engineering team build each com
 | Reconciliation | Mostly ready | Matching rules specified; per-provider parsers require sample files from ACQ-PH1 and WAG-1. |
 | Payouts | Ready | Section 16.3. |
 | Webhooks | Ready | Section 17. |
-| Admin plane | Partial | Roles and policies specified; Admin API schemas pending (Backlog item 9). |
+| Admin plane | Partial | Roles and policies specified; Admin API schemas pending (Backlog item 7). |
 | Disputes | Not ready | Backlog item 1. |
 
 ### Overall conclusion
 
-The transaction core — API, idempotency, state machine, routing, retries, vault, ledger, webhooks — is specified to implementation level. The admin plane's API schemas and the dispute module are the two material gaps; neither blocks the first merchant cohort, which will use the portal rather than the Admin API and will have disputes handled manually by Finance Operations through the back-office console.
+The transaction core is specified to implementation level. The Admin API schemas and the dispute module are the two material gaps; neither blocks the first merchant cohort, which will use the portal and have disputes handled manually by Finance Operations.
 
 ---
 
@@ -897,7 +860,7 @@ The transaction core — API, idempotency, state machine, routing, retries, vaul
 | 4 | Routing and Retry Engines; remaining card adapters | Partially — static priors until Backlog item 3 |
 | 5 | Wallet and bank-transfer adapters (WAG-1, PayNow, FPX, DuitNow, QRIS, PromptPay, InstaPay) | No — ready |
 | 6 | Reconciliation and payouts | Partially — sample files outstanding |
-| 7 | Webhooks and merchant admin plane | Partially — Admin API schemas (Backlog item 9) |
+| 7 | Webhooks and merchant admin plane | Partially — Admin API schemas (Backlog item 7) |
 | 8 | Fraud Hook (FRV-1) | Yes — vendor contract (Backlog item 4) |
 | 9 | Hardening — load, chaos and DR game days; PCI DSS assessment; Section 26 test plan | Follows Section 26 |
 
