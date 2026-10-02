@@ -1,0 +1,1 @@
+This scoring pilot (2026-10-02) predates the LC12 guard (SIT FABLE ruling #26, 2026-10-03): it scored an answer key that was not signed off (scored_run_ready false), so its scores are exploratory and may not be reported as confirmatory.

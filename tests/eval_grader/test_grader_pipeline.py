@@ -187,7 +187,10 @@ def test_grader_key_aware_is_diagnostic_only(tmp_path: Path, graded_inputs, heur
     kp = tmp_path / "key.yaml"
     kp.write_text(yaml.safe_dump(key), encoding="utf-8")
     blind = grade_review(*graded_inputs, tmp_path / "blind", judge=FakeJudge(heuristic_responder)).report
-    rep = grade_review(*graded_inputs, tmp_path / "aware", judge=heuristic_judge, answer_key=kp).report
+    # a legacy key carries no sign-off, so LC12 allows its diagnostic only as an exploratory run
+    rep = grade_review(*graded_inputs, tmp_path / "aware", judge=heuristic_judge, answer_key=kp,
+                       exploratory=True).report
+    assert rep["exploratory"] is True and blind["exploratory"] is False
     purposes = [c.purpose for c in heuristic_judge.calls]
     assert purposes.count("grader:passB_key_aware") == 2 and len(purposes) == 6
     for c in heuristic_judge.calls:

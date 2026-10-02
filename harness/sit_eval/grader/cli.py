@@ -15,7 +15,7 @@ app = typer.Typer(help="Lecturer grader (research/grading/grader_prompt.md).", n
 JUDGE_KINDS = ("fake", "claude_code", "anthropic_api")
 
 
-def _judge(kind: str, out_dir: Path) -> Any:
+def _judge(kind: str, out_dir: Path, exploratory: bool = False) -> Any:
     if kind not in JUDGE_KINDS:
         typer.echo(f"--judge must be one of {', '.join(JUDGE_KINDS)}", err=True)
         raise typer.Exit(2)
@@ -28,7 +28,7 @@ def _judge(kind: str, out_dir: Path) -> Any:
     from sit_eval.judge import build_judge
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    options: dict[str, Any] = {}
+    options: dict[str, Any] = {"log_tags": {"exploratory": exploratory}}   # LC12 mode in every logged attempt
     if kind == "claude_code":   # only this client takes a per-call --max-budget-usd
         options["max_budget_usd_per_call"] = load_eval_config().grader.max_budget_usd_per_call
     try:
@@ -78,20 +78,37 @@ def run(
     model: str = typer.Option("claude-opus-5-5", "--model"),
     effort: str = typer.Option("high", "--effort"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the planned calls and cost; call nothing."),
+    exploratory: bool = typer.Option(False, "--exploratory",
+                                     help="LC12 override: run the key-aware diagnostic on a key that is not signed "
+                                          "off. Every artefact is marked exploratory and may not be reported as "
+                                          "confirmatory. Without it such a key is refused."),
 ) -> None:
     """Grade one review (key-blind score; optional key-aware diagnostic)."""
-    from sit_eval.grader.pipeline import GraderError, grade_review, plan_grade
+    from sit_eval import lc12
+    from sit_eval import prereg as prereg_mod
+    from sit_eval.grader import answer_key as ak
+    from sit_eval.grader.pipeline import LC12_KEY_BLIND_ALTERNATIVE, GraderError, grade_review, plan_grade
     from sit_eval.grader.projection import GraderInputError
 
     try:
+        # LC12: the key-aware diagnostic reads the key; refuse one that is not signed off before any judge exists
+        ready, pending, reason = (ak.signoff(ak.load_answer_key(answer_key)) if answer_key is not None
+                                  else (True, [], None))
         if dry_run:
             _print_plan(plan_grade(review, pdf, answer_key=answer_key, v1_review=v1_review, v1_document=v1_pdf,
-                                   samples=samples, model=model, effort=effort))
+                                   samples=samples, model=model, effort=effort, exploratory=exploratory))
             return
-        client = _judge(judge, out)
+        lc12.require_signed(answer_key or "", ready, pending, exploratory=exploratory, reason=reason,
+                            alternative=LC12_KEY_BLIND_ALTERNATIVE)
+        for line in lc12.notes(exploratory, prereg_frozen=prereg_mod.prereg_status()["frozen"]):
+            typer.echo(line)
+        client = _judge(judge, out, exploratory)
         res = grade_review(review, pdf, out, judge=client, answer_key=answer_key, v1_review=v1_review,
                            v1_document=v1_pdf, samples=samples, seed=seed, max_cost_usd=max_cost_usd, model=model,
-                           effort=effort)
+                           effort=effort, exploratory=exploratory)
+    except lc12.UnsignedKeyRefusal as exc:
+        typer.echo(f"error: refusing a key-aware grade: {exc}", err=True)
+        raise typer.Exit(2) from exc
     except GraderInputError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc

@@ -13,18 +13,25 @@ The agent never imports this package (`tests/eval_harness/test_eval_isolation.py
 sit-eval score docs/live_runs/live_cc_opus_payments_v1 \
   --key eval/synthetic/payments_orchestration/answer_key.canonical.json --dry-run
 
-# live scoring (default judge: headless `claude -p`, Opus, effort high), with a hard cost stop
+# live scoring (default judge: headless `claude -p`, Opus, effort high), with a hard cost stop; the S-dev
+# keys are not signed off yet (scored_run_ready false), so LC12 refuses them without --exploratory
 sit-eval score docs/live_runs/live_cc_opus_payments_v1 \
   --key eval/synthetic/payments_orchestration/answer_key.canonical.json \
-  --out runs/eval/live_cc_opus_payments_v1 --max-cost-usd 60
+  --out runs/eval/live_cc_opus_payments_v1 --max-cost-usd 60 --exploratory
 
 # variants
 #   --candidate-rule union         overlap union shortlist, the pre-2026-10-02 rule (DEVIATION; comparison only)
 #   --no-grounding-judges          skip the G3 premise and citation-support judges (those metrics become null)
 #   --granularity per_flaw_batch   one call per flaw and sample (DEVIATION from prereg; owner approval needed)
 #   --judge fake                   deterministic offline plumbing (numbers are hashes, never a score)
+#   --exploratory                  LC12 override for a key that is not signed off; every artefact says exploratory
 
+# refuses exploratory scores (alone or mixed with confirmatory ones) unless given --exploratory too
 sit-eval aggregate runs/eval/*/scores.json --compare FULL --compare B0 --out runs/eval/aggregate.json
+# key-blind grade plus the key-aware diagnostic; the diagnostic reads the key, so LC12 applies as for score
+sit-eval grade run docs/live_runs/live_cc_opus_payments_v1/report.json \
+  --pdf eval/synthetic/payments_orchestration/design_v1.pdf \
+  --answer-key eval/synthetic/payments_orchestration/answer_key.canonical.json --judge claude_code --exploratory
 sit-eval prompts                 # check prompts/PROMPTS.lock; exit 1 on drift
 sit-eval prompts --write-lock    # after an intended prompt edit (before the prereg freeze only)
 ```
@@ -82,6 +89,21 @@ are shuffled per listwise call with a seed derived from `--seed` and recorded in
   prompt bundle hash.
 - `sit_eval/prompts/PROMPTS.lock`: SHA-256 of every judge prompt and judge output schema plus a bundle hash;
   the bundle hash is the value for prereg `matcher.prompt_sha256`.
+
+## LC12: signed keys only (`sit_eval/lc12.py`)
+
+Prereg LC12 says every key used for scoring has `scored_run_ready: true`, which only the owner's sign-off sets (`eval/KEY_SIGNOFF.md` section 4).
+Since SIT FABLE ruling #26 (`docs/USER_DECISIONS.md`, 2026-10-03) the harness enforces it instead of warning.
+`sit-eval score`, and `sit-eval grade run` with `--answer-key`, refuse a key that is not signed off with exit 2, before any judge is built, so no call is made and nothing is spent.
+The message names the key, the pending sign-off fields and the override.
+A legacy YAML grader key carries no sign-off, so it is always refused; the key-blind grade (no `--answer-key`) reads no key and is not affected.
+`--exploratory` lets the run proceed, and every artefact it writes says so: `scores.json` and `grade.json` carry `exploratory: true`, `exploratory_note` and `outside_preregistered_analysis`; `scores.md` and `grade.md` open with an EXPLORATORY line; the console prints the same line; each row of `judge_results.jsonl` records `exploratory`.
+The flag marks the run even on a signed key.
+With `eval/prereg.yaml` frozen, an `--exploratory` run also says that it is outside the pre-registered analysis; it can never be a confirmatory run.
+A confirmatory run reuses only cache rows marked `"exploratory": false`, so answers from an exploratory run, or from a cache written before this guard (such as the pilots'), are paid for again and never served as confirmatory; the number of rows not reused is in the warnings.
+`sit-eval aggregate` treats a `scores.json` as exploratory when it says so, or when it predates the guard and its key was not signed off; it refuses such inputs, alone or mixed with confirmatory ones, unless it is given `--exploratory`, and then its output carries the same marker.
+`--dry-run` still plans the calls and adds an `lc12` note saying that a real run would refuse.
+`score_review` and `grade_review` apply the same rule when called as a library.
 
 ## Cost of scoring one review (first live run: 20 findings, 14 v1 flaws, 80 location-overlap pairs)
 

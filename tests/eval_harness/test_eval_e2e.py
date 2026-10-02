@@ -23,9 +23,11 @@ runner = CliRunner()
 
 @pytest.fixture(scope="module")
 def plumbing_run(tmp_path_factory) -> Path:
+    # --exploratory: the real key may be unsigned, and LC12 refuses an unsigned key without it (test_eval_lc12.py
+    # pins the refusal and the confirmatory path on temporary copies); the flag marks the run whatever the key's state
     out = tmp_path_factory.mktemp("plumbing")
     res = runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--judge", "fake",
-                              "--out", str(out)])
+                              "--out", str(out), "--exploratory"])
     assert res.exit_code == 0, res.output
     return out
 
@@ -35,6 +37,7 @@ def test_plumbing_scores_json_is_valid(plumbing_run: Path):
     assert validate_scores(s) == []
     assert s["status"] == "plumbing_only" and any("PLUMBING ONLY" in w for w in s["warnings"])
     assert any("UNFROZEN" in w for w in s["warnings"]) and s["prereg"]["label"] == "pilot_unfrozen"
+    assert s["exploratory"] is True and "may not be reported as confirmatory" in s["exploratory_note"]
     # The warning follows the real key's state: present while the key is unsigned (LC12), absent once the owner has
     # signed it (eval/KEY_SIGNOFF.md section 4, whose last step runs this suite).
     ready = json.loads(PAYMENTS_KEY.read_text(encoding="utf-8"))["authoring_status"]["scored_run_ready"]
@@ -59,13 +62,13 @@ def test_plumbing_scores_json_is_valid(plumbing_run: Path):
     assert s["calls"]["calls_failed"] == 0 and s["calls"]["calls_total"] > 0
     assert s["metrics"]["quote_fabrication_rate"]["value"] == 0.0      # every quote resolves in the canonical text
     md = (plumbing_run / "scores.md").read_text()
-    assert "PLUMBING ONLY" in md and "| recall |" in md
+    assert "PLUMBING ONLY" in md and "| recall |" in md and md.splitlines()[2].startswith("**EXPLORATORY**")
     assert (plumbing_run / "judge_results.jsonl").exists()
 
 
 def test_rerun_into_same_out_dir_uses_the_cache(plumbing_run: Path):
     res = runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--judge", "fake",
-                              "--out", str(plumbing_run), "--no-grounding-judges"])
+                              "--out", str(plumbing_run), "--no-grounding-judges", "--exploratory"])
     assert res.exit_code == 0, res.output
     s = json.loads((plumbing_run / "scores.json").read_text())
     assert s["calls"]["calls_live"] == 0 and s["calls"]["calls_cached"] > 0
@@ -133,5 +136,5 @@ def test_live_judge_preflight_fails_fast(tmp_path: Path):
     cfg.write_text("judge:\n  executable: definitely-not-an-installed-claude-binary\n")
     res = runner.invoke(app, ["score", str(fixtures / "review_example.json"), "--key", str(PAYMENTS_KEY),
                               "--doc", str(fixtures / "booking_v1.pages.txt"), "--judge", "claude_code",
-                              "--config", str(cfg), "--out", str(tmp_path / "o")])
+                              "--config", str(cfg), "--out", str(tmp_path / "o"), "--exploratory"])
     assert res.exit_code == 2 and "not found on PATH" in res.output

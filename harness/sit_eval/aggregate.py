@@ -4,6 +4,10 @@ flaw-level permutation test and McNemar (metrics.md §12, prereg ``statistics``)
 
 Runs of A and B on the same document are paired by their order (sorted run id). Holm / BH are left
 to the analysis step that knows the prereg families (``sit_eval.stats.holm``).
+
+LC12 (``sit_eval.lc12``): exploratory scores (``exploratory: true``, or a file written before the guard
+whose key was not signed off) are refused, alone or mixed with confirmatory ones, unless
+``exploratory=True`` (``--exploratory``); the aggregate is then marked exploratory itself.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from sit_eval import stats
+from sit_eval import lc12, stats
 
 DEFAULT_METRICS = ["recall", "lenient_recall", "precision_strict", "precision_adjudicated", "f1_adjudicated",
                    "severity_weighted_recall", "critical_recall", "hallucinated_finding_rate", "cdr",
@@ -50,8 +54,15 @@ def _cond(s: dict[str, Any]) -> str:
 
 
 def aggregate(paths: list[Path], *, metrics: list[str] | None = None, compare: tuple[str, str] | None = None,
-              B: int = 10_000, seed: int = 0, paired_seed: int = 1) -> dict[str, Any]:
+              B: int = 10_000, seed: int = 0, paired_seed: int = 1, exploratory: bool = False,
+              prereg_frozen: bool = False) -> dict[str, Any]:
+    """Raises :class:`~sit_eval.lc12.ExploratoryInputRefusal` before any statistic when exploratory inputs
+    reach a run without ``exploratory``."""
     rows, warnings = load_scores(paths)
+    expl = [lc12.describe_exploratory(s["_path"], s) for s in rows if lc12.scores_are_exploratory(s)]
+    lc12.require_confirmatory_inputs(expl, len(rows), exploratory=exploratory)
+    if expl and len(expl) < len(rows):
+        warnings.append(f"the inputs mix exploratory and confirmatory scores (--exploratory): {'; '.join(expl)}")
     metrics = metrics or DEFAULT_METRICS
     by: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for s in rows:
@@ -59,7 +70,10 @@ def aggregate(paths: list[Path], *, metrics: list[str] | None = None, compare: t
     for cond in by:
         for d in by[cond]:
             by[cond][d].sort(key=lambda s: s["inputs"]["run_id"])
-    out: dict[str, Any] = {"kind": "sit_eval.aggregate", "inputs": [s["_path"] for s in rows], "warnings": warnings,
+    out: dict[str, Any] = {"kind": "sit_eval.aggregate", **lc12.marker(exploratory, prereg_frozen=prereg_frozen),
+                           "exploratory_inputs": [s["_path"] for s in rows if lc12.scores_are_exploratory(s)],
+                           "inputs": [s["_path"] for s in rows],
+                           "warnings": lc12.notes(exploratory, prereg_frozen=prereg_frozen) + warnings,
                            "aggregation": "per run -> mean over a document's runs -> mean over documents (macro); "
                                           "micro recall pools TP and G within each run index",
                            "bootstrap": {"B": B, "seed": seed, "paired_seed": paired_seed}, "conditions": {}}

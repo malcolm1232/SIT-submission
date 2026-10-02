@@ -16,6 +16,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
+from sit_eval import lc12
 from sit_eval.calls import BudgetStop, JudgeRunner
 from sit_eval.grounding import QuoteFinder, run_grounding
 from sit_eval.loaders import DocInput, ReviewInput
@@ -53,6 +54,7 @@ class ScoreOptions:
     embedding_prefilter: bool = False
     adaptive_samples: bool = False
     candidate_rule: str = "shortlist_bounded"   # union = DEVIATION (the pre-2026-10-02 rule, comparison only)
+    exploratory: bool = False   # LC12 override (--exploratory): allows an unsigned key, marks every artefact
 
 
 def _verdict_label(rin: ReviewInput) -> str | None:
@@ -216,13 +218,25 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
                        runner: JudgeRunner | None, opts: ScoreOptions, prereg: dict[str, Any],
                        prompts_info: dict[str, Any], prior_scores: dict[str, Any] | None = None) -> dict[str, Any]:
     t0 = time.monotonic()
-    warnings: list[str] = list(docin.warnings)
+    # LC12 (eval/prereg.yaml; SIT FABLE ruling #26): refuse a key that is not signed off before any judge call
+    ready, pending = lc12.key_signoff(key)
+    lc12.require_signed(key_path, ready, pending, exploratory=opts.exploratory)
+    if runner is not None and runner.exploratory != opts.exploratory:
+        raise ValueError(f"the judge runner's cache mode (exploratory={runner.exploratory}) differs from the run's "
+                         f"(exploratory={opts.exploratory}): an exploratory cache must never serve a confirmatory "
+                         "run, nor a confirmatory cache take exploratory answers")
+    warnings: list[str] = lc12.notes(opts.exploratory, prereg_frozen=prereg.get("frozen") is True)
+    warnings += list(docin.warnings)
     if prereg.get("label") == "pilot_unfrozen":
         warnings.append(prereg["message"])
-    if not key["authoring_status"]["scored_run_ready"]:
-        warnings.append("answer key has scored_run_ready = false (pending: "
-                        + ", ".join(key["authoring_status"]["pending"]) + "); core_insight is filled from the "
-                        "description and credit items, so matcher scores are provisional")
+    if not ready:
+        warnings.append("answer key has scored_run_ready = false (pending: " + ", ".join(pending) + "): scored "
+                        "under --exploratory (LC12 override); core_insight is filled from the description and "
+                        "credit items, so matcher scores are provisional")
+    if runner is not None and runner.rows_withheld_exploratory:
+        warnings.append(f"{runner.rows_withheld_exploratory} cached judge answers in this --out were written by an "
+                        "--exploratory run or before the LC12 guard and were not reused; their calls were made "
+                        "again")
     if prompts_info.get("problems"):
         warnings.append("judge prompts differ from prompts/PROMPTS.lock: " + "; ".join(prompts_info["problems"]))
     if opts.granularity != "pairwise":
@@ -308,6 +322,7 @@ def _base(rin: ReviewInput, key: dict[str, Any], key_path: Path, docin: DocInput
             "doc_version": version, "doc_source": docin.source, "doc_sha256_text": docin.sha256_text,
             "doc_sha256_text_matches_review": docin.sha256_matches_review,
         },
+        **lc12.marker(opts.exploratory, prereg_frozen=prereg.get("frozen") is True),
         "prereg": prereg,
         "prompts": prompts_info,
         "judge": {**asdict(opts), "embedding_prefilter": False,

@@ -46,6 +46,12 @@ Sources: the scope-cut table in `research/audit/fresh_eyes.md` §2.3 (FE), `rese
 | | **Support runs (A-1, A-8, A-9)** | | | **36** | **78.48** |
 | | **Agent total** | | | **132** | **240.12** |
 
+Scoring against a key that is not signed off (LC12).
+The harness refuses to score, or to run the grader's key-aware diagnostic, on a key whose `scored_run_ready` is false, unless the command is given `--exploratory` (SIT FABLE ruling #26, `docs/USER_DECISIONS.md`; `harness/README.md`, "LC12").
+A pilot scored before the owner signs the S-dev keys (T3) is therefore an exploratory run: it uses `--exploratory`, every artefact it writes is marked exploratory, and it may not be reported as confirmatory.
+The three pilots under `docs/live_runs/live_cc_opus_payments_v1/` (`eval_pilot/`, `eval_pilot2_bounded/`, `grade_pilot/`) predate the guard and are exploratory; a note file in each says so.
+Lines A-3 to A-7 score only signed keys; `sit-eval aggregate` refuses to put an exploratory score into their analysis.
+
 Instruments:
 
 | Instrument | Volume | USD |

@@ -3,12 +3,16 @@
  "$id": "https://sit-design-review.invalid/harness/scores.schema.json",
  "title": "sit-eval scores.json (one review scored against one answer key)",
  "type": "object",
- "required": ["schema_version", "kind", "generated_at", "status", "inputs", "prereg", "prompts", "judge", "metrics",
-              "warnings", "calls"],
+ "required": ["schema_version", "kind", "generated_at", "status", "exploratory", "inputs", "prereg", "prompts", "judge",
+              "metrics", "warnings", "calls"],
  "properties": {
   "schema_version": {"const": "1.0"},
   "kind": {"const": "sit_eval.scores"},
   "generated_at": {"type": "string"},
+  "exploratory": {"type": "boolean",
+                  "description": "LC12 (eval/prereg.yaml): true when the run was started with --exploratory (the only way to score a key whose scored_run_ready is false); such scores may not be reported as confirmatory"},
+  "exploratory_note": {"type": ["string", "null"], "description": "the human-readable exploratory line; null for a confirmatory run"},
+  "outside_preregistered_analysis": {"type": "boolean", "description": "true when eval/prereg.yaml was frozen and the run was --exploratory"},
   "status": {"enum": ["frozen", "pilot_unfrozen", "plumbing_only", "stopped_budget"],
              "description": "plumbing_only = fake judge; stopped_budget = --max-cost-usd reached, metrics empty"},
   "inputs": {
@@ -73,6 +77,8 @@
   "elapsed_s": {"type": "number"}
  },
  "allOf": [
+  {"if": {"properties": {"exploratory": {"const": true}}, "required": ["exploratory"]},
+   "then": {"required": ["exploratory_note"], "properties": {"exploratory_note": {"type": "string"}}}},
   {"if": {"properties": {"status": {"not": {"const": "stopped_budget"}}}},
    "then": {"required": ["findings", "flaws", "matching", "adjudication", "grounding", "failures"],
             "properties": {"metrics": {"required": ["recall", "precision_strict", "precision_adjudicated",

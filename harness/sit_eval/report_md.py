@@ -39,6 +39,8 @@ def _cls(f: dict[str, Any]) -> str:
 def render_scores_md(s: dict[str, Any]) -> str:
     inp = s["inputs"]
     lines = [f"# Scores: {inp['run_id']} vs {inp['item_id']} ({inp['doc_version']})", ""]
+    if s.get("exploratory"):   # LC12 marker, first so no reader misses it
+        lines += ["**EXPLORATORY** - " + str(s.get("exploratory_note") or "").removeprefix("EXPLORATORY: "), ""]
     banner = {"plumbing_only": "**PLUMBING ONLY** - fake judge; these numbers are not a score.",
               "pilot_unfrozen": "**UNFROZEN PILOT** - eval/prereg.yaml is not frozen; exploratory only.",
               "stopped_budget": "**STOPPED** - the cost limit was reached; no metrics were computed.",
