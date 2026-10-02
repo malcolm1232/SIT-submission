@@ -288,6 +288,7 @@ class ConfigOverrides(_Cfg):
     replay_fixtures: str | None = None
     fault_schedule: str | None = None
     plan_approval: bool | None = None
+    profile: str | None = None      # overlay config/profiles/<name>.yaml (e.g. "demo"); recorded in the manifest
 
 
 # ============================================================================ effective config
@@ -395,6 +396,31 @@ def apply_overrides(agent: AgentConfig, stop: StopRulesConfig, tools: ToolsConfi
     return (agent.model_copy(update=a), stop.model_copy(update=s), tools.model_copy(update={"servers": servers}))
 
 
+PROFILE_SECTIONS = ("agent", "stop_rules")
+
+
+def _deep_merge(base: Any, overlay: Any) -> Any:
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        out = dict(base)
+        for k, v in overlay.items():
+            out[k] = _deep_merge(base.get(k), v) if k in base else v
+        return out
+    return overlay
+
+
+def _read_profile(root: Path, name: str) -> tuple[Path, dict[str, Any]]:
+    """``<config root>/profiles/<name>.yaml``: a mapping with optional ``agent`` and ``stop_rules``
+    sections, deep-merged over those files before validation (a profile never changes the tools,
+    criteria, endpoints or persona files)."""
+    if not name or "/" in name or "\\" in name or name.startswith("."):
+        raise ConfigError(f"invalid profile name: {name!r}")
+    path = root / "profiles" / f"{name}.yaml"
+    data = _read_yaml(path)
+    if not isinstance(data, dict) or set(data) - set(PROFILE_SECTIONS):
+        raise ConfigError(f"{path}: a profile may only contain the sections {', '.join(PROFILE_SECTIONS)}")
+    return path, data
+
+
 def load_config(path: str | Path | None = None, overrides: ConfigOverrides | None = None) -> EffectiveConfig:
     """Load ``agent.yaml`` (default ``<repo>/config/agent.yaml``; a directory means
     ``<dir>/agent.yaml``) and every file it names, apply ``overrides``, validate across files.
@@ -405,22 +431,24 @@ def load_config(path: str | Path | None = None, overrides: ConfigOverrides | Non
     if agent_path.is_dir():
         agent_path = agent_path / "agent.yaml"
     root = agent_path.resolve().parent
-    agent = _parse(AgentConfig, _read_yaml(agent_path), agent_path)
+    ov = overrides or ConfigOverrides()
+    profile_path, profile = _read_profile(root, ov.profile) if ov.profile else (None, {})
+    agent = _parse(AgentConfig, _deep_merge(_read_yaml(agent_path), profile.get("agent", {})), agent_path)
     files = agent.files
     paths = {
         "stop_rules": root / files.stop_rules, "tools": root / files.tools, "criteria": root / files.criteria,
         "endpoints": root / files.endpoints, "persona": root / files.persona,
     }
-    stop = _parse(StopRulesConfig, _read_yaml(paths["stop_rules"]), paths["stop_rules"])
+    stop = _parse(StopRulesConfig, _deep_merge(_read_yaml(paths["stop_rules"]), profile.get("stop_rules", {})),
+                  paths["stop_rules"])
     tools = _parse(ToolsConfig, _read_yaml(paths["tools"]), paths["tools"])
     criteria = _parse(CriteriaConfig, _read_yaml(paths["criteria"]), paths["criteria"])
     endpoints = _parse(EndpointsConfig, _read_yaml(paths["endpoints"]), paths["endpoints"])
     personas = _parse(PersonasConfig, _read_yaml(paths["persona"]), paths["persona"])
     url_path = root / tools.url_policy
     url_policy = _parse(UrlPolicy, _read_yaml(url_path), url_path)
-    ov = overrides or ConfigOverrides()
     agent, stop, tools = apply_overrides(agent, stop, tools, ov)
-    hashed = [agent_path, *paths.values(), url_path]
+    hashed = [agent_path, *paths.values(), url_path, *([profile_path] if profile_path else [])]
     try:
         return EffectiveConfig(
             agent=agent, stop_rules=stop, tools=tools, criteria=criteria, endpoints=endpoints,
