@@ -20,7 +20,8 @@ def _copy_config(tmp_path: Path) -> Path:
 def test_profile_overlays_agent_and_stop_rules(tmp_path: Path) -> None:
     root = _copy_config(tmp_path)
     (root / "profiles" / "t.yaml").write_text(
-        "agent:\n  effort:\n    assess: medium\nstop_rules:\n  deadline_seconds: 321\n")
+        "agent:\n  effort:\n    assess: medium\nstop_rules:\n  deadline_seconds: 321\n"
+        "  stage_limits_s: {stage_1_end: 150, refine_end: 270, verdict_end: 310}\n")
     base = load_config(root)
     cfg = load_config(root, ConfigOverrides(profile="t"))
     assert cfg.agent.effort.assess == "medium"
@@ -32,7 +33,9 @@ def test_profile_overlays_agent_and_stop_rules(tmp_path: Path) -> None:
 
 def test_cli_deadline_still_wins_over_profile(tmp_path: Path) -> None:
     root = _copy_config(tmp_path)
-    (root / "profiles" / "t.yaml").write_text("stop_rules:\n  deadline_seconds: 321\n")
+    (root / "profiles" / "t.yaml").write_text(
+        "stop_rules:\n  deadline_seconds: 321\n"
+        "  stage_limits_s: {stage_1_end: 150, refine_end: 270, verdict_end: 310}\n")
     cfg = load_config(root, ConfigOverrides(profile="t", deadline_seconds=100))
     assert cfg.stop_rules.deadline_seconds == 100
 

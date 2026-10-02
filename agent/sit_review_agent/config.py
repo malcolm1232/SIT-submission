@@ -1,10 +1,11 @@
 """Typed loader for ``config/*.yaml``: the "modify on the spot" surface (runbook §4).
 
 ``config/agent.yaml`` is the entry file. Its pinned lines 1-12 (model, per-stage effort,
-max_tokens, allow_fallback, persona) are followed by free-layout keys (LLM retry policy, phase
-flags, transport, fault schedule, report options) and a ``files:`` block naming the other files:
-``stop_rules.yaml`` (stop rules and budgets), ``tools.yaml`` (servers and tool allowlists),
-``criteria.yaml``, ``endpoints.yaml``, ``url_policy.yaml`` and ``persona.yaml``. Paths in
+max_tokens, allow_fallback, persona) are followed by free-layout keys (LLM retry policy, the
+``claude_code`` block, the ``assess.shards`` criterion groups, phase flags, transport, fault
+schedule, report options) and a ``files:`` block naming the other files:
+``stop_rules.yaml`` (stop rules, budgets, reserves and ``stage_limits_s``), ``tools.yaml`` (servers
+and tool allowlists),``criteria.yaml``, ``endpoints.yaml``, ``url_policy.yaml`` and ``persona.yaml``. Paths in
 ``files:`` and ``tools.yaml url_policy`` are relative to the directory of ``agent.yaml``.
 
 :func:`load_config` returns a frozen :class:`EffectiveConfig` (all files merged, CLI overrides
@@ -14,6 +15,7 @@ applied, every source file hashed) whose :meth:`EffectiveConfig.sha256` goes int
 from __future__ import annotations
 
 import fnmatch
+from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -88,6 +90,66 @@ class ClaudeCodeSettings(_Cfg):
                                                      "the claude -p environment so it bills the subscription")
 
 
+class AssessShard(_Cfg):
+    """One criterion group of the concurrent assess stage: one model call that assesses these
+    criteria from the document and the criteria only (design section 4)."""
+
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    criteria: list[str]
+
+    @model_validator(mode="after")
+    def _non_empty_and_unique(self) -> AssessShard:
+        if not self.criteria:
+            raise ValueError(f"assess.shards group {self.name!r} is empty: list at least one criterion id")
+        seen: set[str] = set()
+        for c in self.criteria:
+            if c in seen:
+                raise ValueError(f"criterion {c!r} is listed twice in group {self.name!r}")
+            seen.add(c)
+        return self
+
+
+class AssessSettings(_Cfg):
+    """``assess:`` block of ``agent.yaml``: the criterion groups that run as concurrent shards in
+    stage 1 (design section 4). Every criterion is in at most one group; the unknown-criterion check
+    is cross-file (:class:`EffectiveConfig`). A criterion of the run that is in no group (one
+    appended live, runbook §4.2 #1) forms its own shard: :meth:`shards_for`."""
+
+    shards: list[AssessShard]
+
+    @model_validator(mode="after")
+    def _groups(self) -> AssessSettings:
+        if not self.shards:
+            raise ValueError("assess.shards is empty: at least one criterion group is needed "
+                             "(design section 4 lists four)")
+        owner: dict[str, str] = {}
+        names: set[str] = set()
+        for shard in self.shards:
+            if shard.name in names:
+                raise ValueError(f"assess.shards group name {shard.name!r} is used twice")
+            names.add(shard.name)
+            for c in shard.criteria:
+                if c in owner:
+                    raise ValueError(f"criterion {c!r} is in two groups: {owner[c]!r} and {shard.name!r}")
+                owner[c] = shard.name
+        return self
+
+    def grouped_criteria(self) -> list[str]:
+        return [c for s in self.shards for c in s.criteria]
+
+    def shards_for(self, criterion_ids: Iterable[str]) -> list[AssessShard]:
+        """The shards of a run whose criteria are ``criterion_ids`` (in the run's order): each
+        configured group restricted to the criteria the run has (a group left with none is dropped),
+        then one shard per criterion in no group, named after the criterion."""
+        ids = list(dict.fromkeys(criterion_ids))
+        present = set(ids)
+        out = [s.model_copy(update={"criteria": [c for c in s.criteria if c in present]}) for s in self.shards]
+        out = [s for s in out if s.criteria]
+        grouped = set(self.grouped_criteria())
+        out += [AssessShard(name=c, criteria=[c]) for c in ids if c not in grouped]
+        return out
+
+
 class PhasesConfig(_Cfg):
     ingest: bool = True
     understand: bool = True
@@ -143,6 +205,7 @@ class AgentConfig(_Cfg):
     thinking_display: Literal["omitted", "summarized"] = "omitted"
     llm: LLMSettings = LLMSettings()
     claude_code: ClaudeCodeSettings = ClaudeCodeSettings()
+    assess: AssessSettings
     phases: PhasesConfig = PhasesConfig()
     transport: Transport = Transport.LIVE
     replay: ReplaySettings = ReplaySettings()
@@ -165,6 +228,33 @@ class AgentConfig(_Cfg):
 # ============================================================================ stop_rules.yaml
 
 
+#: Config keys that were renamed; the old name is refused with the new one named, never read.
+RENAMED_STOP_RULE_KEYS: dict[str, str] = {"assess_reserve_seconds": "refine_reserve_seconds"}
+
+
+class StageLimits(_Cfg):
+    """``stop_rules.stage_limits_s``: the run-clock second by which each stage of the concurrent
+    design must have ended (design section 4: stage 1 by 265 s, refine by 465 s, the verdict call by
+    530 s on the 540 s demo profile). Absolute seconds per profile, not a fraction of the deadline:
+    the thinking block of a model call is a fixed cost (about 105 s for an assess shard at
+    ``medium``), so the limits do not scale with ``deadline_seconds``; a profile that changes the
+    deadline sets its own. Readers: W1 (``llm/runtime.py``) and W2 (``orchestrator.py``)."""
+
+    stage_1_end: int = Field(ge=1, description="understand, plan, research and every assess shard end by here")
+    refine_end: int = Field(ge=1, description="the refine call ends by here, else the merged findings stand")
+    verdict_end: int = Field(ge=1, description="the verdict call ends by here, else the rule-based verdict")
+
+    @model_validator(mode="after")
+    def _increasing(self) -> StageLimits:
+        if not (self.stage_1_end < self.refine_end < self.verdict_end):
+            raise ValueError("stage_limits_s must increase: stage_1_end < refine_end < verdict_end, got "
+                             f"{self.stage_1_end} / {self.refine_end} / {self.verdict_end}")
+        return self
+
+    def as_dict(self) -> dict[str, int]:
+        return {"stage_1_end": self.stage_1_end, "refine_end": self.refine_end, "verdict_end": self.verdict_end}
+
+
 class StopRulesConfig(_Cfg):
     """``config/stop_rules.yaml``. Rule names in ``active`` are resolved against the registry in
     :mod:`sit_review_agent.stop_rules` when the run starts (unknown name = ConfigError)."""
@@ -177,9 +267,40 @@ class StopRulesConfig(_Cfg):
     no_marginal_gain_window: int = Field(ge=1)
     min_independent_sources: int = Field(ge=1)
     report_reserve_seconds: int = Field(60, ge=0)
-    assess_reserve_seconds: int = Field(0, ge=0, description="research ends this long before the report reserve "
-                                                             "so assess keeps its time (robustness LLM-05)")
+    refine_reserve_seconds: int = Field(0, ge=0, description="stage 1 (research and the assess shards) ends this "
+                                                             "long before the report reserve so refine keeps its "
+                                                             "time (robustness LLM-05; replaced "
+                                                             "assess_reserve_seconds on 2026-10-03)")
+    stage_limits_s: StageLimits
     max_output_tokens: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _renamed_keys(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _refuse_renamed_keys(data)
+        return data
+
+    def stage_limits_problem(self) -> str | None:
+        """Why the stage limits do not fit ``deadline_seconds``, or ``None``. A file-level rule
+        (:func:`load_config` refuses the base file or profile that breaks it), not a model invariant:
+        ``--deadline`` is applied after it, so a run may legitimately hold a deadline below its
+        profile's limits; the runtime clamps and announces that (W1), as it does for the reserves."""
+        if self.stage_limits_s.verdict_end >= self.deadline_seconds:
+            return (f"stage_limits_s.verdict_end {self.stage_limits_s.verdict_end} s is not below deadline_seconds "
+                    f"{self.deadline_seconds} s: the limits are absolute seconds, so a profile that lowers the "
+                    f"deadline must set its own stage_limits_s")
+        return None
+
+
+def _refuse_renamed_keys(data: dict[str, Any], source: str = "") -> None:
+    """An old key is an error that names the new one; it is never read, dropped or mapped."""
+    for old, new in RENAMED_STOP_RULE_KEYS.items():
+        if old in data:
+            where = f"{source}: " if source else ""
+            raise ValueError(f"{where}{old} was renamed {new} on 2026-10-03 (latency redesign: stage 1 ends this "
+                             f"long before the report reserve so refine keeps its time); rename the key, it is "
+                             f"not read under its old name")
 
 
 # ================================================================================= tools.yaml
@@ -339,6 +460,12 @@ class EffectiveConfig(_Cfg):
         missing = sorted({s.name for s in self.tools.enabled_servers()} - set(self.endpoints.servers))
         if missing:
             raise ValueError(f"enabled servers without an endpoint in endpoints.yaml: {missing}")
+        known = set(self.criteria.ids())
+        for shard in self.agent.assess.shards:
+            for c in shard.criteria:
+                if c not in known:
+                    raise ValueError(f"assess.shards group {shard.name!r} names an unknown criterion {c!r} "
+                                     f"(criteria.yaml has {sorted(known)})")
         return self
 
     def sha256(self) -> str:
@@ -463,8 +590,16 @@ def load_config(path: str | Path | None = None, overrides: ConfigOverrides | Non
         "stop_rules": root / files.stop_rules, "tools": root / files.tools, "criteria": root / files.criteria,
         "endpoints": root / files.endpoints, "persona": root / files.persona,
     }
-    stop = _parse(StopRulesConfig, _deep_merge(_read_yaml(paths["stop_rules"]), profile.get("stop_rules", {})),
-                  paths["stop_rules"])
+    profile_stop = profile.get("stop_rules", {})
+    if isinstance(profile_stop, dict):
+        try:
+            _refuse_renamed_keys(profile_stop, str(profile_path))
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from None
+    stop = _parse(StopRulesConfig, _deep_merge(_read_yaml(paths["stop_rules"]), profile_stop), paths["stop_rules"])
+    problem = stop.stage_limits_problem()
+    if problem:
+        raise ConfigError(f"{profile_path if profile_stop else paths['stop_rules']}: {problem}")
     tools = _parse(ToolsConfig, _read_yaml(paths["tools"]), paths["tools"])
     criteria = _parse(CriteriaConfig, _read_yaml(paths["criteria"]), paths["criteria"])
     endpoints = _parse(EndpointsConfig, _read_yaml(paths["endpoints"]), paths["endpoints"])

@@ -285,13 +285,24 @@ def test_a_recorded_usage_dict_never_reaches_the_error_constructor() -> None:
         assert billed(err, Usage(input_tokens=5)).usage == Usage(input_tokens=5)
 
 
-def test_the_committed_demo_measurement_run_replays_offline(cfgdir: Path, no_network: None) -> None:
-    """The committed run with a deadline-cut assess call (docs/live_runs/demo_profile_measure_1) replays
-    offline with exit 0 (it crashed once LLMError gained ``usage``)."""
-    src = Path(__file__).resolve().parents[1] / "docs" / "live_runs" / "demo_profile_measure_1"
-    res = replay(cfgdir, src, "demo-replay")
-    assert res.exit_code == 0, res.output
-    assert "matches the recording" in res.output
+def test_the_committed_demo_measurement_run_is_refused_by_name_since_the_config_redesign(
+        cfgdir: Path, no_network: None) -> None:
+    """The committed run (docs/live_runs/demo_profile_measure_1, recorded at 2d84f59 with a deadline-cut
+    assess call) replayed offline with exit 0 until the latency redesign W0 (2026-10-03): its
+    ``effective_config.json`` carries ``assess_reserve_seconds`` and lacks ``assess.shards`` and
+    ``stage_limits_s``, so it is refused with the renamed key named and no traceback, like a run whose
+    prompts changed; it replays at its own commit. The crash this test guarded (``dict + Usage`` on a
+    recorded cut call) is pinned by ``test_a_recorded_usage_dict_never_reaches_the_error_constructor``."""
+    repo = Path(__file__).resolve().parents[1]
+    src = repo / "docs" / "live_runs" / "demo_profile_measure_1"
+    # The run recorded its input as a repo-relative path; pass it absolute so the test does not depend
+    # on pytest's working directory (it failed when started from outside the repo root).
+    pdf = repo / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
+    assert pdf.is_file()
+    res = replay(cfgdir, src, "demo-replay", "--pdf", str(pdf))
+    assert res.exit_code == 2, res.output
+    assert "effective_config.json: not a valid effective config" in res.output
+    assert "assess_reserve_seconds was renamed refine_reserve_seconds" in res.output
 
 
 # ------------------------------------------------------------------ request-hash recipes per backend

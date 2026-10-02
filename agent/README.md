@@ -187,9 +187,36 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     `phase_seconds` for a state written before). Writers: none yet (W2: `orchestrator.py` sets it at every
     checkpoint). Readers: none yet (W2: `orchestrator.resume_run`, which today sums `phase_seconds`;
     W3: `manifest.py` timing and `replay.py`, which read `phase_seconds`).
-  - Not in this change: the config keys of design section 5 (`assess.shards`, `refine_reserve_seconds`
-    replacing `assess_reserve_seconds`, the stage limits, `claude_code.extra_args: ["--setting-sources", ""]`).
-    `config.ClaudeCodeSettings.extra_args` already exists and `ClaudeCodeGateway.build_argv` already appends it.
+  - Config keys (second W0 commit, same day; tests `tests/test_config.py`, the "latency redesign W0" block):
+    - `agent.yaml` `assess.shards` (`config.AssessSettings`, `AssessShard`): the four criterion groups of
+      design section 4, each shipped criterion in exactly one; a criterion in two groups, an unknown id, a
+      group listed twice, an empty group or no group at all is a `ConfigError` that names the problem.
+      `AssessSettings.shards_for(run_criteria)` gives the run's shards: the groups restricted to the run's
+      criteria, then one shard per criterion in no group (a criterion appended live, runbook §4.2 #1).
+      Readers: none yet (W2: `phases/assess.py` and `orchestrator.py` start one call per shard; W3:
+      `manifest.py` shard count, fault schedules numbered in launch order).
+    - `stop_rules.yaml` `refine_reserve_seconds` replaces `assess_reserve_seconds` (same values: 600 s base,
+      200 s demo). The old key is refused in the base file, a profile and a recorded `effective_config.json`
+      alike, with the new name in the message; it is never read, dropped or mapped
+      (`config.RENAMED_STOP_RULE_KEYS`). Readers today, renamed in place: `llm/runtime.build_runtime` and
+      `deadline_warnings`, `phases/research._ResearchRun` (still research's extra reserve until W1 reads the
+      limits below); tests `test_runtime_policies.py`, `test_research_phase.py`, `test_cli_kruns.py`.
+    - `stop_rules.yaml` `stage_limits_s` (`config.StageLimits`: `stage_1_end`, `refine_end`, `verdict_end`),
+      absolute run-clock seconds per profile: 265 / 465 / 530 on the 540 s demo profile (design section 4),
+      2820 / 3420 / 3540 in the base file (3600 - 180 - 600, 3600 - 180, 3600 - 60). The thinking block per
+      call is fixed, so the limits are not a fraction of the deadline. Validation at load: increasing, and
+      `verdict_end` below the `deadline_seconds` of the file or profile that results (a profile that lowers the
+      deadline without setting its limits is refused); a profile without the block inherits the base values
+      (deep merge). `--deadline` is applied after that check, as for the reserves, so a run may hold a deadline
+      below its limits: W1's runtime must clamp and announce it (`llm.runtime.deadline_warnings` today announces
+      only the reserves). Readers: none yet (W1: `llm/runtime.py` stage limits; W2: `orchestrator.py` cuts).
+    - `agent.yaml` `claude_code.extra_args: ["--setting-sources", ""]` (design lever 10, draft ADR-012).
+      `ClaudeCodeGateway.build_argv` already appended `extra_args` to every argv; the pair is pinned by
+      `test_default_claude_code_argv_is_hermetic`. UNVERIFIED in a cloud session (design section 7, last check).
+    - Consequence: a run recorded before this commit (`docs/live_runs/demo_profile_measure_1`) no longer
+      validates under `EffectiveConfig` (old key, missing blocks), so `dra replay` refuses it by name with exit
+      2, as it refuses a run whose prompts changed; it replays at its own commit `2d84f59`
+      (`tests/test_cli_replay.py`). The demo backup run is recorded with the final code (design section 8).
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are
@@ -250,7 +277,7 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
 - **Deadline inside model calls.** With the `deadline` rule active, every model attempt's timeout is
   `min(llm.timeout_s, time left - reserve)` from the one run clock; the reserve is
   `stop_rules.report_reserve_seconds` (verify + report) and, for research, also
-  `assess_reserve_seconds`. A cut attempt raises `LLMDeadlineError` and is not retried; no attempt
+  `refine_reserve_seconds` (named `assess_reserve_seconds` before 2026-10-03). A cut attempt raises `LLMDeadlineError` and is not retried; no attempt
   or retry starts with less than 10 s left. Research ends (`deadline`); a cut or skipped assess gives
   a report that says "out of time before assessment" with no finding and the verdict `not_assessed`
   (confidence 0, shown as "Not assessed (out of time before assessment)" in `report.md`); the same

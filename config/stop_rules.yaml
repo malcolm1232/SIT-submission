@@ -22,7 +22,22 @@ min_independent_sources: 2
 report_reserve_seconds: 180        # kept for verify + report: the deadline rule fires this long before the
                                    # deadline, and every model attempt before verify ends by then (LLM-05).
                                    # Measured at high: verify 33 s + report 88 s = ~2 min, plus ~1 min margin
-assess_reserve_seconds: 600        # research also stops this long before the report reserve, so assess keeps
-                                   # its time (research absorbs the squeeze; LLM-05). Measured: one assess
-                                   # attempt at high took ~520 s (HANDOVER §8)
+refine_reserve_seconds: 600        # stage 1 (research and the assess shards) ends this long before the report
+                                   # reserve, so refine keeps its time (research absorbs the squeeze; LLM-05).
+                                   # Renamed from assess_reserve_seconds on 2026-10-03 (latency redesign); the
+                                   # old key is refused, not mapped. Until W1 reads stage_limits_s the runtime
+                                   # still applies it to research only, as before. 600 s: one assess attempt at
+                                   # high took ~520 s (HANDOVER §8)
+# stage_limits_s: the run-clock second by which each stage of the concurrent design must have ended
+# (design 2026-10-03 section 4; readers: W1 llm/runtime.py, W2 orchestrator.py). They are absolute
+# seconds, not a fraction of the deadline, because the thinking block of a model call is a fixed cost
+# (about 105 s per assess shard at medium, whatever the deadline), so a fraction would silently move
+# the limits when --deadline changes; a profile that changes the deadline sets its own three values.
+# Each profile's limits must increase and all lie below its deadline_seconds; a profile without the
+# block inherits these. These defaults keep the demo shape at 3600 s with the reserves above:
+# stage_1_end = 3600 - 180 - 600, refine_end = 3600 - 180, verdict_end = 3600 - 60 (render and invariants).
+stage_limits_s:
+  stage_1_end: 2820                # understand, plan, research and every assess shard end by here
+  refine_end: 3420                 # the refine call ends by here, else the merged findings stand (disclosed)
+  verdict_end: 3540                # the verdict call ends by here, else the rule-based verdict
 max_output_tokens: null            # optional cap on summed output tokens (null = none)

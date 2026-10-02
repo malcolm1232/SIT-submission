@@ -9,7 +9,7 @@ without one are left alone).
   (``RunContext.elapsed_s``, which resume restores from the checkpoint). Each model attempt's
   timeout is ``min(llm.timeout_s, remaining - reserve)``; the reserve is
   ``stop_rules.report_reserve_seconds`` (verify + report, the same reserve the between-phase
-  ``deadline`` rule keeps) and, for ``research`` only, also ``stop_rules.assess_reserve_seconds``,
+  ``deadline`` rule keeps) and, for ``research`` only, also ``stop_rules.refine_reserve_seconds``,
   so research absorbs the squeeze and assess keeps its time. ``verify`` and ``report`` are the
   reserve and may use what is left up to the deadline. A run whose ``stop_rules.active`` has no
   ``deadline`` rule keeps the full ``llm.timeout_s``. An attempt bounded by the deadline that times
@@ -295,7 +295,7 @@ def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window
     sr = config.stop_rules
     deadline = RunDeadline(deadline_s=float(sr.deadline_seconds) if "deadline" in sr.active else None,
                            reserve_s=float(sr.report_reserve_seconds),
-                           research_reserve_s=float(sr.assess_reserve_seconds), elapsed=elapsed)
+                           research_reserve_s=float(sr.refine_reserve_seconds), elapsed=elapsed)
     window = context_window_for(config.agent.model, config.agent.llm.context_window_tokens, retrieved_window)
     return RuntimeLimits(deadline=deadline, context=ContextGuard(window_tokens=window, pages=pages))
 
@@ -307,7 +307,7 @@ def deadline_warnings(stop_rules: Any, *, min_attempt_s: float = MIN_ATTEMPT_S) 
     reserves): the run would then end "not assessed" or document-only with no hint why."""
     if "deadline" not in stop_rules.active:
         return []
-    d, r, a = stop_rules.deadline_seconds, stop_rules.report_reserve_seconds, stop_rules.assess_reserve_seconds
+    d, r, a = stop_rules.deadline_seconds, stop_rules.report_reserve_seconds, stop_rules.refine_reserve_seconds
     fix = "raise --deadline, or use a profile with smaller reserves (--profile demo: 120 s and 200 s)"
     before_verify = d - r
     if before_verify < min_attempt_s:

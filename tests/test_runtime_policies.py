@@ -216,14 +216,14 @@ def test_runs_without_a_deadline_rule_keep_the_full_timeout(base: EffectiveConfi
 
 def test_default_deadline_and_demo_profile(base: EffectiveConfig) -> None:
     sr = base.stop_rules
-    assert (sr.deadline_seconds, sr.report_reserve_seconds, sr.assess_reserve_seconds) == (3600, 180, 600)
+    assert (sr.deadline_seconds, sr.report_reserve_seconds, sr.refine_reserve_seconds) == (3600, 180, 600)
     assert "deadline" in sr.active and base.agent.llm.timeout_s == 1800
     demo = load_config(overrides=ConfigOverrides(profile="demo"))
     assert demo.stop_rules.deadline_seconds == 540
     e = demo.agent.effort
     assert (e.plan, e.research, e.assess, e.refine, e.verify, e.report) == ("medium", "low", "medium", "medium",
                                                                             "medium", "medium")
-    assert demo.stop_rules.report_reserve_seconds + demo.stop_rules.assess_reserve_seconds < 540
+    assert demo.stop_rules.report_reserve_seconds + demo.stop_rules.refine_reserve_seconds < 540
     text = (config_dir() / "profiles" / "demo.yaml").read_text(encoding="utf-8")
     assert "UNMEASURED" in text and "USER_DECISIONS #1" in text and "forks" in text
     lim = build_runtime(demo, lambda: 0.0)
@@ -306,7 +306,7 @@ async def test_fake_gateway_refuses_a_call_without_time(base: EffectiveConfig) -
     assert gw.calls == []
 
 
-def test_research_keeps_the_assess_reserve(tmp_path: Path, base: EffectiveConfig) -> None:
+def test_research_keeps_the_refine_reserve(tmp_path: Path, base: EffectiveConfig) -> None:
     from sit_review_agent.context import RunContext
     from sit_review_agent.phases.research import _ResearchRun
     from sit_review_agent.progress import NullProgress
@@ -321,7 +321,7 @@ def test_research_keeps_the_assess_reserve(tmp_path: Path, base: EffectiveConfig
                      llm=FakeGateway({}), tools=None, ledger=EvidenceLedger(rd, clock=clock),
                      registry=DecisionRegistry(), prompts=PromptBundle.load(), clock=clock, progress=NullProgress())
     sr = base.stop_rules
-    assert _ResearchRun(ctx).params.report_reserve_seconds == sr.report_reserve_seconds + sr.assess_reserve_seconds
+    assert _ResearchRun(ctx).params.report_reserve_seconds == sr.report_reserve_seconds + sr.refine_reserve_seconds
 
 
 async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path, base: EffectiveConfig) -> None:
@@ -368,7 +368,7 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
 
     assert deadline_warnings(base.stop_rules) == []
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.assess_reserve_seconds) == (540, 120, 200)
+    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (540, 120, 200)
     assert deadline_warnings(demo) == []
     short = deadline_warnings(rules(deadline_seconds=300))
     assert len(short) == 1 and "leaves research no time" in short[0] and "share 120 s" in short[0]
@@ -387,7 +387,7 @@ def test_deadline_warning_boundary_is_one_model_attempt(base: EffectiveConfig) -
     from sit_review_agent.llm.runtime import MIN_ATTEMPT_S, deadline_warnings
 
     sr = base.stop_rules
-    fit = sr.report_reserve_seconds + sr.assess_reserve_seconds
+    fit = sr.report_reserve_seconds + sr.refine_reserve_seconds
     tight = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S / 2}))
     assert len(tight) == 1 and "leaves research no time" in tight[0]
     assert deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S})) == []

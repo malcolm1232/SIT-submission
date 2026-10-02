@@ -44,9 +44,28 @@ llm:
 
 claude_code:                       # used only when llm.backend is claude_code
   executable: claude               # Claude Code CLI on PATH (check with `claude --version`)
-  extra_args: []                   # appended to every `claude -p` call; --bare and --no-session-persistence are rejected
+  # extra_args is appended to every `claude -p` call (ClaudeCodeGateway.build_argv); --bare and
+  # --no-session-persistence are rejected. `--setting-sources ""` makes the call hermetic: no user-level
+  # hooks, plugins or settings (design 2026-10-03 lever 10, M2 against M3: about 7 s and 1,433 input
+  # tokens per call on the Mac). UNVERIFIED in a cloud session: check once there (design section 7).
+  extra_args: ["--setting-sources", ""]
   max_budget_usd_per_call: null    # number: passed as --max-budget-usd (client-side estimate); null = no cap
   inherit_api_key: false           # false: strip ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN so claude -p bills the subscription / cloud credits
+
+assess:                            # the concurrent assess stage (design 2026-10-03 section 4)
+  # shards: criterion groups, one model call each, run side by side in stage 1 with understand and
+  # plan. Each criterion of config/criteria.yaml is in exactly one group (a criterion in two groups,
+  # an unknown id, an empty group or no group at all is a config error). A criterion appended live
+  # (runbook §4.2 #1) that is in no group forms its own shard, so it adds a parallel call, not wall time.
+  shards:
+    - name: intent_and_fitness
+      criteria: [design_intent, fitness_for_objectives, decision_preservation]
+    - name: requirements_and_consistency
+      criteria: [requirement_completeness, internal_consistency, verifiability]
+    - name: claims_and_assumptions
+      criteria: [claims_and_external_constraints, assumptions_and_dependencies]
+    - name: risk_and_operations
+      criteria: [security_and_privacy, scalability_and_failure_modes, operability_and_governance]
 
 phases:                            # only research and refine may be disabled
   ingest: true

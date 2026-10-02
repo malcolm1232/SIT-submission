@@ -30,7 +30,10 @@ def cfgdir(tmp_path: Path) -> Path:
     agent.write_text(agent.read_text(encoding="utf-8").replace("run_root: runs", f"run_root: {tmp_path / 'runs'}"),
                      encoding="utf-8")
     (dst / "profiles").mkdir(exist_ok=True)
-    (dst / "profiles" / "t.yaml").write_text("stop_rules:\n  deadline_seconds: 321\n", encoding="utf-8")
+    (dst / "profiles" / "t.yaml").write_text(
+        "stop_rules:\n  deadline_seconds: 321\n"
+        "  stage_limits_s: {stage_1_end: 150, refine_end: 270, verdict_end: 310}\n",
+        encoding="utf-8")
     return dst
 
 
@@ -159,7 +162,7 @@ def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path
     for i in (1, 2):
         eff = json.loads((runs / f"demo-k{i}" / "effective_config.json").read_text(encoding="utf-8"))
         sr = eff["stop_rules"]
-        assert (sr["deadline_seconds"], sr["report_reserve_seconds"], sr["assess_reserve_seconds"]) == (540, 120, 200)
+        assert (sr["deadline_seconds"], sr["report_reserve_seconds"], sr["refine_reserve_seconds"]) == (540, 120, 200)
         assert eff["agent"]["effort"]["assess"] == "medium" and eff["agent"]["effort"]["research"] == "low"
         man = json.loads((runs / f"demo-k{i}" / "manifest.json").read_text(encoding="utf-8"))
         assert man["budgets"]["deadline_s"] == 540 and man["extra"]["config"]["cli_args"]["profile"] == "demo"

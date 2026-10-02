@@ -57,7 +57,7 @@ How the loop works (decisions the docs left open are marked *decision*):
   stop reason ``error``. A model call cut by the run deadline (``LLMDeadlineError``) ends research with
   stop reason ``deadline`` (robustness LLM-05); a conversation grown past the context limit
   (``LLMContextTooLongError``, never sent) ends it with ``budget_tokens`` / ``context_window``
-  (LLM-10). Research's deadline rule keeps ``assess_reserve_seconds`` on top of the report reserve,
+  (LLM-10). Research's deadline rule keeps ``refine_reserve_seconds`` on top of the report reserve,
   so research absorbs the squeeze and assess keeps its time. Other ``LLMError``\\ s (rate limit,
   overload, auth, timeout) propagate after the gateway's retry budget (exit 3, resumable).
   Strict-replay misses (``ReplayMiss``) propagate.
@@ -143,9 +143,9 @@ class _ResearchRun:
         self.state = ctx.state
         sr = ctx.config.stop_rules
         # Research absorbs the squeeze (robustness LLM-05): its deadline rule also keeps
-        # assess_reserve_seconds for assess, as the model-call timeouts do (llm.runtime.RunDeadline).
+        # refine_reserve_seconds for assess, as the model-call timeouts do (llm.runtime.RunDeadline).
         self.params = sr.model_copy(update={"report_reserve_seconds": sr.report_reserve_seconds
-                                            + sr.assess_reserve_seconds})
+                                            + sr.refine_reserve_seconds})
         self.call_ids = ctx.state.llm_calls.setdefault(PhaseName.RESEARCH.value, [])
         self.conversation_id = f"{ctx.state.run_id}-research-{len(self.call_ids)}"
         self.messages: list[dict[str, Any]] = []

@@ -64,7 +64,7 @@ def test_demo_profile_lines_named_by_the_runbook() -> None:
     for lineno, prefix in want.items():
         assert lines[lineno - 1].startswith(prefix), f"demo.yaml:{lineno} is {lines[lineno - 1]!r}"
     text = "\n".join(lines)
-    assert "report_reserve_seconds: 120" in text and "assess_reserve_seconds: 200" in text
+    assert "report_reserve_seconds: 120" in text and "refine_reserve_seconds: 200" in text
     runbook = RUNBOOK.read_text(encoding="utf-8")
     for needle in ("--profile demo`. Updated SIT design", "Research stops by 220 s", "is cut at 420 s",
                    "verify and report keep 120 s", "`config/profiles/demo.yaml` lines 19-24"):
