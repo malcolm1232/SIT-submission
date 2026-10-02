@@ -183,7 +183,7 @@ None recorded.
 
 {% if unresolved %}
 {% for u in unresolved %}
-- {{ u.text }}{% if u.ids %} ({{ u.ids | join(", ") }}){% endif %}{% if u.owner %}. Next step ({{ u.owner }}): {{ u.action }}{% endif %}
+- {{ u.text }}{% if u.ids %} ({{ u.ids | join(", ") }}){% endif %}{% if u.owner %} Next step ({{ u.owner }}): {{ u.action }}{% endif %}
 
 {% endfor %}
 {% else %}

@@ -169,10 +169,11 @@ def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, l
     known = {f.id for f in ctx.state.findings}
     degs = {d.id for d in ctx.state.degradations}
     v = out.verdict
-    conditions = [VerdictCondition(text=c.text.strip(), finding_ids=list(dict.fromkeys(x for x in c.finding_ids
-                                                                                      if x in known)))
-                  for c in v.conditions if c.text.strip()]
-    conditions = [c for c in conditions if c.finding_ids]
+    conditions: list[VerdictCondition] = []
+    for c in v.conditions:
+        ids = list(dict.fromkeys(x for x in c.finding_ids if x in known))
+        if c.text.strip() and ids:
+            conditions.append(VerdictCondition(text=c.text.strip(), finding_ids=ids))
     label = v.label
     notes: list[str] = []
     if label is VerdictLabel.FIT_WITH_CONDITIONS and not conditions:

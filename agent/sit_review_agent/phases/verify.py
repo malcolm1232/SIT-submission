@@ -195,15 +195,16 @@ def _verify_owner(docs: dict[str, Document], o: _Owner) -> None:
     o.results = verify_finding_anchors(docs, o.anchors) if o.anchors else [verify_finding_anchors(docs, [])[0]]
 
 
-def _window(tokens: Sequence[str], centre: int, size: int = 14) -> tuple[int, int]:
-    lo = max(0, centre - size // 2)
-    hi = min(len(tokens), lo + size)
-    return max(0, hi - size), hi
+def _window(tokens: Sequence[str], start: int, size: int = 20, min_size: int = 8) -> tuple[int, int]:
+    """Up to ``size`` tokens beginning at ``start``; starts earlier only if fewer than ``min_size`` remain."""
+    start = max(0, min(start, len(tokens)))
+    hi = min(len(tokens), start + size)
+    return (start if hi - start >= min_size else max(0, hi - min_size)), hi
 
 
 def code_anchor(doc: Document, offset: int, *, min_tokens: int = 8) -> DocAnchor | None:
-    """A verbatim anchor built in code around ``offset`` of ``doc.text``: the line holding it (plus
-    following lines until it has ``min_tokens`` tokens), cut to a window of about 14 tokens,
+    """A verbatim anchor built in code at ``offset`` of ``doc.text``: the line holding it (plus
+    following lines until it has ``min_tokens`` tokens), cut to at most 20 tokens from ``offset``,
     with the page and section at that offset. ``None`` if no such passage verifies."""
     start = doc.text.rfind("\n", 0, offset) + 1
     end = doc.text.find("\n", offset)
