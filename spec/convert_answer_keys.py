@@ -9,13 +9,27 @@ Checks  each output against answer_key.schema.json and the cross-field rules in 
 
 Mapping follows spec/README.md §2 and taxonomy.yaml legacy_mappings. Fields that need a human (core_insight,
 anchor quotes, expected dispositions, approved decisions, provenance, canary, external-fact verification, v2
-changed sections) are written as null / [] and listed in authoring_status.pending. Nothing is invented.
+changed sections) are written as null / [] and listed in authoring_status.pending. Nothing is invented by the
+converter itself.
 
-Usage: python3 spec/convert_answer_keys.py [--check]   (--check: validate only, do not write)
+Agent drafts (spec/README.md §2.9). If a legacy key carries a top-level `authoring_drafts` block, its values are
+copied into the canonical key, the drafted field names are listed in authoring_status.drafts.fields, and they stay
+in authoring_status.pending until `authoring_drafts.signoff` names a signer, a date and the accepted fields.
+scored_run_ready is true only when pending is empty (key_semantics then checks every flaw is complete).
+
+Usage: python3 spec/convert_answer_keys.py [--check] [--tier synthetic|blind] [--verify-anchors]
+  --check           validate only, do not write
+  --tier T          convert only the items of tier T (repeatable). With only `synthetic`, the spec self-test that
+                    this script runs on import is kept from reading eval/blind (its legacy-coverage glob is filtered),
+                    so a synthetic-only run never opens a sealed S-heldout file (SEALING.md §6 rule 1).
+  --verify-anchors  also check every flaw and approved-decision anchor quote against the PDF text produced by the
+                    agent's own ingest (sit_review_agent.ingest.pdf.ingest): exact match and page. Needs the agent
+                    package installed (e.g. `. .venv/bin/activate`).
 """
 from __future__ import annotations
 
 import contextlib
+import glob
 import hashlib
 import io
 import json
@@ -27,10 +41,49 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
+
+def _tiers_from_argv(argv: list[str]) -> set[str]:
+    out = {argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "--tier"}
+    out |= {a.split("=", 1)[1] for a in argv if a.startswith("--tier=")}
+    unknown = out - {"synthetic", "blind"}
+    if unknown:
+        sys.exit(f"unknown --tier {sorted(unknown)}; use synthetic or blind")
+    return out or {"synthetic", "blind"}
+
+
+TIERS = _tiers_from_argv(sys.argv[1:])
+_BLIND_DIR = os.path.join(ROOT, "eval", "blind") + os.sep
+
+
+@contextlib.contextmanager
+def _no_blind_glob():
+    """While validate_examples.py runs, keep its legacy-coverage glob out of eval/blind: an `eval/*/...` pattern is
+    expanded tier by tier without ever listing or opening anything inside eval/blind."""
+    real = glob.glob
+    eval_dir = os.path.join(ROOT, "eval")
+    wildcard = os.path.join(eval_dir, "*") + os.sep
+
+    def filtered(pattern, *a, **kw):
+        pattern = os.fspath(pattern)
+        if os.path.abspath(pattern).startswith(wildcard):
+            rest = os.path.abspath(pattern)[len(wildcard):]
+            tiers = sorted(t for t in os.listdir(eval_dir) if t != "blind" and os.path.isdir(os.path.join(eval_dir, t)))
+            hits = [h for t in tiers for h in real(os.path.join(eval_dir, t, rest), *a, **kw)]
+        else:
+            hits = real(pattern, *a, **kw)
+        return [h for h in hits if not os.path.abspath(h).startswith(_BLIND_DIR)]
+
+    glob.glob = filtered
+    try:
+        yield
+    finally:
+        glob.glob = real
+
+
 # Reuse the validators and the taxonomy loaded by validate_examples.py (it also self-tests the spec).
 _buf = io.StringIO()
 try:
-    with contextlib.redirect_stdout(_buf):
+    with contextlib.redirect_stdout(_buf), (_no_blind_glob() if "blind" not in TIERS else contextlib.nullcontext()):
         V = runpy.run_path(os.path.join(HERE, "validate_examples.py"))
 except SystemExit as exc:  # validate_examples failed: the spec itself is broken
     sys.stdout.write(_buf.getvalue())
@@ -333,17 +386,166 @@ def convert(tier: str, item: str, fmt: str) -> tuple[dict, dict]:
         report["notes"].append("category_taxonomy covers every defect label" if not missing else f"labels outside category_taxonomy: {missing}")
     if "severity_scale" in k:
         report["notes"].append(f"severity_scale labels {sorted(k['severity_scale'])} == scale {scale}: {sorted(k['severity_scale']) == sorted(sev_map)}")
-    consumed_top |= {"flaw_counts", "category_counts_v1", "defect_count", "category_taxonomy", "severity_scale"}
+    consumed_top |= {"flaw_counts", "category_counts_v1", "defect_count", "category_taxonomy", "severity_scale",
+                     "authoring_drafts"}
     report["unmapped"] += [f"top-level {x}" for x in k if x not in consumed_top]
 
     pending |= {"approved_decisions", "key_second_review"}
-    order = KEY_PENDING_ORDER
     key = {
         "schema_version": "1.0", "item": meta, "scoring": scoring, "approved_decisions": [], "flaws": flaws,
         "sound_sections": sounds, "still_valid_observations": item_obs, "v2": v2,
-        "authoring_status": {"pending": [p for p in order if p in pending], "scored_run_ready": False},
+        "authoring_status": {"pending": [], "scored_run_ready": False},
     }
+    drafts = apply_drafts(k.get("authoring_drafts"), key, report, pending)
+    status = key["authoring_status"]
+    status["pending"] = [p for p in KEY_PENDING_ORDER if p in pending]
+    status["scored_run_ready"] = not pending
+    if drafts is not None:
+        status["drafts"] = drafts
     return key, report
+
+
+# ---------------------------------------------------------------- agent drafts and owner sign-off (README §2.9)
+PROVENANCE_FIELDS = ("author_type", "author_model", "generation_date", "generator_session_ref", "brief_sha256",
+                     "canary_guid")
+
+
+def apply_drafts(d: dict | None, key: dict, report: dict, pending: set[str]) -> dict | None:
+    """Copy an `authoring_drafts` block into `key`; return the authoring_status.drafts record (or None).
+
+    Provenance facts taken from the record (author_type / author_model / generation_date) leave `pending` when set.
+    Every judgement field drafted here stays in `pending` and is listed in the drafts record until `signoff`
+    accepts it. Nothing here sets scored_run_ready; the caller derives it from `pending`."""
+    if not d:
+        return None
+    drafted: set[str] = set()
+    meta = key["item"]
+    it = d.get("item") or {}
+    for f in PROVENANCE_FIELDS:
+        if it.get(f) is not None:
+            meta[f] = it[f]
+    if meta["author_type"] != "unknown":
+        pending.discard("author_type")
+    for f in ("author_model", "generation_date"):
+        if meta[f] is not None:
+            pending.discard(f)
+    if meta["canary_guid"] is not None and it.get("canary_embedded_in_documents"):
+        pending.discard("canary_guid")
+
+    by_id = {f["id"]: f for f in key["flaws"]}
+    for fid, fd in (d.get("flaws") or {}).items():
+        f = by_id.get(fid)
+        if f is None:
+            report["unmapped"].append(f"authoring_drafts.flaws.{fid} (no such flaw)")
+            continue
+        if fd.get("core_insight"):
+            f["core_insight"] = fd["core_insight"]
+            drafted.add("core_insight")
+        if fd.get("anchor_quote"):
+            f["location"]["anchor_quote"] = fd["anchor_quote"]
+            f["location"]["page"] = fd.get("anchor_page")
+            drafted.add("anchor_quote")
+            if len(fd["anchor_quote"].split()) < 8:
+                report["notes"].append(f"{fid}: anchor quote under 8 tokens")
+        if fd.get("expected_disposition"):
+            f["expected_disposition"] = fd["expected_disposition"]
+            f["acceptable_dispositions"] = fd.get("acceptable_dispositions") or [fd["expected_disposition"]]
+            drafted.add("expected_disposition")
+        ext = fd.get("external_fact")
+        if ext and f["external_fact"] is not None:
+            for x in ("claim", "source", "verification_note", "verified", "verified_source_url", "verified_at"):
+                if x in ext and ext[x] is not None:
+                    f["external_fact"][x] = ext[x]
+            drafted.add("external_fact_verification")
+        elif ext:
+            report["unmapped"].append(f"authoring_drafts.flaws.{fid}.external_fact (flaw needs no external fact)")
+    missing = sorted(set(by_id) - set(d.get("flaws") or {}))
+    if d.get("flaws") and missing:
+        report["notes"].append(f"no draft for flaws {', '.join(missing)}")
+
+    if d.get("approved_decisions"):
+        key["approved_decisions"] = d["approved_decisions"]
+        for a in key["approved_decisions"]:
+            for fid in a["flaw_ids"]:
+                if fid in by_id and a["id"] not in by_id[fid]["affected_decisions"]:
+                    by_id[fid]["affected_decisions"].append(a["id"])
+        drafted.add("approved_decisions")
+
+    split = d.get("sound_sections") or {}
+    legacy_refs = {s["location"]["sections"][0] for s in key["sound_sections"]}
+    for s in key["sound_sections"]:
+        sd = split.get(s["location"]["sections"][0])
+        if sd and sd.get("sections"):
+            s["location"]["sections"] = sd["sections"]
+    if "sound_sections" in d:
+        report["unmapped"] += [f"authoring_drafts.sound_sections[{u!r}] (no such sound section)"
+                               for u in sorted(set(split) - legacy_refs)]
+        drafted.add("sound_overlap_annotations")
+
+    if d.get("v2_changed_sections") is not None and key["v2"] is not None:
+        key["v2"]["changed_sections"] = d["v2_changed_sections"]
+        if d.get("v2_changed_sections_note"):
+            prior = (key["v2"]["notes"] or "").rstrip("-\n ")
+            key["v2"]["notes"] = (prior + "\n\n" + d["v2_changed_sections_note"]).strip()
+        drafted.add("v2_changed_sections")
+
+    so = d.get("signoff") or {}
+    if so.get("signed_by") and so.get("signed_on"):
+        accepted = set(so.get("accepted") or [])
+        bad = accepted - set(KEY_PENDING_ORDER)
+        if bad:
+            report["unmapped"].append(f"signoff.accepted has unknown fields {sorted(bad)}")
+        pending -= accepted
+        drafted -= accepted
+        signer = f"{so['signed_by']} (signed {so['signed_on']})"
+        meta["key_reviewed_by"] = sorted(set(meta["key_reviewed_by"]) | {signer})
+        if "external_fact_verification" in accepted and any(
+                f["external_fact"] and not f["external_fact"]["verified"] for f in key["flaws"]):
+            report["notes"].append("signoff accepts external_fact_verification while some external_fact.verified "
+                                   "is false (owner accepted the eval-audit verification notes)")
+    elif so.get("accepted"):
+        report["notes"].append("signoff.accepted ignored: signed_by and signed_on are both required")
+    note = d.get("note")
+    if so.get("signed_by") and so.get("signed_on"):
+        acc = ", ".join(p for p in KEY_PENDING_ORDER if p in set(so.get("accepted") or [])) or "nothing"
+        note = ((note or "") + f" Owner sign-off by {so['signed_by']} on {so['signed_on']} accepted: {acc}.").strip()
+    return {"drafted_by": d["drafted_by"], "drafted_on": d["drafted_on"],
+            "fields": [p for p in KEY_PENDING_ORDER if p in drafted and p in pending], "note": note}
+
+
+def verify_anchors(tier: str, item: str, key: dict) -> list[str]:
+    """Exact-match every flaw and approved-decision anchor quote against the agent-ingested PDF text."""
+    try:
+        from sit_review_agent.ingest.pdf import ingest
+        from sit_review_agent.ingest.text import flatten_for_match, normalise_quote
+    except ImportError:
+        return ["--verify-anchors skipped: sit_review_agent is not importable (activate the venv)"]
+    base = os.path.join(ROOT, "eval", tier, item)
+    docs: dict[str, object] = {}
+    out = []
+    rows = [(f["id"], "v2" if f["introduced_in"] == "v2" else "v1", f["location"]) for f in key["flaws"]]
+    rows += [(a["id"], "v1", a["location"]) for a in key["approved_decisions"]]
+    for rid, ver, loc in rows:
+        q = loc.get("anchor_quote")
+        if not q:
+            continue
+        pdf = os.path.join(base, f"design_{ver}.pdf")
+        if not os.path.exists(pdf):
+            out.append(f"{rid}: {os.path.basename(pdf)} not found")
+            continue
+        if ver not in docs:
+            docs[ver] = ingest(pdf)
+        doc = docs[ver]
+        hay = flatten_for_match(doc.text)
+        nq = normalise_quote(q)
+        i = hay.find(nq)
+        if i < 0:
+            out.append(f"{rid}: anchor quote not found verbatim in {os.path.basename(pdf)}")
+        elif hay.count(nq) > 1:
+            out.append(f"{rid}: anchor quote occurs {hay.count(nq)} times in {os.path.basename(pdf)}")
+        elif doc.page_at(i) != loc.get("page"):
+            out.append(f"{rid}: anchor quote is on page {doc.page_at(i)}, key says {loc.get('page')}")
+    return out
 
 
 def _count(flaws: list[dict], field: str) -> dict:
@@ -358,11 +560,18 @@ KEY_PENDING_ORDER = V["KD"]["PendingField"]["enum"]
 
 def main() -> int:
     write = "--check" not in sys.argv
+    check_anchors = "--verify-anchors" in sys.argv
     failures = 0
     total = 0
-    for tier, item, fmt in ITEMS:
+    items = [x for x in ITEMS if x[0] in TIERS]
+    for tier, item, fmt in items:
         key, rep = convert(tier, item, fmt)
         errs = errors(V_KEY, key) + key_semantics(key)
+        st = key["authoring_status"]
+        if st.get("drafts") and not set(st["drafts"]["fields"]) <= set(st["pending"]):
+            errs.append("authoring_status.drafts.fields must be a subset of pending")
+        if check_anchors:
+            errs += [f"anchor: {e}" for e in verify_anchors(tier, item, key)]
         out = os.path.join(ROOT, "eval", tier, item, "answer_key.canonical.json")
         if write and not errs:
             with open(out, "w", encoding="utf-8") as fh:
@@ -381,14 +590,19 @@ def main() -> int:
         print(f"   v2_status {_count(fl, 'v2_status')}; credit mode {key['scoring']['default_credit_mode']}: {n_req} required / {n_sup} supporting items")
         print(f"   needs_external_research {sum(f['needs_external_research'] for f in fl)}; sound sections {len(key['sound_sections'])}; "
               f"overlap links {sum(len(f['overlapping_sound_section_ids']) for f in fl)}; still-valid observations {n_obs}")
-        print(f"   pending: {', '.join(key['authoring_status']['pending'])}")
+        print(f"   pending: {', '.join(key['authoring_status']['pending'])}; scored_run_ready "
+              f"{key['authoring_status']['scored_run_ready']}")
+        if key["authoring_status"].get("drafts"):
+            drafted = ", ".join(key["authoring_status"]["drafts"]["fields"]) or "none"
+            print(f"   drafted (awaiting sign-off): {drafted}; "
+                  f"approved decisions {len(key['approved_decisions'])}")
         for n in rep["notes"]:
             print(f"   note: {n}")
         print(f"   could not map: {', '.join(rep['unmapped']) if rep['unmapped'] else 'none'}")
         for e in errs:
             print(f"   INVALID: {e}")
         failures += bool(errs)
-    print(f"\n{total} flaws converted across {len(ITEMS)} keys; {failures} key(s) failed validation")
+    print(f"\n{total} flaws converted across {len(items)} keys; {failures} key(s) failed validation")
     return 1 if failures else 0
 
 

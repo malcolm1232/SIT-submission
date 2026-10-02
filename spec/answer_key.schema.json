@@ -243,9 +243,23 @@
       "type": "object", "additionalProperties": false, "required": ["pending", "scored_run_ready"],
       "properties": {
         "pending": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/PendingField"}},
-        "scored_run_ready": {"type": "boolean", "description": "true only when pending is empty and every nullable-while-pending field is set."}
+        "scored_run_ready": {"type": "boolean", "description": "true only when pending is empty and every nullable-while-pending field is set."},
+        "drafts": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/DraftRecord"}], "description": "Optional. Present when some pending fields already hold an agent draft; absent or null when nothing was drafted."}
       },
-      "allOf": [{"if": {"properties": {"scored_run_ready": {"const": true}}}, "then": {"properties": {"pending": {"maxItems": 0}}}}]
+      "allOf": [{"if": {"properties": {"scored_run_ready": {"const": true}}},
+                 "then": {"properties": {"pending": {"maxItems": 0},
+                                         "drafts": {"anyOf": [{"type": "null"}, {"properties": {"fields": {"maxItems": 0}}}]}}}}]
+    },
+
+    "DraftRecord": {
+      "type": "object", "additionalProperties": false, "required": ["drafted_by", "drafted_on", "fields", "note"],
+      "description": "Marks values that an agent drafted and a human has not yet signed (human_labelling_protocol.md T3). Every field named in `fields` also stays in authoring_status.pending until the owner signs it; the converter enforces that subset rule.",
+      "properties": {
+        "drafted_by": {"$ref": "#/$defs/NonEmpty", "description": "Who drafted, e.g. the model ID and session."},
+        "drafted_on": {"type": "string", "format": "date"},
+        "fields": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/PendingField"}, "description": "Pending fields whose current values are drafts awaiting sign-off."},
+        "note": {"type": ["string", "null"]}
+      }
     }
   }
 }

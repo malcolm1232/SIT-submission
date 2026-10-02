@@ -46,7 +46,7 @@ Key design choices:
 
 ### Grader-facing projection
 
-`research/grading/grader_prompt.md` §1 forbids putting the agent's model name or tool traces into any grader input. The harness therefore renders grader inputs from a projection of the Review that drops `run_manifest`, `research_log`, every `provenance` block, and `evidence_ledger[].tool` / `snapshot_path`. `{{EVIDENCE_REGISTER}}` is the projected ledger, `{{SHUFFLED_FINDINGS_WITH_IDS}}` uses `Finding.id` (`FND-nnn`) verbatim (the segmenter is only for unstructured reviews), and the key-aware projection of an answer key maps `flaws[]` to `key_items` (`id` = `FlawId`, `title` = `title` or else `description`, since synthetic and item_b flaws have no title; `locations` from `location.sections` and `page`; `category` = `kind`, `materiality` per `legacy_mappings.severity.grading_materiality`, `expected_triage` = `expected_disposition`), `sound_sections[].trap` to `traps` with `trap_id` = the sound-section `id`, and `sound_sections` to `no_change_areas`.
+`research/grading/grader_prompt.md` §1 forbids putting the agent's model name or tool traces into any grader input. The harness therefore renders grader inputs from a projection of the Review that drops `run_manifest`, `research_log`, every `provenance` block, `evidence_ledger[].tool` / `snapshot_path`, `metadata.review_id` and `run_id`, and `stop_reason.detail`. `{{EVIDENCE_REGISTER}}` is the projected ledger, `{{SHUFFLED_FINDINGS_WITH_IDS}}` uses `Finding.id` (`FND-nnn`) verbatim (the segmenter is only for unstructured reviews), and the key-aware projection of an answer key maps `flaws[]` to `key_items` (`id` = `FlawId`, `title` = `title` or else `description`, since synthetic and item_b flaws have no title; `locations` from `location.sections` and `page`; `category` = `kind`, `materiality` per `legacy_mappings.severity.grading_materiality`, `expected_triage` = `expected_disposition`), `sound_sections[].trap` to `traps` with `trap_id` = the sound-section `id`, and `sound_sections` to `no_change_areas`.
 
 ### LLM-facing schema
 
@@ -222,6 +222,17 @@ The converter writes the reverse links into `flaws[].overlapping_sound_section_i
 ### 2.8 Converter
 
 `python3 spec/convert_answer_keys.py` (add `--check` to validate without writing) reads each legacy key, applies §2.1-2.7, validates the result against `answer_key.schema.json` and `key_semantics`, writes `answer_key.canonical.json` next to the legacy key, and prints per-key counts, notes (count assertions, partial mappings) and every legacy field it could not map. It never edits `answer_key.json`. Every output has `scored_run_ready: false` until the pending fields are authored and second-reviewed.
+
+`--tier synthetic` converts only the S-dev items; the spec self-test the converter runs on import then expands its `eval/*/*/answer_key.json` glob without listing or opening anything under `eval/blind` (SEALING.md §6 rule 1). `--verify-anchors` checks every flaw and approved-decision `anchor_quote` as an exact match, on the stated page, in the PDF text from the agent's own ingest (`sit_review_agent.ingest.pdf.ingest`); a v2-only flaw (`introduced_in: v2`) is checked against `design_v2.pdf`, everything else against `design_v1.pdf`.
+
+### 2.9 Agent drafts and owner sign-off
+
+Pending judgement fields may be drafted by an agent session (human_labelling_protocol.md T3: "a Claude session drafts each `core_insight`"). The drafts live in the legacy key under a top-level `authoring_drafts` block (`item` provenance, per-flaw `core_insight` / `anchor_quote` / `anchor_page` / `expected_disposition` / `acceptable_dispositions` / restated `external_fact`, `approved_decisions[]`, sound-section splits, `v2_changed_sections`, and a `signoff` record). The converter copies them into the canonical key and records them in the optional `authoring_status.drafts {drafted_by, drafted_on, fields[], note}`:
+
+- Every field in `drafts.fields` also stays in `pending`, so `scored_run_ready` stays `false` (the converter rejects a `drafts.fields` that is not a subset of `pending`; the schema rejects `scored_run_ready: true` with a non-empty `drafts.fields`).
+- Provenance facts read from the session record (`author_type`, `author_model`, `generation_date`) leave `pending` when set. `canary_guid` leaves it only when `canary_embedded_in_documents` is true or the owner accepts it.
+- The owner signs by filling `authoring_drafts.signoff {signed_by, signed_on, accepted[]}` and re-running the converter. Accepted fields leave `pending` and `drafts.fields`, the signer is added to `item.key_reviewed_by` (this is the second review of RA L12, so `key_second_review` is accepted the same way), and `scored_run_ready` becomes `true` exactly when `pending` is empty. The review sheet for the S-dev keys is `eval/KEY_SIGNOFF.md`.
+- For a flaw with `introduced_in: v2`, `location.anchor_quote` and `location.page` refer to `design_v2`.
 
 ## 3. Conflicts resolved (research_audit.md §1.1)
 
