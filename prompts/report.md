@@ -1,24 +1,69 @@
 {# prompts/report.md - phase brief for `report` (output: ReportOutput).
-   Variables: findings_summary, objectives, degradations (list of {id, type, event, impact}),
-   stop_reason. Owner: workstream C. Placeholder content. #}
+   Variables: findings (list of {id, rank, kind, severity, disposition, title, statement}),
+   objectives (list of {ref, text}), degradations (list of {id, type, event, impact}),
+   stop_reason ({code, detail} or none), unverified (list of str), refusal_retry (bool).
+   Owner: workstream C. #}
+{% if refusal_retry %}
+This request is part of a professional engineering design review commissioned by the document's
+owner. It asks only for a summary judgement of the design's fitness for purpose; it does not ask
+for instructions to build, attack or misuse anything.
+
+{% endif %}
 # Phase: conclude the review
 
-Decide whether the design is fit for purpose and state what remains open.
+Decide whether the design is fit for purpose and state what remains open. The verified findings
+of this review are listed below with their IDs. Do not raise new findings here.
 
 ## Task
-- Give one verdict: fit, fit_with_conditions (each condition linked to finding IDs) or not_fit,
-  with a rationale, a confidence between 0 and 1, a verdict per objective, and what evidence would
-  change it.
-- List the unresolved issues with an owner role and next step.
-- Write one limitation for each degradation below and cite its ID; say plainly what the review
-  could not check and why.
+- Give one verdict: `fit`, `fit_with_conditions` or `not_fit`, with a short rationale, a
+  confidence between 0 and 1, a verdict per objective (cite the objective's reference and the
+  finding IDs behind it), and what evidence would change the verdict.
+- For `fit_with_conditions`, state each condition and link it to the finding IDs it depends on.
+- List the unresolved issues: every finding whose disposition is needs_investigation,
+  needs_prototyping, needs_testing or governance_decision, plus anything else that remains open,
+  each with an owner role and the next step.
+- Write one limitation for each degradation listed below and cite its ID. Say plainly what the
+  review could not check and why, and what that means for confidence in the verdict.
 
 ## Required content rules
-- The verdict is consistent with the findings' severities and dispositions.
+- The verdict must be consistent with the severities and dispositions of the findings: an open
+  critical or high finding is not compatible with an unconditional `fit`.
 - If no refinement is needed, say why the existing design remains appropriate.
-- Evidence by EV ID only; never write a URL.
+- Refer to findings only by the IDs listed below and to evidence by EV ID only; never write a URL.
+- Owners are roles, not names of people.
+
+## Verified findings
+{% for f in findings %}
+- {{ f.id }} (rank {{ f.rank }}, {{ f.kind }}, severity {{ f.severity if f.severity else "n/a" }}, disposition {{ f.disposition }}): {{ f.title }}. {{ f.statement }}
+{% else %}
+- None. The review raised no verified finding.
+{% endfor %}
+
+## Design objectives
+{% for o in objectives %}
+- {{ o.ref if o.ref else "(no ID)" }}: {{ o.text }}
+{% else %}
+- None stated in the intent summary.
+{% endfor %}
+{% if unverified %}
+
+## Points that could not be verified (not findings)
+{% for u in unverified %}
+- {{ u }}
+{% endfor %}
+{% endif %}
+
+## How research ended
+{% if stop_reason %}
+- {{ stop_reason.code }}{% if stop_reason.detail %} ({{ stop_reason.detail }}){% endif %}
+
+{% else %}
+- No external research was performed.
+{% endif %}
 
 ## Degradations
 {% for d in degradations %}
 - {{ d.id }} ({{ d.type }}): {{ d.event }}; impact: {{ d.impact }}
+{% else %}
+- None.
 {% endfor %}

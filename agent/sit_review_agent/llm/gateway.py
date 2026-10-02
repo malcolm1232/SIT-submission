@@ -837,7 +837,148 @@ class FaultInjectingLLMGateway:
         self.clock = clock or SystemClock()
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
-        raise NotImplementedError("phase 2: FaultInjectingLLMGateway.call (workstream B)")
+        """One logical call. Each *attempt* is matched against the ``llm:`` rules (``stage`` =
+        phase, ``attempt`` = 0-based attempt of this call, ``after_seconds`` since the first call
+        through this wrapper) and against ``network: offline`` windows. An attempt with no fault
+        goes to ``inner``. A retryable fault (429, 529/503/5xx, ``hang``, ``connection_reset``,
+        offline) is retried here with the live gateways' policy, read from ``inner`` when it has
+        it (``max_retries``, ``backoff_base_s``, ``backoff_max_s``, ``timeout_s``; else the
+        ``config/agent.yaml`` defaults 4 / 2.0 / 60.0 / 600): ``retry-after`` is honoured exactly,
+        otherwise exponential backoff with jitter on the injected clock; after the budget the typed
+        error is raised (exit 3). Non-retryable faults raise at once: ``auth`` / 401 / 403 ->
+        :class:`LLMAuthError`, 400 -> :class:`LLMBadRequestError`, ``stop_reason: refusal`` ->
+        :class:`LLMRefusalError`, ``stop_reason: max_tokens`` -> :class:`LLMTruncatedError`,
+        ``schema_violation`` -> the real response is corrupted and fails validation
+        (:class:`LLMSchemaError`). ``latency`` delays the attempt; ``flaky`` picks one of its
+        ``inner`` faults with a seeded RNG. Injected failures are logged to the inner gateway's
+        ``llm.jsonl`` (``fault`` field) when it has one."""
+        import json as _json
+        import random as _random
+
+        from sit_review_agent.errors import (
+            LLMAuthError,
+            LLMBadRequestError,
+            LLMOverloadedError,
+            LLMRateLimitError,
+            LLMTimeoutError,
+            LLMUnavailableError,
+        )
+        from sit_review_agent.tools import fault_apply as fa
+
+        st = self.__dict__.setdefault("_fault_state", {"t0": self.clock.monotonic(), "seq": 0,
+                                                       "rng": _random.Random(getattr(self.schedule, "seed", 0))})
+        st["seq"] += 1
+        seq = st["seq"]
+        phase = request.phase.value
+        max_retries = int(getattr(self.inner, "max_retries", 4))
+        base_s = float(getattr(self.inner, "backoff_base_s", 2.0))
+        max_s = float(getattr(self.inner, "backoff_max_s", 60.0))
+        timeout_s = float(getattr(self.inner, "timeout_s", 600.0))
+        progress = getattr(self.inner, "progress", None)
+        log = getattr(self.inner, "log", None)
+        seed = getattr(self.schedule, "seed", 0)
+        attempt = 0
+        while True:
+            elapsed = self.clock.monotonic() - st["t0"]
+            rng = fa.seeded_rng(seed, "llm", phase, seq, attempt)
+            spec: Any = None
+            delay = 0.0
+            if fa.offline_now(self.schedule, elapsed):
+                spec = "offline"
+            else:
+                for rule in self.schedule.llm:
+                    if not fa.match_rule(rule.match, stage=phase, attempt=attempt, elapsed_s=elapsed):
+                        continue
+                    s = fa.resolve_flaky(rule.fault, rng)
+                    if s is None:
+                        continue
+                    if s.type.value == "latency":
+                        delay += fa.latency_seconds(s, rng)
+                    elif spec is None:
+                        spec = s
+            if delay:
+                await self.clock.sleep(delay)
+            if spec is None:
+                return await self.inner.call(request)
+            kind = spec if isinstance(spec, str) else spec.type.value
+            err: LLMError
+            retry = True
+            wait: float | None = None
+            if kind == "offline":
+                err = LLMUnavailableError("network unreachable (offline) [injected fault]", phase=phase)
+            elif kind == "hang":
+                await self.clock.sleep(timeout_s)
+                err = LLMTimeoutError(f"no response within {timeout_s:.0f} s (hang) [injected fault]", phase=phase)
+            elif kind == "connection_reset":
+                err = LLMUnavailableError("connection reset by peer [injected fault]", phase=phase)
+            elif kind in ("http_status", "auth"):
+                extra = spec.model_extra or {}
+                status = int(extra.get("status", extra.get("code", extra.get("value", 401 if kind == "auth" else 500))))
+                ra = extra.get("retry_after")
+                if status in (401, 403):
+                    err, retry = LLMAuthError(f"HTTP {status}: the model API refused the credentials; check "
+                                              "ANTHROPIC_API_KEY (anthropic_api) or the Claude Code login "
+                                              "(claude_code) [injected fault]", phase=phase), False
+                elif status == 429:
+                    wait = float(ra) if ra is not None else None
+                    why = f"retry after {ra} s" if ra is not None else "no retry-after: spend cap or usage limit"
+                    err = LLMRateLimitError(f"HTTP 429 ({why}) [injected fault]", retry_after_s=wait, phase=phase)
+                elif status in (529, 503):
+                    err = LLMOverloadedError(f"HTTP {status} (overloaded) [injected fault]", phase=phase)
+                elif status >= 500:
+                    err = LLMUnavailableError(f"HTTP {status} [injected fault]", phase=phase)
+                else:
+                    err, retry = LLMBadRequestError(f"HTTP {status} [injected fault]", phase=phase), False
+            elif kind == "stop_reason":
+                extra = spec.model_extra or {}
+                if str(extra.get("value", "refusal")) == "max_tokens":
+                    err = LLMTruncatedError("output truncated at max_tokens [injected fault]",
+                                            max_tokens=request.max_tokens, phase=phase)
+                else:
+                    category = extra.get("category")
+                    refusals = getattr(self.inner, "_refusals", None)
+                    if isinstance(refusals, list):
+                        refusals.append({"call_id": None, "stage": phase, "category": category})
+                    err = LLMRefusalError("model declined [injected fault]", category=category, phase=phase)
+                retry = False
+            elif kind == "schema_violation":
+                res = await self.inner.call(request)
+                extra = spec.model_extra or {}
+                problem = "schema_violation"
+                if request.output_schema is not None and res.parsed is not None:
+                    data = res.parsed.model_dump(mode="json")
+                    field_name = str(extra.get("drop_field") or extra.get("bad_enum") or "")
+                    if extra.get("prose_prefix") is not None or not field_name or field_name not in data:
+                        payload: Any = f"Here is my answer: {_json.dumps(data)}"
+                    elif extra.get("drop_field"):
+                        payload = {k: v for k, v in data.items() if k != field_name}
+                    else:
+                        payload = {**data, field_name: "__not_an_allowed_value__"}
+                    try:
+                        if isinstance(payload, str):
+                            request.output_schema.model_validate_json(payload)
+                        else:
+                            request.output_schema.model_validate(payload)
+                    except ValidationError as exc:
+                        problem = str(exc).splitlines()[0]
+                err, retry = LLMSchemaError(f"structured output did not validate: {problem} [injected fault]",
+                                            call_id=res.call_id, phase=phase), False
+            else:                                   # MCP- or process-level fault types: not for this layer
+                return await self.inner.call(request)
+            if log is not None:
+                log.log({"call_id": None, "phase": phase, "purpose": request.purpose,
+                         "conversation_id": request.conversation_id, "attempt": attempt,
+                         "outcome": type(err).__name__, "fault": kind, "message": str(err),
+                         "started_at": isoformat_z(self.clock.now_utc())})
+            if not retry or attempt >= max_retries:
+                raise err
+            if wait is None:
+                wait = min(max_s, base_s * (2 ** attempt)) * (0.5 + 0.5 * st["rng"].random())
+            if progress is not None:
+                progress.emit(phase, f"{type(err).__name__}: {err}; retry {attempt + 1}/{max_retries} in "
+                                     f"{wait:.0f} s", "warn")
+            await self.clock.sleep(wait)
+            attempt += 1
 
     def usage_total(self) -> Usage:
         return self.inner.usage_total()
