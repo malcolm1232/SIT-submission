@@ -232,3 +232,38 @@ already happened (none had for entries made before the freeze).
   confirmed by SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #25).
 - **Scored runs before the change:** none (`frozen: false`). The pilot scoring and grading of the first live
   run are unaffected (its verdict is `fit_with_conditions`).
+
+---
+
+## 10. 2026-10-03: cost and token metrics of runs whose usage is partly unknown
+
+- **Fields:** `stop_rule.pilot_checkpoint`; `reporting.always_reported` (the Efficiency row); the comment on
+  `secondary_metrics` "Cost (USD), tokens, tool calls, wall time"; `costs.usage_completeness` (new) and comments on
+  `costs.per_run_usd`, `costs.measured_median_full_usd` and `freeze.fill_before_freeze`
+  `costs.measured_median_full_usd` (a `fill_before_freeze` field, still `null`; only its comment changed).
+- **Old text:** `pilot_checkpoint: If the pilot median FULL cost exceeds $3.24 or the p95 wall time exceeds the demo
+  slot, re-plan before freezing (BUDGET.md §5); this is a pre-freeze change, not a deviation.`; Efficiency row
+  `cost, tokens, tool calls, wall time median and IQR, stop reasons`; secondary metric comment `MM §10, median and
+  IQR`; no `costs.usage_completeness`.
+- **New text:** the cost check is `sit-eval aggregate` `pilot_checkpoint` against
+  `costs.per_run_usd.heavy_case_FULL`: `fail` if the lower-bound median over all FULL runs exceeds the threshold,
+  `pass` only if every FULL run is fully accounted and the median is at or below it, otherwise `not_evaluable`; a
+  lower bound can fail the check but never pass it. `costs.usage_completeness` defines "fully accounted" (the run
+  manifest's `extra.model.calls_with_unrecorded_usage` is empty, or the same rule over an older run's `llm.jsonl`
+  finds no cut call; neither available means unknown), says that an incompletely accounted run's cost and tokens are
+  null with the recorded figures beside them as lower bounds, that medians and IQRs are over fully accounted runs
+  with the excluded count and share, that a lower-bound median over all runs stands beside them, that no aggregate
+  mixes the two, and that the share of runs with any cut call is reported intention-to-treat. The Efficiency row and
+  the secondary metric comment say the same.
+- **Reason:** the agent runtime (commit `8ef32d4`) records a model attempt that was killed or cut (run deadline,
+  timeout, crashed `claude -p`, dropped stream, interrupt) with `usage: null` instead of zeros, lists it in the
+  manifest and marks `usage.cost_usd` a lower bound. The harness read `usage.cost_usd` as a complete figure (the
+  demo measurement run showed $1.10 for a run of about $1.9), so a median over such runs understated the pilot cost
+  and the "$3.24" checkpoint could pass on a lower bound. The rule is pinned to the runtime's in
+  `harness/sit_eval/usage.py` (`tests/eval_harness/test_eval_usage_completeness.py`, with the demo run's `llm-0003`
+  entry shape as the legacy fixture). The first live run's manifest predates the field and its `llm.jsonl` is not
+  in the repository, so the harness reports its cost ($3.68) as a lower bound of unknown completeness.
+- **Decided by:** SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #28).
+- **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The two pilot `scores.json`
+  files under `docs/live_runs/live_cc_opus_payments_v1/` are not rewritten; `sit-eval aggregate` treats a scores file
+  that carries no completeness as unknown (its cost is a lower bound, never fully accounted).

@@ -105,6 +105,22 @@ A confirmatory run reuses only cache rows marked `"exploratory": false`, so answ
 `--dry-run` still plans the calls and adds an `lc12` note saying that a real run would refuse.
 `score_review` and `grade_review` apply the same rule when called as a library.
 
+## Cost and tokens of the run under test: unknown usage is not zero (`sit_eval/usage.py`)
+
+The `efficiency` metric (MM §10) reads the agent run's `usage.cost_usd` and token counts from its manifest.
+Since 2026-10-03 the runtime logs a model call that was killed or cut (run deadline, timeout, a crashed `claude -p`, a dropped stream, an interrupt) with `usage: null`, lists it in `extra.model.calls_with_unrecorded_usage` and sets `extra.model.cost_usd_lower_bound`; `usage.cost_usd` then sums the recorded calls only.
+SIT FABLE ruling #28 (`docs/USER_DECISIONS.md`) makes the harness honest about such runs.
+Completeness is read in this order: the manifest field when present (`complete` when the list is empty, else `unrecorded`); for a manifest that predates the field, the runtime's rule applied by the harness to the `llm.jsonl` beside `report.json` (a deadline cut or timeout logged with zero usage, no cost and no HTTP status; unsent, fault, replayed and fake entries spend nothing), read by code only and named in `usage_source` and a warning; with neither, `unknown`.
+The rule lives once in `sit_eval/usage.py` and `tests/eval_harness/test_eval_usage_completeness.py` pins it to the runtime's behaviour with the demo run's `llm-0003` entry as the legacy fixture.
+A fully accounted run is unchanged except for the new fields `usage_completeness: complete`, `usage_reason: null`, `usage_source` and `calls_with_unrecorded_usage: []`.
+Any other run has `cost_usd`, `input_tokens`, `output_tokens` and `cached_tokens` null with `usage_reason` `unrecorded_usage` (the `usage_note` names the count and each call) or `usage_completeness_unknown`, and the recorded figures beside them as `cost_usd_lower_bound`, `input_tokens_lower_bound`, `output_tokens_lower_bound` and `cached_tokens_lower_bound`; `scores.schema.json` refuses a cost figure on such a run.
+`scores.md` opens the efficiency section with a LOWER BOUND or COMPLETENESS UNKNOWN line, the `score` console prints a `cost` entry with the completeness and a line on stderr, and `scores.json` carries a warning.
+`sit-eval aggregate` reports per condition `cost_usd`, `input_tokens` and `output_tokens` as `median_fully_accounted` and `iqr_fully_accounted` over fully accounted runs, `excluded_unrecorded` and `excluded_unknown` (count and share), and `median_lower_bound_all_runs` over every run at its lower bound; no figure mixes the two.
+`runs_with_unrecorded_usage` is the intention-to-treat share of runs with any cut call; `runs_with_unknown_usage_completeness` stands beside it.
+A `scores.json` written before the ruling (cost present, no completeness) aggregates as unknown.
+The top-level `pilot_checkpoint` is the prereg `stop_rule.pilot_checkpoint` on the FULL runs against `costs.per_run_usd.heavy_case_FULL`: `fail` if the lower-bound median over all FULL runs exceeds the threshold, `pass` only if every FULL run is fully accounted and the median is at or below it, else `not_evaluable`; a lower bound can fail the check but never pass it.
+The first live run's manifest predates the field and its `llm.jsonl` is not in the repository, so its $3.68 is reported as a lower bound of unknown completeness.
+
 ## Cost of scoring one review (first live run: 20 findings, 14 v1 flaws, 80 location-overlap pairs)
 
 | Mode | Judge calls | Cost (per-kind prices below) | Wall time at concurrency 4 |
