@@ -405,9 +405,9 @@ class AnchorRepairOutput(Draft):
 # VerdictLabel.NOT_ASSESSED is left out of AssessedVerdictLabel on purpose: phases.report sets it in
 # code only, when the run produced no assessment.
 class AssessedVerdictLabel(StrEnum):
-    """The verdict labels the model may choose. The label not_assessed is left out on purpose: code
-    sets it only when the run produced no assessment, so this schema never offers it and an answer
-    that carries it fails validation."""
+    """The verdict labels the model may choose. The label for a run that assessed nothing is left out
+    on purpose: code sets it only when the run produced no assessment, so this schema never offers it
+    and an answer that carries it fails validation."""
 
     FIT = VerdictLabel.FIT.value
     FIT_WITH_CONDITIONS = VerdictLabel.FIT_WITH_CONDITIONS.value
