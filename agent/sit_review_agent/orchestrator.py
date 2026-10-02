@@ -434,14 +434,17 @@ class Orchestrator:
             if p not in ctx.state.completed_phases:
                 ctx.state.completed_phases.append(p)
             self.checkpoint(ctx, p)
-            ctx.progress.emit(p.value, f"stage 1 closed; merged in {ctx.clock.monotonic() - t0:.1f}s", "done")
+            # the member's done line (robustness OPS-10: every completed phase has started and done)
+            ctx.progress.emit(p.value, f"done in {spent:.1f}s; stage 1 closed, merged in "
+                              f"{ctx.clock.monotonic() - t0:.1f}s", "done")
             milestone(ctx.progress, "merged", PhaseName.REFINE.value, findings=len(ctx.state.finding_drafts),
                       shards=len(results))
         elif p in ended:
             if p not in ctx.state.completed_phases:
                 ctx.state.completed_phases.append(p)
             self.checkpoint(ctx, p)
-            ctx.progress.emit(p.value, "stage 1 closed", "done")
+            ctx.progress.emit(p.value, f"done in {ctx.state.budget.phase_seconds.get(p.value, 0.0):.1f}s; stage 1 "
+                              "closed", "done")
 
     # ------------------------------------------------------------------ finished shards on disk
 
