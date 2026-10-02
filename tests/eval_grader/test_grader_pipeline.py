@@ -152,10 +152,12 @@ class _CostlyJudge:
 def test_grader_budget_stops_mid_grade(tmp_path: Path, graded_inputs) -> None:
     judge = _CostlyJudge()
     with pytest.raises(BudgetExceeded):
-        grade_review(*graded_inputs, tmp_path / "o", judge=judge, max_cost_usd=1.0)
+        # 1.3: three calls fit ($0.90 spent); the fourth (Pass B, estimate ~$0.41 since the thinking
+        # allowance was raised to 12k tokens) would cross the limit
+        grade_review(*graded_inputs, tmp_path / "o", judge=judge, max_cost_usd=1.3)
     rep = json.loads((tmp_path / "o" / "grade.json").read_text())
     assert len(judge.calls) == 3 and rep["budget"]["spent_usd"] == pytest.approx(0.9)
-    assert rep["budget"]["spent_usd"] <= 1.0
+    assert rep["budget"]["spent_usd"] <= 1.3
 
 
 def test_grader_delta_mode(tmp_path: Path, graded_inputs, make_judge, review_dict, write_review) -> None:

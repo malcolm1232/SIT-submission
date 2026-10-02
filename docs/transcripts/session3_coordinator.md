@@ -235,3 +235,33 @@ There are 29 fault YAMLs. A test loads each one through the agent's loader and c
 
 ---
 
+## Report: grader verifier
+
+**1. Status.** `ruff check harness/sit_eval/grader tests/eval_grader` is clean. `pytest -q tests/eval_grader tests/test_*.py`: 538 passed. The grader suite alone is now 94 tests (was 79). Full `pytest -q`: 844 passed. Nothing is skipped or xfailed. The edit log is `research/audit/verify_grader_editlog.md`. The new tests are in `tests/eval_grader/test_grader_verify_fixes.py`.
+
+**2. Defects found and fixed.** Each new test fails without its fix.
+1. **`claude -p` rejected every grader schema (the most serious one).** Found by the live check. The schema sent still had `"$schema": draft 2020-12`, and the CLI refused it ("no schema with key or ref"). Every live grade would have failed on its first call. Fix: `schemas.llm_facing()` now also drops `$schema`. The full schemas and the prompt hash are unchanged. Test: `test_grader_llm_facing_schema_drops_dollar_schema`.
+2. **A judge exception other than `JudgeError` escaped.** A `TimeoutError` or client bug left no `grade.json` and no call-log entry, and the CLI ended in a traceback. Fix: `_call` now catches any exception, logs it and raises `GraderError`; the CLI exits 3. Tests: `test_grader_non_judge_error_ends_grade_cleanly`, `test_grader_cli_judge_exception_exits_3`.
+3. **The budget boundary refused a call that lands exactly on the limit** (0.1 + 0.2 > 0.3 in floating point). Fix: a 1e-9 USD tolerance in `Budget.check`. Tests: `test_grader_budget_allows_a_call_landing_exactly_on_the_limit`, `test_grader_budget_boundary_in_pipeline`.
+4. **The cost estimate behind the hard budget stop was about 3x too low.** Each Haiku call used about 10.5k thinking tokens; the estimate allowed 3k. Fix: `THINKING_ALLOWANCE` raised to 12000, and the misleading "$0.05-0.15 per call" CLI text replaced. The limit in `test_grader_budget_stops_mid_grade` was raised from 1.0 to 1.3 so it still checks a stop after 3 calls.
+5. **`--samples 3` with disagreement ran a fourth sample.** Fix: a third sample is added only to a two-sample grade; with 3+ samples a disagreement is flagged for human review. Test: `test_grader_three_samples_never_get_a_fourth`.
+6. **A split hallucination verdict was silent.** One sample flagged a verified-false material hallucination and the other did not; the median count was 0.5, so no G3 cap applied and `needs_human_review` was false. Fix: a human-review reason is added when samples disagree on that count; the scoring rule is unchanged. Test: `test_grader_split_hallucination_count_needs_human_review`.
+7. **A bad `--answer-key` gave a traceback (exit 1).** Fix: `GraderInputError`, exit 2. Test: `test_grader_bad_answer_key_is_an_input_error`.
+8. **`grade validate` crashed on bad input** (malformed review, `--variant V6` without `=`, V6 without a variant). Fix: all exit 2 with a message. Test: `test_grader_validate_cli_bad_inputs_exit_2`.
+9. **Leakage through agent-written text.** Planted values in limitations, verdict, tags, evidence quotes, anchors, registry, sound areas and unresolved items passed through the leak guard: "Opus 5.5", "Claude Opus 5.5", "Claude Code", `--no-tools`, `no_tools`, condition `B0`. Realistic, since the agent's own degradation text contains "(--no-tools, …)". Fix: these are scrubbed and caught by the leak guard; a plain-word stop detail such as "deadline" is left alone. Tests: `test_grader_live_review_planted_identity_never_reaches_the_projection`, `test_grader_plain_word_stop_detail_is_not_scrubbed`.
+10. **`grade.md` showed non-delta weights in delta mode** (display only). Test: `test_grader_markdown_shows_delta_weights`.
+
+Also added `test_grader_dry_runs_never_build_a_judge` (already correct). Confirmed clean: prompts and schemas verbatim; weights, gates, caps, bands and the third-sample rule match GR §4 and prereg; §5.3 computed in code; hand recomputation of Example C FQS = 14.2, Example D = 94.6, V2 = 63.0, R_base with one hallucination = 69.0 grade C; rendered live-run prompts carry no model, run, backend or condition ID; key-blind calls never contain the key.
+
+**3. Deviation decisions.** All kept. Extra G3 cap: the GR §4.2 rows read as cumulative; add a clarifying clause to GR §4.2 before freeze. Counts instead of shares: denominators are emitted so shares can be derived; update §5.3 to the counts form. K1 to K01: matches the canonical `FlawId` pattern; `key_id_map` keeps originals. Median x.5 versus P9: P9 is anchor choice for the model; aggregation follows prereg. The rest kept.
+
+**4. Live check.** Two calls with `claude -p --model claude-haiku-4-5`, `ANTHROPIC_API_KEY` unset, no `--bare`, on an invented 2-finding fixture. First attempt rejected by the CLI before any model call ($0): defect 1. After the fix, Pass A $0.1071 and Pass B $0.1298, $0.2369 total. Both stripped schemas accepted; both `structured_output` objects validate against the full schemas; Pass B returned the exact `mode` string.
+
+**5. Found but not fixed.** Per-call budget cap: the grader calls `build_judge(kind, out_dir=out)` with no options, so no `--max-budget-usd` reaches `claude -p` (`config/eval.yaml` sets 1.0 but the grader does not read it). Cache pricing: `claude -p` writes its cache at the 1-hour rate (about 2x input), so the dry-run estimate is not an upper bound. Lenient meta-validation criteria (V1 on median ΔS; V4 counts suspected and Pass A flags; V10's G5 flag guaranteed by the harness regex). `stop_reason.code: tool_failure` stays in the projection.
+
+**6. Still unverified.** Opus as grader: real cost, time and thinking volume; whether Pass A for 21 findings fits in 32k tokens. The `ClaudeCodeJudge` path end to end. Message Batches. Whether any real grader passes V1, V4 and V10.
+
+**7. Prompt bundle hash:** unchanged, `64efe6b88489ac5542d7028f62782ed3c0b3096b0dfbfc0ac9ead22b4db75df0`.
+
+---
+

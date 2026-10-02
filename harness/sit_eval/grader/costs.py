@@ -21,10 +21,12 @@ PRICES: dict[str, tuple[float, float]] = {
 DEFAULT_PRICE = PRICES["claude-opus-5-5"]
 CHARS_PER_TOKEN = 3.5
 #: Expected output: Pass A grows with the number of findings; Pass B is roughly fixed. The
-#: thinking allowance covers adaptive thinking at effort high.
+#: thinking allowance covers adaptive thinking. It was 3000; the verifier's live smoke calls
+#: (2026-10-02, `claude -p`, Haiku 4.5, a two-finding review) used about 10.5k thinking tokens per
+#: call, so the old value let the pre-call budget check pass calls costing about 3x the estimate.
 PASS_A_OUT_BASE, PASS_A_OUT_PER_FINDING = 600, 450
 PASS_B_OUT = 7000
-THINKING_ALLOWANCE = 3000
+THINKING_ALLOWANCE = 12000
 #: Wall time per call, seconds (brief: Opus via claude -p at high effort, 20-60 s; longer for a long Pass B).
 SECONDS_PER_CALL = (20, 60)
 

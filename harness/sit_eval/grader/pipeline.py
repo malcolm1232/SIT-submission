@@ -48,6 +48,8 @@ CONVENTIONS = [
     "Caps per sample, then median per dimension over samples (two samples: their mean); caps re-applied "
     "to the medians with the median count of material verified-false hallucinations.",
     "G3 with >= 2 hallucinations also keeps D9 <= 2 and grade <= C.",
+    "Samples that disagree on the count of material verified-false hallucinations are flagged for human review.",
+    "A third Pass B sample is added only to a two-sample grade (prereg: 2, a third on disagreement).",
     "G4 (verdict present) is computed in code from the structured review.",
     "G5 fails on the harness injection pre-scan or any model flag (Pass A or B); needs human review.",
     "A verified_false hallucination whose design_quote is not in the design text is downgraded to suspected.",
