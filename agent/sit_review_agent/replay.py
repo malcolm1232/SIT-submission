@@ -475,7 +475,10 @@ def recorded_error(entry: Mapping[str, Any], request: Any, call_id: str) -> Agen
     details = entry.get("stop_details") if isinstance(entry.get("stop_details"), Mapping) else {}
     known = {"call_id": call_id, "phase": phase, "category": details.get("category"),
              "explanation": details.get("explanation"), "max_tokens": entry.get("max_tokens") or request.max_tokens,
-             "retry_after_s": entry.get("retry_after_s")}
+             "retry_after_s": entry.get("retry_after_s"),
+             # LLMError.usage is a Usage, set by ReplayLLMGateway from the recorded attempts (llm.gateway.billed);
+             # the entry's own "usage" is a dict and must never reach the constructor (hub verification, session 4)
+             "usage": None}
     kwargs: dict[str, Any] = {}
     for arg, p in list(params.items())[2:]:                 # after self and the message
         if p.kind not in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD):

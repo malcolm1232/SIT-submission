@@ -270,6 +270,30 @@ def test_recorded_errors_are_rebuilt_typed() -> None:
     assert isinstance(recorded_error({"outcome": "SomethingElse"}, req, "llm-0003"), ReplayDivergence)
 
 
+def test_a_recorded_usage_dict_never_reaches_the_error_constructor() -> None:
+    """Session 4 hub verification: LLMError gained ``usage`` (a Usage), and an error class that inherits
+    LLMError.__init__ (a deadline cut, a timeout) was rebuilt with the log entry's ``usage`` dict, so replaying
+    a run with a cut call crashed (``dict + Usage``; docs/live_runs/demo_profile_measure_1)."""
+    from sit_review_agent.errors import LLMDeadlineError, LLMTimeoutError
+    from sit_review_agent.llm.gateway import Usage, billed
+    from sit_review_agent.replay import recorded_error
+
+    usage = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    for name, cls in (("LLMDeadlineError", LLMDeadlineError), ("LLMTimeoutError", LLMTimeoutError)):
+        err = recorded_error({"outcome": name, "error": "cut", "usage": usage}, _request(), "llm-0003")
+        assert isinstance(err, cls) and err.usage is None
+        assert billed(err, Usage(input_tokens=5)).usage == Usage(input_tokens=5)
+
+
+def test_the_committed_demo_measurement_run_replays_offline(cfgdir: Path, no_network: None) -> None:
+    """The committed run with a deadline-cut assess call (docs/live_runs/demo_profile_measure_1) replays
+    offline with exit 0 (it crashed once LLMError gained ``usage``)."""
+    src = Path(__file__).resolve().parents[1] / "docs" / "live_runs" / "demo_profile_measure_1"
+    res = replay(cfgdir, src, "demo-replay")
+    assert res.exit_code == 0, res.output
+    assert "matches the recording" in res.output
+
+
 # ------------------------------------------------------------------ request-hash recipes per backend
 
 
