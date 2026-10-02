@@ -233,6 +233,8 @@ Pending judgement fields may be drafted by an agent session (human_labelling_pro
 - Provenance facts read from the session record (`author_type`, `author_model`, `generation_date`) leave `pending` when set. `canary_guid` leaves it only when `canary_embedded_in_documents` is true or the owner accepts it.
 - The owner signs by filling `authoring_drafts.signoff {signed_by, signed_on, accepted[]}` and re-running the converter. Accepted fields leave `pending` and `drafts.fields`, the signer is added to `item.key_reviewed_by` (this is the second review of RA L12, so `key_second_review` is accepted the same way), and `scored_run_ready` becomes `true` exactly when `pending` is empty. The review sheet for the S-dev keys is `eval/KEY_SIGNOFF.md`.
 - For a flaw with `introduced_in: v2`, `location.anchor_quote` and `location.page` refer to `design_v2`.
+- A key that comes out `scored_run_ready: true` always has its anchor quotes checked against the agent's ingest, as with `--verify-anchors`; if the agent package cannot be imported, that key fails. With `--check`, a canonical key on disk that says `scored_run_ready: true` but differs from the key regenerated from `answer_key.json` fails (a hand edit or a stale file). The schema alone cannot tell a hand-set `true` from a converter-set one.
+- The sign-off is not tied to the draft text: an edit to `authoring_drafts` after signing keeps the key signed. Sign last, and re-sign (new `signed_on`) after any later edit.
 
 ## 3. Conflicts resolved (research_audit.md §1.1)
 

@@ -59,7 +59,7 @@ These are the flaws where the core insight was hard to state, or where the exist
 2. **research_lakehouse F06.** c2 requires naming the correct controls (3.13.16 and/or 3.13.11). This is strict in the same way as F05: a finding that says "3.1.1 is access control, not encryption" may be enough for you.
 3. **research_lakehouse F04.** The required items are about tier behaviour only (opt-in, restore needed). The NFR-9 cost breach is c3, which is supporting. So the draft leaves cost out. Decide whether the cost breach belongs in the core insight.
 4. **clinical_rpm F05.** The audit (Task 5) calls F05 arguable: IEC 60601-1-8 separates alarm-condition delay from alarm-signal delay, so whether the 10-second window counts against NFR-2 depends on where NFR-2 starts. The draft says "up to" and does not require a 15-second worst case.
-5. **clinical_rpm F03 and F12, payments F04.** The drafts drop a must-mention item that is phrased as "or" or "at least one of": F03 drops the MIC@Home / residency item, F04 drops the item-size / LSI detail, and F12 keeps the window and clock only as context. Under `substance` mode that keeps the core insight to the essential defect. Check you agree.
+5. **clinical_rpm F03 and F12, payments F04 and F12.** The drafts drop a must-mention item that is phrased as "or", "and/or" or "at least one of": clinical F03 drops the MIC@Home / residency item (c4), payments F04 drops the item-size / LSI detail (c3), clinical F12 no longer names the window and clock, and payments F12 accepts either of its two ambiguities. Under `substance` mode that keeps the core insight to the essential defect. Check you agree. (Clinical F12 and payments F12 were edited by the verifier; see their entries in section 5.)
 6. **The three `decision_depends_on_pending_item` flaws** (payments F14, clinical F14, lakehouse F14) were drafted as `governance_decision`, with `refinement_now` acceptable. That is a policy choice for the action-type metric. Other borderline dispositions: payments F03 (`governance_decision`), payments F07 and clinical F07 (`needs_investigation`), and payments F13, clinical F13 and lakehouse F13 (`needs_testing`).
 7. **Approved-decision links that were left out on purpose:**
    - lakehouse "Catalog" is not linked to F10, and "Primary storage class" is not linked to F04: neither flaw cites §20 in the legacy key.
@@ -69,6 +69,17 @@ These are the flaws where the core insight was hard to state, or where the exist
 8. **payments F05 severity.** It is still `minor` (low), although audit P2-13 suggests major. This was not changed: severity is outside this sheet.
 9. **The v2 revision logs are incomplete.** Payments v2 also changed §10.3 and §19.1, clinical v2 also changed §14.5, §17.1 and §23, and lakehouse v2 also changed §20 and the NFR-9 criterion in §22.2. The logs do not name these. They are included in `v2.changed_sections`.
 
+#### Added by the verification pass (2026-10-02)
+
+A second agent checked these drafts against the design documents and the legacy keys. It edited three core insights (payments F03 and F12, clinical F12; marked "Edited by the verifier" in section 5; log in `research/audit/verify_key_drafts_editlog.md`). These points are left for you:
+
+10. **How strict a core insight is.** In `substance` mode (payments and clinical) the matcher is told the finding "must state the core insight as a whole". So every clause in a draft is a requirement, including clauses after a semicolon and lists in brackets. If a clause is only supporting detail, delete it. Examples to look at: payments F04 ("(and 3,000 RCU)", "at least 1,800 WCU"), payments F11 (the 1,500 TPS trigger clause), lakehouse F01 (the zero-data-retention clause, which is a supporting item).
+11. **clinical_rpm F05 also drops c4.** Besides the "up to" wording (item 4), the draft leaves out c4 (APNs/FCM push has no latency guarantee), which the legacy key lists as a must-mention item. The distractor note treats the push figure as secondary, so this looks right, but it is looser than the legacy list.
+12. **clinical_rpm F09 lists every quasi-identifier but omits c2.** The draft names the postal code, timestamps, ward and bed, age, sex and ethnicity, so a strict matcher may want all of them. It does not say why the postal code matters (c2: a 6-digit Singapore postal code usually identifies one building). A possible text: "The 'anonymised' extracts remove only direct identifiers and keep strong quasi-identifiers, notably the full 6-digit home postal code, which in Singapore usually identifies a single building, together with demographics or exact timestamps, so patients remain re-identifiable and the data is still personal data; the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, is therefore unjustified."
+13. **payments F15 and the "Disaster recovery" row (AD-004).** F15 is linked only to "Idempotency store" (AD-006). The v2 "Disaster recovery" row adds the warm API cell in ap-southeast-3, which is what sends a retry to the second region. Linking AD-004 to F15 is defensible; leaving it is also defensible, because the defect is the global-table lock. Lakehouse F15, by contrast, is linked to both rows its v2 change touched.
+14. **Sign last.** The sign-off is not tied to the draft text. If you edit `authoring_drafts` after signing, the key stays signed. Make all edits first, then sign; after any later edit, sign again with a new `signed_on`.
+15. **Sound-section sub-locations are text only.** Clinical §4 and lakehouse §16 are split into sub-locations, but the harness reads only the section number (for example "16 Audit Plane (Content boundaries)" is section 16), so the split guides the matcher and the human rater, not the location arithmetic.
+
 ## 3. How the anchor quotes were checked
 
 Every flaw anchor and every approved-decision anchor was checked against the text the agent itself reads:
@@ -76,7 +87,7 @@ Every flaw anchor and every approved-decision anchor was checked against the tex
 - `sit_review_agent.ingest.pdf.ingest` was run on `design_v1.pdf`, and on `design_v2.pdf` for the three v2-only flaws (F15).
 - Each quote is an **exact, case-sensitive, unique** substring of the flattened canonical page text. Its page is the page of that match.
 - Each quote is also verbatim in the Markdown source once markup is removed (backticks, `**`, and table pipes, so table cells read as one line).
-- The agent's own section-window check (`sit_review_agent.ingest.anchor.verify_anchor`) passes for every flaw anchor except two, explained below.
+- The agent's own section-window check (`sit_review_agent.ingest.anchor.verify_anchor`) passes for every flaw anchor with the ingest code now in the repository (two failed with the earlier ingest; see below).
 
 Re-run the check at any time with `python3 spec/convert_answer_keys.py --tier synthetic --check --verify-anchors` (venv active). It fails on any quote that is not an exact, unique match on the stated page.
 
@@ -85,7 +96,7 @@ Known limits:
 - **The PDF extractor removes some hyphens at line breaks.** For example "storage-level" becomes "storagelevel" (payments §20.2) and "multi-provider" becomes "multiprovider" (§16.2). Quotes containing such words were avoided, so no anchor is a fuzzy match.
 - **Long table cells are split across lines in the PDF.** Requirement-table anchors are therefore the part of the cell on one PDF line. For example, payments FR-8's anchor stops before "2%", because "authorization rate by more than 2%." is on the next page.
 - **Seven decision anchors are shorter than 8 tokens:** payments "Cloud and primary region" and "Idempotency retention"; clinical D-5 and D-11; lakehouse "Cloud and primary region", "Ingestion pattern" and "Primary storage class". These short table cells cannot be quoted at 8 or more tokens without crossing into the next row. The 8-token rule applies to finding anchors, and the schema does not require it for decision anchors.
-- **The agent's section-window check fails for two exact quotes: clinical F09 (§17.4) and lakehouse F03 (§13).** The ingest heading heuristic reads the numbered list items ("1." to "4.") inside those sections as section headings. So a quote after them resolves to "section 4" and fails `verify_anchor` for the real section, even though the text and page match exactly. The same thing would happen to an agent finding that quotes those passages. This is an ingest issue in `agent/`, outside this workstream, and is reported to the coordinator.
+- **The agent's section-window check failed for two exact quotes when drafted: clinical F09 (§17.4) and lakehouse F03 (§13).** The ingest heading heuristic read the numbered list items ("1." to "4.") inside those sections as section headings. The ingest code now in the repository (another workstream's change, WIP snapshot `3155202`) drops such list items, and with it all 45 flaw anchors pass `verify_anchor` (checked by the verification pass, 2026-10-02). If that change is reverted, these two fail again; the exact-match check above does not depend on it.
 
 ## 4. How to sign (exact steps)
 
@@ -118,7 +129,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
    EOF
    ```
 4. **External facts.** All 20 `external_fact` entries have `verified: false`. The claim, source and note were restated from the eval-data audit (2026-10-02). That audit labelled its sources P (primary mirror), P-snippet, S or K, and found every flaw-level fact correct. You have two options:
-   - (a) Re-check each source with network access. In `authoring_drafts.flaws.<Fxx>.external_fact`, add `"verified": true`, `"verified_source_url"` and `"verified_at"` (YYYY-MM-DD). The converter copies them, and the schema requires the URL and date whenever `verified` is true.
+   - (a) Re-check each source with network access. In `authoring_drafts.flaws.<Fxx>.external_fact`, add `"verified": true`, `"verified_source_url"` and `"verified_at"` (YYYY-MM-DD). The converter copies them, and the schema requires the URL and date whenever `verified` is true. You still list `external_fact_verification` in `accepted` (step 3); the converter does not clear it on its own.
    - (b) Accept the audit's check as sufficient, and include `external_fact_verification` in `accepted`. The converter then prints a note that you accepted audit-level verification. Under (b) the key stays honest: `verified` remains false and the note says why.
 5. **Canary.** Methodology §1.1 rule 5 wants the per-split canary in every document and key. The GUID is in the keys only. Embedding it in `design_v*.md` and rebuilding the PDFs (`eval/build_pdfs.py`) would change the document hashes and the page text, so it was not done here. Either embed it, then set `authoring_drafts.item.canary_embedded_in_documents: true`; or accept a key-only canary by listing `canary_guid` in `accepted`, and record that choice for the LC10/LC11 canary scans.
 6. **Regenerate and check.** Run this from the repository root with the venv active:
@@ -128,7 +139,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
    python3 spec/convert_answer_keys.py --tier synthetic --verify-anchors
    ```
 
-   For each item it prints `pending: ...; scored_run_ready True|False`. **`scored_run_ready` is never set by hand.** The converter sets it to `true` exactly when `pending` is empty. The schema and `key_semantics` then refuse a key in which any flaw still lacks `core_insight`, `anchor_quote` or `expected_disposition`, or whose provenance is incomplete. Your name and date are added to `item.key_reviewed_by`. `--tier synthetic` keeps the run away from `eval/blind` (it neither lists nor opens it). Do not run the converter without `--tier synthetic` before the S-heldout keys are sealed.
+   For each item it prints `pending: ...; scored_run_ready True|False`. A key that becomes ready always has its anchors re-checked, even without `--verify-anchors`, so the venv must be active. **`scored_run_ready` is never set by hand**; `python3 spec/convert_answer_keys.py --tier synthetic --check` fails if a canonical key on disk says `true` but differs from what the converter produces. The converter sets it to `true` exactly when `pending` is empty. The schema and `key_semantics` then refuse a key in which any flaw still lacks `core_insight`, `anchor_quote` or `expected_disposition`, or whose provenance is incomplete. Your name and date are added to `item.key_reviewed_by`. `--tier synthetic` keeps the run away from `eval/blind` (it neither lists nor opens it). Do not run the converter without `--tier synthetic` before the S-heldout keys are sealed.
 7. Run `pytest -q`. Commit the three `answer_key.json`, the three `answer_key.canonical.json`, and the sheet hash.
 
 ## 5. Flaws
@@ -152,7 +163,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F03 · high (legacy major) · internal_contradiction
 - Location: §2.2; 20.2; 24; 26.2 (NFR-4)
-- **Core insight (draft):** NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates across regions asynchronously (Aurora Global Database, lag under about 1 s) and does not replicate DynamoDB, MSK or Redis at all, so commits in the lag window are lost on regional failure and RPO cannot be zero.
+- **Core insight (draft):** NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates the payments and ledger database across regions asynchronously (Aurora Global Database, lag under about 1 s), so commits in the lag window are lost on regional failure and RPO cannot be zero. *(Edited by the verifier: the DynamoDB/MSK/Redis clause was dropped, because no credit item requires it and in `substance` mode every clause is required. W3's text added "and does not replicate DynamoDB, MSK or Redis at all".)*
 - **Anchor** (design_v1.pdf p. 3): "Recovery point objective for authorized payments and ledger postings shall be zero, including on loss of an entire AWS region."
 - **Expected disposition:** `governance_decision` (also acceptable: `refinement_now`)
 - Linked approved decisions: AD-004
@@ -223,7 +234,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F12 · low (legacy minor) · ambiguous_requirement
 - Location: §2.1; 10.3; 24; 26.1 (FR-8)
-- **Core insight (draft):** FR-8's 'reduces the expected authorization rate by more than 2%' supports incompatible readings, per-transaction approval priors versus a merchant's realised authorization rate, and 2 percentage points versus 2% relative, and Section 10.3 applies the same tolerance both ways, so the routing rule and its test cannot be implemented unambiguously.
+- **Core insight (draft):** FR-8's 'reduces the expected authorization rate by more than 2%' is ambiguous in at least one way that changes routing outcomes, a per-transaction comparison of approval priors versus a merchant's realised authorization rate (Section 10.3 applies the same tolerance both ways), or 2 percentage points versus 2% relative, so the routing rule and its test cannot be implemented unambiguously. *(Edited by the verifier: W3's text required both ambiguities, but credit item c3 is "and/or", so one is enough.)*
 - **Anchor** (design_v1.pdf p. 2): "For each transaction, the Routing Engine shall prefer the lowest-cost eligible acquirer unless doing so reduces the expected"
 - **Expected disposition:** `refinement_now` (also acceptable: `governance_decision`)
 - Linked approved decisions: AD-012
@@ -342,7 +353,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F12 · high (legacy major) · ambiguous_requirement
 - Location: §2.1; 10.3; 20; 22.1 (FR-7, D-11)
-- **Core insight (draft):** FR-7 does not define a 'duplicate' alert (any alert for the same patient, or the same patient and parameter or rule), so one valid reading suppresses a new or higher-priority alert raised within 5 minutes of a different one; the window semantics and clock are also unspecified, and the FR-7 test (identical alerts) passes under every reading.
+- **Core insight (draft):** FR-7 does not define a 'duplicate' alert (any alert for the same patient, or the same patient and parameter or rule), so one valid reading suppresses a new or higher-priority alert raised within 5 minutes of a different one, and nothing in the document, including the FR-7 acceptance test (which uses identical alerts), settles which reading applies. *(Edited by the verifier: W3's text required both the window/clock gap and the test gap, but credit item c4 is "test does not disambiguate (or window semantics/clock unspecified)". The draft now requires only that nothing, including the test, settles the reading.)*
 - **Anchor** (design_v1.pdf p. 2): "The Alert Service shall suppress duplicate alerts for the same patient within a 5-minute window, so that clinicians are not repeatedly"
 - **Expected disposition:** `refinement_now` (also acceptable: `governance_decision`)
 - Linked approved decisions: AD-011

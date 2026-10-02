@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/payments_orchestration/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "ce117b3d2f67e5295d120e7e1ac049054a149ee999f1e9da6c6d3c685b753bef"
+      "sha256": "eb211e586b89743bd2cbddef9cee9f563b8441884b3a6f3ee4f699c48ebec951"
     }
   },
   "scoring": {
@@ -549,7 +549,7 @@
       },
       "description": "NFR-4 requires RPO = 0 for authorized payments and ledger postings 'including on loss of an entire AWS region'. Section 20.2 and the Confirmed Decisions use Aurora Global Database, which replicates cross-region asynchronously with typical lag under 1 s. DynamoDB, MSK and Redis are not replicated cross-region at all.",
       "rationale": "Asynchronous replication cannot give zero data loss on regional failure: commits in the lag window are lost. A confirmed decision directly violates an NFR. The NFR-4 DR game-day acceptance criterion would fail, or would be met only by a planned switchover, which is not the scenario NFR-4 describes.",
-      "core_insight": "NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates across regions asynchronously (Aurora Global Database, lag under about 1 s) and does not replicate DynamoDB, MSK or Redis at all, so commits in the lag window are lost on regional failure and RPO cannot be zero.",
+      "core_insight": "NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates the payments and ledger database across regions asynchronously (Aurora Global Database, lag under about 1 s), so commits in the lag window are lost on regional failure and RPO cannot be zero.",
       "credit": {
         "mode": "substance",
         "items": [
@@ -1244,7 +1244,7 @@
       },
       "description": "FR-8: prefer the lowest-cost acquirer 'unless doing so reduces the expected authorization rate by more than 2%'. Section 10.3 applies the same 'tolerance (default 2)' both per transaction (difference in approval priors) and in a weekly merchant-level review of realised authorization rate.",
       "rationale": "The requirement supports incompatible readings. (a) A per-transaction rule comparing approval-probability priors, versus a merchant-level rule on the aggregate authorization rate over time. (b) 2 percentage points absolute versus 2% relative. These lead to different routing engines, different test cases and different commercial outcomes. The FR-8 acceptance test ('matches the expected choice') does not settle which reading applies.",
-      "core_insight": "FR-8's 'reduces the expected authorization rate by more than 2%' supports incompatible readings, per-transaction approval priors versus a merchant's realised authorization rate, and 2 percentage points versus 2% relative, and Section 10.3 applies the same tolerance both ways, so the routing rule and its test cannot be implemented unambiguously.",
+      "core_insight": "FR-8's 'reduces the expected authorization rate by more than 2%' is ambiguous in at least one way that changes routing outcomes, a per-transaction comparison of approval priors versus a merchant's realised authorization rate (Section 10.3 applies the same tolerance both ways), or 2 percentage points versus 2% relative, so the routing rule and its test cannot be implemented unambiguously.",
       "credit": {
         "mode": "substance",
         "items": [

@@ -207,6 +207,7 @@ def test_replay_refuses_run_dirs_lacking_data(cfgdir: Path, tmp_path: Path) -> N
     eff = json.loads((live / "effective_config.json").read_text(encoding="utf-8"))
     eff["agent"]["transport"] = "live"
     (live / "effective_config.json").write_text(json.dumps(eff), encoding="utf-8")
+    (live / "tools_list.jsonl").unlink(missing_ok=True)         # a run from before listings were logged
     res = invoke(["replay", str(live), "--config", str(cfgdir)])
     assert res.exit_code == 2 and "tool catalogue" in res.output
     # 4. prompts changed since the run

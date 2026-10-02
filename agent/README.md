@@ -42,7 +42,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `models.py` | Pydantic v2 copy of `spec/finding.schema.json` (Finding, DocAnchor, EvidenceItem, Recommendation, Provenance, LedgerEntry, RegistryEntry, SoundArea, Verdict, StopReason, ResearchLog / ResearchLogEntry, RunManifest, Review, plus `ManifestExtra` for REPRODUCIBILITY §8). The schema's `allOf` rules are validators | done |
 | `config.py` | Typed loader for `config/*.yaml`, CLI overrides, `EffectiveConfig.sha256()` | done |
 | `states.py`, `stop_rules.py` | Phase enum and transitions; `@register` stop-rule registry; closed `StopReasonCode` | done |
-| `orchestrator.py` | `Orchestrator.run`; `run_review` (run dir, gateways, manifest, background MCP warm-up started right after the tool stack, LLM preflight, exit-code mapping, `failure.json` for every failure after the run dir exists) and `resume_run` (ADR-009: drift check, ledger truncation, `SelfReplayGateway`, call IDs continued via `llm.gateway.prepare_resume` and `CallIds.advance_to`) | done |
+| `orchestrator.py` | `Orchestrator.run`; `run_review` (missing MCP key check before anything is built (INF-08), run dir, gateways, run limits attached to the LLM stack (`llm/runtime.py`), background MCP warm-up started right after the tool stack, LLM preflight before `models.retrieve` (NET-02), the schedule's `process:` faults around phases (new runs only), exit-code mapping, `failure.json` for every failure after the run dir exists) and `resume_run` (ADR-009: drift check, ledger truncation, `SelfReplayGateway`, call IDs continued via `llm.gateway.prepare_resume` and `CallIds.advance_to`) | done |
 | `context.py` | `RunContext`: the run state plus services, passed to every phase | done |
 | `state/run_state.py` | `RunState`, the serialisable checkpoint payload | done |
 | `state/evidence_ledger.py` | Append-only ledger with `EV-nnn` IDs, `ledger.jsonl` journal, `hydrate()` | done |
@@ -53,15 +53,16 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
 | `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done; envelope tool loop UNVERIFIED live on Opus |
 | `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
+| `llm/runtime.py` | Run limits every gateway honours (2026-10-02): `RunDeadline` (attempt timeout = min(`llm.timeout_s`, time left - reserve), LLM-05), `ContextGuard` (pre-send size estimate, LLM-10), `FirstCallNetwork` (NET-02); `attach_runtime`, `build_runtime` | done; live behaviour UNVERIFIED |
 | `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, `CallIds`, the layer stack and `build_tool_gateway`: `MCPToolGateway`, `ReplayGateway`, `RecordingGateway`, `FakeToolGateway`, `FaultInjectingGateway`, `SelfReplayGateway`, `PolicyToolGateway`, `LoggingToolGateway` | done (B, C); live MCP behaviour UNVERIFIED (auth header, cold starts) |
 | `tools/mcp_client.py` | Live MCP plumbing for `MCPToolGateway`: httpx2 + streamable-HTTP session factory with an error-status hook, failure classification, one owner task per server session, `find_layer` / `start_warm_up` | done (B) |
 | `tools/policy.py` | Pure policy checks for `PolicyToolGateway`: URL policy (`fetch_only_from_results`, added query strings), argument sanitiser (secrets, canaries, key-shaped tokens, bulk text), `scrub_args` | done (B) |
 | `tools/fault_apply.py` | Rule matching shared by the MCP and LLM fault injectors (seeded `flaky`, `offline` windows, latency) | done (B) |
-| `tools/faults.py` | Robustness fault-schedule model and loader | done |
+| `tools/faults.py` | Robustness fault-schedule model and loader (refuses malformed `process:` entries) | done |
 | `tools/cassette.py` | Cassette key, argument canonicalisation, `Redactor` | done |
-| `tools/sources.py` | `ExternalSource`; `extract_sources` (search hits, JSON records, fetched pages), `classify_authority`, `independence_key` | done (B) |
+| `tools/sources.py` | `ExternalSource`; `extract_sources` (search hits, JSON records, fetched pages), `classify_authority` (host lists from `config/url_policy.yaml` `authority:`, OVF-07), `independence_key` | done (B) |
 | `ingest/text.py` | Normalisation and the `[[PAGE n]]` marker | done |
-| `ingest/pdf.py` | `ingest()` (pdfplumber), `Document` (pages, sections, requirement index, PDF block) | done (heading detection is heuristic: numbered lists inside tables become extra sections) |
+| `ingest/pdf.py` | `ingest()` (pdfplumber), `Document` (pages, sections, requirement index, PDF block) | done (heading detection is heuristic; since 2026-10-02 section numbers must go forward, so numbered list items inside a section are no longer extra sections) |
 | `ingest/anchor.py` | `verify_anchor`, `verify_finding_anchors`, anchor-table rows | done |
 | `phases/ingest.py`, `verify.py`, `report.py` | Ingest (pdfplumber in a worker thread), anchor verification with one repair turn and registry-anchor settlement after `understand`, hydration, report assembly and invariant gate | done (C) |
 | `phases/understand.py`, `plan.py`, `assess.py`, `refine.py` | The model phases of workstream A | done (A) |
@@ -189,6 +190,24 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
 `ClaudeCodeGateway.call`, or one line per `list_tools()` call in `runs/<id>/tools_list.jsonl`
 (`{"listed_at", "tools": [{server, name, description, input_schema, capability}]}`, written by
 `LoggingToolGateway.list_tools`). Replay already reads both.
+
+### Runtime policies (2026-10-02; robustness LLM-05, NET-02, INF-08, LLM-10, OVF-07)
+
+- **Deadline inside model calls.** With the `deadline` rule active, every model attempt's timeout is
+  `min(llm.timeout_s, time left - reserve)` from the one run clock; the reserve is
+  `stop_rules.report_reserve_seconds` (verify + report) and, for research, also
+  `assess_reserve_seconds`. A cut attempt raises `LLMDeadlineError` and is not retried; no attempt
+  or retry starts with less than 10 s left. Research ends (`deadline`); a cut or skipped assess gives
+  a report that says "out of time before assessment" with no finding and a not-assessed verdict
+  (`not_fit` at confidence 0, shown as "Not assessed" in `report.md`; the schema has no such label);
+  a cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
+- **No network at start.** Connection-type errors on the first model call of a run get a 10 s window,
+  then exit 3 "no network"; `anthropic_api` runs its no-retry preflight before `models.retrieve`.
+- **Missing MCP key.** Live tool transport, servers enabled, key unset: exit 2 before any model call.
+- **Size before sending.** Input estimated at 3 characters per token (+2,000 tokens per native PDF
+  page) against 80 % of the context window; over it, `LLMContextTooLongError` (exit 2), never sent.
+  Errors raised before an attempt is made are logged to `llm.jsonl` with `sent: false` (for replay).
+- **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
 
 ### LLM backends (ADR-010)
 

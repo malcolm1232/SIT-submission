@@ -529,7 +529,7 @@
         ]
       },
       "F03": {
-        "core_insight": "NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates across regions asynchronously (Aurora Global Database, lag under about 1 s) and does not replicate DynamoDB, MSK or Redis at all, so commits in the lag window are lost on regional failure and RPO cannot be zero.",
+        "core_insight": "NFR-4 requires zero RPO even on loss of the whole AWS region, but the confirmed DR design replicates the payments and ledger database across regions asynchronously (Aurora Global Database, lag under about 1 s), so commits in the lag window are lost on regional failure and RPO cannot be zero.",
         "anchor_quote": "Recovery point objective for authorized payments and ledger postings shall be zero, including on loss of an entire AWS region.",
         "anchor_page": 3,
         "anchor_doc": "design_v1",
@@ -653,7 +653,7 @@
         }
       },
       "F12": {
-        "core_insight": "FR-8's 'reduces the expected authorization rate by more than 2%' supports incompatible readings, per-transaction approval priors versus a merchant's realised authorization rate, and 2 percentage points versus 2% relative, and Section 10.3 applies the same tolerance both ways, so the routing rule and its test cannot be implemented unambiguously.",
+        "core_insight": "FR-8's 'reduces the expected authorization rate by more than 2%' is ambiguous in at least one way that changes routing outcomes, a per-transaction comparison of approval priors versus a merchant's realised authorization rate (Section 10.3 applies the same tolerance both ways), or 2 percentage points versus 2% relative, so the routing rule and its test cannot be implemented unambiguously.",
         "anchor_quote": "For each transaction, the Routing Engine shall prefer the lowest-cost eligible acquirer unless doing so reduces the expected",
         "anchor_page": 2,
         "anchor_doc": "design_v1",

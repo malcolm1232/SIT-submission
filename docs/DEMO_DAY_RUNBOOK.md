@@ -74,10 +74,12 @@ The four most likely requests, with the exact file and lines each one touches. E
  3  max_tool_calls: 30
  4  max_research_iterations: 4
  5  max_input_tokens: 4000000
- 6  deadline_seconds: 540
+ 6  deadline_seconds: 3600
  7  no_marginal_gain_window: 2
  8  min_independent_sources: 2
 ```
+
+Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2026-10-02, sized for a high-effort run). The demo runs at 540 s through `config/profiles/demo.yaml` (`--profile demo`), which also sets per-stage effort and the verify + report reserve below the pinned lines; the pinned lines are unchanged by it.
 
 `config/tools.yaml` (server URLs live in `config/endpoints.yaml` so these line numbers stay fixed)
 ```yaml
@@ -149,9 +151,9 @@ Illustrative output (made-up content): `dra explain F-07` → "F-07 (risk, high,
 
 | Situation | What still works | Do this |
 |---|---|---|
-| SIT MCP servers down or key revoked, internet and Anthropic fine | Doc-only review of the new PDF, live (robustness INF-24, INF-07) | Run normally; the agent switches to doc-only and the report says "No external research was possible". Narrate it as designed behaviour |
+| SIT MCP servers down or key revoked, internet and Anthropic fine | Doc-only review of the new PDF, live (robustness INF-24, INF-07) | Run normally; the agent switches to doc-only and the report says "No external research was possible". Narrate it as designed behaviour. If `SIT_MCP_API_KEY` is not set at all, the run stops at once with exit 2 before any model call (INF-08): set the key, or rerun with `--no-tools` |
 | Venue network blocks the MCP hosts but not Anthropic | Same as above, or `--transport replay` for the SIT sample only | Prefer the live doc-only run of the new PDF |
-| No internet at all | **Cannot review an unseen PDF** (no local model; robustness NET-02). Can show recorded runs | Switch to the phone hotspot first. If that fails: `dra replay runs/demo_backup_sit_v1` and `dra replay runs/demo_backup_delta` (both stamped "replayed evidence"), walk through `explain` and the coverage map, and offer to run the new PDF as soon as connectivity returns and send the outputs to the SIT officer |
+| No internet at all | **Cannot review an unseen PDF** (no local model; robustness NET-02). The run exits 3 with "no network" within about 10 s of its first model call. Can show recorded runs | Switch to the phone hotspot first. If that fails: `dra replay runs/demo_backup_sit_v1` and `dra replay runs/demo_backup_delta` (both stamped "replayed evidence"), walk through `explain` and the coverage map, and offer to run the new PDF as soon as connectivity returns and send the outputs to the SIT officer |
 | Anthropic API down or rate-limited for a long time | Checkpoints up to the last completed stage | `dra resume <run_id>` when it recovers; meanwhile, show the replayed backups |
 
 Replay uses strict cassettes and the recorded `llm.jsonl`; it never calls a network and never invents output.
@@ -168,7 +170,7 @@ Each drill is rehearsed before the day with the fault-injection flag (`--faults 
 | 4 | **LLM-06 refusal** (a security-heavy section trips a classifier) | Progress line "assess §7: model declined (category: cyber); retrying with review framing" | Checks `stop_reason` before parsing (never `stop_details`, whose category may be `null`: the progress line then says "category: none given"); a mid-stream refusal's partial output is discarded; one retry with professional-review framing (our heuristic; the skill documents no prompt fix for Opus 5.5 false positives); if it persists, marks that section "model declined" and completes every other section. No fallback model in eval mode; on demo day, `--allow-fallback` is available but is recorded in the manifest and the report | "The model's safety classifier declined one section; the agent records it rather than guessing, and the rest of the review is complete." Do not toggle `--allow-fallback` mid-run | `--faults LLM-06`; L1 with the clinical-protocol fixture (INP-14b) |
 | 5 | **NET-01 network lost mid-run** | Tool and LLM calls fail as network errors; progress line "offline, checkpointed at stage research" | Checkpoint after every stage; ledger already holds earlier tool results; tools go doc-only; if the LLM stays unreachable, the run halts with a resumable checkpoint | Switch to the hotspot, then `dra resume <run_id>`: it continues from the last completed stage without repeating completed tool calls | `--faults NET-01`; physical drill: turn Wi-Fi off at about 200 s, back on after 2 min |
 
-Also drilled, lower priority: Ctrl-C then `resume` (OPS-04); `max_tokens` mid-JSON (LLM-07); a broken live code change (DEMO-13, §4).
+Also drilled, lower priority: Ctrl-C then `resume` (OPS-04; `--faults OPS-04` interrupts research, `--faults BEH-25` crashes assess with a partial report); `max_tokens` mid-JSON (LLM-07); a broken live code change (DEMO-13, §4).
 
 ## 8. Talking points for part (a), in order
 

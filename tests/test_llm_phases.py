@@ -331,11 +331,11 @@ async def test_plan_with_tools_and_approval(tmp_path: Path, cfg: EffectiveConfig
                                       input_schema={"type": "object"})], {})
     ctx = make_ctx(tmp_path, approval, {PhaseName.PLAN: [FakeResponse(parsed=plan_output(cfg.criteria.ids()))]},
                    tools=tools)
-    assert enabled_capabilities(ctx) == ["search", "scholarly"]                # browse's server is disabled
+    assert enabled_capabilities(ctx) == ["scholarly", "search"]                # sorted; browse's server is disabled
     await PlanPhase().run(ctx)
     ext = next(q for q in ctx.state.plan.questions if q.criterion_id == "claims_and_external_constraints")
     assert ext.capability == "search" and ctx.state.plan.approved is False
-    assert "search, scholarly" in brief_of(ctx.llm.calls[0])
+    assert "scholarly, search" in brief_of(ctx.llm.calls[0])
 
 
 async def test_plan_declined_falls_back_to_document_questions(tmp_path: Path, cfg: EffectiveConfig) -> None:

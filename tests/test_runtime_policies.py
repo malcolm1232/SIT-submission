@@ -628,3 +628,96 @@ def test_authority_hosts_come_from_config_without_the_sample_stack() -> None:
 def test_timeout_and_deadline_errors_keep_their_exit_codes() -> None:
     assert issubclass(LLMDeadlineError, LLMTimeoutError) and LLMDeadlineError("x").exit_code == 3
     assert LLMConnectionError("x").exit_code == 3 and LLMContextTooLongError("x").exit_code == 2
+
+
+# ============================================================================= replay support (W2 requests)
+
+
+async def test_unsent_errors_are_logged_with_their_call_id(tmp_path: Path, base: EffectiveConfig) -> None:
+    gw, runner, rd, _ = claude(tmp_path / "cc", base, cli_ok())
+    attach_runtime(gw, deadline(415)[0])
+    with pytest.raises(LLMDeadlineError):
+        await gw.call(req())
+    attach_runtime(gw, RuntimeLimits(context=ContextGuard(window_tokens=1_000)))
+    with pytest.raises(LLMContextTooLongError):
+        await gw.call(req(text="z" * 10_000))
+    entries = log(rd)
+    assert runner.calls == [] and [(e["call_id"], e["outcome"], e["sent"]) for e in entries] == [
+        ("llm-0001", "LLMDeadlineError", False), ("llm-0002", "LLMContextTooLongError", False)]
+    assert all(e["phase"] == "assess" and "purpose" in e for e in entries)
+
+    fake_rd = RunDir(tmp_path / "fake").create()
+    fake = FakeGateway({"assess": [FakeResponse(text="x")]}, run_dir=fake_rd)
+    attach_runtime(fake, deadline(415)[0])
+    with pytest.raises(LLMDeadlineError) as ei:
+        await fake.call(req())
+    assert ei.value.call_id == "llm-0001" and log(fake_rd)[0]["sent"] is False
+
+
+async def test_retry_refused_by_the_deadline_is_logged(tmp_path: Path, base: EffectiveConfig) -> None:
+    gw, _, rd, _ = claude(tmp_path, base, cli_err("API Error: 529 overloaded"))
+    gw.runtime = RuntimeLimits(deadline=RunDeadline(540, 120, 200, Elapsed(409)))
+    with pytest.raises(LLMDeadlineError):
+        await gw.call(req())
+    outcomes = [(e["attempt"], e["outcome"], e.get("sent", True)) for e in log(rd)]
+    assert outcomes == [(0, "LLMOverloadedError", True), (1, "LLMDeadlineError", False)]
+
+
+async def test_tool_listings_are_logged_for_replay(tmp_path: Path, base: EffectiveConfig,
+                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    from sit_review_agent.tools.gateway import FakeToolGateway, ToolSpec, build_tool_gateway
+
+    monkeypatch.setenv("SIT_MCP_API_KEY", "SECRETVALUE-not-a-key-12345")
+    spec = ToolSpec(server="mcp-internet-search", name="search", description="Web search SECRETVALUE-not-a-key-12345",
+                    input_schema={"type": "object"}, capability="search")
+    rd = RunDir(tmp_path / "run").create()
+    clock = FakeClock()
+    cfg = base.model_copy(update={"agent": base.agent.model_copy(update={"transport": Transport.FAKE})})
+    gw = build_tool_gateway(cfg, rd, clock=clock, base=FakeToolGateway([spec], {}, clock=clock))
+    listed = await gw.list_tools()
+    await gw.list_tools()
+    lines = JsonlWriter(rd.root / "tools_list.jsonl").read()
+    assert len(lines) == 2 and lines[0]["listed_at"] == "2026-10-02T09:00:00Z"
+    tool = lines[0]["tools"][0]
+    assert {k: tool[k] for k in ("server", "name", "capability")} == {
+        "server": "mcp-internet-search", "name": "search", "capability": "search"}
+    assert len(lines[0]["tools"]) == len(listed) and "SECRETVALUE" not in json.dumps(lines)
+
+
+def test_console_progress_reads_stderr_at_construction(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+    import sys
+
+    from sit_review_agent.progress import ConsoleProgress
+
+    buf = io.StringIO()
+    monkeypatch.setattr(sys, "stderr", buf)
+    ConsoleProgress(clock=FakeClock()).emit("run", "hello")
+    assert "hello" in buf.getvalue()
+
+
+async def test_k_index_reaches_the_manifest(tmp_path: Path) -> None:
+    import io
+
+    from sit_review_agent.orchestrator import RunRequest, run_review
+    from sit_review_agent.progress import NullProgress
+    from sit_review_agent.selftest import FIXTURE_DIR
+
+    cfg = load_config(overrides=ConfigOverrides(transport=Transport.FAKE, no_tools=True))
+    cfg = cfg.model_copy(update={"agent": cfg.agent.model_copy(update={"run_root": str(tmp_path / "runs")})})
+    out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=cfg, run_id="k2", plan_only=True,
+                                      k_index=2), clock=FakeClock(), progress=NullProgress(), stdout=io.StringIO())
+    manifest = json.loads((out.run_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert out.exit_code == 0 and manifest["extra"]["k_index"] == 2
+
+
+def test_plan_capabilities_do_not_depend_on_config_order(tmp_path: Path, base: EffectiveConfig) -> None:
+    from sit_review_agent.phases.plan import enabled_capabilities
+
+    caps = dict(base.tools.capabilities)
+    flipped = dict(reversed(list(caps.items())))
+    seen = []
+    for c in (caps, flipped):
+        cfg = base.model_copy(update={"tools": base.tools.model_copy(update={"capabilities": c})})
+        seen.append(enabled_capabilities(SimpleNamespace(tools=object(), config=cfg)))  # type: ignore[arg-type]
+    assert seen[0] == seen[1] == sorted(seen[0])

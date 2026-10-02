@@ -472,7 +472,8 @@ def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     rec = recs[0]
     assert oracles.exit_code(rec) == 2 and rec.report is None
     assert rec.gateway is not None and rec.gateway.calls == []                  # nothing reached the model
-    assert not rec.run_dir.llm_log.is_file() or llm_calls(rec) == []
+    logged = llm_calls(rec)                                                     # the refusal is logged, unsent
+    assert len(logged) == 1 and logged[0]["sent"] is False and logged[0]["outcome"] == "LLMContextTooLongError"
     fail = rec.failure
     assert fail["error"] == "LLMContextTooLongError" and fail["phase"] == "understand"
     assert "150 pages" in fail["message"] and "characters" in fail["message"] and "120,000 tokens" in fail["message"]

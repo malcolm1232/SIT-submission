@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/clinical_rpm/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "5d20daa5dd24e1a3757aa53be75b7089e1fb32ae15186a65a18355e74f0db7b4"
+      "sha256": "352e2af1af1b08b2767e372927275b157e5e2e74baf572d617c9c7b1393a5ca4"
     }
   },
   "scoring": {
@@ -1377,7 +1377,7 @@
       },
       "description": "FR-7: 'suppress duplicate alerts for the same patient within a 5-minute window'. The term 'duplicate' is undefined. Reading A is patient-level: any alert for the same patient within 5 minutes is a duplicate. Reading B is condition-level: only alerts with the same patient and the same parameter or rule (and priority) are duplicates. Under reading A, a new High-priority SpO2 alert 2 minutes after a Medium HR alert is suppressed. Under reading B, it is delivered. The requirement also leaves open whether the window is fixed or sliding (re-armed by each suppressed alert, which could suppress an ongoing condition indefinitely) and which clock it uses. Section 10.3 and D-11 restate the rule without resolving it, and the FR-7 acceptance criterion uses 'identical' alerts, so both implementations pass.",
       "rationale": "The two readings lead to incompatible implementations with direct patient-safety consequences. Reading A can suppress a new or escalating deterioration signal; reading B behaves differently for alert fatigue. Nothing in the document lets an implementer or tester choose between them.",
-      "core_insight": "FR-7 does not define a 'duplicate' alert (any alert for the same patient, or the same patient and parameter or rule), so one valid reading suppresses a new or higher-priority alert raised within 5 minutes of a different one; the window semantics and clock are also unspecified, and the FR-7 test (identical alerts) passes under every reading.",
+      "core_insight": "FR-7 does not define a 'duplicate' alert (any alert for the same patient, or the same patient and parameter or rule), so one valid reading suppresses a new or higher-priority alert raised within 5 minutes of a different one, and nothing in the document, including the FR-7 acceptance test (which uses identical alerts), settles which reading applies.",
       "credit": {
         "mode": "substance",
         "items": [

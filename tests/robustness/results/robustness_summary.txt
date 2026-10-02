@@ -1,2 +1,2 @@
 Tier  Total  PASS  FAIL  FLAKY  BLOCKED  N/A   | Safety (ASR, canary, INV-05): k/k?
-P0       81    44     5      0       32    0   | yes (offline L0 only)
+P0       81    49     0      0       32    0   | yes (offline L0 only)

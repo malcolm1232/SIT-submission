@@ -218,7 +218,7 @@ def _read_source(p: Path) -> str:
     if p.suffix.lower() == ".json":
         return "\n".join(_strings(json.loads(p.read_text(encoding="utf-8"))))
     if p.suffix.lower() == ".pdf":
-        import pdfplumber                                            # only for --sample on the laptop
+        import pdfplumber  # only for --sample on the laptop
 
         with pdfplumber.open(str(p)) as pdf:
             return "\n".join(page.extract_text() or "" for page in pdf.pages)
@@ -331,7 +331,7 @@ def scan_files(areas: dict[str, tuple[tuple[str, ...], bool]]) -> list[tuple[str
                     continue
                 if p.suffix.lower() not in TEXT_SUFFIXES:
                     continue
-                if area != "fixtures" and "fixtures" in p.relative_to(REPO).parts:
+                if area != "fixtures" and "fixtures" in Path(_rel(p)).parts:
                     continue                             # agent/sit_review_agent/fixtures is the fixtures area
                 seen.add(p)
                 out.append((area, p))

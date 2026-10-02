@@ -24,7 +24,10 @@ Usage: python3 spec/convert_answer_keys.py [--check] [--tier synthetic|blind] [-
                     so a synthetic-only run never opens a sealed S-heldout file (SEALING.md §6 rule 1).
   --verify-anchors  also check every flaw and approved-decision anchor quote against the PDF text produced by the
                     agent's own ingest (sit_review_agent.ingest.pdf.ingest): exact match and page. Needs the agent
-                    package installed (e.g. `. .venv/bin/activate`).
+                    package installed (e.g. `. .venv/bin/activate`). A key that comes out scored_run_ready is always
+                    checked this way, flag or not; if the agent package is missing, that key fails.
+  With --check, a canonical key on disk that says scored_run_ready true but differs from the regenerated key fails
+  (scored_run_ready is never set by hand).
 """
 from __future__ import annotations
 
@@ -509,6 +512,8 @@ def apply_drafts(d: dict | None, key: dict, report: dict, pending: set[str]) -> 
     if so.get("signed_by") and so.get("signed_on"):
         acc = ", ".join(p for p in KEY_PENDING_ORDER if p in set(so.get("accepted") or [])) or "nothing"
         note = ((note or "") + f" Owner sign-off by {so['signed_by']} on {so['signed_on']} accepted: {acc}.").strip()
+        if "canary_guid" in (so.get("accepted") or []) and not it.get("canary_embedded_in_documents"):
+            note += " canary_guid accepted as a key-only canary (not embedded in the documents; record for LC10/LC11)."
     return {"drafted_by": d["drafted_by"], "drafted_on": d["drafted_on"],
             "fields": [p for p in KEY_PENDING_ORDER if p in drafted and p in pending], "note": note}
 
@@ -570,9 +575,19 @@ def main() -> int:
         st = key["authoring_status"]
         if st.get("drafts") and not set(st["drafts"]["fields"]) <= set(st["pending"]):
             errs.append("authoring_status.drafts.fields must be a subset of pending")
-        if check_anchors:
+        # A key that becomes scoreable always has its anchors checked, with or without --verify-anchors (README §2.9).
+        if check_anchors or st["scored_run_ready"]:
             errs += [f"anchor: {e}" for e in verify_anchors(tier, item, key)]
         out = os.path.join(ROOT, "eval", tier, item, "answer_key.canonical.json")
+        if not write and os.path.exists(out):
+            # scored_run_ready is set only by this converter: a canonical key on disk that claims it but differs from
+            # the regenerated key was edited by hand or is stale.
+            with open(out, encoding="utf-8") as fh:
+                on_disk = json.load(fh)
+            if (on_disk.get("authoring_status") or {}).get("scored_run_ready") and \
+                    on_disk != json.loads(json.dumps(key, ensure_ascii=False)):
+                errs.append(f"{os.path.relpath(out, ROOT)} says scored_run_ready true but differs from the key "
+                            "regenerated from answer_key.json (hand edit or stale); re-run the converter")
         if write and not errs:
             with open(out, "w", encoding="utf-8") as fh:
                 json.dump(key, fh, indent=2, ensure_ascii=False)
