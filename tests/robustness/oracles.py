@@ -20,12 +20,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from robustness_harness import CANARIES, RunRecord
+
 from sit_review_agent.errors import AgentError, ExitCode
 from sit_review_agent.invariants import check_all, check_INV_08
 from sit_review_agent.report.explain import explain, format_explain
 from sit_review_agent.state.evidence_ledger import EvidenceLedger
-
-from robustness_harness import CANARIES, RunRecord
 
 #: Documented exit codes (``errors.ExitCode``; agent/README.md "State machine").
 EXIT_CODES = frozenset(int(c) for c in ExitCode)
@@ -174,8 +174,8 @@ def log_complete(rec: RunRecord) -> OracleResult:
             problems.append(f"llm.jsonl {e.get('call_id')}: usage without token counts")
     state = rec.state
     done = state.get("completed_phases", [])
-    ckpts = {p.stem.split("-", 1)[1] for p in rec.run_dir.checkpoints.glob("*.json")} if rec.run_dir.checkpoints.is_dir() \
-        else set()
+    ckpt_dir = rec.run_dir.checkpoints
+    ckpts = {p.stem.split("-", 1)[1] for p in ckpt_dir.glob("*.json")} if ckpt_dir.is_dir() else set()
     problems += [f"no checkpoint for completed phase {p}" for p in done if p not in ckpts]
     progress = rec.run_dir.progress_log.read_text(encoding="utf-8") if rec.run_dir.progress_log.is_file() else ""
     for p in done:

@@ -10,7 +10,10 @@ removed from the child environment unless ``inherit_api_key`` (billing goes to t
 login, ADR-010); errors are classified with the backend's own classifier. Every attempt starts a
 fresh CLI session, so a call's cost is that session's own ``total_cost_usd``; the code still
 subtracts the session's previously seen cumulative total, so a reused session would be costed
-correctly (``cost_basis`` in the log says which applied).
+correctly (``cost_basis`` in the log says which applied). A call's reported cost is the sum over all
+its attempts (failed attempts included); attempts that reported no cost (a timeout, a crash) are
+counted in ``raw["unknown_cost_attempts"]`` (or ``JudgeError.unknown_cost_attempts``) so the
+scorer's cost stop can charge a reserve for each.
 
 :class:`AnthropicJudge` calls the Messages API with ``ANTHROPIC_API_KEY`` (the SDK reads it; the value
 is never logged), streaming like the agent's ``AnthropicGateway``. Message Batches (50 % price,
@@ -157,6 +160,8 @@ class ClaudeCodeJudge(_Retrying):
         self.cwd.mkdir(parents=True, exist_ok=True)
         attempt = 0
         t_call = time.monotonic()
+        known_cost = 0.0          # summed over every attempt of this call, failed ones included
+        unknown_attempts = 0      # attempts that may have cost money but reported nothing (timeouts, crashes)
         while True:
             session_id = str(uuid.uuid4())
             t0 = time.monotonic()
@@ -164,21 +169,35 @@ class ClaudeCodeJudge(_Retrying):
             try:
                 data, info = await self._attempt(request, schema_json, session_id, env, entry)
             except _AttemptError as err:
+                c = err.entry.get("call_cost_usd")
+                if isinstance(c, int | float):
+                    known_cost += float(c)
+                else:
+                    unknown_attempts += 1
                 self.log.write({**entry, **err.entry, "outcome": "error", "error": str(err)[:500],
                                 "elapsed_s": round(time.monotonic() - t0, 3)})
                 if err.retry and attempt < self.max_retries:
                     await self._sleep(self.backoff(attempt))
                     attempt += 1
                     continue
-                raise JudgeError(f"{request.purpose}: {err}") from None
+                exc = JudgeError(f"{request.purpose}: {err}")
+                exc.cost_usd = known_cost if attempt + 1 > unknown_attempts else None  # type: ignore[attr-defined]
+                exc.unknown_cost_attempts = unknown_attempts  # type: ignore[attr-defined]
+                raise exc from None
             elapsed = time.monotonic() - t0
             self.log.write({**entry, **info, "outcome": "ok", "elapsed_s": round(elapsed, 3)})
-            return JudgeResult(data=data, model=info["served_model"], cost_usd=info["call_cost_usd"],
+            c = info["call_cost_usd"]
+            if c is None:
+                unknown_attempts += 1
+            total = known_cost + (c or 0.0) if (c is not None or known_cost > 0) else None
+            return JudgeResult(data=data, model=info["served_model"], cost_usd=total,
                                input_tokens=info["usage"].get("input_tokens", 0),
                                output_tokens=info["usage"].get("output_tokens", 0),
                                elapsed_s=time.monotonic() - t_call,
                                raw={"backend": self.backend, "session_id": session_id, "attempts": attempt + 1,
-                                    "num_turns": info.get("num_turns"), "cost_basis": info["cost_basis"]})
+                                    "num_turns": info.get("num_turns"), "cost_basis": info["cost_basis"],
+                                    "unknown_cost_attempts": unknown_attempts,
+                                    "cost_includes_failed_attempts": attempt > 0})
 
     def _cost(self, out: dict[str, Any], session_id: str) -> tuple[float | None, str]:
         total = out.get("total_cost_usd")

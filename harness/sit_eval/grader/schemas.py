@@ -26,6 +26,10 @@ _NAMES = {PASS_A: "pass_a_output.schema.json", PASS_B: "pass_b_output.schema.jso
 #: Keywords stripped from the LLM-facing schema (spec/README.md "LLM-facing schema" step 2).
 STRIP_KEYWORDS = frozenset({"minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum",
                             "exclusiveMaximum", "minItems", "maxItems", "pattern", "format"})
+#: Also dropped: the ``$schema`` meta keyword. ``claude -p --json-schema`` rejects the whole schema when it
+#: names draft 2020-12 ("no schema with key or ref"; live check 2026-10-02, Claude Code 2.1.287), and the
+#: matcher's judge schemas drop it too (``sit_eval/prompts.py``). Output validation still uses 2020-12.
+META_KEYWORDS = frozenset({"$schema"})
 
 
 @cache
@@ -60,7 +64,8 @@ def errors(name: str, data: Any) -> list[str]:
 
 
 def llm_facing(name: str) -> dict[str, Any]:
-    """Derived schema for the structured-output call: constraints in :data:`STRIP_KEYWORDS` removed.
+    """Derived schema for the structured-output call: constraints in :data:`STRIP_KEYWORDS` and the
+    :data:`META_KEYWORDS` removed.
 
     Property names that collide with a stripped keyword (none today) are kept, because stripping
     only happens on schema nodes, never inside ``properties`` maps.
@@ -69,7 +74,7 @@ def llm_facing(name: str) -> dict[str, Any]:
         if isinstance(node, dict):
             out = {}
             for k, v in node.items():
-                if not in_props and k in STRIP_KEYWORDS:
+                if not in_props and (k in STRIP_KEYWORDS or k in META_KEYWORDS):
                     continue
                 out[k] = strip(v, in_props=(k in ("properties", "$defs") and not in_props))
             return out

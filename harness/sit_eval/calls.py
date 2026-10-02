@@ -6,13 +6,18 @@ It adds what the frozen :class:`~sit_eval.judge.JudgeClient` interface leaves to
 * the output schema of each call kind (``schemas/judge_<kind>.schema.json``), re-validated here so a
   fake or a misbehaving client cannot slip an invalid answer through;
 * a result cache, ``<out_dir>/judge_results.jsonl``, keyed by the SHA-256 of everything the model
-  sees (model, effort, max_tokens, system, user, schema, sample index). Prompts are deterministic
-  given the seed, so re-running ``sit-eval score`` into the same ``--out`` after a stop or a crash
-  re-pays nothing that already succeeded;
+  sees (model, effort, max_tokens, system, user, schema, sample index) plus the client namespace
+  (the judge backend, e.g. ``claude_code``, or the client class such as ``FakeJudge``), so answers
+  of the plumbing-only fake judge are never reused by a live run written to the same ``--out``.
+  Prompts are deterministic given the seed, so re-running ``sit-eval score`` into the same
+  ``--out`` after a stop or a crash re-pays nothing that already succeeded;
 * the hard cost stop (``--max-cost-usd``): a call is refused (and the stop recorded) when the spend
   so far, plus the reserve of calls in flight, plus this call's reserve would cross the limit. The
   reserve is ``judge.max_budget_usd_per_call`` when set, else the high per-call estimate. A call
-  whose client reports no cost is charged its reserve.
+  whose client reports no cost is charged its reserve; a client that retried internally reports
+  the known cost of every attempt plus the number of attempts whose cost is unknown
+  (``raw["unknown_cost_attempts"]``, or ``JudgeError.unknown_cost_attempts`` on failure), and
+  each of those is charged one reserve.
 """
 
 from __future__ import annotations
@@ -41,9 +46,9 @@ def derive_seed(base: int, *parts: Any) -> int:
     return int(h[:12], 16)
 
 
-def request_key(req: JudgeRequest) -> str:
-    blob = json.dumps([req.model, req.effort, req.max_tokens, req.system, req.user, req.schema, req.sample_index],
-                      sort_keys=True, ensure_ascii=False)
+def request_key(req: JudgeRequest, namespace: str = "") -> str:
+    blob = json.dumps([namespace, req.model, req.effort, req.max_tokens, req.system, req.user, req.schema,
+                       req.sample_index], sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
@@ -82,9 +87,12 @@ class JudgeRunner:
     max_cost_usd: float | None = None
     reserve_usd: float = 0.15
     out_dir: Path | None = None
+    cache_namespace: str | None = None   # default: the client's ``backend`` attribute, else its class name
     records: list[CallRecord] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        if self.cache_namespace is None:
+            self.cache_namespace = str(getattr(self.judge, "backend", None) or type(self.judge).__name__)
         self._sem = asyncio.Semaphore(self.concurrency)
         self._inflight = 0.0
         self._inflight_n = 0
@@ -119,7 +127,7 @@ class JudgeRunner:
                   seed: int | None = None) -> dict[str, Any]:
         """Structured answer of one call (raises :class:`JudgeError` / :class:`BudgetStop`)."""
         req = self.request(kind, purpose, system, user, sample_index)
-        key = request_key(req)
+        key = request_key(req, self.cache_namespace or "")
         hit = self._cache.get(key)
         if hit is not None:
             self.records.append(CallRecord(kind, purpose, sample_index, True, True, 0.0, hit.get("model"), 0.0, key,
@@ -137,15 +145,18 @@ class JudgeRunner:
                     raise JudgeError(f"{purpose}: answer violates the {kind} schema: " + "; ".join(problems))
             except JudgeError as exc:
                 if not isinstance(exc, BudgetStop):
-                    self.budget.spent_usd += self.reserve_usd if self.max_cost_usd is not None else 0.0
-                    self.records.append(CallRecord(kind, purpose, sample_index, False, False, None, None,
+                    known = getattr(exc, "cost_usd", None)
+                    unknown = int(getattr(exc, "unknown_cost_attempts", 0 if known is not None else 1))
+                    self.budget.spent_usd += (known or 0.0) + self.reserve_usd * unknown
+                    self.records.append(CallRecord(kind, purpose, sample_index, False, False, known, None,
                                                    time.monotonic() - t0, key, seed, str(exc)[:300]))
                 raise
             finally:
                 self._inflight -= self.reserve_usd
                 self._inflight_n -= 1
             cost = res.cost_usd
-            self.budget.spent_usd += cost if cost is not None else self.reserve_usd
+            unknown = int((res.raw or {}).get("unknown_cost_attempts", 0))
+            self.budget.spent_usd += (cost or 0.0) + self.reserve_usd * max(unknown, 1 if cost is None else 0)
             self.records.append(CallRecord(kind, purpose, sample_index, True, False, cost, res.model,
                                            time.monotonic() - t0, key, seed))
             if self._cache_path is not None:
@@ -165,7 +176,7 @@ class JudgeRunner:
 
     def summary(self) -> dict[str, Any]:
         live = [r for r in self.records if not r.cached]
-        costs = [r.cost_usd for r in live if r.cost_usd is not None]
+        costs = [r.cost_usd for r in live if r.cost_usd is not None]   # failed calls count their known cost
         by_kind: dict[str, int] = {}
         for r in self.records:
             by_kind[r.kind] = by_kind.get(r.kind, 0) + 1

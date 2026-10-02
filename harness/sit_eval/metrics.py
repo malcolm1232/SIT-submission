@@ -136,6 +136,17 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
         out[pfx + "precision_adjudicated"] = M(
             Pa, ("N = 0 (no findings)" if N == 0 else f"{unadj} unmatched findings could not be adjudicated"),
             status="key_secondary" if setting == "strict" else "secondary", tp=TP, v=V, n=N)
+        if setting == "strict":
+            # Exploratory only: also credits unmatched findings that score PARTIAL (2) against a key flaw
+            # nobody matched, unless adjudicated DUPLICATE or HALLUCINATED. metrics.md does not define this
+            # case; the primary P_a counts VALID_UNPLANTED only (verifier E1 decision, 2026-10-02).
+            Vp = sum(1 for d in adj.values() if d.cls == "VALID_UNPLANTED" or (
+                d.partial_key_flaw_id is not None and d.cls not in ("DUPLICATE", "HALLUCINATED", "UNADJUDICATED")))
+            out["precision_adjudicated_partial_credit"] = M(
+                ratio(TP + Vp, N) if not unadj else None,
+                ("N = 0 (no findings)" if N == 0 else f"{unadj} unmatched findings could not be adjudicated"),
+                status="exploratory", tp=TP, v_or_partial=Vp, n=N,
+                partial_key_findings=sorted(d.finding_id for d in adj.values() if d.partial_key_flaw_id))
         out[pfx + "f1_strict"] = M(f1(Ps, R), "precision or recall undefined" if f1(Ps, R) is None else None)
         out[pfx + "f1_adjudicated"] = M(f1(Pa, R), "precision or recall undefined" if f1(Pa, R) is None else None)
         counts = Counter(d.cls for d in adj.values())
@@ -388,8 +399,7 @@ def _restraint_metrics(findings: list[Any], f2g: dict[str, str], adj: dict[str, 
     for u in units:
         uloc = key_location(u["location"])
         located = [f for f in findings if f.loc.overlaps(uloc)]
-        vu = [f.id for f in located if f.id not in f2g and adj.get(f.id) and adj[f.id].cls == "VALID_UNPLANTED"
-              and adj[f.id].basis != "partial_key_match"]
+        vu = [f.id for f in located if f.id not in f2g and adj.get(f.id) and adj[f.id].cls == "VALID_UNPLANTED"]
         if vu:
             removed.append({"unit": u["id"], "because": ", ".join(vu)})
             continue

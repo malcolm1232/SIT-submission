@@ -44,6 +44,9 @@ def score(
     granularity: str | None = typer.Option(None, "--granularity", help="pairwise (prereg) | per_flaw_batch "
                                                                        "(deviation)"),
     concurrency: int | None = typer.Option(None, "--concurrency", min=1),
+    adaptive_samples: bool | None = typer.Option(None, "--adaptive-samples/--no-adaptive-samples",
+                                                 help="Ask the third pairwise sample only when the first two "
+                                                      "disagree (same median; needs owner approval)."),
     grounding_judges: bool | None = typer.Option(None, "--grounding-judges/--no-grounding-judges",
                                                  help="G3 premise and citation support judges."),
     recommendation_judge: bool | None = typer.Option(None, "--recommendation-judge/--no-recommendation-judge"),
@@ -80,7 +83,8 @@ def score(
         grounding_judges=cfg.grounding.judges if grounding_judges is None else grounding_judges,
         recommendation_judge=(cfg.grounding.recommendation_judge if recommendation_judge is None
                               else recommendation_judge),
-        theta_q=cfg.grounding.theta_q, condition=condition)
+        theta_q=cfg.grounding.theta_q, condition=condition,
+        adaptive_samples=cfg.matcher.adaptive_third_sample if adaptive_samples is None else adaptive_samples)
     try:
         rin = load_review(run)
         key_data = load_key(key)

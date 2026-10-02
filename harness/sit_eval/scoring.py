@@ -46,6 +46,7 @@ class ScoreOptions:
     theta_q: float
     condition: str | None = None
     embedding_prefilter: bool = False
+    adaptive_samples: bool = False
 
 
 def file_sha256(path: Path) -> str:
@@ -74,12 +75,14 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
     k = min(opts.shortlist_k, N)
     shortlist_calls = G if k > 0 and N > 0 else 0
     pairs_min, pairs_max = n_overlap, sum(min(N, len(v) + k) for v in overlap.values())
+    adaptive = opts.adaptive_samples and opts.samples == 3
+    lo_samples = 2 if adaptive else opts.samples
     if opts.granularity == "per_flaw_batch":
         flaws_min = sum(1 for v in overlap.values() if v)
         flaws_max = sum(1 for v in overlap.values() if v or k > 0)
-        score_min, score_max = flaws_min * opts.samples, flaws_max * opts.samples
+        score_min, score_max = flaws_min * lo_samples, flaws_max * opts.samples
     else:
-        score_min, score_max = pairs_min * opts.samples, pairs_max * opts.samples
+        score_min, score_max = pairs_min * lo_samples, pairs_max * opts.samples
     adj_min, adj_max = max(0, N - G), N
     premise = N if opts.grounding_judges else 0
     cite = sum(1 for f in findings if any(e.get("supports_claim") for e in f.data.get("evidence", []))) \
@@ -90,6 +93,7 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
     conc = max(1, opts.concurrency)
     return {
         "judge": opts.judge_kind, "granularity": opts.granularity, "samples": opts.samples,
+        "adaptive_third_sample": adaptive,
         "findings_scored": N, "key_flaws": G, "location_overlap_pairs": n_overlap,
         "calls": {"shortlist": shortlist_calls, "pair_scoring": {"min": score_min, "max": score_max},
                   "adjudication": {"min": adj_min, "max": adj_max}, "premise_judge": premise,
@@ -126,6 +130,10 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
                         "(one call per pair); it needs the owner's approval before any scored run")
     if opts.samples != 3:
         warnings.append(f"samples = {opts.samples}: prereg matcher.pairwise_scoring says 3 samples, median")
+    elif opts.adaptive_samples:
+        warnings.append("adaptive third sample: the third pairwise sample is asked only when the first two "
+                        "disagree or one failed (the median of 3 is then unchanged); this reading of prereg "
+                        "'3 samples, median' needs the owner's approval before any scored run")
     if not opts.grounding_judges:
         warnings.append("grounding judges switched off: G3 and citation support metrics are null")
     if opts.judge_kind == "fake":
@@ -137,7 +145,8 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
         raise ValueError("a judge runner is required")
     matcher = Matcher(runner, MatcherSettings(granularity=opts.granularity, samples=opts.samples,
                                               shortlist_k=opts.shortlist_k, severity_epsilon=opts.severity_epsilon,
-                                              seed=opts.seed), doc=doc)
+                                              seed=opts.seed, adaptive_third_sample=opts.adaptive_samples),
+                      doc=doc)
     try:
         match = await matcher.run(rin.data, key, version, doc_text)
         finder = QuoteFinder(doc, opts.theta_q)
@@ -203,14 +212,14 @@ def _details(match: MatchResult, grounding: Any, seed: int) -> dict[str, Any]:
               "v2_status": g.data.get("v2_status"), "matched_finding_strict": s_g2f.get(g.id),
               "matched_finding_lenient": l_g2f.get(g.id), "best_score": best.get(g.id)} for g in match.flaws]
     pair_rows = [{"finding_id": p.finding_id, "flaw_id": p.flaw_id, "sources": p.sources, "samples": p.samples,
-                  "median": p.median, "capped_samples": p.capped,
+                  "median": p.median, "capped_samples": p.capped, "skipped_samples": p.skipped,
                   "rationales": [r.get("rationale") for r in p.raw if r]}
                  for p in sorted(match.pairs.values(), key=lambda p: (p.flaw_id, p.finding_id))]
 
     def adj_rows(adj: dict[str, Any]) -> list[dict[str, Any]]:
         return [{"finding_id": d.finding_id, "class": d.cls, "basis": d.basis, "duplicate_of": d.duplicate_of,
                  "related_flaw_id": d.related_flaw_id, "observation_id": d.observation_id,
-                 "rationale": d.rationale} for d in adj.values()]
+                 "partial_key_flaw_id": d.partial_key_flaw_id, "rationale": d.rationale} for d in adj.values()]
 
     # human review queue (prereg matcher.adjudication.human_review; human_labelling_protocol T6)
     must = [d.finding_id for d in adj_s.values() if d.cls in ("VALID_UNPLANTED", "HALLUCINATED")]

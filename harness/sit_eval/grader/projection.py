@@ -26,6 +26,8 @@ REDACTED = "[redacted]"
 #: Model IDs of any provider, as they appear in manifests and provenance blocks.
 MODEL_ID_RE = re.compile(
     r"\b(?:claude|gpt|gemini|o[1-9]|llama|mistral|command)-[a-z0-9][a-z0-9.\-]*\b", re.I)
+#: A Claude model ID split into family and version, e.g. ``claude-opus-5-5`` -> ("opus", "5", "5").
+_CLAUDE_ID_RE = re.compile(r"\bclaude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?\b", re.I)
 _ISO_TS = re.compile(r"^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$")
 _MIN_SCRUB_LEN = 6
 
@@ -94,7 +96,7 @@ def identifying_values(review: dict[str, Any]) -> set[str]:
         if isinstance(meta.get(k), str):
             vals.add(meta[k])
     manifest = review.get("run_manifest") or {}
-    for k in ("run_id", "git_commit", "config_sha256", "prompts_bundle_sha256", "taxonomy_sha256",
+    for k in ("run_id", "git_commit", "config_sha256", "prompts_bundle_sha256", "bundle_sha256", "taxonomy_sha256",
               "prereg_sha256", "condition", "fault_schedule_id", "git_branch", "effective_config_sha256",
               "pyproject_sha256", "backend", "requested_model", "served_model", "model"):
         for v in _walk_key(manifest, k):
@@ -105,6 +107,22 @@ def identifying_values(review: dict[str, Any]) -> set[str]:
                 vals.update(x for x in v if isinstance(x, str))
     for s in _strings(manifest):
         vals.update(m.group(0) for m in MODEL_ID_RE.finditer(s))
+    # Display forms of the agent's own Claude model and backend ("Opus 5.5", "Claude Code"), which the
+    # ID regex does not catch, and every runner flag on the command line (e.g. "--no-tools").
+    for s in _strings(manifest):
+        for m in _CLAUDE_ID_RE.finditer(s):
+            fam, ver = m.group(1).capitalize(), f"{m.group(2)}.{m.group(3)}" if m.group(3) else m.group(2)
+            vals.update({f"{fam} {ver}", f"Claude {fam} {ver}"})
+    if any(v == "claude_code" for v in _walk_key(manifest, "backend")):
+        vals.add("Claude Code")
+    for argv in _walk_key(manifest, "argv"):
+        if isinstance(argv, list):
+            vals.update(a.split("=", 1)[0] for a in argv if isinstance(a, str) and a.startswith("--"))
+    # The runner's stop detail is dropped from the projection; its value must not come back through
+    # agent-written text (e.g. "no_tools" copied into a limitation).
+    sr = review.get("stop_reason")
+    if isinstance(sr, dict) and isinstance(sr.get("detail"), str):
+        vals.add(sr["detail"])
     for prov in _walk_key(review, "provenance"):
         if isinstance(prov, dict):
             vals.update(str(prov.get(k)) for k in ("model", "prompt_hash") if prov.get(k))
@@ -121,7 +139,10 @@ def identifying_values(review: dict[str, Any]) -> set[str]:
     for d in meta.get("documents") or []:
         if isinstance(d, dict) and d.get("text_path"):
             vals.add(str(d["text_path"]))
-    return {v for v in vals if len(v) >= _MIN_SCRUB_LEN and not _ISO_TS.match(v)}
+    out = {v for v in vals if len(v) >= _MIN_SCRUB_LEN and not _ISO_TS.match(v)}
+    # Condition names are short ("B0", "FULL", "A5"); they are identifying at any length.
+    out.update(v for v in _walk_key(manifest, "condition") if isinstance(v, str) and len(v) >= 2)
+    return out
 
 
 def _value_pattern(values: set[str]) -> re.Pattern[str] | None:

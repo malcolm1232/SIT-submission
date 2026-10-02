@@ -23,6 +23,10 @@ matcher:
   shortlist_k: 3                 # prereg matcher.candidates: listwise LLM shortlist, up to 3 per flaw
   severity_epsilon: 0.01         # prereg matcher.assignment: score + 0.01 x primary severity weight
   embedding_prefilter: false     # prereg: optional; only if an embedding model is recorded at freeze
+  # adaptive_third_sample = ask sample 3 only when samples 1 and 2 disagree or one failed. The median of 3
+  # is then identical, so results do not change; saves up to a third of pair calls. Needs the owner's
+  # approval as a reading of prereg "3 samples, median" (verifier E1, 2026-10-02).
+  adaptive_third_sample: false
 
 grounding:
   theta_q: 0.90                  # prereg grounding.theta_q (null until the pilot calibration); default 0.90

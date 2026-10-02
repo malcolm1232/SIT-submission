@@ -124,7 +124,8 @@ def test_per_flaw_batch_mode(tmp_path):
 
 def test_adjudication_rules(tmp_path):
     # FND-001 matches F01; FND-002 also scores 3 on F01 -> deterministic DUPLICATE;
-    # FND-003 scores 2 on F02 (nobody matches F02 strictly) -> partial_key_match;
+    # FND-003 scores 2 on F02 (nobody matches F02 strictly) -> LLM adjudicated like any unmatched
+    # finding (verifier E1: no deterministic VALID_UNPLANTED), with partial_key_flaw_id = F02;
     # FND-004 -> LLM says it matches observation O01 -> VALID_UNPLANTED via the observation.
     findings = [make_finding(1, "1"), make_finding(2, "1"), make_finding(3, "2"), make_finding(4, "9")]
     key = _two_flaw_key()
@@ -137,14 +138,22 @@ def test_adjudication_rules(tmp_path):
     scores, fake, _ = run_pipeline(tmp_path, make_review(findings), key, responder_from(table))
     st = {r["finding_id"]: r for r in scores["adjudication"]["strict"]}
     assert st["FND-002"]["class"] == "DUPLICATE" and st["FND-002"]["basis"] == "deterministic_duplicate"
-    assert st["FND-003"]["class"] == "VALID_UNPLANTED" and st["FND-003"]["basis"] == "partial_key_match"
+    assert st["FND-003"]["class"] == "NON_SPECIFIC" and st["FND-003"]["basis"] == "llm"
+    assert st["FND-003"]["partial_key_flaw_id"] == "F02"
     assert st["FND-004"]["class"] == "VALID_UNPLANTED" and st["FND-004"]["observation_id"] == "O01"
+    assert st["FND-004"]["partial_key_flaw_id"] is None
     le = {r["finding_id"]: r for r in scores["adjudication"]["lenient"]}
     assert "FND-003" not in le                                   # matched to F02 under lenient matching
-    assert {c.purpose for c in fake.calls if c.purpose.startswith("adjudicate")} == {"adjudicate:FND-004"}
+    assert {c.purpose for c in fake.calls if c.purpose.startswith("adjudicate")} == {"adjudicate:FND-003",
+                                                                                     "adjudicate:FND-004"}
     adj_call = next(c for c in fake.calls if c.purpose == "adjudicate:FND-004")
     assert "- O01: webhook retention" in adj_call.user
-    assert scores["human_review_queue"]["all_valid_unplanted_and_hallucinated"] == ["FND-003", "FND-004"]
+    assert scores["human_review_queue"]["all_valid_unplanted_and_hallucinated"] == ["FND-004"]
+    m = scores["metrics"]
+    # strict P_a counts VALID_UNPLANTED only: (TP 1 + V 1) / 4; the partial finding is not credited
+    assert m["precision_adjudicated"]["value"] == 0.5 and m["precision_adjudicated"]["v"] == 1
+    assert m["precision_adjudicated_partial_credit"]["value"] == 0.75
+    assert m["precision_adjudicated_partial_credit"]["status"] == "exploratory"
 
 
 def test_credit_rules_and_pending_core_insight():

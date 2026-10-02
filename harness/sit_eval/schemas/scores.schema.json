@@ -94,7 +94,7 @@
             "properties": {"score": {"type": "number", "minimum": 2, "maximum": 3}}}},
   "AdjRows": {"type": "array", "items": {"type": "object", "required": ["finding_id", "class", "basis"],
               "properties": {"class": {"$ref": "#/$defs/AdjClass"},
-                             "basis": {"enum": ["llm", "deterministic_duplicate", "partial_key_match",
-                                                "still_valid_observation", "llm_failed"]}}}}
+                             "basis": {"enum": ["llm", "deterministic_duplicate", "still_valid_observation",
+                                                "llm_failed"]}}}}
  }
 }

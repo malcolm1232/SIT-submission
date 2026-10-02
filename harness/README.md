@@ -85,9 +85,13 @@ Ranges come from `--dry-run`; the shortlist decides where in the range a run lan
 - G1/G2 reuse the agent's normaliser and `verify_anchor`: character-level partial ratio (MM says
   token-level), exact match first, a section that cannot be resolved falls back to the page window.
   Doc-evidence quotes shorter than 8 tokens are allowed but must match exactly.
-- A strict-unmatched finding whose best score is PARTIAL (2) against a flaw nobody matched is labelled
-  VALID_UNPLANTED with basis `partial_key_match` (MM does not define this case); it never joins the
-  pooled key.
+- A strict-unmatched finding whose best score is PARTIAL (2) against a flaw nobody matched goes to the
+  LLM adjudicator like any unmatched finding (MM §13 pseudo-code); the flaw is recorded as
+  `partial_key_flaw_id`. Primary P_a counts VALID_UNPLANTED only; the exploratory
+  `precision_adjudicated_partial_credit` also credits such partial findings (unless DUPLICATE or
+  HALLUCINATED). MM does not define this case (verifier E1, 2026-10-02).
+- The result cache (`judge_results.jsonl`) is keyed by the client namespace too (`claude_code`,
+  `anthropic_api`, `FakeJudge`), so fake answers are never reused by a live run in the same `--out`.
 - Ties between findings for one flaw go to the agent's higher-ranked finding (a < 1e-4 weight term).
 - Medians use the lower median when a failed sample leaves an even count.
 - RJR_subst needs the optional recommendation judge; citation recall covers finding claims only (no claim

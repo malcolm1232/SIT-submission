@@ -31,7 +31,8 @@ def test_writer_produces_the_template_table(tmp_path: Path) -> None:
     by = {r["scenario_id"]: r for r in rows}
     assert all(r["status"] in STATUSES and r["tier"] == "P0" for r in rows)
     assert by["INF-03"]["status"] == "PASS" and by["INF-03"]["pass_hat_k"] == "1.00" and by["INF-03"]["k"] == "1"
-    assert by["INF-18"]["status"] == "FAIL" and by["INF-18"]["pass_hat_k"] == "0.00" and "seed 7" in by["INF-18"]["notes"]
+    inf18 = by["INF-18"]
+    assert inf18["status"] == "FAIL" and inf18["pass_hat_k"] == "0.00" and "seed 7" in inf18["notes"]
     for sid, cov in COVERAGE.items():                                    # rows the session did not run
         if sid in ("INF-03", "INF-18"):
             continue

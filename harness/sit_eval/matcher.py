@@ -7,7 +7,9 @@ Procedure:
    seed). The optional embedding prefilter is not implemented (prereg: used only if an embedding
    model is recorded at freeze).
 2. Pairwise 0-3 scores, ``samples`` per pair, median (lower median when a sample failed and an even
-   number remains). ``call_granularity: pairwise`` (prereg-faithful) makes one call per pair and
+   number remains). With ``adaptive_third_sample`` (off by default; needs the owner's approval) the
+   third sample is asked only when the first two disagree or one failed: the median of three is the
+   agreed value whenever two agree, so the result is identical and about a third of calls are saved. ``call_granularity: pairwise`` (prereg-faithful) makes one call per pair and
    sample; ``per_flaw_batch`` (a DEVIATION) makes one call per flaw and sample scoring all its
    candidates. A score of 3 with ``location_ok: false`` is capped at 2 (MATCH requires a
    compatible location, §2.2).
@@ -15,9 +17,12 @@ Procedure:
    lenient: >= 2), plus a tie-break below 1e-4 favouring the agent's higher-ranked finding.
 4. Unmatched findings: deterministic DUPLICATE when the finding scores >= 2 against a flaw that is
    assigned to another finding (§2.3 table); otherwise the LLM adjudicator gives one of the six
-   classes; a still-valid observation match is VALID_UNPLANTED. A strict-unmatched finding whose
-   best score is 2 against a flaw nobody matched is labelled VALID_UNPLANTED with basis
-   ``partial_key_match`` (correct but only partly stated; never a pooled-key candidate).
+   classes (metrics.md §13 ``adjudicator.classify`` for every unmatched finding); a still-valid
+   observation match is VALID_UNPLANTED. A strict-unmatched finding whose best score is 2 against a
+   flaw nobody matched is adjudicated by the LLM like any other; the flaw is recorded in
+   ``partial_key_flaw_id`` and feeds only the exploratory ``precision_adjudicated_partial_credit``.
+   (An earlier version labelled it VALID_UNPLANTED deterministically, which credited strict
+   precision with findings the strict rule rejects; verifier E1, 2026-10-02.)
 
 The prompts never contain the review's run id, model, condition, provenance or confidence.
 """
@@ -73,6 +78,7 @@ class PairScore:
     samples: list[int | None] = field(default_factory=list)
     raw: list[dict[str, Any]] = field(default_factory=list)
     capped: int = 0
+    skipped: int = 0                         # adaptive third sample: not asked because samples 1-2 agreed
 
     @property
     def scored(self) -> list[int]:
@@ -103,11 +109,12 @@ class Assignment:
 class Adjudication:
     finding_id: str
     cls: str
-    basis: str    # llm | deterministic_duplicate | partial_key_match | still_valid_observation | llm_failed
+    basis: str    # llm | deterministic_duplicate | still_valid_observation | llm_failed
     duplicate_of: str | None = None
     related_flaw_id: str | None = None
     observation_id: str | None = None
     rationale: str | None = None
+    partial_key_flaw_id: str | None = None   # strict only: median 2 (PARTIAL) against a flaw nobody matched
 
 
 @dataclass
@@ -219,6 +226,7 @@ class MatcherSettings:
     shortlist_k: int = 3
     severity_epsilon: float = 0.01
     seed: int = 0
+    adaptive_third_sample: bool = False   # with samples = 3: skip sample 3 when samples 1 and 2 agree
 
 
 class Matcher:
@@ -275,6 +283,15 @@ class Matcher:
 
         pair.samples = [None] * self.s.samples
         pair.raw = [{} for _ in range(self.s.samples)]
+        if self.s.adaptive_third_sample and self.s.samples == 3:
+            # The median of 3 equals the common value whenever two samples agree, so the third call
+            # cannot change the result; it is asked only on disagreement or a failed sample.
+            await asyncio.gather(one(0), one(1))
+            if pair.samples[0] is not None and pair.samples[0] == pair.samples[1]:
+                pair.skipped = 1
+                return
+            await one(2)
+            return
         await asyncio.gather(*(one(k) for k in range(self.s.samples)))
 
     async def score_flaw_batch(self, g: FlawView, cands: list[FindingView], pairs: dict[tuple[str, str], PairScore],
@@ -309,6 +326,16 @@ class Matcher:
                 p.capped += int(capped)
                 p.raw[k] = e
 
+        if self.s.adaptive_third_sample and self.s.samples == 3:
+            await asyncio.gather(one(0), one(1))
+            agreed = all(pairs[(f.id, g.id)].samples[0] is not None
+                         and pairs[(f.id, g.id)].samples[0] == pairs[(f.id, g.id)].samples[1] for f in cands)
+            if agreed:
+                for f in cands:
+                    pairs[(f.id, g.id)].skipped = 1
+                return
+            await one(2)
+            return
         await asyncio.gather(*(one(k) for k in range(self.s.samples)))
 
     # -- assignment
@@ -338,13 +365,18 @@ class Matcher:
                                 related_flaw_id=best_taken[1],
                                 rationale=f"scores {best_taken[0]:g} against {best_taken[1]}, already matched to "
                                           f"{taken[best_taken[1]]}")
-        if a.setting == "strict":
-            best_free = max(((pairs[(f.id, g.id)].median or 0.0, g.id) for g in flaws
-                             if (f.id, g.id) in pairs and g.id not in taken), default=(0.0, None))
-            if best_free[0] >= 2:
-                return Adjudication(f.id, "VALID_UNPLANTED", "partial_key_match", related_flaw_id=best_free[1],
-                                    rationale=f"PARTIAL ({best_free[0]:g}) against unmatched key flaw {best_free[1]}")
         return None
+
+    @staticmethod
+    def partial_free_flaw(f: FindingView, a: Assignment, flaws: list[FlawView],
+                          pairs: dict[tuple[str, str], PairScore]) -> str | None:
+        """Strict setting: the unassigned flaw this unmatched finding scores PARTIAL (2) against, if any."""
+        if a.setting != "strict":
+            return None
+        taken = a.flaw_to_finding
+        best = max(((pairs[(f.id, g.id)].median or 0.0, g.id) for g in flaws
+                    if (f.id, g.id) in pairs and g.id not in taken), default=(0.0, None))
+        return best[1] if best[0] >= 2 else None
 
     async def adjudicate_llm(self, f: FindingView, findings: list[FindingView], key: dict[str, Any],
                              key_summary: str, doc_text: str) -> dict[str, Any]:
@@ -432,6 +464,7 @@ class Matcher:
                     else:
                         d = Adjudication(fid, ans["class"], "llm", duplicate_of=ans.get("duplicate_of"),
                                          rationale=ans.get("rationale"))
+                    d.partial_key_flaw_id = self.partial_free_flaw(by_id[fid], assignments[setting], flaws, pairs)
                 adjudication[setting][fid] = d
         return MatchResult(findings=findings, flaws=flaws, candidates=candidates, shortlist=shortlist, pairs=pairs,
                            assignments=assignments, adjudication=adjudication, llm_adjudication=llm,

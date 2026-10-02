@@ -27,8 +27,8 @@ import oracles
 import pytest
 from robustness_harness import (
     CANARIES,
-    DOC,
     CANARY_MCP,
+    DOC,
     FETCH,
     SCHOLAR,
     SCHOLAR_QUERY,
@@ -666,8 +666,9 @@ def check_beh17(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert not [e for e in ledger_doc if EXTERNAL_QUOTE in (e["excerpt"] or "")]   # never recorded as doc text
     ledger = {e["evidence_id"]: e for e in r["evidence_ledger"]}
     f1 = next(f for f in r["findings"] if f["title"] == "E-mail plan cannot send peak-day reminders")
-    assert [e["source_type"] for e in f1["evidence"]] == ["external"]       # label taken from the ledger, not the model
-    assert all(e["source_type"] == ledger[e["evidence_id"]]["source_type"] for f in r["findings"] for e in f["evidence"])
+    assert [e["source_type"] for e in f1["evidence"]] == ["external"]       # label from the ledger, not the model
+    cited = [e for f in r["findings"] for e in f["evidence"]]
+    assert all(e["source_type"] == ledger[e["evidence_id"]]["source_type"] for e in cited)
     return Metric("external facts presented as doc evidence", 0, "0")
 
 
@@ -869,6 +870,6 @@ def test_robustness_scenario(case: Case, tmp_path: Path, control: RunRecord, res
             oracles.assert_oracles(rec)
             recs.append(rec)
         row.duration_s = sum(r.wall_s for r in recs)
-        row.artefacts = str(recs[0].run_dir.root)
+        row.artefacts = f"<pytest tmp>/runs/{recs[0].run_dir.root.name}"
         metric = case.check(recs, tmp_path, control)
         row.key_metric, row.value, row.threshold = metric.key_metric, metric.value, metric.threshold

@@ -66,8 +66,9 @@ def test_offline_cases_match_the_registry() -> None:
 
 def test_readme_table_lists_every_p0_scenario_with_its_coverage() -> None:
     readme = (HERE / "README.md").read_text(encoding="utf-8")
+    section = readme.split("## Coverage of the 81 P0 scenarios", 1)[1].split("\n## ", 1)[0]
     found: dict[str, list[str]] = {}
-    for line in readme.splitlines():
+    for line in section.splitlines():
         m = re.match(r"^\| ([A-Z]+-\d\d) \|", line)
         if m:
             found[m.group(1)] = [c.strip() for c in line.strip("|").split("|")]
@@ -101,3 +102,31 @@ def test_fixtures_hold_no_secret() -> None:
         for label, pat in SECRET_PATTERNS:
             assert not pat.search(text), (p, label)
         assert not re.search(r"X-API-Key\s*[:=]\s*\S{8,}", text, re.IGNORECASE), p
+
+
+@pytest.mark.parametrize("sid", ["INF-24", "INF-03"])
+def test_documented_cli_drill_runs_offline(sid: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The README's offline drill: `sit-review run <fixture> --transport fake --replay
+    tests/robustness/fixtures/cassettes --faults <ID>` (runs under tmp_path, not the repo's runs/)."""
+    import shutil
+
+    from typer.testing import CliRunner
+
+    from sit_review_agent.cli import app
+    from sit_review_agent.paths import config_dir
+    from sit_review_agent.selftest import FIXTURE_DIR
+
+    monkeypatch.setenv("SIT_MCP_API_KEY", "not-a-real-key-offline-drill")
+    cfg = tmp_path / "config"
+    shutil.copytree(config_dir(), cfg)
+    agent = cfg / "agent.yaml"
+    agent.write_text(agent.read_text(encoding="utf-8").replace("run_root: runs", f"run_root: {tmp_path / 'runs'}"),
+                     encoding="utf-8")
+    res = CliRunner().invoke(app, ["run", str(FIXTURE_DIR / "design.pages.txt"), "--config", str(cfg),
+                                   "--transport", "fake", "--replay", str(CASSETTES), "--faults", sid,
+                                   "--run-id", f"cli-{sid}"])
+    assert res.exit_code == 0 and "Traceback" not in res.output, res.output
+    rd = tmp_path / "runs" / f"cli-{sid}"
+    assert json.loads((rd / "manifest.json").read_text(encoding="utf-8"))["fault_schedule_id"] == sid
+    if sid == "INF-24":
+        assert "No external research was possible" in (rd / "report.md").read_text(encoding="utf-8")
