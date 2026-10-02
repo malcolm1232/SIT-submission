@@ -1,7 +1,6 @@
 # BEH-25 (S1, P0, L0): stage crash. Expected (scenarios.md, ADR-009 item 5): checkpoint plus a
 # partial report listing the completed stages, exit 4.
-# FAILING, NEEDS DECISION (tests/robustness/README.md): exit 4, state.json and failure.json (with
-# completed_phases) are written, but no partial report is produced.
+# The agent writes report.partial.md on a stage crash (verifier fix; research/audit/robustness_suite_editlog.md).
 id: BEH-25
 description: An exception is raised inside the assess stage.
 seed: 42

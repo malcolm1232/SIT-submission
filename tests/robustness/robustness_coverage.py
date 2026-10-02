@@ -213,11 +213,11 @@ COVERAGE: dict[str, Coverage] = {
                  "'Unresolved issues' / 'Evidence limitations' sections"),
     "BEH-24": _o("max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, "
                  "not-attempted list non-empty, report produced"),
-    "BEH-25": _o("exception in assess (process fault applied by the harness)", schedule=True,
-                 covered_by="test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed; "
-                            "states.TRANSITIONS (illegal transitions)",
-                 decision="exit 4, state.json and failure.json are written, but no partial report (ADR-009 item 5 "
-                          "and the scenario require one)"),
+    "BEH-25": _o("exception in assess (process fault applied by the harness): exit 4, checkpoint, failure.json, "
+                 "report.partial.md listing the completed stages and no finding, no report.json; resume completes. "
+                 "Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and "
+                 "ON_CAP only move forward (fixed by the verifier)", schedule=True,
+                 covered_by="test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed"),
     "BEH-27": _l("claims about the doc vs gold facts (judge)", "sit-review run <pdf>, judged by `sit-eval`"),
     "BEH-28": _o("oracle on every run: INV-03 schema plus every brief section rendered in report.md"),
     # ------------------------------------------------------------------------------------ DEMO

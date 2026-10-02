@@ -48,6 +48,10 @@ from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.state.run_state import FindingMeta, FindingRevision
 from sit_review_agent.states import PhaseName
 
+#: Fields that carry a finding's conclusion: refine may change them only with a stated reason or new
+#: evidence (robustness BEH-10, "no change without cause").
+CONCLUSION_FIELDS = ("kind", "severity", "disposition")
+
 
 def findings_json(drafts: list[FindingDraft]) -> str:
     """The current drafts as the model sees them (stable key order, so the brief is byte-stable)."""
@@ -94,9 +98,20 @@ class RefinePhase:
         meta = dict(ctx.state.finding_meta)
         new_ids = {f.id for f in revised}
         counts = {"revised": 0, "unchanged": 0, "added": 0, "withdrawn": 0}
-        for f in revised:
+        for i, f in enumerate(revised):
             if f.id in old:
                 diff = changed_fields(old[f.id], f)
+                flips = [k for k in CONCLUSION_FIELDS if k in diff]
+                new_ev = {c.evidence_id for c in f.evidence} - {c.evidence_id for c in old[f.id].evidence}
+                if flips and not new_ev and not (f.id in notes and notes[f.id].reason.strip()):
+                    # No change of conclusion without cause (robustness BEH-10): keep the earlier draft.
+                    what = ", ".join(f"{k} {diff[k][0]} -> {diff[k][1]}" for k in flips)
+                    ctx.emit(f"{f.id}: {what} rejected (no revision reason, no new evidence)", "warn")
+                    revised[i], m, diff = old[f.id], meta.get(f.id), {}
+                    if m is not None:
+                        meta[f.id] = m.model_copy(update={"history": [*m.history, FindingRevision(
+                            phase=phase, call_id=result.call_id, note=f"rejected: {what} without a revision "
+                            "reason or new evidence (BEH-10); earlier draft kept")]})
                 if not diff:
                     counts["unchanged"] += 1
                     continue

@@ -46,6 +46,7 @@ from robustness_harness import (
 from sit_review_agent.paths import config_dir
 from sit_review_agent.phases.research import MAX_TOOL_TEXT_CHARS
 from sit_review_agent.selftest import FIXTURE_QUERY, FIXTURE_URL
+from sit_review_agent.states import ON_CAP, PHASE_ORDER, TRANSITIONS
 from sit_review_agent.tools.gateway import PolicyToolGateway
 from sit_review_agent.tools.mcp_client import find_layer
 
@@ -292,6 +293,7 @@ def check_inf24(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert not external(rec) and rec.outbound == []
     assert all(e["source_type"] != "external" for f in r["findings"] for e in f["evidence"])
     assert "No external research was possible" in md(rec)
+    assert r["stop_reason"]["code"] == "tool_failure", r["stop_reason"]    # never "sufficient_evidence" with none
     research_s = rec.state["budget"]["phase_seconds"]["research"]
     assert research_s < 150, research_s                                     # no 4 x 150 s serial waits
     return Metric("external citations", 0, "0; research < 150 s")
@@ -657,6 +659,52 @@ def _mislabel(p: dict[str, Any]) -> None:
                                               "supports_claim": True, "derived_from": []})
 
 
+def _flip(p: dict[str, Any]) -> None:
+    f = finding(p, "FND-001")
+    f["severity"], f["confidence"] = "low", 0.3                             # no new evidence ...
+    p["revisions"] = [r for r in p["revisions"] if r["finding_id"] != "FND-001"]   # ... and no reason
+
+
+def check_beh10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    rec = recs[0]
+    r = ok(rec)
+    before = next(f for f in control.report["findings"] if f["id"] == "FND-001")
+    after = next(f for f in r["findings"] if f["id"] == "FND-001")
+    assert before["severity"] != "low" and after["severity"] == before["severity"]   # the flip is rejected
+    history = rec.state["finding_meta"]["FND-001"]["history"]
+    assert any(h["phase"] == "refine" and h["note"].startswith("rejected: severity") for h in history), history
+    assert titles(rec) == titles(control)
+    return Metric("unexplained severity flips accepted", 0, "0; rejection in the change log")
+
+
+REVERSAL = "Replace the campus design system with a bespoke component library for the booking front end."
+
+
+def _reverse_decision(p: dict[str, Any]) -> None:
+    """FND-002 (which preserves approved decision AD-001) now recommends reversing it, unlabelled."""
+    f = finding(p, "FND-002")
+    f.update(kind="risk", category="unsupported_or_incorrect_claim", severity="medium",
+             disposition="refinement_now", no_change_rationale=None, affected_decisions=[])
+    f["recommendation"] = {
+        "issue": "The campus design system limits the booking screens unnecessarily.",
+        "rationale": "A bespoke component library would let the team move faster on new screens.",
+        "expected_benefit": "Faster delivery of new booking screens for students.",
+        "change_summary": REVERSAL, "objective_refs": ["Reserve study rooms"],
+        "supporting_evidence_ids": [e["evidence_id"] for e in f["evidence"]], "verification": None}
+
+
+def check_beh12(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    rec = recs[0]
+    r = ok(rec)
+    f2 = next(f for f in r["findings"] if f["id"] == "FND-002")
+    assert f2["recommendation"]["change_summary"] == REVERSAL and f2["affected_decisions"] == []
+    hit = [d for d in r["research_log"]["degradations"]
+           if d["event"].startswith("FND-002's recommendation appears to reverse approved decision AD-001")]
+    assert len(hit) == 1 and any(hit[0]["id"] in lim["degradation_ids"] for lim in r["limitations"])
+    assert not [d for d in degs(control) if "appears to reverse" in d]      # no false alarm on the control run
+    return Metric("unlabelled reversals of an approved decision caught", 1, "all caught (L0 lexical check)")
+
+
 def check_beh17(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     rec = recs[0]
     r = ok(rec)
@@ -724,6 +772,23 @@ def check_beh24(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert not_attempted != "none" and "RQ-" in not_attempted, impact
     assert len(rec.outbound) <= 3 and r["research_log"]["unanswered_questions"]
     return Metric("not-attempted questions listed", not_attempted, "non-empty")
+
+
+def check_beh25(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    rec = recs[0]
+    assert oracles.exit_code(rec) == 4 and rec.report is None and rec.failure["resumable"]
+    assert rec.failure["phase"] == "assess" and rec.failure["partial_report"] == "report.partial.md"
+    assert sorted(p.name for p in rec.run_dir.checkpoints.iterdir())[-1] == "04-research.json"
+    partial = (rec.run_dir.root / "report.partial.md").read_text(encoding="utf-8")
+    assert "Completed stages: ingest, understand, plan, research" in partial and "Crashed stage: assess" in partial
+    assert "not a review" in partial and not [t for t in titles(control) if t in partial]   # no unverified finding
+    # The transition table only moves forward: no edge such as report -> research exists to take.
+    assert all(PHASE_ORDER.index(b) == PHASE_ORDER.index(a) + 1 for a, b in TRANSITIONS.items() if b is not None)
+    assert all(PHASE_ORDER.index(b) > PHASE_ORDER.index(a) for a, b in ON_CAP.items())
+    again = resume(rec)                                                     # process faults are not re-applied
+    oracles.assert_oracles(again)
+    assert oracles.exit_code(again) == 0 and titles(again) == titles(control)
+    return Metric("partial report on a stage crash", "report.partial.md, exit 4", "partial report + exit 4")
 
 
 def check_beh28(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -847,12 +912,17 @@ CASES: list[Case] = [
     Case("BEH-03", [sc("BEH-03", research=[answer(stop=True, only=[]), *two_source_research()])], check_beh03),
     Case("BEH-04", [sc("BEH-04", patches={"assess": _fabricate, "refine": _fabricate})], check_beh04),
     Case("BEH-06", [sc("BEH-06")], check_beh06),
+    Case("BEH-10", [sc("BEH-10", patches={"refine": _flip})], check_beh10,
+         notes="L0 half: refine flips a severity with no reason and no new evidence"),
+    Case("BEH-12", [sc("BEH-12", patches={"assess": _reverse_decision, "refine": _reverse_decision})], check_beh12,
+         notes="L0 half: verify discloses an unlabelled reversal of an approved decision"),
     Case("BEH-17", [sc("BEH-17", patches={"assess": _mislabel, "refine": _mislabel})], check_beh17),
     Case("BEH-20", [sc("BEH-20", patches={"assess": _critical, "refine": _critical, "report": _fit})], check_beh20),
     Case("BEH-23", [sc("BEH-23", faults="INF-03")], check_beh23,
          notes="run under the INF-03 schedule (any fault scenario)"),
     Case("BEH-24", [sc("BEH-24", stop_rules={"max_tool_calls": 3}, research=beh24_research(),
                        patches={"plan": _third_question})], check_beh24),
+    Case("BEH-25", [sc("BEH-25", faults="BEH-25")], check_beh25),
     Case("BEH-28", [sc("BEH-28")], check_beh28),
     Case("DEMO-01", [demo01_config], check_demo01),
     Case("DEMO-02", [sc("DEMO-02", overrides={"max_tool_calls": 5}, research=demo02_research())], check_demo02),

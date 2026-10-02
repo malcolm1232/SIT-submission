@@ -42,7 +42,8 @@ How the loop works (decisions the docs left open are marked *decision*):
   except ``deadline``, which ends at once to keep the report reserve); all active rules plus the
   always-on iteration cap after every iteration. *Decision:* the model's ``stop_requested`` is
   honoured only when no external question is still ``open`` and at least one tool call was made
-  (BEH-03); it is reported as ``sufficient_evidence`` with detail ``model_stop_vote``. When every
+  (BEH-03); it is reported as ``sufficient_evidence`` with detail ``model_stop_vote`` (``tool_failure``
+  or ``no_marginal_gain`` when no external evidence was gathered). When every
   external question is ``answered`` the phase stops with ``sufficient_evidence`` /
   ``all_questions_answered`` even if that rule is not active.
 * Degradations: no tools / tools all down / auth cascade -> ``tool_unavailable`` ("No external
@@ -205,6 +206,11 @@ class _ResearchRun:
                 still_open = [q.id for q in external if q.status == "open"]
                 if not still_open and self.calls_this_phase > 0:
                     stop = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "model_stop_vote")
+                    if not any(e.source_type is SourceType.EXTERNAL for e in ctx.ledger):
+                        # Zero external evidence is never "sufficient": every call failed, or none found anything.
+                        failed = not any(c.status is ToolCallStatus.OK for c in state.tool_calls)
+                        stop = StopReason.of(StopReasonCode.TOOL_FAILURE if failed else StopReasonCode.NO_MARGINAL_GAIN,
+                                             "model_stop_vote with no external evidence")
                 else:
                     ctx.emit(f"model asked to stop; ignored ({len(still_open)} question(s) never attempted, "
                              f"{self.calls_this_phase} tool call(s) so far)", "warn")

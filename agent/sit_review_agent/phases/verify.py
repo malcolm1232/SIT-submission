@@ -66,6 +66,7 @@ from sit_review_agent.llm.outputs import (
 )
 from sit_review_agent.llm.prefix import start_conversation
 from sit_review_agent.models import (
+    DecisionRelation,
     DegradationType,
     DocAnchor,
     DocumentRole,
@@ -78,6 +79,7 @@ from sit_review_agent.models import (
     ReassessmentStatus,
     Recommendation,
     RegistryEntry,
+    RegistryEntryType,
     ReviewMode,
     SoundArea,
     SourceType,
@@ -101,6 +103,36 @@ _NORM_WS = re.compile(r"\s+")
 #: Placeholder text a hollow answer carries instead of content (robustness LLM-09).
 _PLACEHOLDER = re.compile(r"^\W*(tbd|tba|tbc|todo|to do|n/?a|none|null|placeholder|lorem ipsum\b.*|x{3,})?\W*$",
                           re.IGNORECASE)
+
+
+#: BEH-12 L0 check: a change that undoes something, and the content words of a decision.
+_REVERSAL = re.compile(r"\b(replac\w*|remov\w*|drop|dropping|abandon\w*|retir\w*|revers\w*|eliminat\w*|"
+                       r"stop using|get rid of|instead of|(?:switch\w*|migrat\w*|mov\w*) (?:away )?from)\b",
+                       re.IGNORECASE)
+_CONTENT_WORD = re.compile(r"[a-z][a-z0-9-]{3,}")
+_COMMON_WORDS = frozenset({"with", "that", "this", "from", "into", "will", "uses", "using", "used", "built", "based",
+                           "shall", "must", "should", "have", "each", "only", "their", "which", "when", "where"})
+
+
+def unlabelled_conflicts(f: Finding, registry: Sequence[RegistryEntry]) -> list[str]:
+    """Approved decisions that ``f``'s recommended change appears to reverse without an
+    ``affected_decisions`` ``challenges`` label (robustness BEH-12, L0): the change summary uses a
+    reversal verb and at least three of the decision's content words (all of them if it has fewer).
+    Lexical, so it is disclosed, never used to drop a finding; paraphrased conflicts are the L1 judge's."""
+    if f.recommendation is None:
+        return []
+    change = f.recommendation.change_summary.lower()
+    if not _REVERSAL.search(change):
+        return []
+    words = set(_CONTENT_WORD.findall(change))
+    labelled = {a.registry_id for a in f.affected_decisions if a.relation is DecisionRelation.CHALLENGES}
+    out = []
+    for e in registry:
+        key = set(_CONTENT_WORD.findall(e.statement.lower())) - _COMMON_WORDS
+        if e.type is RegistryEntryType.APPROVED_DECISION and e.registry_id not in labelled and key \
+                and len(key & words) >= min(3, len(key)):
+            out.append(e.registry_id)
+    return out
 
 
 def _norm(text: str) -> str:
@@ -453,6 +485,12 @@ class VerifyPhase:
             if old != new:
                 metas.pop(old, None)
         state.finding_meta = metas
+        for f in state.findings:                       # BEH-12: undeclared reversal of an approved decision
+            for rid in unlabelled_conflicts(f, ctx.registry.entries()):
+                e = ctx.registry.get(rid)
+                _degrade(ctx, f"{f.id}'s recommendation appears to reverse approved decision {rid} ({e.doc_ref}) "
+                         "without a 'challenges' label", "the conflict is not declared and not backed by the two "
+                         "evidence items a challenge needs; check it against the decision before acting on it")
 
         # ---- 6. sound areas
         sound: list[SoundArea] = []
