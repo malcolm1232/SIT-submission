@@ -46,7 +46,8 @@ The write-up says this plainly: results are statistically reproducible, not bitw
 
 - Every scored output (findings, verdict, triage, coverage map, report fields) is produced through `output_config.format` / `client.messages.parse()` against the versioned schema. The report document itself is rendered from those fields by a Jinja template; the model never writes the report structure.
 - Constraints that structured outputs cannot express (at most 3 locations per finding, quotes of at least 8 tokens, non-empty rationale) are checked in code after parsing.
-- `stop_reason: "max_tokens"` is detected before parsing. Truncated JSON is never repaired into a shorter valid object; the call is retried with a higher `max_tokens` or the work is split (robustness LLM-07).
+- `stop_reason: "max_tokens"` is detected before parsing. Truncated JSON is never repaired into a shorter valid object; the call is retried once, with a higher `max_tokens` when one exists, else at the same cap (robustness LLM-07).
+  A second truncation is not retried and the work is not split: the stage degrades like a deadline cut, the report discloses "the <stage> answer was truncated twice at the output cap", and the manifest lists both calls in `extra.model.truncations` (an unassessed design is `not_assessed`).
 - Native citations are not used for scored outputs because they cannot be combined with `output_config.format`.
 
 ## 6. Recorded calls and strict replay

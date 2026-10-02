@@ -301,6 +301,21 @@ async def test_truncation_retry_at_and_below_the_output_cap(tmp_path: Path, cfg:
     assert twice.state.declined_sections == [] and len(twice.state.llm_calls["understand"]) == 2
 
 
+async def test_a_call_truncated_twice_is_neither_declined_nor_cut(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """The phases tell the three no-output outcomes apart by the PhaseCall flags."""
+    from sit_review_agent.llm.outputs import UnderstandOutput
+    from sit_review_agent.phases._model_calls import call_model
+
+    ctx = make_ctx(tmp_path, cfg, {PhaseName.UNDERSTAND: [FakeResponse(stop_reason="max_tokens")] * 2})
+
+    def render(*, reframed: bool, schema_error: str) -> Any:
+        return ctx.prompts.render("understand.md", criteria=[], documents=[], review_mode="full",
+                                  reframed=reframed, schema_error=schema_error)
+
+    call = await call_model(ctx, PhaseName.UNDERSTAND, render, UnderstandOutput)
+    assert call.result is None and call.truncated and not call.cut and not call.declined
+
+
 def test_configured_output_cap_is_the_model_maximum_and_fits_the_context_margin(cfg: EffectiveConfig) -> None:
     """config/agent.yaml max_tokens is 128000 (the live assess used 63,392 of the earlier 64,000).
     The pre-send size check (LLM-10) allows input up to 80 % of the context window and does not

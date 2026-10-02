@@ -30,7 +30,10 @@ sit-review selftest
 the run jumps to `verify` (or from `research` to `assess`), so a report is still produced and
 the cap is recorded as a degradation. After every completed phase it writes an atomic checkpoint
 (ADR-009) and prints a progress line. Errors are typed, and each maps to an exit code:
-0 ok, 2 usage, 3 LLM unavailable, 4 stage crash, 5 resume drift, 130 interrupted.
+0 ok, 2 usage, 3 LLM unavailable, 4 stage crash, 5 resume drift, 130 interrupted. A run that
+degrades and discloses it (a deadline cut, an answer truncated twice at the output cap, a model
+that declined a stage) still writes its report and exits 0 with manifest outcome
+`completed_degraded`.
 
 ## Module map
 
@@ -200,7 +203,8 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   or retry starts with less than 10 s left. Research ends (`deadline`); a cut or skipped assess gives
   a report that says "out of time before assessment" with no finding and the verdict `not_assessed`
   (confidence 0, shown as "Not assessed (out of time before assessment)" in `report.md`); the same
-  verdict is reported when the model declines the assess call twice (LLM-06). `not_assessed` is set by
+  verdict is reported when the assess answer is truncated twice at the output cap (LLM-07) and when the
+  model declines the assess call twice (LLM-06), each with its own reason. `not_assessed` is set by
   code only: the model's output schema offers `fit`, `fit_with_conditions` and `not_fit`
   (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
 - **A deadline that does not fit its reserves is announced.** `--deadline` and a profile each set one
@@ -216,11 +220,20 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
 - **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
 - **Output cap (2026-10-03).** `config/agent.yaml` `max_tokens` is 128000, the model's maximum and the
   largest value `config.py` accepts. A truncated answer gets one retry: at double the cap when the
-  configured value is below 128000, else at the same cap; a second truncation ends the run with a typed,
-  resumable exit 3 (`failure.json` names the stage; no `report.md`, no partial report), never a repaired
-  object (LLM-07; `tests/robustness/test_robustness_regressions.py`, "truncates twice"). Known limitation:
-  a second truncation is not recovered by splitting the stage, and `sit-review resume` repeats the same
-  call at the same cap. `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+  configured value is below 128000, else at the same cap. A second truncation is never retried again and
+  never repaired (LLM-07): the stage degrades like a deadline cut (Session 4 ruling). The degradation
+  "the <stage> answer was truncated twice at the output cap" names the cap and both call IDs, and the
+  stage continues with its deadline fallback: understand without intent or registry, plan with one
+  document-only question per criterion, assess with no findings and the verdict `not_assessed` ("Not
+  assessed (answer truncated twice at the output cap)"), refine with the assess findings kept unrefined.
+  The run writes its report and exits 0 (`completed_degraded`); the manifest lists both calls in
+  `extra.model.truncations`, and their tokens and cost are in its totals
+  (`tests/robustness/test_robustness_regressions.py` and `tests/test_truncation_fallback.py`). Research,
+  verify and report make no truncation retry: one truncation already ends research (`error`,
+  `max_tokens`), skips the anchor repair, or gives the verdict by rule. Known limitation: a second
+  truncation is not recovered by splitting the stage, so an assessment that does not fit the cap stays
+  unassessed; `sit-review resume` on such a run serves the finished report and makes no model call, and a
+  rerun is a new run that may or may not fit (answer length varies between calls). `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
   (checked on Haiku with Claude Code 2.1.287: a cap of 256 was enforced). When the cap is hit, `claude -p`
   does not report `stop_reason: max_tokens`: after its own recovery turns it returns an error result
   ("... exceeded the N output token maximum ..."), which the gateway types as `LLMTruncatedError` and does
