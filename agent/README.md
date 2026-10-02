@@ -45,6 +45,8 @@ the cap is recorded as a degradation. After every completed phase it writes an a
 | `llm/gateway.py` | `LLMGateway` protocol, `LLMRequest` / `LLMResult` / `Usage`, `FakeGateway` (done); `AnthropicGateway`, `FaultInjectingLLMGateway` (stubs) | partial, A/B |
 | `llm/outputs.py` | Structured-output draft types for each phase (`UnderstandOutput` … `ReportOutput`, `FindingDraft`) | done (types); `llm_facing_schema` stub, A |
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
+| `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, `--session-id`/`--resume` conversations, retry policy, `llm.jsonl` logging, `preflight` | done |
+| `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
 | `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, layer stack and `build_tool_gateway`. `ReplayGateway`, `RecordingGateway`, `FakeToolGateway` and `LoggingToolGateway` are done; `MCPToolGateway`, `PolicyToolGateway`, `FaultInjectingGateway` and `SelfReplayGateway` are stubs | partial, B/C |
 | `tools/faults.py` | Robustness fault-schedule model and loader | done |
 | `tools/cassette.py` | Cassette key, argument canonicalisation, `Redactor` | done |
@@ -144,3 +146,18 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   per-client isolation (fresh_eyes N15).
 - **Config paths:** paths in `config/` are relative to the `agent.yaml` directory; run, cassette
   and fixture paths are repo-relative.
+
+### LLM backends (ADR-010)
+
+`config/agent.yaml` `llm.backend` selects the live gateway through `llm.backend.build_llm_gateway`:
+`claude_code` (default; headless Claude Code, billed to the Claude subscription or cloud credits) or
+`anthropic_api` (`ANTHROPIC_API_KEY`). Both implement the same `LLMGateway` protocol, so phases do not
+change. With every CLI tool switched off, `ClaudeCodeGateway` cannot emit native `tool_use` blocks.
+When a request carries `tools`, it renders them into the system prompt (`render_tool_catalogue`) and
+asks, via `--json-schema`, for an envelope `{"tool_calls": [{id, name, input}], "final": <schema> | null}`.
+A non-empty `tool_calls` becomes a `tool_use` result with `ToolUse`s (ids made unique per run as
+`call-nnnn`). `tool_calls: []` with `final` becomes `end_turn` with `parsed`. `tool_result` blocks are sent
+back as text. Each conversation is one CLI session (`--session-id`, then `--resume`), and only the new
+user turns go to stdin. The gateway rejects assistant turns it did not produce. `ClaudeCodeGateway.native_pdf`
+is `False`: native PDF blocks are dropped (logged as `pdf_dropped`), and callers should check
+`supports_native_pdf(gw)` (`getattr(gw, "native_pdf", True)`) before building the PDF block.

@@ -68,6 +68,16 @@ class LLMSettings(_Cfg):
     backoff_base_s: float = 2.0
     backoff_max_s: float = 60.0
     refusal_retries: int = Field(1, ge=0, le=1)
+    backend: Literal["anthropic_api", "claude_code"] = Field(
+        "anthropic_api", description="claude_code: headless Claude Code (ADR-010); anthropic_api: ANTHROPIC_API_KEY")
+
+
+class ClaudeCodeSettings(_Cfg):
+    """``claude_code:`` block, used when ``llm.backend`` is ``claude_code`` (ADR-010)."""
+
+    executable: str = "claude"
+    extra_args: list[str] = Field(default_factory=list)
+    max_budget_usd_per_call: float | None = Field(None, gt=0, description="passed as --max-budget-usd when set")
 
 
 class PhasesConfig(_Cfg):
@@ -124,6 +134,7 @@ class AgentConfig(_Cfg):
     persona: str
     thinking_display: Literal["omitted", "summarized"] = "omitted"
     llm: LLMSettings = LLMSettings()
+    claude_code: ClaudeCodeSettings = ClaudeCodeSettings()
     phases: PhasesConfig = PhasesConfig()
     transport: Transport = Transport.LIVE
     replay: ReplaySettings = ReplaySettings()

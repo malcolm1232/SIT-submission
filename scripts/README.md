@@ -58,3 +58,16 @@ The script writes `./mcp_probe_results.json` and prints a summary table. For eac
 - `errors`
 
 **Paste the contents of `mcp_probe_results.json` back into the Claude session.**
+
+# Claude Code backend smoke test (ADR-010)
+
+`smoke_claude_code_backend.py` makes **one real model call** through `ClaudeCodeGateway` (headless `claude -p`) to check that the `llm.backend: claude_code` path works on this machine. It is opt-in: pytest does not collect it, and every test stays offline.
+
+```bash
+. .venv/bin/activate                                          # the agent venv (pip install -e ".[dev]")
+claude --version                                              # Claude Code installed and logged in
+python scripts/smoke_claude_code_backend.py                   # claude-opus-5-5, effort high
+python scripts/smoke_claude_code_backend.py --model claude-haiku-4-5   # cheap check (overrides the gateway's model, not the config)
+```
+
+It asks for a tiny `PlanOutput` against a 3-line fake document and prints the parsed answer, the served model, token usage, `total_cost_usd` (a client-side estimate, not the bill), latency and the path of the `llm.jsonl` it wrote (a temp run directory unless `--run-dir` is given). The call bills to whatever `claude` is logged in with; check the usage or credit meter before and after if you want to confirm where it lands.

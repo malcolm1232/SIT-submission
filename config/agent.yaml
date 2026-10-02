@@ -21,6 +21,12 @@ llm:
   backoff_base_s: 2.0
   backoff_max_s: 60.0
   refusal_retries: 1               # one retry with professional-review framing (robustness LLM-06)
+  backend: claude_code   # claude_code (Claude subscription / cloud credits via headless Claude Code, ADR-010) | anthropic_api (ANTHROPIC_API_KEY)
+
+claude_code:                       # used only when llm.backend is claude_code
+  executable: claude               # Claude Code CLI on PATH (check with `claude --version`)
+  extra_args: []                   # appended to every `claude -p` call; --bare and --no-session-persistence are rejected
+  max_budget_usd_per_call: null    # number: passed as --max-budget-usd (client-side estimate); null = no cap
 
 phases:                            # only research and refine may be disabled
   ingest: true

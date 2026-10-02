@@ -20,6 +20,7 @@ def test_shipped_config_loads() -> None:
     assert cfg.agent.model == "claude-opus-5-5"
     assert cfg.agent.allow_fallback is False
     assert cfg.agent.transport is Transport.LIVE
+    assert cfg.agent.llm.backend == "claude_code" and cfg.agent.claude_code.executable == "claude"
     assert {cfg.effort_for(p) for p in PhaseName if p is not PhaseName.INGEST} == {"high"}
     assert cfg.persona().title
     assert len(cfg.criteria.criteria) >= 10
