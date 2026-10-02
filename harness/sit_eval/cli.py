@@ -72,8 +72,13 @@ def score(
     model: str | None = typer.Option(None, "--model", help="Judge model (default config/eval.yaml)."),
     effort: str | None = typer.Option(None, "--effort"),
     config: Path | None = typer.Option(None, "--config", help="Path to eval.yaml."),
+    exploratory: bool = typer.Option(False, "--exploratory",
+                                     help="LC12 override: score a key that is not signed off (scored_run_ready "
+                                          "false). Every artefact is marked exploratory and may not be reported "
+                                          "as confirmatory. Without it such a key is refused."),
 ) -> None:
     """Score one review against one answer key; writes scores.json, scores.md and the judge call log."""
+    from sit_eval import lc12
     from sit_eval import prereg as prereg_mod
     from sit_eval import prompts as prompts_mod
     from sit_eval.calls import JudgeRunner
@@ -103,7 +108,8 @@ def score(
         recommendation_judge=(cfg.grounding.recommendation_judge if recommendation_judge is None
                               else recommendation_judge),
         theta_q=cfg.grounding.theta_q, condition=condition,
-        adaptive_samples=cfg.matcher.adaptive_third_sample if adaptive_samples is None else adaptive_samples)
+        adaptive_samples=cfg.matcher.adaptive_third_sample if adaptive_samples is None else adaptive_samples,
+        exploratory=exploratory)
     try:
         rin = load_review(run)
         key_data = load_key(key)
@@ -112,14 +118,25 @@ def score(
     if doc_version not in (None, "v1", "v2"):
         _fail("--doc-version must be v1 or v2")
     version = doc_version or infer_doc_version(rin, key_data, doc)
+    ready, pending = lc12.key_signoff(key_data)
 
     if dry_run:
         plan = plan_calls(rin, key_data, version, opts, cfg.cost_estimate.per_call_usd, cfg.cost_estimate.per_call_s,
                           basis_model=cfg.cost_estimate.basis_model, per_kind_usd=cfg.cost_estimate.per_kind_usd)
         plan["max_cost_usd"] = opts.max_cost_usd
+        plan["lc12"] = {"scored_run_ready": ready, "exploratory": exploratory, "note": (
+            None if ready and not exploratory else
+            lc12.EXPLORATORY_NOTE if exploratory else
+            "the key is not signed off (scored_run_ready false): a real run refuses it without --exploratory "
+            "(eval/prereg.yaml LC12)")}
         typer.echo(json.dumps(plan, indent=1))
         return
 
+    # LC12: refuse an unsigned key before any judge is built (no call, no cost)
+    try:
+        lc12.require_signed(key, ready, pending, exploratory=exploratory)
+    except lc12.UnsignedKeyRefusal as exc:
+        _fail(f"refusing a scored run: {exc}")
     status = prereg_mod.prereg_status()
     problems = prompts_mod.check_lock()
     bundle = prompts_mod.compute_lock()["bundle_sha256"]
@@ -131,6 +148,8 @@ def score(
         typer.echo(f"WARNING: {status['message']}", err=True)
     if problems:
         typer.echo("WARNING: judge prompts differ from prompts/PROMPTS.lock: " + "; ".join(problems), err=True)
+    for line in lc12.notes(exploratory, prereg_frozen=status["frozen"]):
+        typer.echo(line, err=True)
 
     try:
         docin = load_document(rin, key=key_data, key_path=key, doc=doc, version=version)
@@ -157,7 +176,7 @@ def score(
     reserve = cfg.judge.max_budget_usd_per_call or cfg.cost_estimate.per_call_usd.get("high", 0.15)
     runner = JudgeRunner(client, model=opts.model, effort=opts.effort, max_tokens=opts.max_tokens,
                          concurrency=opts.concurrency, max_cost_usd=opts.max_cost_usd,
-                         reserve_usd=0.0 if kind == "fake" else reserve, out_dir=out_dir)
+                         reserve_usd=0.0 if kind == "fake" else reserve, out_dir=out_dir, exploratory=exploratory)
     prior = json.loads(prior_scores.read_text(encoding="utf-8")) if prior_scores else None
     prompts_info = {"bundle_sha256": bundle, "lock_ok": not problems, "problems": problems}
     scores = asyncio.run(score_review(rin=rin, key=key_data, key_path=key, docin=docin, version=version,
@@ -170,7 +189,10 @@ def score(
     m = scores.get("metrics") or {}
     headline = {k: (m.get(k) or {}).get("value") for k in ("recall", "lenient_recall", "precision_adjudicated",
                                                             "severity_weighted_recall", "hallucinated_finding_rate")}
-    typer.echo(json.dumps({"status": scores["status"], "scores_json": str(js), "scores_md": str(md),
+    typer.echo(json.dumps({"status": scores["status"], "exploratory": scores["exploratory"],
+                           "exploratory_note": scores["exploratory_note"],
+                           "outside_preregistered_analysis": scores["outside_preregistered_analysis"],
+                           "scores_json": str(js), "scores_md": str(md),
                            "headline": headline, "calls": {k: scores["calls"][k] for k in
                                                            ("calls_total", "calls_live", "calls_failed",
                                                             "cost_usd_reported")}}, indent=1, default=str))
@@ -186,17 +208,29 @@ def aggregate_cmd(
     compare: list[str] | None = typer.Option(None, "--compare", help="Two condition labels: A then B."),
     bootstrap_b: int | None = typer.Option(None, "--bootstrap-b", min=100),
     config: Path | None = typer.Option(None, "--config"),
+    exploratory: bool = typer.Option(False, "--exploratory",
+                                     help="LC12 override: aggregate exploratory scores (alone or mixed with "
+                                          "confirmatory ones); the output is marked exploratory. Without it "
+                                          "such inputs are refused."),
 ) -> None:
     """Aggregate several scores.json: macro means, cluster-bootstrap CIs, paired tests."""
+    from sit_eval import lc12
+    from sit_eval import prereg as prereg_mod
     from sit_eval.aggregate import aggregate
     from sit_eval.config import load_eval_config
 
     cfg = load_eval_config(config)
     if compare and len(compare) != 2:
         _fail("--compare takes exactly two condition labels (repeat the option twice)")
-    res = aggregate(list(scores), metrics=metric or None, compare=tuple(compare) if compare else None,
-                    B=bootstrap_b or cfg.statistics.bootstrap_b, seed=cfg.statistics.seed,
-                    paired_seed=cfg.statistics.paired_seed)
+    frozen = prereg_mod.prereg_status()["frozen"]
+    try:
+        res = aggregate(list(scores), metrics=metric or None, compare=tuple(compare) if compare else None,
+                        B=bootstrap_b or cfg.statistics.bootstrap_b, seed=cfg.statistics.seed,
+                        paired_seed=cfg.statistics.paired_seed, exploratory=exploratory, prereg_frozen=frozen)
+    except lc12.ExploratoryInputRefusal as exc:
+        _fail(f"refusing to aggregate: {exc}")
+    for line in lc12.notes(exploratory, prereg_frozen=frozen):
+        typer.echo(line, err=True)
     text = json.dumps(res, indent=1, default=str)
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)

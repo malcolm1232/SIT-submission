@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from sit_eval import lc12
 from sit_eval.grader import answer_key as ak
 from sit_eval.grader import costs, prompts, schemas, scoring, verify
 from sit_eval.grader.projection import (
@@ -42,6 +43,7 @@ DEFAULT_EFFORT = "high"               # prereg grader.primary.effort
 MAX_TOKENS = 32000
 CALL_LOG = "grader_calls.jsonl"
 NONE = "NONE"
+LC12_KEY_BLIND_ALTERNATIVE = "or drop --answer-key for the key-blind grade, which reads no key"
 CONVENTIONS = [
     "Segmenter not run: the review is a structured Review; FND IDs used verbatim (grader_prompt.md §1, §4).",
     "Pass A hides each finding's rank and resolves affected_decisions against the decision registry.",
@@ -143,6 +145,8 @@ class _Grader:
     effort: str = DEFAULT_EFFORT
     budget: costs.Budget = field(default_factory=costs.Budget)
     validity_tier: str = "unvalidated (GR §7 smoke calibration not yet run)"
+    exploratory: bool = False      # LC12 override (--exploratory); marks every artefact
+    prereg_frozen: bool = False
 
     # ------------------------------------------------------------------ preparation (no calls)
     def prepare(self) -> None:
@@ -190,11 +194,26 @@ class _Grader:
                                    else "NONE (the prior design document was not supplied to the grader)")
 
         self.key_loaded = ak.load_answer_key(self.answer_key_path) if self.answer_key_path else None
+        self.key_ready: bool | None = None
         if self.key_loaded:
+            self.key_ready, self.key_pending, self.key_reason = ak.signoff(self.key_loaded)
             self.key_legacy, self.key_id_map = ak.project_key(
                 self.key_loaded, review_mode="delta" if self.delta else "full")
+        self.warnings[:0] = lc12.notes(self.exploratory, prereg_frozen=self.prereg_frozen)
+        if self.key_ready is False:
+            self.warnings.append(f"answer key {self.answer_key_path} is not signed off ("
+                                 + (self.key_reason or "scored_run_ready = false; pending: "
+                                    + ", ".join(self.key_pending)) + "): key-aware diagnostic run under "
+                                 "--exploratory (LC12 override)")
         self.system = prompts.load_prompt("system.txt")
         self.n_findings = len(self.proj.get("findings") or [])
+
+    def require_signed_key(self) -> None:
+        """LC12: refuse a key-aware diagnostic on a key that is not signed off (key-blind grades read no key)."""
+        if self.key_loaded:
+            lc12.require_signed(self.answer_key_path, bool(self.key_ready), self.key_pending,
+                                exploratory=self.exploratory, reason=self.key_reason,
+                                alternative=LC12_KEY_BLIND_ALTERNATIVE)
 
     # ------------------------------------------------------------------------------ rendering
     def shuffle_seed(self, i: int) -> int:
@@ -449,6 +468,7 @@ class _Grader:
             "samples": [], "disagreement": None, "dimensions_final": None, "caps_applied": [],
             "gates": None, "S": None, "grade": None, "pass": None, "hallucinations": [],
             "key_alignment_diagnostic": None, "needs_human_review": True, "human_review_reasons": [],
+            **lc12.marker(self.exploratory, prereg_frozen=self.prereg_frozen),
         }
         reasons: list[str] = []
         if self.blind:
@@ -504,6 +524,7 @@ class _Grader:
                 "dimensions_diagnostic": scoring.median_dims(recs, self.dims),
                 "disagreement": self.key_aware["disagreement"],
                 "key_id_map": self.key_id_map,
+                "scored_run_ready": bool(self.key_ready), "exploratory": self.exploratory,
             }
 
         anchors = [a for v in self.harness_checks.values() for a in v["doc_anchors"]]
@@ -577,7 +598,8 @@ def merge_hallucinations(per_sample: list[tuple[str, list[dict[str, Any]]]]) -> 
 def _make(review_path: str | Path, document_pdf: str | Path | Document, out_dir: str | Path,
           judge: JudgeClient | None, answer_key: str | Path | None, v1_review: str | Path | None,
           v1_document: str | Path | Document | None, samples: int, seed: int, budget: costs.Budget,
-          model: str, effort: str, validity_tier: str | None) -> _Grader:
+          model: str, effort: str, validity_tier: str | None, exploratory: bool = False,
+          prereg_frozen: bool = False) -> _Grader:
     if samples < 1:
         raise ValueError("samples must be >= 1 (prereg: 2)")
     review = load_review(review_path)
@@ -589,7 +611,8 @@ def _make(review_path: str | Path, document_pdf: str | Path | Document, out_dir:
     g = _Grader(review_path=Path(review_path), document=doc, out_dir=Path(out_dir), judge=judge,
                 answer_key_path=Path(answer_key) if answer_key else None,
                 v1_review_path=Path(v1_review) if v1_review else None, v1_document=v1_doc,
-                samples=samples, seed=seed, model=model, effort=effort, budget=budget)
+                samples=samples, seed=seed, model=model, effort=effort, budget=budget, exploratory=exploratory,
+                prereg_frozen=prereg_frozen)
     if validity_tier:
         g.validity_tier = validity_tier
     g.prepare()
@@ -611,13 +634,19 @@ async def grade_review_async(review_path: str | Path, document_pdf: str | Path |
                              samples: int = 2, seed: int = 0, max_cost_usd: float | None = None,
                              model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT,
                              budget: costs.Budget | None = None, validity_tier: str | None = None,
-                             raise_on_error: bool = True) -> GradeResult:
-    """Async form of :func:`grade_review`. ``budget`` lets several grades share one spend limit."""
+                             raise_on_error: bool = True, exploratory: bool = False) -> GradeResult:
+    """Async form of :func:`grade_review`. ``budget`` lets several grades share one spend limit.
+
+    Raises :class:`~sit_eval.lc12.UnsignedKeyRefusal` before any call or file write when ``answer_key`` is
+    not signed off and ``exploratory`` is false (LC12)."""
+    from sit_eval import prereg as prereg_mod
     from sit_eval.grader.report import render_markdown
 
     bud = budget or costs.Budget(max_cost_usd=max_cost_usd)
     g = _make(review_path, document_pdf, out_dir, judge, answer_key, v1_review, v1_document, samples, seed,
-              bud, model, effort, validity_tier)
+              bud, model, effort, validity_tier, exploratory=exploratory,
+              prereg_frozen=prereg_mod.prereg_status()["frozen"])
+    g.require_signed_key()
     report = await g.run()
     out = Path(out_dir)
     gj, gm = out / "grade.json", out / "grade.md"
@@ -635,11 +664,14 @@ def grade_review(review_path: str | Path, document_pdf: str | Path | Document, o
                  judge: JudgeClient, answer_key: str | Path | None = None, v1_review: str | Path | None = None,
                  samples: int = 2, seed: int = 0, max_cost_usd: float | None = None,
                  v1_document: str | Path | Document | None = None, model: str = DEFAULT_MODEL,
-                 effort: str = DEFAULT_EFFORT, validity_tier: str | None = None) -> GradeResult:
+                 effort: str = DEFAULT_EFFORT, validity_tier: str | None = None,
+                 exploratory: bool = False) -> GradeResult:
     """Grade one Review with the lecturer grader and write ``grade.json``, ``grade.md`` and
     ``grader_calls.jsonl`` (plus ``inputs/``, ``outputs/`` and ``grader_projection.json``) to ``out_dir``.
 
-    Key-blind is the score; ``answer_key`` adds a key-aware diagnostic that never changes it.
+    Key-blind is the score; ``answer_key`` adds a key-aware diagnostic that never changes it. A key that
+    is not signed off (``scored_run_ready`` false, or any legacy YAML key) is refused unless
+    ``exploratory`` is true, and then every artefact is marked exploratory (LC12, ``sit_eval.lc12``).
     ``v1_review`` switches on delta mode (D11); ``v1_document`` optionally supplies the prior design.
     ``max_cost_usd`` stops before any call that would cross it (outputs are still written, then
     :class:`~sit_eval.grader.costs.BudgetExceeded` is raised).
@@ -647,4 +679,4 @@ def grade_review(review_path: str | Path, document_pdf: str | Path | Document, o
     return asyncio.run(grade_review_async(
         review_path, document_pdf, out_dir, judge=judge, answer_key=answer_key, v1_review=v1_review,
         v1_document=v1_document, samples=samples, seed=seed, max_cost_usd=max_cost_usd, model=model,
-        effort=effort, validity_tier=validity_tier))
+        effort=effort, validity_tier=validity_tier, exploratory=exploratory))

@@ -55,6 +55,17 @@ def load_answer_key(path: str | Path) -> dict[str, Any]:
     raise GraderInputError(f"{p.name}: neither a canonical key (flaws, sound_sections) nor a legacy key (key_items)")
 
 
+def signoff(loaded: dict[str, Any]) -> tuple[bool, list[str], str | None]:
+    """``(scored_run_ready, pending, reason)`` for LC12 (``sit_eval.lc12``). A canonical key carries its
+    owner sign-off in ``authoring_status``; the legacy YAML format carries none, so it is never ready."""
+    from sit_eval import lc12
+
+    if loaded["format"] == "canonical":
+        ready, pending = lc12.key_signoff(loaded["canonical"])
+        return ready, pending, None
+    return False, [], lc12.LEGACY_KEY_REASON
+
+
 def _locations(loc: dict[str, Any]) -> list[str]:
     out = [str(s) for s in loc.get("sections") or []]
     if loc.get("page"):

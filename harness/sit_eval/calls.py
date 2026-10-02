@@ -10,7 +10,11 @@ It adds what the frozen :class:`~sit_eval.judge.JudgeClient` interface leaves to
   (the judge backend, e.g. ``claude_code``, or the client class such as ``FakeJudge``), so answers
   of the plumbing-only fake judge are never reused by a live run written to the same ``--out``.
   Prompts are deterministic given the seed, so re-running ``sit-eval score`` into the same
-  ``--out`` after a stop or a crash re-pays nothing that already succeeded;
+  ``--out`` after a stop or a crash re-pays nothing that already succeeded. Each row records whether
+  it was written by an ``--exploratory`` run (LC12, ``sit_eval.lc12``); a confirmatory runner
+  (``exploratory=False``) reuses only rows marked ``"exploratory": false``, so an answer given while
+  the key was not signed off (or written before the guard, with no marker) is never served to a
+  confirmatory run as if it were one; such rows are counted in ``rows_withheld_exploratory``;
 * the hard cost stop (``--max-cost-usd``): a call is refused (and the stop recorded) when the spend
   so far, plus the reserve of calls in flight, plus this call's reserve would cross the limit. The
   reserve is ``judge.max_budget_usd_per_call`` when set, else the high per-call estimate. A call
@@ -88,6 +92,7 @@ class JudgeRunner:
     reserve_usd: float = 0.15
     out_dir: Path | None = None
     cache_namespace: str | None = None   # default: the client's ``backend`` attribute, else its class name
+    exploratory: bool = False            # LC12: an --exploratory run; confirmatory runners never reuse its rows
     records: list[CallRecord] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -98,14 +103,19 @@ class JudgeRunner:
         self._inflight_n = 0
         self.budget = BudgetState(max_cost_usd=self.max_cost_usd, reserve_usd=self.reserve_usd)
         self._cache: dict[str, dict[str, Any]] = {}
+        self.rows_withheld_exploratory = 0
         self._cache_path = (Path(self.out_dir) / CACHE_NAME) if self.out_dir is not None else None
         if self._cache_path is not None and self._cache_path.exists():
             for line in self._cache_path.read_text(encoding="utf-8").splitlines():
                 try:
                     row = json.loads(line)
-                    self._cache[row["request_key"]] = row
-                except (ValueError, KeyError):
+                    key = row["request_key"]
+                except (ValueError, KeyError, TypeError):
                     continue
+                if not self.exploratory and row.get("exploratory") is not False:
+                    self.rows_withheld_exploratory += 1   # exploratory, or written before the LC12 guard
+                    continue
+                self._cache[key] = row
 
     def request(self, kind: str, purpose: str, system: str, user: str, sample_index: int = 0) -> JudgeRequest:
         return JudgeRequest(purpose=purpose, system=system, user=user, schema=judge_schema(kind), model=self.model,
@@ -163,7 +173,8 @@ class JudgeRunner:
                 self._cache_path.parent.mkdir(parents=True, exist_ok=True)
                 with self._cache_path.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps({"request_key": key, "purpose": purpose, "sample_index": sample_index,
-                                         "model": res.model, "cost_usd": cost, "data": res.data},
+                                         "model": res.model, "cost_usd": cost, "data": res.data,
+                                         "exploratory": self.exploratory},
                                         sort_keys=True, ensure_ascii=False) + "\n")
             self._cache[key] = {"data": res.data, "model": res.model}
             return res.data

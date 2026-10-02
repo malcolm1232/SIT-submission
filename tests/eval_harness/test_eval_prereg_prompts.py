@@ -85,7 +85,7 @@ def test_loaders():
 
 
 def _fake_scores(cond: str, doc: str, run: str, recall: float, detected: list[bool]) -> dict:
-    return {"kind": "sit_eval.scores", "status": "pilot_unfrozen",
+    return {"kind": "sit_eval.scores", "status": "pilot_unfrozen", "exploratory": False,   # confirmatory (LC12)
             "inputs": {"item_id": doc, "doc_version": "v1", "run_id": run, "condition": cond},
             "metrics": {"recall": {"value": recall, "tp": int(recall * 14), "g": 14, "status": "primary",
                                    "reason": None},

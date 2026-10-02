@@ -20,6 +20,8 @@ def _fmt(v: Any) -> str:
 
 def render_markdown(rep: dict[str, Any]) -> str:
     out = [f"# Lecturer grade: {rep.get('review_id') or 'review'}", ""]
+    if rep.get("exploratory"):   # LC12 marker, first so no reader misses it
+        out += ["**EXPLORATORY** - " + str(rep.get("exploratory_note") or "").removeprefix("EXPLORATORY: "), ""]
     out.append(f"> {rep.get('label')}")
     out.append("")
     if rep.get("status") != "complete":
