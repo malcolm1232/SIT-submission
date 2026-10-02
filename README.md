@@ -28,8 +28,8 @@ matcher, metrics, statistics, lecturer grader) and the robustness P0 suite are b
 ## Reproducing checks
 
 ```
-python3 spec/validate_examples.py      # schema + taxonomy self-tests
-python3 spec/convert_answer_keys.py    # rebuild canonical answer keys
+python3 spec/validate_examples.py      # schema + taxonomy self-tests; never reads eval/blind unless --include-blind
+python3 spec/convert_answer_keys.py --tier synthetic   # rebuild the S-dev canonical keys; without --tier it reads eval/blind too
 python3 eval/build_pdfs.py             # rebuild synthetic PDFs from markdown
 python3 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
 make smoke                             # offline, about 10 s: selftest + config, prompt-lock, CLI and leakage tests

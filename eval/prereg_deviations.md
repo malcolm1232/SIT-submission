@@ -179,3 +179,31 @@ already happened (none had for entries made before the freeze).
   path are in `docs/HANDOVER_FULL.md` §9.
 - **Decided by:** the coordinator under the owner's delegation (`docs/USER_DECISIONS.md` #11).
 - **Scored runs before the change:** none (`frozen: false`).
+
+---
+
+## 8. 2026-10-03: S-dev canary key-only (LC10/LC11 notes); two lakehouse credit items made supporting
+
+- **Fields:** comments on `leakage_controls.before_unsealing_s_heldout` LC10 and
+  `leakage_controls.after_runs_before_scoring` LC11 (the checks themselves are unchanged). Also logged, although it
+  is not a `prereg.yaml` field: the credit-item roles of the S-dev lakehouse key, which `matcher.credit_mode`
+  ("per flaw from the key") reads.
+- **Old text:** no comment on LC10 or LC11. Lakehouse F05 c2 ("HNSW memory formula / overhead ~1.1x(4d+8M)") and
+  F06 c2 ("correct controls are 3.13.16 (CUI at rest) and/or 3.13.11 (FIPS-validated crypto)") were `required`
+  under the legacy "first two must-mention items" rule (`spec/README.md` §2.6), so under `all_of` a finding had to
+  state them.
+- **New text:** LC10 and LC11 carry the scan note "key-only canary, S-dev": the three S-dev items carry the canary
+  GUID in `answer_key.json` only, not in `design_v*.md` or the PDFs, and every held-out item gets its canary
+  embedded before its first run (`docs/SEALING.md` §3). Lakehouse F05 c2 and F06 c2 are `supporting`
+  (`spec/convert_answer_keys.py` `SUPPORTING_OVERRIDES`, read by `role_of()`); the lakehouse key now has 28
+  required and 30 supporting credit items (was 30 and 28). F05 requires c1 only (memory understated about 4 times
+  because float32 is 4 bytes per dimension); F06 requires c1 only (3.1.1 is access control, not encryption).
+- **Reason:** the S-dev documents are cited by hash and anchor page in the live run and both pilots, and S-dev is
+  the open development set, so an embedded canary there protects nothing; LC10 and LC11 would otherwise read a
+  missing S-dev canary as an unavailable control. For F05 and F06, a finding that states c1 has plainly found the
+  flaw; requiring the exact formula or the correct control numbers made the key stricter than the defect (the
+  eval-data audit, Task 5, already called F05 c2 supporting). These are key content decisions taken before any key
+  was signed; they are logged here because they change what a lakehouse finding must state to match.
+- **Decided by:** SIT FABLE for the owner, 2026-10-02 (`docs/USER_DECISIONS.md` #17 and #19); applied 2026-10-03.
+- **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`, and no lakehouse run has
+  been matched).

@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/clinical_rpm/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "352e2af1af1b08b2767e372927275b157e5e2e74baf572d617c9c7b1393a5ca4"
+      "sha256": "64c71a6de410a544c89ac3fc8899c2ad129823140ed1e6388f9798c3631ebb54"
     }
   },
   "scoring": {
@@ -478,7 +478,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (K, page not fetched), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (K, page not fetched), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -652,7 +652,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "governance_decision",
       "acceptable_dispositions": [
@@ -740,7 +740,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs, ms.date 2025) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs, ms.date 2025) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -896,7 +896,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (standard is paywalled) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (standard is paywalled) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -979,7 +979,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "needs_investigation",
       "acceptable_dispositions": [
@@ -1063,7 +1063,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1117,7 +1117,7 @@
       },
       "description": "The 'anonymised' extracts remove direct identifiers but keep strong quasi-identifiers: timestamps to the second, ward and bed, age, sex, ethnicity, diagnosis codes, and the full 6-digit home postal code for MIC@Home patients. A Singapore 6-digit postal code typically identifies a single building, often a single landed house. The document then declares the extracts outside the PDPA and permits sharing into an ML partner's own tenancy without per-extract approval.",
       "rationale": "Re-identification risk is high: postal code combined with age, sex, and ethnicity, or exact admission and event times combined with ward/bed, which staff and visitors can link. Under PDPC anonymisation guidance, data with a serious possibility of re-identification remains personal data. The claim that the extracts fall outside the PDPA is therefore unjustified, and the onward sharing breaks purpose limitation, P8 (minimum necessary), and possibly NFR-9 if the partner tenancy is offshore. The FR-15 acceptance criterion checks only direct identifiers, so it cannot catch this.",
-      "core_insight": "The 'anonymised' extracts keep strong quasi-identifiers (full 6-digit home postal code, exact timestamps, ward and bed, age, sex, ethnicity), so patients remain re-identifiable and the data is still personal data, which makes the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, unjustified.",
+      "core_insight": "The 'anonymised' extracts remove only direct identifiers and keep strong quasi-identifiers, notably the full 6-digit home postal code, which in Singapore usually identifies a single building, together with demographics or exact timestamps, so patients remain re-identifiable and the data is still personal data; the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, is therefore unjustified.",
       "credit": {
         "mode": "substance",
         "items": [
@@ -1151,7 +1151,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (K, not fetched), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (K, not fetched), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1323,7 +1323,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs, ms.date 2026) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Strictly, devices whose clocks run behind are the ones dropped as late."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class P (MicrosoftDocs azure-docs, ms.date 2026) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Strictly, devices whose clocks run behind are the ones dropped as late. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1646,7 +1646,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S/P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.2: verdict C (key correct), source class S/P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1839,7 +1839,7 @@
         "sound_overlap_annotations",
         "v2_changed_sections"
       ],
-      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest."
+      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest. SIT FABLE decisions for the owner (2026-10-02, docs/USER_DECISIONS.md #17-#20) applied 2026-10-03: canary_guid is key-only for S-dev (not embedded in design_v*.md or the PDFs; record for the LC10/LC11 canary scans); the eval-data audit is accepted as the external-fact verification for S-dev; core insights follow the substance-mode rule in eval/KEY_SIGNOFF.md item 10. These are decisions on the drafts, not the owner's signature; signoff is still empty."
     }
   }
 }

@@ -7,8 +7,8 @@ This folder resolves two P0 blockers from `research/audit/research_audit.md` §6
 | `spec/taxonomy.yaml` | The only enum registry. Definitions, inclusion/exclusion notes and invented examples for every label. Also holds the converter-only `legacy_mappings`. | Kinds, categories, severities, confidence bands, dispositions, verdicts, provenance, stop reasons, decision relations, phases, credit modes, v2 statuses, splits, matcher labels, anchor rules |
 | `spec/finding.schema.json` | JSON Schema 2020-12. Root = one hydrated **Finding**; `#/$defs/Review` = the **Review** envelope. | What the agent emits, what the matcher reads, what the grader and robustness oracles validate |
 | `spec/answer_key.schema.json` | JSON Schema 2020-12 for one sealed **answer key**. Reuses `Kind`, `Category`, `Severity`, `Disposition` from the finding schema by `$ref`. | What a gold flaw, sound section and still-valid observation look like |
-| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative and adversarial tests, runs the INV-04 anchor oracle, and checks that `legacy_mappings` covers every label in the five existing keys. | — |
-| `spec/convert_answer_keys.py` | Converts the five legacy keys to `eval/<tier>/<item>/answer_key.canonical.json`, validates each, and prints counts, notes and any field it could not map (§2.8). | — |
+| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative and adversarial tests, runs the INV-04 anchor oracle, and checks that `legacy_mappings` covers every label in the existing legacy keys (the three S-dev keys by default; the two held-out keys only with `--include-blind`, §6). | - |
+| `spec/convert_answer_keys.py` | Converts the five legacy keys to `eval/<tier>/<item>/answer_key.canonical.json`, validates each, and prints counts, notes and any field it could not map (§2.8). | - |
 
 **Handling.** `taxonomy.yaml` outside `legacy_mappings` is prompt-safe: its examples are invented and avoid every mechanism in the eval keys. This README and `legacy_mappings` name eval-key labels and some flaw details, and §2.6-2.7 cover the S-heldout (ex-blind) items. Never place either in an agent, matcher or grader prompt. When the S-heldout keys are sealed (audit P0 action 7), move §2.4 rows for item_a/item_b, §2.6 and §2.7 into the sealed archive.
 
@@ -75,7 +75,7 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `item.canary_guid` | `null` + pending (assigned per split when the canary is embedded in the documents) | same | same | same | same |
 | `item.author_type / author_model / generation_date` | `unknown` / `null` / `null` + pending (U11) | same | same | same | same |
 | `item.source_key` | `{path, format: synthetic_json_v0, sha256}` | same | same | `blind_a_json_v0` | `blind_b_json_v0` |
-| `scoring.default_credit_mode` | `substance` | `substance` | `all_of` (items 1-2 `required`, the legacy "first two" rule) | `all_of` | `all_of` |
+| `scoring.default_credit_mode` | `substance` | `substance` | `all_of` (items 1-2 `required`, the legacy "first two" rule; F05 and F06 item 1 only, §2.6) | `all_of` | `all_of` |
 | `scoring.severity_mapping.source_scale` | `synthetic3` | `synthetic3` | `synthetic3` | `blind4_capitalised` | `blind4` |
 | `scoring.severity_tolerance` | `null` | `null` | `null` | `null` | `1` |
 | `scoring.notes` | README "by substance" rule (superseded) | `scoring_guidance` | `version_notes` "first two" rule (superseded) | "Scoring guidance" section of `readme_notes_moved_at_sealing` | `scoring_guidance` |
@@ -111,7 +111,7 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `rationale` | `why_it_is_a_flaw` | `why_it_matters` | `why_it_matters` |
 | `core_insight` | pending (derive from required credit items; second reviewer, L12) | pending | pending |
 | `credit.mode` | payments, clinical `substance`; lakehouse `all_of` | `all_of` | `all_of` |
-| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required`, except text starting "(supporting" and lakehouse items 3+ → `supporting` | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` |
+| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required`, except text starting "(supporting", lakehouse items 3+ and lakehouse F05/F06 item 2 → `supporting` | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` |
 | `credit.min_required` | `null` | `null` | `null` |
 | `needs_external_research` | `true` for the flaws eval_data_audit Task 1 checked as external facts (payments F01 F04 F06 F07 F11 F15; clinical F01 F03 F04 F06 F07 F08 F09 F11 F15; lakehouse F04 F05 F06 F10 F15), else `false` | `requires_external_fact` | `external_fact` not null/"None" |
 | `external_fact` | when needed: `claim` = `why_it_is_a_flaw` (placeholder: restate as the external fact during verification), `source` = URLs in `distractor_notes` or "unspecified in legacy key", `verified: false`, pending `external_fact_verification` | split `external_fact` at the first ": " → `source`, `claim` when the head is ≤ 150 characters; otherwise `claim` = whole string and `source` = "unspecified in legacy key (citation embedded in claim)"; `verified: false` + pending | same as item_a |
@@ -191,7 +191,7 @@ The key stores the **primary** value in `severity` and the verbatim label in `se
 
 ### 2.6 Credit-item role overrides (content fixes from eval_data_audit P0 #4)
 
-`research/audit/eval_fixes_applied.md` has since applied the four flaw-level rows below to the legacy keys themselves (clinical F06 remedy removed, F11 item 4 prefixed "(supporting, not required)", F04 merged, item_b DEF-12 remedy removed). The converter therefore applies only the lakehouse rule and the "(supporting" prefix rule; the rows are kept as history.
+`research/audit/eval_fixes_applied.md` has since applied the four flaw-level rows below to the legacy keys themselves (clinical F06 remedy removed, F11 item 4 prefixed "(supporting, not required)", F04 merged, item_b DEF-12 remedy removed). The converter therefore applies only the lakehouse rule, the "(supporting" prefix rule and the owner-level overrides in `SUPPORTING_OVERRIDES` (last row); the other rows are kept as history.
 
 | Item / flaw | Change |
 |---|---|
@@ -200,6 +200,7 @@ The key stores the **primary** value in `severity` and the verbatim label in `se
 | clinical_rpm F11 | item 4 ("silent: data still appears in ADX") → `supporting` |
 | clinical_rpm F04 | merge the "claim is false" and "consequence" items into one `required` item (manual edit) |
 | blind/item_b DEF-12 | item 2 (must recommend GNSS/PTP/IRIG-B) → `supporting` |
+| research_lakehouse F05, F06 | item 2 → `supporting` (F05: the HNSW memory formula; F06: naming 3.13.16 / 3.13.11). SIT FABLE for the owner, 2026-10-02 (`docs/USER_DECISIONS.md` #19; `eval/prereg_deviations.md` entry 8); set by `SUPPORTING_OVERRIDES` in the converter |
 
 Other content fixes the eval audit requires are **not** mechanical and need a second reviewer: item_a D01 `external_fact` and credit (UK reg. 34(5) vs 34(6)); lakehouse sound §16 `why_sound` and trap; item_b DEF-03 tolerance ("2 s unless otherwise agreed with the utility"); optional payments F05 minor → major.
 
@@ -223,7 +224,7 @@ The converter writes the reverse links into `flaws[].overlapping_sound_section_i
 
 `python3 spec/convert_answer_keys.py` (add `--check` to validate without writing) reads each legacy key, applies §2.1-2.7, validates the result against `answer_key.schema.json` and `key_semantics`, writes `answer_key.canonical.json` next to the legacy key, and prints per-key counts, notes (count assertions, partial mappings) and every legacy field it could not map. It never edits `answer_key.json`. Every output has `scored_run_ready: false` until the pending fields are authored and second-reviewed.
 
-`--tier synthetic` converts only the S-dev items; the spec self-test the converter runs on import then expands its `eval/*/*/answer_key.json` glob without listing or opening anything under `eval/blind` (SEALING.md §6 rule 1). `--verify-anchors` checks every flaw and approved-decision `anchor_quote` as an exact match, on the stated page, in the PDF text from the agent's own ingest (`sit_review_agent.ingest.pdf.ingest`); a v2-only flaw (`introduced_in: v2`) is checked against `design_v2.pdf`, everything else against `design_v1.pdf`.
+`--tier synthetic` converts only the S-dev items; the spec self-test the converter runs on import is then not asked to include the held-out tier, and the converter also filters its glob, so nothing under `eval/blind` is listed or opened (SEALING.md §6 rule 1). A run that includes the `blind` tier (no `--tier`, or `--tier blind`) reads the held-out keys: the self-test prints a notice on stderr, and the access must be recorded in `eval/blind/ACCESS_LOG.md`. `--verify-anchors` checks every flaw and approved-decision `anchor_quote` as an exact match, on the stated page, in the PDF text from the agent's own ingest (`sit_review_agent.ingest.pdf.ingest`); a v2-only flaw (`introduced_in: v2`) is checked against `design_v2.pdf`, everything else against `design_v1.pdf`.
 
 ### 2.9 Agent drafts and owner sign-off
 
@@ -366,4 +367,8 @@ pip install jsonschema pyyaml   # jsonschema >= 4.18 (uses `referencing`)
 python3 spec/validate_examples.py
 ```
 
-The legacy-coverage check reads `eval/*/*/answer_key.json` read-only and skips if `eval/` is absent.
+The legacy-coverage check reads `eval/<tier>/<item>/answer_key.json` read-only and skips if `eval/` is absent.
+Run with no flags, it leaves the held-out tier out: nothing under `eval/blind` is listed or opened, and the output says so (SEALING.md §6 rule 1; `tests/test_spec_validator_blind.py` pins this).
+`python3 spec/validate_examples.py --include-blind` also reads the two held-out keys and prints a one-line notice on stderr.
+That run is an access to held-out material and must be recorded in `eval/blind/ACCESS_LOG.md`.
+A caller that runs the file with `runpy` (the converter) asks for the held-out tier with `init_globals={"INCLUDE_BLIND": True}`; the caller's own command line is never read.

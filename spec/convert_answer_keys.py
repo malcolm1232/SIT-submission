@@ -20,8 +20,10 @@ scored_run_ready is true only when pending is empty (key_semantics then checks e
 Usage: python3 spec/convert_answer_keys.py [--check] [--tier synthetic|blind] [--verify-anchors]
   --check           validate only, do not write
   --tier T          convert only the items of tier T (repeatable). With only `synthetic`, the spec self-test that
-                    this script runs on import is kept from reading eval/blind (its legacy-coverage glob is filtered),
-                    so a synthetic-only run never opens a sealed S-heldout file (SEALING.md §6 rule 1).
+                    this script runs on import is not asked to include eval/blind (and its glob is filtered as a
+                    second guard), so a synthetic-only run never opens a sealed S-heldout file (SEALING.md §6
+                    rule 1). A run that includes `blind` reads the held-out keys: the self-test prints a notice,
+                    and the access must be recorded in eval/blind/ACCESS_LOG.md.
   --verify-anchors  also check every flaw and approved-decision anchor quote against the PDF text produced by the
                     agent's own ingest (sit_review_agent.ingest.pdf.ingest): exact match and page. Needs the agent
                     package installed (e.g. `. .venv/bin/activate`). A key that comes out scored_run_ready is always
@@ -60,8 +62,9 @@ _BLIND_DIR = os.path.join(ROOT, "eval", "blind") + os.sep
 
 @contextlib.contextmanager
 def _no_blind_glob():
-    """While validate_examples.py runs, keep its legacy-coverage glob out of eval/blind: an `eval/*/...` pattern is
-    expanded tier by tier without ever listing or opening anything inside eval/blind."""
+    """While validate_examples.py runs, keep every glob out of eval/blind: an `eval/*/...` pattern is expanded tier
+    by tier without ever listing or opening anything inside eval/blind, and any other hit under it is dropped.
+    validate_examples.py leaves eval/blind out by itself unless INCLUDE_BLIND is passed; this is the second guard."""
     real = glob.glob
     eval_dir = os.path.join(ROOT, "eval")
     wildcard = os.path.join(eval_dir, "*") + os.sep
@@ -83,11 +86,12 @@ def _no_blind_glob():
         glob.glob = real
 
 
-# Reuse the validators and the taxonomy loaded by validate_examples.py (it also self-tests the spec).
+# Reuse the validators and the taxonomy loaded by validate_examples.py (it also self-tests the spec). Its
+# legacy-coverage check reads eval/blind only when this run converts the blind tier.
 _buf = io.StringIO()
 try:
     with contextlib.redirect_stdout(_buf), (_no_blind_glob() if "blind" not in TIERS else contextlib.nullcontext()):
-        V = runpy.run_path(os.path.join(HERE, "validate_examples.py"))
+        V = runpy.run_path(os.path.join(HERE, "validate_examples.py"), init_globals={"INCLUDE_BLIND": "blind" in TIERS})
 except SystemExit as exc:  # validate_examples failed: the spec itself is broken
     sys.stdout.write(_buf.getvalue())
     sys.exit(f"spec self-test failed (exit {exc.code}); fix spec/ before converting")
@@ -143,10 +147,18 @@ def split_ids(ids: list[str]) -> tuple[list[str], list[str]]:
     return [i for i in ids if not DECISION_RE.match(i)], [i for i in ids if DECISION_RE.match(i)]
 
 
-def role_of(item: str, idx: int, text: str) -> str:
+# README §2.6: single credit items made supporting by an owner-level decision, as (item, flaw id) -> 0-based indexes.
+# Lakehouse F05 c2 (the HNSW memory formula) and F06 c2 (naming 3.13.16 / 3.13.11): SIT FABLE for the owner,
+# 2026-10-02 (docs/USER_DECISIONS.md #19).
+SUPPORTING_OVERRIDES = {("research_lakehouse", "F05"): {1}, ("research_lakehouse", "F06"): {1}}
+
+
+def role_of(item: str, idx: int, text: str, flaw_id: str | None = None) -> str:
     if text.lstrip().lower().startswith("(supporting"):
         return "supporting"
     if item == "research_lakehouse" and idx >= 2:  # legacy "first two must_mention items" rule (README §2.6)
+        return "supporting"
+    if idx in SUPPORTING_OVERRIDES.get((item, flaw_id), set()):
         return "supporting"
     return "required"
 
@@ -249,7 +261,7 @@ def convert(tier: str, item: str, fmt: str) -> tuple[dict, dict]:
             texts = [f["credit_requires"]]
         else:
             texts = f["credit_requires"]
-        items = [{"id": f"c{i + 1}", "text": t, "role": role_of(item, i, t)} for i, t in enumerate(texts)]
+        items = [{"id": f"c{i + 1}", "text": t, "role": role_of(item, i, t, f["id"])} for i, t in enumerate(texts)]
         # external fact
         if synthetic:
             needs_ext = f["id"] in NEEDS_EXTERNAL[item]

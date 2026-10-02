@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/research_lakehouse/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "a27e42710eed9deae1e2a0eea797b2b6270d3c8eaea71ee149f6904a116882bc"
+      "sha256": "56ca982cdf4b136af1ddbcf2a1386d512dac9198687c8a6ccfa8043dccca2a51"
     }
   },
   "scoring": {
@@ -371,7 +371,7 @@
       },
       "description": "Confirmed decision sends Restricted-tier chunks to a commercial LLM on the vendor's public endpoint, while NFR-5 (and the Section 4 tier table) forbid any processing of Restricted or Controlled content outside Westmoor-controlled AWS accounts.",
       "rationale": "Section 14.4 and the 'Generation model' row in Section 20 say the external enterprise API serves Public, Internal AND Restricted content. Restricted documentation and notebook text is indexed (Section 4/14.1), so the top-8 chunks placed in the prompt routinely include Restricted content. Zero-data-retention terms do not make a third-party endpoint a Westmoor-controlled account. Because the NFR-5 egress acceptance test would fail, the design cannot pass its own validation.",
-      "core_insight": "NFR-5 forbids processing Restricted content outside Westmoor-controlled AWS accounts, yet Section 14.4 and the 'Generation model' decision send Restricted-tier chunks to a commercial LLM on the vendor's public endpoint; zero-data-retention terms do not make that endpoint a Westmoor account.",
+      "core_insight": "NFR-5 forbids processing Restricted content outside Westmoor-controlled AWS accounts, yet Section 14.4 and the 'Generation model' decision send Restricted-tier chunks to a commercial LLM on the vendor's public endpoint.",
       "credit": {
         "mode": "all_of",
         "items": [
@@ -647,7 +647,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P (archived mirror) and S/P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. The key's USD 12,560 re-estimate ignores the Infrequent Access tier and is a lower bound; the conclusion (over USD 10,000) only strengthens."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P (archived mirror) and S/P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. The key's USD 12,560 re-estimate ignores the Infrequent Access tier and is a lower bound; the conclusion (over USD 10,000) only strengthens. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -711,7 +711,7 @@
           {
             "id": "c2",
             "text": "HNSW memory formula / overhead ~1.1x(4d+8M)",
-            "role": "required"
+            "role": "supporting"
           },
           {
             "id": "c3",
@@ -733,7 +733,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P (opensearch-project documentation-website) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. The ~112 GB per node figure assumes a 32 GB heap; the conclusion holds for any heap size."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P (opensearch-project documentation-website) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. The ~112 GB per node figure assumes a 32 GB heap; the conclusion holds for any heap size. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -797,7 +797,7 @@
           {
             "id": "c2",
             "text": "correct controls are 3.13.16 (CUI at rest) and/or 3.13.11 (FIPS-validated crypto)",
-            "role": "required"
+            "role": "supporting"
           },
           {
             "id": "c3",
@@ -814,7 +814,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1134,7 +1134,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (key correct), source class P-snippet (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1526,7 +1526,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (reasoning), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.3: verdict C (reasoning), source class K (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1738,7 +1738,7 @@
         "sound_overlap_annotations",
         "v2_changed_sections"
       ],
-      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest."
+      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest. SIT FABLE decisions for the owner (2026-10-02, docs/USER_DECISIONS.md #17-#20) applied 2026-10-03: canary_guid is key-only for S-dev (not embedded in design_v*.md or the PDFs; record for the LC10/LC11 canary scans); the eval-data audit is accepted as the external-fact verification for S-dev; core insights follow the substance-mode rule in eval/KEY_SIGNOFF.md item 10. These are decisions on the drafts, not the owner's signature; signoff is still empty."
     }
   }
 }
