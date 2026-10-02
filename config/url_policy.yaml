@@ -1,0 +1,8 @@
+# config/url_policy.yaml - which URLs the research loop may fetch (ADR-001, audit C18).
+# mode deny: everything not denied is allowed. mode allow: only allow_domains (live change
+# "only use authoritative sources", fresh_eyes §1.8).
+mode: deny                        # deny | allow
+allow_domains: []
+deny_domains: []
+fetch_only_from_results: true     # fetch only URLs seen in search results or cited in the document
+reject_added_query_strings: true  # block query strings that were not in the source URL (ADV-05)

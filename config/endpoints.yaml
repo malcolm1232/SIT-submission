@@ -1,0 +1,8 @@
+# config/endpoints.yaml - MCP server URLs (kept apart so config/tools.yaml line numbers stay fixed).
+# Same hosts as scripts/probe_mcp_servers.py. No credentials here: the key comes from the env var
+# named by tools.yaml `auth_env`.
+servers:
+  mcp-internet-search: https://mcp-internet-search.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp
+  mcp-research-information: https://mcp-research-information.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp
+  mcp-browser-automation-pw: https://mcp-browser-automation-pw.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp
+  mcp-document-intelligence: https://mcp-document-intelligence.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp

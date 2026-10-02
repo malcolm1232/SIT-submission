@@ -77,7 +77,9 @@ Recomputed per audit C25: the grader is the full pipeline in `research/grading/R
 | B2 (Anthropic only, Opus grader, local matcher) | $796 | $165 | $961 | $1,249 | $866 |
 | B3 (Anthropic only, worst case) | $796 | $598 | $1,394 | $1,812 | $1,236 |
 
-**Budget to approve: $1,812 (call it $1,850).** It covers every judge branch, so it does not depend on ADR-003. If the user confirms branch B1 or B2, the expected spend falls to about $1,150-1,250. Until the Blind, OOD and sound-control docs are commissioned, the spend that can actually be incurred is the current-items column (at most $1,236). Anthropic's share of the agent spend alone is $1,035 with margin; set the Anthropic Console spend limit for this project's workspace to the Anthropic portion of the chosen branch (for example $1,035 + Claude instrument spend).
+**Smaller figure to approve first: Tier A, $650** (§6; the minimum research-grade core from `research/audit/fresh_eyes.md` §2.3, scoped in `eval/EVAL_PLAN.md`). The full programme below stays the reference.
+
+**Budget to approve for the full programme: $1,812 (call it $1,850).** It covers every judge branch, so it does not depend on ADR-003. If the user confirms branch B1 or B2, the expected spend falls to about $1,150-1,250. Until the Blind, OOD and sound-control docs are commissioned, the spend that can actually be incurred is the current-items column (at most $1,236). Anthropic's share of the agent spend alone is $1,035 with margin; set the Anthropic Console spend limit for this project's workspace to the Anthropic portion of the chosen branch (for example $1,035 + Claude instrument spend).
 
 **Unbudgeted risk: effort switches.** `config/agent.yaml` (runbook §4.1) runs `plan` at `high`, `research` at `medium` and the later stages at `high`. A top-level `effort` change invalidates the messages-tier prompt cache (claude-api skill, prompt caching "Invalidation hierarchy"), and the PDF and canonical text sit in `messages`, so each switch rewrites the whole context at the cache-write price. Two switches per run cost about **+$1.20 per FULL run** (`cost_model.py`, "Sensitivity"; $3.38 instead of $2.18), about $500 over the planned matrix, which is more than the 30 % margin on the agent line. The figures above assume this is avoided (ADR-002: one effort level per conversation, or the per-message effort beta). Confirm on the laptop from `cache_creation_input_tokens` at stage boundaries before the pilot.
 
@@ -106,3 +108,42 @@ Not in USD, but budgeted: about 20-25 person-hours of human labelling (audit §4
 Cuts 1-6 together save about $535 before margin (about $695 with margin).
 
 **Never cut:** the single Blind evaluation; the S-heldout evaluations; FULL against B0 and B0-$ (cost-matched baselines; methodology L29); matcher validation against human labels; the verify stage in the agent; demo rehearsals.
+
+## 6. Tier A: minimum research-grade core (approve this first)
+
+Added 2026-10-02. Scope from `research/audit/fresh_eyes.md` §2.3 (keep column), run matrix and claims in `eval/EVAL_PLAN.md` §1, decision rules in `eval/prereg.yaml`. Per-run prices are the §1 per-condition figures (FULL $2.18, B0 $0.63, B0-$ $2.18, A5 $1.02); instrument rates are §3's (matcher and judges $1.05 per matched run, Opus 5.5 grader $0.57 per review in batch, Sonnet 5.5 control $0.30). The full programme in §2-§5 is unchanged and remains the reference; Tier A is a subset of it, not an addition.
+
+| # | Line item (Tier A) | Runs | Agent USD |
+|---|---|---|---|
+| A-1 | Development iteration, FULL, resume from checkpoints (support; no claims) | 16 | 34.88 |
+| A-2 | S-dev pilot before the freeze: FULL and B0, k = 3, 3 docs | 18 | 25.29 |
+| A-3 | Frozen agent on S-dev: FULL, B0, B0-$, A5, k = 3, 3 docs | 36 | 54.09 |
+| A-4 | Frozen agent on S-heldout (access 1 of 3): FULL, B0, B0-$, k = 3, 2 docs | 18 | 29.94 |
+| A-5 | v2 re-review: FULL, fresh and with v1 context, k = 3, 3 v2 docs | 18 | 39.24 |
+| A-6 | Real-dev: SIT sample v1, FULL, k = 3 (scored against the owner's key) | 3 | 6.54 |
+| A-7 | Owner-written SIT v2 fixture, FULL delta mode, k = 3 | 3 | 6.54 |
+| A-8 | Robustness minimum gate, live-LLM part (about 6 scenarios × 2) | 12 | 26.16 |
+| A-9 | Rehearsals, cassette recording, fresh-clone check | 8 | 17.44 |
+| | **Agent subtotal (Tier A)** (96 scored + 36 support) | **132** | **240.12** |
+
+| Instruments (Tier A) | Volume | USD |
+|---|---|---|
+| Matcher, adjudicator, G3 and citation judges (Opus 5.5 batch, or the second provider) | 101 matched runs | 106.05 |
+| Opus 5.5 grader, effort `high` (`docs/USER_DECISIONS.md` #2) | 101 reviews | 57.57 |
+| Sonnet 5.5 same-family control grader | 101 reviews | 30.30 |
+| Second-provider grader, only if a key exists (price UNVERIFIED) | 101 reviews | 57.57 |
+
+| Tier A total | Subtotal | **× 1.3** |
+|---|---|---|
+| Anthropic only | $434 | **$564** |
+| With a second-provider grader | $492 | **$639** |
+| Sensitivity: every FULL-shaped run (99) at the $3.24 heavy-thinking cost | $539-597 | $701-776 |
+
+**Tier A approval figure: $650.** It covers both grader branches at the planning cost. The §5 pilot checkpoint applies unchanged: if the pilot's median FULL run costs more than $3.24, stop and re-plan before the freeze. Hard stop at $650 without a new decision in `docs/DECISIONS.md`. Not in USD: about 18 person-hours for one rater (`eval/human_labelling_protocol.md` §1) and about 7-11 hours of laptop wall time (132 runs × 8-10 min, 2-3 in parallel).
+
+| Tier | Runs | USD with margin | Status |
+|---|---|---|---|
+| A (core; must finish before submission) | 132 | $564-639 (approve $650) | Approve now |
+| B (if time; `eval/EVAL_PLAN.md` §2: A4b effort sweep, A4 Sonnet-as-agent, human-planted set, sound control, AI-platform rehearsal doc) | 63 | $278-323 | Approve after Tier A is on track |
+| A + B | 195 | $842-962 | |
+| Full programme (§2-§4, reference) | 442 | $1,147-1,812 | Needs the commissioned Blind, OOD and sound-control docs |

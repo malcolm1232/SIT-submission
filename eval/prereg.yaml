@@ -1,0 +1,690 @@
+# Pre-registration: SIT design-review agent evaluation
+#
+# Status: DRAFT. Hypotheses, metrics, tests and decision rules are fixed now, before any
+# agent run. Only the fields listed under `freeze.fill_before_freeze` may change between
+# this draft and the frozen version, and they may only be filled with values measured in
+# the S-dev pilot (EVAL_PLAN.md line A-2). Any other change after the first scored run
+# is a deviation and goes in eval/prereg_deviations.md.
+#
+# Sources: research/methodology/README.md (MR) and metrics.md (MM), research/audit/
+# research_audit.md (RA), research/audit/fresh_eyes.md (FE), docs/BUDGET.md, docs/
+# USER_DECISIONS.md (UD), docs/DECISIONS.md (ADR), docs/SEALING.md, spec/README.md,
+# research/grading/README.md (GR). Metric names are spelled as in MM.
+#
+# Authoring note (exposure disclosure, SEALING.md §6 rules 4 and 6): the session that
+# wrote this file read RA (whose §4.3 names S-heldout defects), FE, and spec/README.md
+# §1-§2.3, §2.5, §2.8, §3, §4, §6 (field-level metadata about the S-heldout keys). It did
+# not open anything under eval/blind/, any answer_key*.json, or spec/README.md §2.4,
+# §2.6, §2.7. This is exposure, not an evaluation; it is listed in
+# access_log_policy.prior_exposures_to_record. Nothing below quotes S-heldout content.
+
+schema_version: "1.0"
+project: SIT design-review agent
+document: eval/prereg.yaml
+companion_plan: eval/EVAL_PLAN.md
+companion_labelling_protocol: eval/human_labelling_protocol.md
+deviations_log: eval/prereg_deviations.md   # created at freeze; append-only
+drafted: "2026-10-02"
+scope: tier_A   # Tier A is confirmatory. Tier B items are pre-registered as exploratory. Tier C is not run.
+
+frozen: false
+frozen_at: null          # UTC timestamp, set in the same edit that flips `frozen` to true
+frozen_by: null
+freeze:
+  rule: >-
+    `frozen` flips to true, and the SHA-256 of this file is recorded, before the first
+    scored run (EVAL_PLAN.md line A-3, the first run of the frozen agent). Dev-iteration
+    and pilot runs on S-dev (lines A-1, A-2) may happen before the freeze; they are
+    calibration runs, carry no confirmatory claim, and are reported as exploratory.
+  fill_before_freeze:      # the only fields that may change between draft and freeze
+    - statistics.pilot_estimates.*
+    - minimum_detectable_effect.recomputed_with_pilot
+    - matcher.prefilter.tau_pre
+    - matcher.prompt_sha256
+    - grounding.theta_q
+    - grader.prompt_sha256
+    - grader.second_provider.model_id
+    - grader.second_provider.available
+    - agent_under_test.git_commit
+    - agent_under_test.prompts_bundle_sha256
+    - agent_under_test.config_sha256
+    - agent_under_test.effort_per_stage
+    - costs.measured_median_full_usd
+    - costs.b0_dollar_matching_n
+  procedure:
+    - Fill every field listed in fill_before_freeze from the pilot; leave everything else untouched.
+    - Run `git diff` of this file against the draft commit; the diff must touch only fill_before_freeze fields. If it touches anything else, record the change and its reason in eval/prereg_deviations.md before freezing.
+    - Set frozen true, set frozen_at and frozen_by, commit.
+    - Compute `sha256sum eval/prereg.yaml` on the committed file. Record the hash in (a) eval/prereg.lock (one line, hash plus commit id), (b) the header of the S-heldout ACCESS_LOG.md, (c) every run manifest field run_manifest.prereg_sha256.
+    - Timestamp the hash outside the developer's control (FE R-04, N14) before the first scored run - email the hash and commit id to the SIT officer, or push a signed tag `prereg-frozen` to GitHub. Record which one in eval/prereg.lock.
+    - From this point the eval runner refuses to start a scored run if the file's hash differs from eval/prereg.lock (SEALING.md §3 unseal step 2 applies the same check to S-heldout).
+
+# ----------------------------------------------------------------------------------
+# 1. Hypotheses
+# ----------------------------------------------------------------------------------
+# Confirmatory families are Holm-corrected (statistics.families). Every hypothesis is
+# reported whatever its outcome (reporting.always_reported).
+analysis_sets:
+  keyed_frozen: >-
+    The 5 keyed v1 documents (3 S-dev + 2 S-heldout; 70 key flaws, 14 per document),
+    runs of the frozen agent only (lines A-3 and A-4). Every document has 14 v1 flaws,
+    so micro and macro recall coincide on this set.
+  heldout_only: The 2 S-heldout documents (28 flaws), runs of the frozen agent (line A-4).
+  dev_only: The 3 S-dev v1 documents (42 flaws), runs of the frozen agent (line A-3). In-sample - the agent was tuned on these.
+  v2_pairs: The 3 S-dev v2 documents (line A-5); diff key from v2_status per flaw.
+  real_dev: The SIT sample artefact v1 (line A-6) and the owner-written SIT v2 fixture (line A-7).
+
+hypotheses:
+  - id: H1
+    family: primary
+    claim: The full agent finds more planted flaws than a single call with the same schema.
+    metric: Recall
+    matching: strict
+    comparison: FULL vs B0
+    analysis_set: keyed_frozen
+    predicted_direction: FULL > B0
+    minimum_effect_of_interest: 0.10   # absolute recall
+    decision_rule: >-
+      Supported only if all three hold - (a) Holm-adjusted paired cluster-bootstrap
+      p < 0.05; (b) the 95 % CI of FULL - B0 excludes 0; (c) the heldout_only point
+      estimate is > 0. If (a) and (b) hold but (c) fails, report "not supported;
+      inconsistent across splits".
+    category_prediction: >-
+      Gain concentrated in flaws whose key has needs_external_research = true and in
+      cross-section flaws; little gain on single-section internal_contradiction flaws.
+      Exploratory (BH).
+  - id: H2
+    family: primary
+    claim: The gain is not only extra compute.
+    metric: Recall
+    matching: strict
+    comparison: FULL vs B0-$
+    analysis_set: keyed_frozen
+    predicted_direction: FULL > B0-$
+    minimum_effect_of_interest: 0.10
+    predicted_outcome: >-
+      Smaller difference than H1. A null here is plausible and is reported as "no
+      evidence that the agent architecture adds detection beyond matched spend at this n",
+      with the MDE (MR §4 B0-$ row).
+    decision_rule: Same three conditions as H1.
+  - id: H3
+    family: guardrail
+    claim: Higher recall is not bought with lower precision.
+    metric: Precision, adjudicated
+    comparison: FULL vs B0
+    analysis_set: keyed_frozen
+    predicted_direction: FULL - B0 >= -0.10 (non-inferiority)
+    minimum_effect_of_interest: 0.10   # non-inferiority margin
+    decision_rule: Holm-adjusted one-sided bootstrap test of H0 Δ <= -0.10 rejects at 0.05.
+  - id: H4
+    family: guardrail
+    claim: The agent does not raise more unjustified changes on sound sections than B0.
+    metric: CDR
+    comparison: FULL vs B0
+    analysis_set: keyed_frozen
+    predicted_direction: FULL - B0 >= -0.10 (non-inferiority)
+    minimum_effect_of_interest: 0.10
+    decision_rule: As H3.
+  - id: H5
+    family: guardrail
+    claim: The verify stage keeps findings grounded in the document.
+    metric: Hallucinated-finding rate
+    comparison: FULL vs B0
+    analysis_set: keyed_frozen
+    predicted_direction: FULL < B0; FULL HFR <= 0.05 in absolute terms
+    minimum_effect_of_interest: 0.05
+    decision_rule: Holm-adjusted two-sided bootstrap p < 0.05 and CI excludes 0 for the comparison; the absolute 0.05 level is descriptive.
+  - id: H6
+    family: gate
+    claim: With every tool disabled the agent does not invent external sources and says that no research was done.
+    metric: Fabricated-citation rate
+    comparison: A5 alone (descriptive)
+    analysis_set: dev_only   # 9 A5 runs, line A-3
+    predicted_direction: Fabricated-citation rate = 0 and disclosure in 9 of 9 runs
+    minimum_effect_of_interest: any fabricated citation fails the gate
+    decision_rule: >-
+      Pass if no A5 run cites any external source and every A5 report discloses that no
+      research was done. Report the exact count and the 95 % Wilson upper bound on the
+      per-run failure rate (0 of 9 gives an upper bound of about 0.30).
+  - id: H7
+    family: exploratory
+    claim: On a revised document the agent recognises fixes, keeps open flaws open and does not declare unchanged text resolved.
+    metrics: [Stale-finding rate, Resolved acknowledgement, Persisted recall, New-flaw recall, Copy-through rate, false_resolution_rate]
+    comparison: fresh vs with-context variants of FULL (descriptive)
+    analysis_set: v2_pairs
+    predicted_direction: >-
+      Stale-finding rate <= 0.20 (fresh) and lower with context; Resolved acknowledgement
+      >= 0.67 (with context); Persisted recall within 0.10 of FULL v1 recall on the same
+      flaws; false_resolution_rate <= 0.10; Copy-through rate <= 0.10. New-flaw recall has
+      n = 3 flaws in total and is reported as counts only (anecdotal; RA G4).
+    minimum_effect_of_interest: 0.10
+  - id: H8
+    family: exploratory
+    claim: Any drop from S-dev to S-heldout is not specific to the tuned agent.
+    metric: Recall
+    comparison: "difference-in-differences: (FULL_dev - FULL_heldout) - (B0_dev - B0_heldout)"
+    analysis_set: keyed_frozen
+    predicted_direction: DiD > 0 (some tuning advantage) with |DiD| < 0.15
+    minimum_effect_of_interest: 0.15
+    decision_rule: >-
+      No pass/fail threshold (RA C20). Report the DiD, its CI and the MDE. With 2
+      held-out documents the CI is expected to be wide; no generalisation claim is made
+      from it (MR §5, L32).
+  - id: H9
+    family: exploratory
+    claim: On the SIT document the agent finds most of what the owner finds, and the owner finds things the model family misses.
+    metric: Recall   # against the owner's independent SIT key, matched by the validated matcher and checked by the owner
+    comparison: FULL (3 runs) vs the owner-written SIT key (descriptive, n = 1 document)
+    analysis_set: real_dev
+    predicted_direction: >-
+      Recall >= 0.50 on owner-key items the owner rates high or critical; at least one
+      owner-only item (FE R-01). Also reported - model-only items adjudicated by the
+      owner, and Chapman's estimate as a lower-bound indicator (MM §9).
+    minimum_effect_of_interest: null   # descriptive
+    note: Real-dev is never a generalisation claim (MR §1.1, L39).
+  - id: H10
+    family: gate
+    claim: The measuring instruments are valid enough to report.
+    metrics:
+      - matcher_vs_human_kappa (binary MATCH vs not, strict)
+      - "B-gen Recall (strict)"
+    comparison: matcher vs the owner's labels on 100 S-dev candidate pairs; B-gen floor
+    predicted_direction: kappa >= 0.80; B-gen strict Recall <= 0.05
+    decision_rule: >-
+      kappa >= 0.80 - matcher numbers are reported as validated. 0.60 <= kappa < 0.80 -
+      reported as tentative, with kappa beside every matcher-derived number. kappa < 0.60
+      - follow human_labelling_protocol.md §7 (fallback to human matching on S-heldout).
+      B-gen strict Recall > 0.05 means the matcher is lenient - fix and re-validate
+      before any matcher number is reported (MR L4).
+
+tier_B_hypotheses:   # pre-registered now; exploratory; run only if Tier A is complete
+  - id: HB1
+    name: A4b effort sweep (UD #1, #5)
+    metric: Recall
+    comparison: FULL at effort medium, high (the FULL reference), xhigh on the 3 S-dev v1 documents
+    predicted_direction: >-
+      Recall non-decreasing with effort; high - medium >= 0.05; xhigh - high < 0.05 at
+      about +50 % cost and longer wall time. Per UD #1, xhigh is adopted for a stage only
+      if its gain is >= 0.05 and its CI excludes 0.
+    minimum_effect_of_interest: 0.05
+  - id: HB2
+    name: A4 Sonnet 5.5 as the agent model (UD #5; the product stays all-Opus)
+    metric: Recall
+    comparison: FULL-Sonnet vs FULL-Opus, and FULL-Sonnet vs B0-Sonnet, on the 5 keyed documents
+    predicted_direction: >-
+      FULL-Opus >= FULL-Sonnet (difference <= 0.10); FULL-Sonnet > B0-Sonnet, i.e. the
+      harness gain persists with a different backbone. This is within one model family
+      and does not support "not tied to one model" across providers (ADR-002, RA C24).
+    minimum_effect_of_interest: 0.10
+  - id: HB3
+    name: Human-planted mini-set (FE §2.2, N12)
+    metric: Recall
+    comparison: FULL vs B0 on 1 public design document with 5-8 owner-planted flaws
+    predicted_direction: FULL > B0; FULL recall on human-planted flaws lower than on LLM-planted S-dev flaws
+    minimum_effect_of_interest: null   # descriptive, Wilson CI
+  - id: HB4
+    name: Sound control document (RA C22)
+    metric: Fully-sound doc accuracy
+    comparison: FULL vs B0
+    predicted_direction: FULL verdict fit with no recommendation of severity >= medium in >= 2 of 3 runs
+
+# ----------------------------------------------------------------------------------
+# 2. Metrics
+# ----------------------------------------------------------------------------------
+primary_metric:
+  name: Recall
+  definition: MM §3 - R = TP / G, TP from the strict one-to-one matching of MM §2
+  key: sealed key G_d only (pooled supplementary key G+ is secondary)
+  aggregation: macro over documents (MM §3.1 proposed default; identical to micro on keyed_frozen)
+  matching: strict (score 3 only)
+
+secondary_metrics:
+  key_secondary:     # methodology primary list (MR §2, bold); reported with CIs for every condition
+    - Precision, adjudicated
+    - Severity-weighted recall
+    - Hallucinated-finding rate
+    - CDR
+    - Fabricated-citation rate
+  other_secondary:
+    - Precision, strict
+    - F1
+    - Pooled recall (secondary)
+    - Duplication rate
+    - Non-specific rate
+    - Critical recall
+    - Quote fabrication rate
+    - Citation precision
+    - Source-type accuracy
+    - RJR_struct
+    - Balanced unit accuracy
+    - Stale-finding rate
+    - Resolved acknowledgement
+    - Persisted recall
+    - New-flaw recall
+    - Copy-through rate
+    - Cost (USD), tokens, tool calls, wall time   # MM §10, median and IQR
+    - Stop-reason distribution
+  lenient_matching: Recall and Precision, adjudicated are also reported at lenient matching (score >= 2), labelled secondary (MR L33)
+  severity_weights:
+    primary: {critical: 8, high: 4, medium: 2, low: 1}
+    sensitivity: {critical: 4, high: 3, medium: 2, low: 1}
+  severity_mapping:   # spec/README.md §2.5
+    synthetic3_primary: {critical: critical, major: high, minor: low}
+    synthetic3_sensitivity: {critical: critical, major: high, minor: medium}
+    heldout_keys: identity after lower-casing
+    report: SWR under both weight schemes and both mappings (MR L14)
+  proposed_additions:   # not yet in metrics.md; must be added to MM §8 before freeze, else dropped
+    - name: false_resolution_rate
+      source: FE R-09, N8
+      definition: >-
+        Prior findings anchored to text that is unchanged between v1 and v2 (code-computed
+        section-level diff of doc.pages.txt) that the v2 review marks resolved, divided by
+        all prior findings anchored to unchanged text.
+      status: exploratory (H7)
+    - name: claimed_fix_verification_accuracy
+      source: FE R-05
+      definition: Share of "fixed per review" claims in the owner-written SIT v2 that the agent correctly classifies as made, partly made or not made.
+      status: exploratory, SIT v2 only, counts reported
+  blocked_metrics:   # reported as BLOCKED, not as zero
+    - name: Action-type accuracy
+      reason: expected_disposition is not authored in any key (spec C8)
+    - name: Approved-decision violation rate
+      reason: approved_decisions[] is empty in every key; authoring is Tier B
+    - name: Bait resistance
+      reason: no sound section has bait = true
+    - name: Fully-sound doc accuracy
+      reason: no fully sound control document exists (Tier B HB4)
+  deferred_metrics:   # Tier C; if computed at all, labelled exploratory
+    - nDCG@k
+    - MRR_crit
+    - Critical-in-top-3
+    - ECE
+    - Brier
+    - AUROC
+    - Jaccard
+    - Detect-in-all-k
+    - Research yield
+    - Overrun
+    - Citation recall
+    - RJR_subst
+    - False-absence rate
+    - Changed-section coverage
+
+# ----------------------------------------------------------------------------------
+# 3. Evaluation tiers and items (ADR-004)
+# ----------------------------------------------------------------------------------
+eval_tiers:
+  dev:   # S-dev; developers may read docs and keys; unlimited use
+    split_name: S-dev
+    items:
+      - path: eval/synthetic/clinical_rpm
+        item_id: synthetic-clinical-rpm-001
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/payments_orchestration
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/research_lakehouse
+        item_id: synth-research-lakehouse-001
+        documents: [design_v1.pdf, design_v2.pdf]
+    counts: 3 v1 documents x 14 flaws = 42; 3 v2 documents, each 6 fixed, 8 persisted, 1 introduced (3 introduced flaws in total)
+    input_format: PDF only (agent never sees the .md, the README or any key)
+    keys: answer_key.canonical.json; scored_run_ready must be true (core_insight signed off by the owner, human_labelling_protocol.md task T3)
+  held_out:   # S-heldout; sealed; NOT blind (RA §4.3, ADR-004)
+    split_name: S-heldout
+    items:
+      - path: eval/blind/item_a   # renamed eval/heldout/ on sealing
+      - path: eval/blind/item_b
+    counts: 2 v1 documents x 14 flaws = 28; no v2
+    sealed: true
+    access_budget: 3 logged evaluations in total
+    planned_accesses:
+      - "access 1 (Tier A): line A-4 runs, then core_insight sign-off for these keys, all in one unseal session"
+      - "access 2 (Tier B, optional): HB2 Sonnet runs on these 2 documents"
+      - "access 3: reserve, only to re-run cells lost to an infrastructure failure (definition in stop_rule)"
+    pdf_rendering: >-
+      These items have no PDF. Inside the unseal session, a script renders design.md to PDF
+      with the same pipeline as eval/build_pdfs.py; no person reads the rendered text.
+    keys_completion: >-
+      core_insight for these keys is written and signed off only after the frozen agent
+      has run on them and before any matcher call; the signer does not look at agent
+      outputs first. The agent is frozen, so this exposure cannot tune it.
+  blind:
+    split_name: Blind
+    items: []   # placeholder; to be commissioned (ADR-004); Tier C
+    status: not commissioned; no claim depends on it
+    access_budget: 1 evaluation, after this file is frozen
+  real_dev:
+    split_name: Real-dev
+    items:
+      - SIT sample artefact v1 (not committed; ADR-005)
+      - SIT v2 fixture written by the owner to FE R-06, with a gold diff written before any agent run on it
+    use: descriptive only (H9, H7 extras); never a generalisation claim (MR L39)
+    leakage_rule: distinctive SIT terms never appear in prompts (MR R5)
+  rehearsal_pool:
+    items: [AI-platform-family rehearsal document (Tier B; FE R-07)]
+    use: demo rehearsal only, never scored
+
+# ----------------------------------------------------------------------------------
+# 4. Runs, conditions, baselines and ablations
+# ----------------------------------------------------------------------------------
+runs_per_item:
+  k: 3
+  applies_to: every scored (document, condition) cell in Tier A and Tier B
+  note: >-
+    MR §4b prefers k = 5 for the primary comparison; k = 3 is the methodology minimum and
+    the FE core choice. The cost of the deviation is a wider CI; the MDE below uses k = 3.
+  no_extension: k is fixed. No runs are added after results are seen (MR L24).
+  reruns: only for infrastructure failures as defined in stop_rule.infrastructure_failure; at most 1 rerun per cell; every rerun is logged.
+  scheduling: >-
+    Conditions are interleaved per document in a seeded random order (seed recorded in
+    the run schedule; schedule SHA-256 in each manifest) so API drift does not align
+    with conditions (MR §4, L31). 2-3 runs in parallel.
+  population: >-
+    Intention-to-treat - every launched run counts; a crashed run scores 0 recall and is
+    counted. Per-protocol (completed runs only) is reported beside it (MR §6).
+
+agent_under_test:
+  model: claude-opus-5-5   # every agent call (ADR-002, UD #1)
+  thinking: adaptive
+  effort_per_stage: null   # fill before freeze; default high everywhere (UD #1); a lower stage effort is allowed only if the pilot latency measurement (FE N3) requires it, and is recorded here
+  server_side_fallbacks: false   # ADR-002
+  git_commit: null
+  prompts_bundle_sha256: null
+  config_sha256: null
+  served_model_check: every response's model field is logged; a run with any served model other than claude-opus-5-5 is excluded from per-protocol and flagged
+
+conditions:
+  tier_A:
+    - id: FULL
+      description: The full agent, frozen
+      documents: keyed_frozen, v2_pairs (fresh and with-context), real_dev
+      predicted_outcome: Reference
+    - id: B0
+      description: Single call, no tools, whole document plus the same task prompt and output schema (MR §4)
+      documents: keyed_frozen
+      predicted_outcome: Lower Recall than FULL by >= 0.10 (H1); similar Precision, adjudicated; higher Hallucinated-finding rate (H5)
+    - id: B0-$
+      description: B0 with best-of-n self-consistency until its median cost matches FULL's measured median cost (MR §4)
+      matching_rule: n chosen from the pilot so that n x median(B0 cost) is closest to median(FULL cost); n recorded in costs.b0_dollar_matching_n; the best-of-n selection is by the model's own self-ranking over the n outputs, never by any key-aware score
+      documents: keyed_frozen
+      predicted_outcome: Between B0 and FULL on Recall (H2)
+    - id: B-gen
+      description: Fixed list of 20 generic design-review findings, no model call (MR §4)
+      documents: keyed_frozen
+      runs: 1 per document (deterministic)
+      predicted_outcome: Recall (strict) <= 0.05 (matcher floor, H10)
+    - id: A5
+      description: All MCP tools disabled; document text supplied directly (MR §4)
+      documents: dev_only
+      predicted_outcome: Fabricated-citation rate = 0 and disclosure in every run (H6); Recall lower than FULL mainly on needs_external_research flaws (exploratory, BH)
+  tier_B:
+    - id: A4b-medium
+      description: FULL with every stage at effort medium (UD #5)
+      documents: dev_only
+      predicted_outcome: HB1
+    - id: A4b-xhigh
+      description: FULL with every stage at effort xhigh (UD #5)
+      documents: dev_only
+      predicted_outcome: HB1
+    - id: A4-sonnet
+      description: FULL harness with claude-sonnet-5-5 as the agent model, plus B0 on Sonnet 5.5 (UD #5)
+      documents: keyed_frozen (uses S-heldout access 2)
+      predicted_outcome: HB2
+  tier_C_not_run:   # stated as limitations (EVAL_PLAN.md Tier C)
+    - id: A1
+      description: No research
+      predicted_outcome_if_run: Drop concentrated in needs_external_research flaws (MR §4)
+    - id: A2
+      description: No iteration
+      predicted_outcome_if_run: Drop in multi-section flaws
+    - id: A3
+      description: No verification pass
+      predicted_outcome_if_run: Higher Hallucinated-finding rate, Recall roughly flat
+    - id: A4e
+      description: Every stage at effort low (superseded by A4b per UD #5; low effort not required)
+    - id: H
+      description: Human expert ceiling (dropped; one-person plan, RA §4.6)
+
+# ----------------------------------------------------------------------------------
+# 5. Instruments
+# ----------------------------------------------------------------------------------
+grader:   # UD #2; GR §5-§8; spec/README.md grader-facing projection
+  role_in_claims: supporting only; no Tier A claim rests on a grader score (FE §2.3, RA G5)
+  primary:
+    model: claude-opus-5-5
+    effort: high
+    api: Message Batches (50 % price)
+    disclosure: same family as the agent; numbers labelled "same-family" and tied to the validity tier reached
+  second_provider:
+    available: null      # fill before freeze from the key report (UD #3)
+    model_id: null       # exact ID returned by one structured-output call; UNVERIFIED until then
+    effort: high
+    rule: >-
+      If an OpenAI or Google key exists, this grader's key-blind score is the headline
+      bias-controlled grader score, and agreement between it and the Opus grader
+      (quadratic-weighted kappa per dimension, ordinal Krippendorff's alpha on S) is
+      reported. If not, the same-family limitation is disclosed (research/models/README.md).
+    sit_material: >-
+      Reviews of the SIT sample and the SIT v2 fixture are sent to the second provider
+      only with SIT's written agreement (FE R-10); until then this grader scores synthetic
+      and held-out reviews only, and SIT reviews are graded by the Claude graders.
+  control:
+    model: claude-sonnet-5-5
+    effort: high
+    purpose: same-family control; agreement with the primary grader reported
+  mode: key-blind primary; key-aware diagnostic only and never reported as recall (spec C4)
+  samples: 2 per review at provider-default sampling; a third if any dimension differs by >= 2 or S differs by >= 8; median per dimension (GR §6.1)
+  input: grader-facing projection of the Review plus doc.pages.txt; no model name, prompts, tool traces or config (GR §6.2)
+  rubric: GR §3 (D1-D10, D11 in delta mode), weights and gates GR §4
+  validation_tier_reached_rule: smoke n = 5 (GR §7 targets); tentative n >= 20 with ordinal alpha >= 0.667; primary per MR §8. Tier A reaches smoke plus a 5-review frozen-agent sample (10 reviews); claims are worded at the tier reached (RA C2).
+  meta_validation_tier_A: [V1, V4, V10]   # GR §8; FE core; full V1-V13 is Tier C
+  prompt_sha256: null
+
+matcher:   # MM §2; spec C4, C5
+  only_source_of_recall: true
+  model:
+    branch_A: the second-provider model, if a key exists (cross-family)
+    branch_B: claude-opus-5-5 via Message Batches, disclosed as same-family (FE §2.3 core; ADR-003 B3 shape). Local open-weight matchers are Tier C.
+  effort: high
+  rule: core_insight_plus_location_v1 - one-to-one, core insight stated, location compatible, category labels ignored
+  credit_mode: per flaw from the key (substance | all_of | any_of); it operationalises the core insight and is not a second rule
+  candidates:
+    - location overlap (finding doc_anchors vs flaw location)
+    - listwise LLM shortlist, up to 3 per flaw
+    - embedding top-3 per flaw (optional; used only if an embedding model is recorded at freeze)
+  prefilter:
+    tau_pre: null   # if the embedding prefilter is used - calibrated on S-dev so >= 0.98 of owner-confirmed matches survive
+  pairwise_scoring: 0-3 scale (MATCH 3, PARTIAL 2, RELATED 1, UNRELATED 0); 3 samples, median
+  assignment: Hungarian on score + 0.01 x primary severity weight; eligible pairs score 3 (strict) or >= 2 (lenient)
+  blinding: matcher never sees the condition or model; findings shuffled per call
+  still_valid_observations: a finding matching one is pre-adjudicated VALID_UNPLANTED
+  adjudication:
+    first_pass: same model as the matcher; classes DUPLICATE, VALID_UNPLANTED, HALLUCINATED, NON_SPECIFIC, INVALID_OPINION, OUT_OF_SCOPE
+    human_review: on S-heldout runs, 100 % of VALID_UNPLANTED and HALLUCINATED plus a random 20 % of the rest (human_labelling_protocol.md task T6); on S-dev runs the LLM first pass stands and is labelled as such
+  key_freeze: sealed keys are never edited after a scored run; confirmed VALID_UNPLANTED go to the pooled supplementary key G+
+  validation: human_labelling_protocol.md task T4 (100 S-dev pairs) and H10
+  prompt_sha256: null
+
+grounding:   # MM §5.1; ADR-006, ADR-007
+  text: canonical doc.pages.txt from the pinned extractor; the same function as the agent's verify stage
+  G1_quote_existence: quote >= 8 tokens, normalised partial-match ratio >= theta_q
+  theta_q: null   # fill before freeze; default 0.90 unless the pilot calibration against owner judgements says otherwise
+  G2_location: quote on the cited page +-1 and in the cited section or an adjacent one
+  G3_premise_judge: same model as the matcher (branch rule above); disclosed if same-family
+  citation_checks: ledger-ID existence and read_before_cite in code; support judge same model as the matcher
+
+# ----------------------------------------------------------------------------------
+# 6. Statistics
+# ----------------------------------------------------------------------------------
+statistics:
+  unit_structure: document -> flaw or finding -> run; documents are the independent units (MR §4b.1)
+  point_estimates: per run -> mean over k runs per document -> mean over documents (MM §12.1)
+  intervals: two-level cluster bootstrap (documents, then runs within document), B = 10000, percentile, fixed seed (MM §12.2)
+  paired_comparisons: paired_diff of MM §12.3 on the same documents and run indices; bootstrap p two-sided (one-sided for non-inferiority)
+  small_cluster_caveat: >-
+    With 5 documents the cluster bootstrap undercovers. Pre-specified sensitivity
+    analyses, always reported - (a) document-level exact sign-flip test (with 5 documents
+    the smallest attainable one-sided p is 1/32); (b) flaw-level paired permutation test
+    stratified by document, with the variance inflated by the design effect from the
+    pilot's rho. A claim is worded "supported at n = 5 documents" and never as a general result.
+  analytic_check: McNemar on discordant flaws, sanity check only (MM §12.3)
+  alpha: 0.05
+  families:
+    primary:
+      tests: [H1, H2]
+      correction: Holm
+    guardrail:
+      tests: [H3, H4, H5]
+      correction: Holm
+    exploratory:
+      includes: per-category Recall and precision (category axis of spec/taxonomy.yaml), per-split breakdowns, every secondary metric comparison not in H1-H5, H7, H8, H9, all Tier B
+      correction: Benjamini-Hochberg, q = 0.10
+      label: exploratory
+  gates_not_tests: [H6, H10]   # pass/fail with exact counts and Wilson bounds
+  pilot_estimates:   # fill before freeze from line A-2 (FULL vs B0, k = 3, 3 S-dev documents)
+    rho_intra_doc: null
+    sigma_d_recall_diff: null
+    psi_discordance: null
+    between_run_sd_recall_full: null
+    icc_runs_vs_docs: null
+
+minimum_detectable_effect:
+  method: Connor paired-proportion formula with the design effect DEFF = 1 + (m - 1) rho, m = 14 flaws per document, 80 % power, two-sided (MM §12.5); document-level n = ((1.96 + 0.84) sigma_d / delta)^2
+  computed_at_drafting:   # rho and psi assumed; recomputed with pilot values before freeze
+    keyed_frozen_70_flaws:
+      rho_0.05: {psi_0.2: 0.19, psi_0.3: 0.23}
+      rho_0.10: {psi_0.2: 0.22, psi_0.3: 0.27}
+      rho_0.20: {psi_0.2: 0.27, psi_0.3: 0.33}
+      holm_alpha_0.025_rho_0.10: {psi_0.2: 0.25, psi_0.3: 0.30}
+    heldout_only_28_flaws:
+      rho_0.10: {psi_0.2: 0.33, psi_0.3: 0.40}
+    dev_only_42_flaws:
+      rho_0.10: {psi_0.2: 0.27, psi_0.3: 0.34}
+    document_level_5_docs: {sigma_d_0.10: 0.13, sigma_d_0.15: 0.19}
+    document_level_2_docs: {sigma_d_0.10: 0.20, sigma_d_0.15: 0.30}
+    a5_gate_0_of_9_runs_wilson_upper: 0.30
+    matcher_kappa_100_pairs_halfwidth: 0.15   # at kappa about 0.75, p_e about 0.6
+  interpretation: >-
+    The minimum effect of interest (0.10 recall) is below the MDE at the achieved n
+    (about 0.22-0.27 on keyed_frozen). Tier A can detect only a large FULL-vs-B0 gap. A
+    non-significant result is reported as "no evidence at this n" with the MDE, never as
+    "no difference" (MR L28).
+  recomputed_with_pilot: null
+
+# ----------------------------------------------------------------------------------
+# 7. Stop rule, reporting, leakage, access
+# ----------------------------------------------------------------------------------
+stop_rule:
+  done_when:
+    - Every Tier A scored cell (EVAL_PLAN.md lines A-3 to A-7) has k = 3 launched runs, counted intention-to-treat.
+    - H10 has a recorded outcome (validated, tentative, or failed with the protocol §7 fallback applied).
+    - Owner adjudication of S-heldout VALID_UNPLANTED and HALLUCINATED labels is complete.
+    - The leakage audit and the runtime access scan are recorded.
+    - Every table in reporting.always_reported is produced by eval/score.py from logs alone.
+  infrastructure_failure: >-
+    A run may be re-launched once only if it failed before producing any review output
+    because of a harness bug fixed without touching prompts or config, an Anthropic API
+    5xx or 529 that exhausted the gateway's retries, or loss of the laptop's network.
+    Tool (MCP) failures are part of the evaluation and are not re-launched. The failed
+    attempt stays in the ITT table.
+  budget_stop: >-
+    Hard stop at the approved Tier A figure in docs/BUDGET.md §6. If reached, stop
+    launching runs, report every completed cell, and list the unrun cells as not run.
+  pilot_checkpoint: >-
+    If the pilot median FULL cost exceeds $3.24 or the p95 wall time exceeds the demo
+    slot, re-plan before freezing (BUDGET.md §5); this is a pre-freeze change, not a deviation.
+  time_stop: >-
+    If two days before submission Tier A is incomplete, stop, analyse what exists, and
+    report the missing cells; never substitute other runs for missing ones.
+  no_optional_stopping: Results are not inspected for significance before the stop rule is met; the score script runs once on the complete Tier A set.
+
+reporting:
+  always_reported:   # whatever the outcome (MR §4b.8, §10)
+    - Every hypothesis H1-H10 with estimate, 95 % CI, adjusted p where tested, MDE, and the decision under its rule, including nulls and failures
+    - "Main results table per split (dev_only, heldout_only, keyed_frozen) for FULL, B0, B0-$, B-gen, A5 (MR §10 Table 1 columns that are in scope)"
+    - Paired differences vs FULL with Holm-adjusted p (MR Table 2)
+    - Per-category Recall, BH-adjusted, labelled exploratory (MR Table 3)
+    - Dev to held-out gap with DiD (MR Table 4, S-dev and S-heldout columns only)
+    - v1 to v2 re-review table (MR Table 5) plus false_resolution_rate
+    - Instrument validity (MR Table 6) - matcher kappa vs the owner, B-gen floor, grader smoke and sample agreement, V1, V4, V10 outcomes
+    - Leakage and integrity audit (MR Table 8) - every leakage_controls item, S-heldout access count, prereg hash, deviations
+    - Efficiency (MR Table 9) - cost, tokens, tool calls, wall time median and IQR, stop reasons
+    - Adjudication counts (MR Table 10)
+    - Run outcome counts per condition, ITT and per-protocol, including every crashed or re-launched run
+    - SIT document comparison with the owner's key - both-found, owner-only, model-only items
+    - The rater statement and L34 disclosure (human_labelling_protocol.md §9)
+    - The list of Tier C items as limitations
+  wording_rules:
+    - Every grader-derived number carries its validity tier and "same-family" where applicable.
+    - Every matcher-derived number carries the matcher kappa.
+    - No result is described as a generalisation to independently authored designs (no Blind set) or as model-independent (ADR-002).
+    - S-heldout is described as "held out, same generator family, not blind".
+
+leakage_controls:   # all must pass before scoring; results go in the leakage table
+  before_first_scored_run:
+    - id: LC1
+      check: This file is frozen, its hash equals eval/prereg.lock, and the external timestamp exists
+    - id: LC2
+      check: Clean git tree; agent git_commit, prompts_bundle_sha256 and config_sha256 identical across all scored runs
+    - id: LC3
+      check: S-heldout sealed per SEALING.md (only .age, MANIFEST.yaml, ACCESS_LOG.md under the sealed path); pre-commit hook installed
+    - id: LC4
+      check: >-
+        Derived copies of S-heldout key content (research/audit/eval_data_audit.md,
+        research/audit/eval_fixes_applied.md, spec/README.md §2.4, §2.6, §2.7,
+        spec/taxonomy.yaml legacy tables for the held-out items) moved into the sealed
+        archive or outside every agent-readable path, and spec/validate_examples.py no
+        longer reads eval/blind (FE R-03, N5)
+    - id: LC5
+      check: Agent filesystem allow-list excludes eval/, research/, spec/README.md and all keys; a test that tries to read them fails closed
+    - id: LC6
+      check: URL deny list for the repository's own domains and the sealed-title query filter active in the ToolGateway (SEALING.md §5)
+    - id: LC7
+      check: Matcher, adjudicator, judge and grader prompts share no private rubric anchors or exemplars with agent prompts; n-gram overlap reported (MR R4, L6)
+    - id: LC8
+      check: Distinctive SIT-sample terms absent from prompts and config (MR R5)
+    - id: LC9
+      check: eval/score.py reproduces the MM §14 worked example exactly (unit test)
+  before_unsealing_s_heldout:
+    - id: LC10
+      check: >-
+        Static leakage audit inside the unseal session by script (MR §3.2 steps 1-3) -
+        distinctive-term grep (top 200 TF-IDF terms per sealed document plus all
+        requirement IDs, numbers with units and proper nouns) over prompts/, config/,
+        agent code, cassettes and test fixtures has 0 unresolved hits; 13-gram overlap = 0;
+        maximum 8-gram overlap reported; canary scan clean (if canary GUIDs are still null,
+        record that the canary control was unavailable)
+  after_runs_before_scoring:
+    - id: LC11
+      check: Runtime access scan of tools.jsonl and llm.jsonl - 0 reads of eval/ paths, 0 own-repository URLs, 0 canary strings in tool results. A run that fails is invalid, stays in the ITT table as a failure, and is reported.
+    - id: LC12
+      check: Every key used for scoring has scored_run_ready = true; for S-heldout this is set in the access-1 session after the runs and before matching
+  not_in_tier_A: [paraphrase and rename probe, section reorder probe, template-tell probe]   # Tier C; stated as limitations
+
+access_log_policy:
+  log_path: eval/heldout/ACCESS_LOG.md   # eval/blind/ACCESS_LOG.md until sealing renames the directory
+  format: append-only Markdown table; existing lines are never edited (pre-commit hook)
+  header: frozen prereg SHA-256 and the commit that froze it
+  entry_written_before_decryption: true
+  entry_fields: [utc_time, who, reason, git_commit, prereg_sha256, access_number_of_budget, what_was_read, runs_launched, outcome]
+  budget: S-heldout 3 evaluations; Blind 1; OOD 1
+  counts_as_access: any decryption, any script that reads plaintext, any person or LLM session that reads a document, README or key
+  exposure_entries: >-
+    Reading material that describes sealed items without decrypting them (audit notes,
+    spec mapping tables) is logged as exposure. It does not consume the evaluation
+    budget but is disclosed in the report.
+  who_may_unseal: the owner, through scripts/unseal.py only; the passphrase never enters a repository, environment variable or LLM session (SEALING.md §2)
+  prior_exposures_to_record:   # to be entered when the log is created (SEALING.md §6 rule 4)
+    - The item briefs and generation sessions at authoring time
+    - Sessions that wrote and edited the held-out keys (research/audit/eval_data_audit.md, eval_fixes_applied.md)
+    - The spec session that wrote spec/README.md §2 and ran spec/convert_answer_keys.py
+    - Every run of spec/validate_examples.py that globbed eval/*/*/answer_key.json (FE R-03)
+    - The research audit skim, 2026-10-02 (RA §4.3 names defects)
+    - The fresh-eyes review, 2026-10-02 (read the two item READMEs)
+    - This pre-registration session, 2026-10-02 (read RA and spec/README.md metadata tables; opened nothing under eval/blind/)
+
+costs:
+  price_basis: docs/BUDGET.md §1 per-condition figures (Opus 5.5, planning base, cached)
+  per_run_usd: {FULL: 2.18, B0: 0.63, B0-$: 2.18, A5: 1.02, heavy_case_FULL: 3.24}
+  measured_median_full_usd: null   # fill before freeze
+  b0_dollar_matching_n: null       # fill before freeze
+  tier_A_cap_usd: see docs/BUDGET.md §6

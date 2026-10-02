@@ -1,0 +1,55 @@
+# config/agent.yaml - line numbers pinned by tests/test_config_layout.py
+model: claude-opus-5-5
+effort:
+  plan: high
+  research: high
+  assess: high
+  refine: high
+  verify: high
+  report: high
+max_tokens: 64000
+allow_fallback: false
+persona: generalist_architect
+# ---- Lines 1-12 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
+# Effort: USER_DECISIONS 2026-10-02 #1 sets `high` for every agent phase (one effort level per
+# conversation, ADR-002); `understand` shares the `plan` level. max_tokens applies to every stage.
+thinking_display: omitted          # omitted | summarized (thinking is always adaptive on Opus 5.5)
+
+llm:
+  timeout_s: 600                   # per attempt; streaming is used for every call
+  max_retries: 4                   # owned by LLMGateway; the SDK client always runs with max_retries=0
+  backoff_base_s: 2.0
+  backoff_max_s: 60.0
+  refusal_retries: 1               # one retry with professional-review framing (robustness LLM-06)
+
+phases:                            # only research and refine may be disabled
+  ingest: true
+  understand: true
+  plan: true
+  research: true
+  assess: true
+  refine: true
+  verify: true
+  report: true
+
+transport: live                    # live | record | replay | fake
+replay:
+  fixtures: null                   # cassette directory for transport=replay
+  strict: true                     # strict: a miss raises ReplayMiss; lenient: empty result
+record:
+  cassette_dir: tests/fixtures/cassettes
+fault_schedule: null               # path to a robustness fault schedule YAML, or null
+
+run_root: runs
+plan_approval: false               # true: print the plan and wait for approval before research
+report:
+  min_severity: low                # findings below this severity are listed only in the appendix
+  template: standard               # standard | risk_register
+
+files:                             # relative to this file's directory
+  stop_rules: stop_rules.yaml
+  tools: tools.yaml
+  criteria: criteria.yaml
+  endpoints: endpoints.yaml
+  url_policy: url_policy.yaml
+  persona: persona.yaml

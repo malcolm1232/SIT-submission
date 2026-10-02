@@ -1,0 +1,473 @@
+{
+ "schema_version": "1.0",
+ "metadata": {
+  "review_id": "REV-2026-10-02-001",
+  "run_id": "run-7c1e",
+  "created_at": "2026-10-02T09:30:00Z",
+  "review_mode": "full",
+  "documents": [
+   {
+    "doc_id": "DOC-booking-v1",
+    "title": "Campus Room Booking Service - Detailed Design",
+    "version": "1.0",
+    "role": "under_review",
+    "sha256_pdf": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "sha256_text": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "text_path": "runs/run-7c1e/text/DOC-booking-v1.txt",
+    "page_count": 22
+   }
+  ],
+  "prior_review_id": null,
+  "taxonomy_version": "1.0"
+ },
+ "intent_summary": {
+  "statement": "A booking service that lets students reserve study rooms, accessibly, with a reliable reminder before each slot.",
+  "objectives": [
+   {
+    "ref": "NFR-7",
+    "text": "All booking screens meet WCAG 2.2 AA."
+   },
+   {
+    "ref": "FR-9",
+    "text": "Every booking gets a reminder one hour before the slot."
+   }
+  ],
+  "constraints": [
+   {
+    "ref": "C-1",
+    "text": "Runs on the existing campus PostgreSQL cluster."
+   }
+  ],
+  "key_assumptions": [
+   {
+    "ref": null,
+    "text": "Peak load is the first week of term."
+   }
+  ],
+  "doc_anchors": [
+   {
+    "doc_id": "DOC-booking-v1",
+    "section_ref": "1",
+    "requirement_ids": [],
+    "quote": "The service lets students reserve study rooms for one-hour slots across campus.",
+    "page": 2
+   }
+  ]
+ },
+ "verdict": {
+  "label": "fit_with_conditions",
+  "rationale": "Accessibility and booking flows are sound; reminders fail FR-9 on peak days until the e-mail quota is fixed.",
+  "confidence": 0.8,
+  "conditions": [
+   {
+    "text": "Fix the reminder e-mail quota (FND-001).",
+    "finding_ids": [
+     "FND-001"
+    ]
+   }
+  ],
+  "per_objective": [
+   {
+    "objective_ref": "NFR-7",
+    "label": "fit",
+    "finding_ids": [
+     "FND-007"
+    ]
+   },
+   {
+    "objective_ref": "FR-9",
+    "label": "not_fit",
+    "finding_ids": [
+     "FND-001"
+    ]
+   }
+  ],
+  "what_would_change_it": "Evidence that the university's contract has a daily quota above 5,000 messages."
+ },
+ "findings": [
+  {
+   "id": "FND-001",
+   "rank": 1,
+   "kind": "risk",
+   "category": "unsupported_or_incorrect_claim",
+   "severity": "high",
+   "confidence": 0.9,
+   "disposition": "refinement_now",
+   "secondary_dispositions": [
+    "needs_testing"
+   ],
+   "title": "E-mail plan cannot send peak-day reminders",
+   "statement": "Section 6.2 states the e-mail service has no daily sending limit, but its published plan allows 2,000 messages a day, below the 5,000 reminders the design sends on exam-week peak days, so most reminders are rejected and FR-9 ('every booking gets a reminder one hour before') fails.",
+   "doc_anchors": [
+    {
+     "doc_id": "DOC-booking-v1",
+     "section_ref": "6.2",
+     "requirement_ids": [
+      "FR-9"
+     ],
+     "quote": "The selected e-mail service has no daily sending limit, so reminders are sent individually as each slot approaches.",
+     "page": 11
+    }
+   ],
+   "evidence": [
+    {
+     "evidence_id": "EV-011",
+     "source_type": "external",
+     "url_or_citation": "https://docs.example-mail.invalid/plans#limits",
+     "quote": "The Starter plan allows up to 2,000 messages per day.",
+     "supports_claim": true,
+     "retrieved_at": "2026-10-02T09:14:00Z",
+     "derived_from": []
+    },
+    {
+     "evidence_id": "EV-012",
+     "source_type": "inference",
+     "url_or_citation": "inference:EV-012",
+     "quote": "5,000 peak-day reminders (section 4.1) exceed the 2,000-per-day plan limit.",
+     "supports_claim": true,
+     "retrieved_at": null,
+     "derived_from": [
+      "EV-011",
+      "EV-005"
+     ]
+    }
+   ],
+   "recommendation": {
+    "issue": "The reminder design depends on a sending limit the chosen plan does not provide.",
+    "rationale": "Reminders over the daily quota are rejected, so the plan, not the design, decides which students get reminders.",
+    "expected_benefit": "FR-9 holds on peak days: every booking receives its reminder.",
+    "change_summary": "In 6.2, state the plan's quota and either move to a plan with at least 10,000 messages a day or send overflow reminders as campus-app push notifications.",
+    "objective_refs": [
+     "FR-9"
+    ],
+    "supporting_evidence_ids": [
+     "EV-011",
+     "EV-012"
+    ],
+    "verification": "Peak-day load test: 5,000 reminders in one day, all delivered."
+   },
+   "no_change_rationale": null,
+   "next_step": {
+    "owner": "Build Phase 2 test lead",
+    "action": "Add the peak-day reminder load test traced to FR-9."
+   },
+   "affected_decisions": [],
+   "acknowledged_in_doc": false,
+   "tags": [
+    "notifications"
+   ],
+   "reassessment": null,
+   "provenance": {
+    "phase": "research",
+    "iteration": 2,
+    "model": "claude-opus-5-5",
+    "prompt_hash": "9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9"
+   }
+  },
+  {
+   "id": "FND-007",
+   "rank": 2,
+   "kind": "strength",
+   "category": null,
+   "severity": null,
+   "confidence": 0.85,
+   "disposition": "no_change",
+   "secondary_dispositions": [],
+   "title": "Accessibility is verified, not just promised",
+   "statement": "NFR-7 (WCAG 2.2 AA) is backed by an acceptance criterion that combines automated checks with a manual screen-reader pass on every booking screen, so the accessibility objective is verifiable as written.",
+   "doc_anchors": [
+    {
+     "doc_id": "DOC-booking-v1",
+     "section_ref": "11.3",
+     "requirement_ids": [
+      "NFR-7",
+      "AC-12"
+     ],
+     "quote": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.",
+     "page": 18
+    }
+   ],
+   "evidence": [
+    {
+     "evidence_id": "EV-004",
+     "source_type": "doc",
+     "url_or_citation": "doc:DOC-booking-v1#p18/s11.3",
+     "quote": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.",
+     "supports_claim": true,
+     "retrieved_at": null,
+     "derived_from": []
+    }
+   ],
+   "recommendation": null,
+   "no_change_rationale": "Automated checks alone miss screen-reader problems; the manual pass covers them and the criterion is traced to NFR-7. More tooling would not change the outcome.",
+   "next_step": null,
+   "affected_decisions": [
+    {
+     "registry_id": "AD-002",
+     "relation": "preserves",
+     "justification": "Affirms decision D-3 (front end built from the campus design-system components)."
+    }
+   ],
+   "acknowledged_in_doc": false,
+   "tags": [
+    "accessibility"
+   ],
+   "reassessment": null,
+   "provenance": {
+    "phase": "verify",
+    "iteration": 1,
+    "model": "claude-opus-5-5",
+    "prompt_hash": "3f1c0e5a9b7d2c4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"
+   }
+  }
+ ],
+ "sound_areas": [
+  {
+   "id": "SA-001",
+   "section_refs": [
+    "11.3"
+   ],
+   "why_sound": "The accessibility objective is verified by automated and manual testing.",
+   "doc_anchors": [
+    {
+     "doc_id": "DOC-booking-v1",
+     "section_ref": "11.3",
+     "requirement_ids": [
+      "NFR-7",
+      "AC-12"
+     ],
+     "quote": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.",
+     "page": 18
+    }
+   ],
+   "evidence_ids": [
+    "EV-004"
+   ],
+   "related_finding_ids": [
+    "FND-007"
+   ]
+  }
+ ],
+ "unresolved": [
+  {
+   "text": "Peak-day reminder delivery must be demonstrated by test.",
+   "finding_ids": [
+    "FND-001"
+   ],
+   "next_step": {
+    "owner": "Build Phase 2 test lead",
+    "action": "Add the peak-day reminder load test traced to FR-9."
+   }
+  }
+ ],
+ "decision_registry": [
+  {
+   "registry_id": "AD-002",
+   "type": "approved_decision",
+   "doc_ref": "D-3",
+   "statement": "The booking front end is built from the campus design-system components.",
+   "doc_anchor": {
+    "doc_id": "DOC-booking-v1",
+    "section_ref": "20",
+    "requirement_ids": [
+     "D-3"
+    ],
+    "quote": "D-3 Confirmed: the booking front end is built from the campus design system component library.",
+    "page": 19
+   }
+  }
+ ],
+ "evidence_ledger": [
+  {
+   "evidence_id": "EV-004",
+   "source_type": "doc",
+   "authority": null,
+   "tool": null,
+   "url_or_citation": "doc:DOC-booking-v1#p18/s11.3",
+   "title": null,
+   "retrieved_at": null,
+   "content_sha256": null,
+   "snapshot_path": null,
+   "excerpt": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.",
+   "read_before_cite": true,
+   "derived_from": []
+  },
+  {
+   "evidence_id": "EV-005",
+   "source_type": "doc",
+   "authority": null,
+   "tool": null,
+   "url_or_citation": "doc:DOC-booking-v1#p6/s4.1",
+   "title": null,
+   "retrieved_at": null,
+   "content_sha256": null,
+   "snapshot_path": null,
+   "excerpt": "Peak exam-week days generate about 5,000 bookings, each with one reminder.",
+   "read_before_cite": true,
+   "derived_from": []
+  },
+  {
+   "evidence_id": "EV-011",
+   "source_type": "external",
+   "authority": "primary_official",
+   "tool": {
+    "server": "mcp-internet-search",
+    "tool_name": "fetch",
+    "call_id": "call-0042"
+   },
+   "url_or_citation": "https://docs.example-mail.invalid/plans#limits",
+   "title": "Plans and sending limits",
+   "retrieved_at": "2026-10-02T09:14:00Z",
+   "content_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+   "snapshot_path": "runs/run-7c1e/web/EV-011.html",
+   "excerpt": "The Starter plan allows up to 2,000 messages per day.",
+   "read_before_cite": true,
+   "derived_from": []
+  },
+  {
+   "evidence_id": "EV-012",
+   "source_type": "inference",
+   "authority": null,
+   "tool": null,
+   "url_or_citation": "inference:EV-012",
+   "title": null,
+   "retrieved_at": null,
+   "content_sha256": null,
+   "snapshot_path": null,
+   "excerpt": "5,000 peak-day reminders (section 4.1) exceed the 2,000-per-day plan limit.",
+   "read_before_cite": true,
+   "derived_from": [
+    "EV-011",
+    "EV-005"
+   ]
+  }
+ ],
+ "research_log": {
+  "iterations": 2,
+  "tool_calls_by_tool": {
+   "mcp-internet-search": 3
+  },
+  "tool_calls": [
+   {
+    "call_id": "call-0040",
+    "server": "mcp-internet-search",
+    "tool_name": "search",
+    "status": "ok",
+    "started_at": "2026-10-02T09:12:00Z"
+   },
+   {
+    "call_id": "call-0041",
+    "server": "mcp-internet-search",
+    "tool_name": "search",
+    "status": "ok",
+    "started_at": "2026-10-02T09:13:00Z"
+   },
+   {
+    "call_id": "call-0042",
+    "server": "mcp-internet-search",
+    "tool_name": "fetch",
+    "status": "ok",
+    "started_at": "2026-10-02T09:14:00Z"
+   }
+  ],
+  "queries_issued": 2,
+  "sources_retrieved": 3,
+  "sources_cited": 1,
+  "unanswered_questions": [],
+  "degradations": [],
+  "registry_sha256_by_iteration": [
+   {
+    "iteration": 1,
+    "sha256": "b4564b0cb97bdfc30e818d38050838d513554e68bec89ff9f62b440512f6b2ea"
+   },
+   {
+    "iteration": 2,
+    "sha256": "b4564b0cb97bdfc30e818d38050838d513554e68bec89ff9f62b440512f6b2ea"
+   }
+  ]
+ },
+ "limitations": [
+  {
+   "text": "The university's contract with the e-mail provider was not available; the public plan limits were assumed to apply.",
+   "degradation_ids": []
+  }
+ ],
+ "stop_reason": {
+  "code": "sufficient_evidence",
+  "group": "decision",
+  "detail": "All external premises resolved by a primary source."
+ },
+ "run_manifest": {
+  "run_id": "run-7c1e",
+  "git_commit": "a1b2c3d",
+  "git_dirty": false,
+  "config_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "prompts_bundle_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "taxonomy_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "schema_version": "1.0",
+  "prereg_sha256": null,
+  "split": "Real-dev",
+  "condition": "FULL",
+  "review_config": {
+   "criteria": [
+    "fitness_for_objectives",
+    "evidence_quality",
+    "decision_preservation"
+   ],
+   "stop_rule": {
+    "min_confidence": 0.8,
+    "max_iterations": 3,
+    "marginal_gain_threshold": 0.05
+   },
+   "persona": "principal architect"
+  },
+  "fault_schedule_id": null,
+  "extractor": {
+   "name": "pymupdf",
+   "version": "1.24.10",
+   "page_marker": "[[PAGE n]]"
+  },
+  "models_used": [
+   {
+    "role": "orchestrator",
+    "requested_model": "claude-opus-5-5",
+    "served_models": [
+     "claude-opus-5-5"
+    ],
+    "thinking": "adaptive",
+    "effort": "high",
+    "max_tokens": 32000,
+    "betas": [],
+    "sampling": "provider-default (not settable)"
+   }
+  ],
+  "fallback_events": [],
+  "tools": [
+   {
+    "name": "mcp-internet-search",
+    "enabled": true,
+    "server_version": null,
+    "mode": "live"
+   }
+  ],
+  "budgets": {
+   "max_tool_calls": 40,
+   "max_tokens": 400000,
+   "deadline_s": 900
+  },
+  "usage": {
+   "input_tokens": 120000,
+   "output_tokens": 9000,
+   "cached_tokens": 80000,
+   "tool_calls": 3,
+   "cost_usd": 1.12,
+   "price_table_date": "2026-10-01"
+  },
+  "timestamps": {
+   "start_utc": "2026-10-02T09:10:00Z",
+   "end_utc": "2026-10-02T09:30:00Z"
+  },
+  "outcome": "completed_nominal",
+  "extra": {}
+ }
+}

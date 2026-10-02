@@ -1,0 +1,83 @@
+# config/criteria.yaml - the review criteria the agent checks (robustness §10 item 7).
+# Generic by design (no document-specific terms; overfitting control, frameworks README level 5).
+# Each criterion: id, question, lab_ref (lab brief section), kinds (spec/taxonomy.yaml kinds the
+# criterion usually yields; empty = any), applies_to, research_hints.
+# Live change (runbook §4.2 #1): APPEND new criteria at the END of the file. The short 4-line form
+# `id / description / applies_to / research_hints` is accepted (`description` = `question`).
+criteria:
+  - id: design_intent
+    question: "What are the design's objectives, principles, constraints, requirements and approved decisions, and are they stated clearly enough to review against?"
+    lab_ref: "§1.2, §2.1, §2.3"
+    kinds: [strength, gap, ambiguity]
+    applies_to: [all]
+    research_hints: []
+
+  - id: fitness_for_objectives
+    question: "Does each major design element plausibly achieve the objective or requirement it is meant to serve?"
+    lab_ref: "§1.4, §2.3, §3.2"
+    kinds: [strength, risk, gap, validation_need]
+    applies_to: [all]
+    research_hints: ["capabilities and documented limits of the named products and services"]
+
+  - id: requirement_completeness
+    question: "Are any requirements, controls, error paths, rollback paths or owners missing that the objectives need?"
+    lab_ref: "§1.4, §2.3"
+    kinds: [gap]
+    applies_to: [all]
+    research_hints: []
+
+  - id: internal_consistency
+    question: "Do requirements, decisions, numbers, flows and acceptance criteria agree with each other across sections?"
+    lab_ref: "§2.4"
+    kinds: [risk, ambiguity]
+    applies_to: [all]
+    research_hints: []
+
+  - id: claims_and_external_constraints
+    question: "Are factual and quantitative claims about products, standards, regulations and platform limits correct and current?"
+    lab_ref: "§1.2, §3.2"
+    kinds: [risk, validation_need]
+    applies_to: [all]
+    research_hints: ["official product documentation and published quotas", "the text of the cited standard or regulation"]
+
+  - id: security_and_privacy
+    question: "Are data protection, access control, secrets handling, auditability and regulatory obligations covered for the data the design handles?"
+    lab_ref: "§1.4, §3.2"
+    kinds: [risk, gap]
+    applies_to: [all]
+    research_hints: ["applicable data-protection regulation and official security guidance for the named services"]
+
+  - id: scalability_and_failure_modes
+    question: "Does the design hold at the stated load and under partial failure, retry, concurrency and recovery?"
+    lab_ref: "§1.4, §3.2"
+    kinds: [risk, validation_need]
+    applies_to: [all]
+    research_hints: ["published performance characteristics and failure behaviour of the named components"]
+
+  - id: assumptions_and_dependencies
+    question: "Which premises, pending items, vendor capabilities or approvals does the design rely on without verifying or tracking them to closure?"
+    lab_ref: "§1.2, §2.3"
+    kinds: [unresolved_assumption]
+    applies_to: [all]
+    research_hints: []
+
+  - id: verifiability
+    question: "Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?"
+    lab_ref: "§2.3, §3.2"
+    kinds: [validation_need]
+    applies_to: [all]
+    research_hints: ["recognised test or benchmark methods for the claim"]
+
+  - id: decision_preservation
+    question: "Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?"
+    lab_ref: "§1.3"
+    kinds: [strength, risk, unresolved_assumption]
+    applies_to: [all]
+    research_hints: []
+
+  - id: operability_and_governance
+    question: "Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?"
+    lab_ref: "§3.2"
+    kinds: [gap, unresolved_assumption]
+    applies_to: [all]
+    research_hints: []

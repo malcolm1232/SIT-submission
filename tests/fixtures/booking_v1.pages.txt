@@ -1,0 +1,10 @@
+[[PAGE 2]]
+1 Overview. The service lets students reserve study rooms for one-hour slots across campus.
+[[PAGE 6]]
+4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder.
+[[PAGE 11]]
+6.2 Notifications. The selected e-mail service has no daily sending limit, so reminders are sent individually as each slot approaches.
+[[PAGE 18]]
+11.3 Accessibility. Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.
+[[PAGE 19]]
+20 Decisions. D-3 Confirmed: the booking front end is built from the campus design system component library.

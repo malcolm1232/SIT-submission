@@ -1,0 +1,27 @@
+# config/tools.yaml - line numbers pinned by tests/test_config_layout.py
+auth_env: SIT_MCP_API_KEY
+auth_header: X-API-Key            # UNVERIFIED until the laptop probe (audit U1)
+servers:
+  - name: mcp-internet-search
+    enabled: true
+    allow_tools: ["*"]
+  - name: mcp-research-information
+    enabled: true
+    allow_tools: ["*"]
+  - name: mcp-browser-automation-pw
+    enabled: false
+    allow_tools: ["*"]
+  - name: mcp-document-intelligence
+    enabled: false
+    allow_tools: []
+url_policy: url_policy.yaml
+# ---- Lines 1-17 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
+# Browser is off by default until the probe shows per-client isolation (fresh_eyes N15).
+# Document intelligence is off: it rejects every input (ADR-006 item 4).
+connect_timeout_s: 150            # cold-start allowance for initialize (scale-to-zero containers)
+call_timeout_s: 60
+cold_start_retries: 1             # one retry on a cold-start-like failure (timeout, 502/503/504)
+capabilities:                     # capability -> server; tools are offered by capability (INF-12)
+  search: mcp-internet-search
+  scholarly: mcp-research-information
+  browse: mcp-browser-automation-pw

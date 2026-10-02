@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sit-review-agent"
+version = "0.1.0"
+description = "SIT design-review agent: custom state machine on the Anthropic SDK with a direct MCP client"
+readme = "agent/README.md"
+requires-python = ">=3.11"
+# Exact pins, verified against PyPI on 2026-10-02. anthropic and mcp are pinned exactly by
+# docs/DECISIONS.md ADR-001; the rest are pinned exactly for reproducibility (docs/REPRODUCIBILITY.md).
+dependencies = [
+    "anthropic==1.11.0",
+    "mcp==2.2.0",
+    "httpx2==2.13.1",        # transport used by anthropic 1.x and mcp 2.x
+    "httpx==0.28.1",
+    "pydantic==2.13.5",
+    "pdfplumber==0.11.10",
+    "pyyaml==6.0.3",
+    "jsonschema==4.26.0",
+    "jinja2==3.1.6",         # prompts and report template, StrictUndefined (REPRODUCIBILITY §4)
+    "typer==0.27.2",
+    "rapidfuzz==3.14.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.16.10",
+]
+
+[project.scripts]
+sit-review = "sit_review_agent.cli:main"
+dra = "sit_review_agent.cli:main"   # alias used by docs/DEMO_DAY_RUNBOOK.md
+
+[tool.setuptools.packages.find]
+where = ["agent"]
+include = ["sit_review_agent*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["agent", "tests"]
+extend-exclude = ["spec", "eval", "scripts", "research"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["B008"]   # typer option defaults are function calls by design
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "phase(n): test for a module that is not implemented yet (see agent/README.md workstreams)",
+]

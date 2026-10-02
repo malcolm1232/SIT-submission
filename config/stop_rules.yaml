@@ -1,0 +1,13 @@
+# config/stop_rules.yaml - line numbers pinned by tests/test_config_layout.py
+active: [sufficient_evidence, no_marginal_gain, budget_tool_calls, budget_tokens, deadline]
+max_tool_calls: 30
+max_research_iterations: 4
+max_input_tokens: 4000000
+deadline_seconds: 540
+no_marginal_gain_window: 2
+min_independent_sources: 2
+# ---- Lines 1-8 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
+# Every rule in `active` must be registered in agent/sit_review_agent/stop_rules.py and reports one
+# of the closed StopReasonCode values (spec/finding.schema.json, spec/taxonomy.yaml stop_reasons).
+report_reserve_seconds: 60         # the deadline rule leaves this long for verify + report
+max_output_tokens: null            # optional cap on summed output tokens (null = none)
