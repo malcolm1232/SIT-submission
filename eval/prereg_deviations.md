@@ -286,3 +286,45 @@ already happened (none had for entries made before the freeze).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The two pilot `scores.json`
   files under `docs/live_runs/live_cc_opus_payments_v1/` are not rewritten; `sit-eval aggregate` treats a scores file
   that carries no completeness as unknown (its cost is a lower bound, never fully accounted).
+
+---
+
+## 11. 2026-10-03: the latency design (effort per stage, B0 wording, scheduling, pilot checkpoint, reporting)
+
+- **Fields:** `agent_under_test.effort_per_stage` (a `fill_before_freeze` field, filled here and logged because the
+  value departs from the draft's stated default); `conditions.tier_A` B0 `description`; `runs_per_item.scheduling`;
+  `stop_rule.pilot_checkpoint`; `reporting.always_reported` (the Efficiency row). `frozen` stays false; no other
+  `fill_before_freeze` value changed (`costs.per_run_usd`, `costs.measured_median_full_usd` and
+  `costs.b0_dollar_matching_n` are as they were).
+- **Old text:** `effort_per_stage: null   # fill before freeze; default high everywhere (UD #1); a lower stage effort
+  is allowed only if the pilot latency measurement (FE N3) requires it, and is recorded here`; B0 `Single call, no
+  tools, whole document plus the same task prompt and output schema (MR §4)`; scheduling ended `2-3 runs in
+  parallel.`; `pilot_checkpoint` ended `the check is not_evaluable and the dropped files are listed with their
+  reasons.`; the Efficiency row ended `the share of runs with any cut model call (intention-to-treat); stop reasons`.
+- **New text:** `effort_per_stage` is the demo profile (`config/profiles/demo.yaml`, deadline 540 s): `medium` for
+  understand, plan, assess, refine, verify and report, `low` for research, with the four assess shards of
+  `config/agent.yaml` `assess.shards` (`intent_and_fitness`, `requirements_and_consistency`,
+  `claims_and_assumptions`, `risk_and_operations`; K = 4). B0 adds: the single call is the assess brief with all
+  criteria in one call. Scheduling: one FULL run at a time until 12 concurrent CLI sessions are measured, because a
+  FULL run holds up to 6 at once (understand, plan and four shards in stage 1; 2 runs × 6 = 12, and 4 and 8 have
+  been measured). `pilot_checkpoint` keeps all its earlier text, including the lower-bound and dropped-run rules of
+  entry 10, and adds: the wall-time gate stays "p95 wall time exceeds the demo slot" (540 s) for this design; the
+  cost figure is re-based on `docs/BUDGET.md` as redone after the first timed rehearsal (predicted about $5.4 per
+  FULL run); until then a pilot of the new design is expected to fail the $3.24 figure, which is a re-plan, not a
+  deviation. The Efficiency row adds, for FULL runs and intention-to-treat, the share with any deadline cut and the
+  count of salvaged assess shards.
+- **Reason:** measured on 2026-10-03 on the owner's Mac, a model call through the CLI has a fixed start-up latency
+  (about 105 s for an assess call at `medium`) and then emits about 310 characters per second, so six sequential
+  phases cannot fit 540 s (a sequential `medium` run with refine is about 1,177 s; the measured demo-profile run
+  ended at 420 s with `not_assessed`, `docs/USER_DECISIONS.md` #27). The redesign (`docs/DECISIONS.md` ADR-011,
+  ADR-012) runs stage 1 concurrently and cuts each stage at a fixed run-clock limit, keeping what a cut call
+  finished; `high` cannot fit the slot at all, so the evaluated agent is the demo profile. Predicted, to be confirmed
+  by the first timed rehearsal: 443 s document-only, 450 to 499 s with research, about $5.0 to $5.4 per FULL run.
+  Every number scored on `live_cc_opus_payments_v1` describes the old single-call agent at `high` and is stale.
+- **Open for the planner, not changed here:** `conditions.tier_B` `A4b-medium` ("FULL with every stage at effort
+  medium") now differs from FULL only in research (`medium` against `low`); ruling #31 keeps `high` as the A4b
+  comparison, and the A4b arms are not renamed in this entry.
+- **Decided by:** SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #31; ruling 2 overrides the `high`
+  default of #1, and the owner may reverse it).
+- **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The pilot scores under
+  `docs/live_runs/live_cc_opus_payments_v1/` are exploratory (ruling #26) and describe the old agent.

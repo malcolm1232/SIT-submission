@@ -377,7 +377,9 @@ runs_per_item:
   scheduling: >-
     Conditions are interleaved per document in a seeded random order (seed recorded in
     the run schedule; schedule SHA-256 in each manifest) so API drift does not align
-    with conditions (MR §4, L31). 2-3 runs in parallel.
+    with conditions (MR §4, L31). One FULL run at a time until 12 concurrent CLI sessions
+    are measured, because a FULL run holds up to 6 sessions at once (ADR-011 stage 1;
+    deviations entry 11; was "2-3 runs in parallel").
   population: >-
     Intention-to-treat - every launched run counts; a crashed run scores 0 recall and is
     counted. Per-protocol (completed runs only) is reported beside it (MR §6).
@@ -385,7 +387,20 @@ runs_per_item:
 agent_under_test:
   model: claude-opus-5-5   # every agent call (ADR-002, UD #1)
   thinking: adaptive
-  effort_per_stage: null   # fill before freeze; default high everywhere (UD #1); a lower stage effort is allowed only if the pilot latency measurement (FE N3) requires it, and is recorded here
+  effort_per_stage:   # filled 2026-10-03 (UD #31 ruling 2, deviations entry 11): the latency measurement of 2026-10-03 showed `high` cannot fit the 540 s slot (UD #27), so the evaluated agent is the demo profile; was null with "default high everywhere (UD #1)"; `high` stays as the A4b effort comparison; to be confirmed by the first timed rehearsal before freeze
+    profile: demo   # config/profiles/demo.yaml, one profile for the demo and the evaluation; deadline 540 s
+    understand: medium   # shares the plan level (states.EFFORT_KEY)
+    plan: medium
+    research: low
+    assess: medium
+    refine: medium
+    verify: medium
+    report: medium   # the verdict-only call (ADR-011)
+    assess_shards:   # config/agent.yaml assess.shards, run concurrently in stage 1 (ADR-011); K = 4
+      intent_and_fitness: [design_intent, fitness_for_objectives, decision_preservation]
+      requirements_and_consistency: [requirement_completeness, internal_consistency, verifiability]
+      claims_and_assumptions: [claims_and_external_constraints, assumptions_and_dependencies]
+      risk_and_operations: [security_and_privacy, scalability_and_failure_modes, operability_and_governance]
   server_side_fallbacks: false   # ADR-002
   git_commit: null
   prompts_bundle_sha256: null
@@ -399,7 +414,7 @@ conditions:
       documents: keyed_frozen, v2_pairs (fresh and with-context), real_dev
       predicted_outcome: Reference
     - id: B0
-      description: Single call, no tools, whole document plus the same task prompt and output schema (MR §4)
+      description: Single call, no tools, whole document plus the same task prompt and output schema (MR §4); the single call is the assess brief with all criteria in one call (with FULL's assess split into concurrent shards, ADR-011; deviations entry 11)
       documents: keyed_frozen
       predicted_outcome: Lower Recall than FULL by >= 0.10 (H1); similar Precision, adjudicated; higher Hallucinated-finding rate (H5)
     - id: B0-$
@@ -610,7 +625,12 @@ stop_rule:
     the check but never pass it. A dropped run is a run of unknown cost: when any FULL scores file
     (or one whose condition cannot be read) is left out of the aggregate (judge budget stop,
     unreadable, schema-invalid, incomplete), the check is not_evaluable and the dropped files are
-    listed with their reasons.
+    listed with their reasons. For the latency design (ADR-011) the wall-time gate stays "p95
+    wall time exceeds the demo slot" (540 s, the FULL run's deadline). Its cost figure is re-based
+    on docs/BUDGET.md as redone after the first timed rehearsal (predicted about $5.4 per FULL run);
+    the $3.24 heavy_case_FULL figure was made for the old single-call agent, and until the re-base
+    a pilot of the new design is expected to fail it, which is a re-plan, not a deviation
+    (deviations entry 11).
   time_stop: >-
     If two days before submission Tier A is incomplete, stop, analyse what exists, and
     report the missing cells; never substitute other runs for missing ones.
@@ -626,7 +646,7 @@ reporting:
     - v1 to v2 re-review table (MR Table 5) plus false_resolution_rate
     - Instrument validity (MR Table 6) - matcher kappa vs the owner, B-gen floor, grader smoke and sample agreement, V1, V4, V10 outcomes
     - Leakage and integrity audit (MR Table 8) - every leakage_controls item, S-heldout access count, prereg hash, deviations
-    - Efficiency (MR Table 9) - cost, tokens, tool calls, wall time median and IQR over fully accounted runs, with the count and share of runs excluded for unrecorded usage, a lower-bound median over all runs, and the share of runs with any cut model call (intention-to-treat); stop reasons
+    - Efficiency (MR Table 9) - cost, tokens, tool calls, wall time median and IQR over fully accounted runs, with the count and share of runs excluded for unrecorded usage, a lower-bound median over all runs, and the share of runs with any cut model call (intention-to-treat); stop reasons; for FULL runs, the share with any deadline cut (a stage limit or the run deadline cut a shard, research, refine or the verdict call) and the count of salvaged assess shards (cut, findings kept), both intention-to-treat (ADR-011, deviations entry 11)
     - Adjudication counts (MR Table 10)
     - Run outcome counts per condition, ITT and per-protocol, including every crashed or re-launched run
     - SIT document comparison with the owner's key - both-found, owner-only, model-only items
