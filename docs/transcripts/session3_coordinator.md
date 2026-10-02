@@ -414,3 +414,19 @@ All three keys are drafted and validate, and all stay at `scored_run_ready: fals
 
 ---
 
+## Report: matcher-rule verifier (with owner follow-ups)
+
+**1. Checks.** Ruff clean; `pytest -q tests/eval_harness tests/eval_grader` 336 passed; full `pytest -q` 968 passed, no skip or xfail.
+
+**2. Verified:** under `shortlist_bounded` no pair outside the shortlist is ever scored (DUPLICATE and partial labels, still-valid observations, per_flaw_batch, adaptive samples, resume from a union-run cache all tested and mutation-tested); the location hint shows finding ids only in shuffled order, no key text; `union` gives the old candidate set for the same shortlist answers; §14 holds, also with adaptive sampling; metrics.md §2.3/§13, prereg `matcher.candidates` and T4 match the code. **Fixed with regression tests:** the dry-run minimum was impossible (no pair scored and 14 flaws matched at once); live-run bounds are now 74-200 calls, $10.54-19.12 ($9.94-19.12 adaptive), union 294-440; shortlist answers past k were cut silently (now `ids_beyond_k` and a warning); shortlist failure flagged on severity-weighted and critical recall too; `shortlist_k = 0` warns; stale README wall times regenerated. 33 mutants, all killed.
+
+**3. Follow-ups done.** (1) `PARTIAL_KEY_MATCH`: a strict-unmatched finding scoring 2 against a flaw nobody matched, set from the matcher's scores (no adjudicator call; DUPLICATE checked first); correct for adjudicated precision P_a = (TP + V + PK) / N when the flaw is in the run's gold set; own count; never in G+, never removes a sound unit; human random-20% sample, not the 100% queue (prereg human-review line unchanged); `precision_adjudicated_partial_credit` retired; metrics.md, prereg, deviations entry 2, T6b codebook. (2) Adaptive third sample on by default; `--no-adaptive-samples` kept; deviations entry 3. (3) No second-provider judge: prereg `grader.second_provider.available: false`, ADR-003 closing note, deviations entry 5. (4) T4: 12 `overlap_not_shortlisted` pairs mixed blind into the sheet outside the 100, miss rate with a Wilson 95% CI (not a gate); T4 1.75 -> 1.95 h, labelling total 14.9 -> 15.1 h; prereg `matcher.shortlist_recall`; deviations entry 4. (5) Text fixes: metrics.md §5.1 character-level; prereg LC9 and stop rule name `sit-eval score`/`aggregate`; both `prompt_sha256` stay null with comments naming the lock files and current hashes; GR §4.2 cumulative G3 caps; grader_prompt.md §5.3 counts with denominators (no extracted block changed; grader lock unchanged); spec/README projection list. (6) USER_DECISIONS #11-#16. Deviations entry 6 corrects entry 1's dry-run numbers. Edit log: `research/audit/verify_matcher_rule_editlog.md`.
+
+**4. Hashes (unchanged):** matcher `ac35d198…`, grader `64efe6b8…`.
+
+**5. Found, not fixed (outside its files; coordinator closed 1, 3 and 4 in commit 1b67471, 2 in the final handover):** taxonomy lists six adjudication classes (PARTIAL_KEY_MATCH is harness-assigned); HANDOVER_FULL still described the old partial-match handling; prereg said Message Batches while the harness uses synchronous `claude -p` (now deviations entry 7); metrics.md §2.3 step 6 said 150 validation pairs vs 100 in H10/T4; a union run today will not reproduce the old pilot `scores.json` because the shortlist prompt changed.
+
+**6. Unverified:** real distance below the maximum and shortlist miss rates; the $0.03 pair price and the premise and citation prices; how often partial matches occur.
+
+---
+
