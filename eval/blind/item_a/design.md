@@ -568,7 +568,7 @@ Dashboards per service show RED metrics, queue depth and age, DynamoDB throttles
 |---|---|---|---|
 | Loss of one AZ | Automatic (multi-AZ ECS, DynamoDB, Aurora) | 0 | Minutes |
 | Loss of primary region | Runbook-driven failover: promote Aurora secondary, switch DynamoDB writes, scale ECS in eu-central-1, enable standby SNS/SQS, flip Route 53 | DynamoDB ≈ 1 s; Aurora ≈ 1 s | ≤ 60 min (NFR-06) |
-| Data corruption by defect | DynamoDB point-in-time recovery (35 days); Aurora point-in-time restore (35 days) and snapshots; replay from event archive | Point in time | Hours |
+| Data corruption by application error | DynamoDB point-in-time recovery (35 days); Aurora point-in-time restore (35 days) and snapshots; replay from event archive | Point in time | Hours |
 
 Regional failover is rehearsed twice a year, once before peak.
 

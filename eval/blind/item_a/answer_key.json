@@ -1,0 +1,385 @@
+{
+  "item_id": "item_a",
+  "document": "design.md",
+  "domain": "E-commerce order management and returns platform (multi-market UK/EU retailer: Meridian OMS for Halden & Rowe)",
+  "severity_scale": {
+    "Critical": "Will cause financial loss, data loss or outage at expected load if built as written; blocks build.",
+    "High": "Will cause a regulatory breach, security exposure or major functional failure; must be fixed before build of the affected component.",
+    "Medium": "Material risk or non-compliance that must be resolved before go-live but does not invalidate the architecture.",
+    "Low": "Weakness in governance or verification; should be fixed but does not by itself cause failure."
+  },
+  "category_taxonomy": [
+    "Regulatory compliance",
+    "Functional logic / internal inconsistency",
+    "Data model and platform limits",
+    "Messaging and scalability",
+    "Consistency and reliability",
+    "Idempotency and financial integrity",
+    "Security",
+    "Privacy and data governance",
+    "Availability and NFR feasibility",
+    "Rollout and rollback",
+    "Testability and acceptance"
+  ],
+  "defect_count": 14,
+  "defects": [
+    {
+      "id": "D01",
+      "category": "Regulatory compliance",
+      "severity": "High",
+      "requires_external_fact": true,
+      "external_fact": "Directive 2011/83/EU Art. 13(1) and 13(3); UK Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013 reg. 34: reimbursement without undue delay and no later than 14 days from the day the trader is informed of the withdrawal decision; trader may withhold reimbursement only until it has received the goods back or the consumer has supplied evidence of having sent them back, whichever is earliest.",
+      "location": {
+        "sections": [
+          "3.1.4",
+          "7.5",
+          "7.6",
+          "12"
+        ],
+        "requirement_ids": [
+          "FR-REF-02",
+          "CMP-02",
+          "AC-07"
+        ]
+      },
+      "title": "Refund deadline anchored to warehouse inspection instead of the withdrawal notification; proof of dispatch ignored",
+      "description": "FR-REF-02 requires refunds within 14 days of the item passing inspection, section 7.6 issues refunds only after inspection (inspection target 5-8 working days after receipt, then a daily batch), and section 7.6 step 4 explicitly refuses to treat carrier acceptance scans as a trigger. The SLA monitor and AC-07 are built on the same wrong anchor. withdrawal_notified_at is recorded in 7.4 step 3 but never used.",
+      "why_it_matters": "For statutory withdrawals the 14-day clock runs from notification of withdrawal, and the trader may only withhold until goods are received or proof of sending is supplied, whichever is earlier. The design routinely refunds 3-5 weeks after notification and well after receipt; a customer holding a carrier drop-off receipt is entitled to be refunded. This is a systematic breach across all five markets and a direct cause of the WISMR contacts the programme is meant to reduce.",
+      "credit_requires": "Reviewer must state that the refund deadline must be measured from the customer's notification of withdrawal (not from inspection), and that withholding is permitted only until receipt of the goods or evidence of dispatch, whichever is earlier. Citing CRD Art. 13 or CCR 2013 reg. 34 (or an unambiguous paraphrase of the rule) is required for full credit. Merely saying 'refunds are slow' or 'inspection SLA is long' earns no credit.",
+      "acceptable_fix": "For returns within the statutory period, compute due_date = withdrawal_notified_at + 14 days; make the refund eligible on the earliest of returns-centre receipt or carrier acceptance scan (evidence of sending); do not gate on inspection (apply any diminished-value deduction from a fast receipt check, or recover it afterwards). Rebase FR-REF-02, the SLA monitor and AC-07 on the statutory anchor. Commercial (day 15-30) returns may keep inspection gating if disclosed. Address empty-box fraud with risk-scored exceptions and carrier weight checks rather than blanket withholding."
+    },
+    {
+      "id": "D02",
+      "category": "Regulatory compliance",
+      "severity": "Medium",
+      "requires_external_fact": true,
+      "external_fact": "Directive 2011/83/EU Art. 13(1)-(2) (and CCR 2013 reg. 34(2)-(3)): reimbursement includes the costs of delivery; only the supplementary cost of a delivery type more expensive than the least expensive standard delivery chosen by the consumer may be retained.",
+      "location": {
+        "sections": [
+          "6.4"
+        ],
+        "requirement_ids": [
+          "CMP-02",
+          "FR-REF-03"
+        ]
+      },
+      "title": "Outbound delivery charge never refunded on returns",
+      "description": "Section 6.4 item 6 states outbound delivery charges are not refundable on returns and are refunded only on cancellation before dispatch.",
+      "why_it_matters": "When a consumer withdraws from the whole order within the statutory period, the standard outbound delivery cost must be reimbursed; only the premium for NEXT_DAY/NAMED_DAY above standard may be retained. The rule as written under-refunds every full-order statutory withdrawal that carried a delivery charge.",
+      "credit_requires": "Reviewer must say that for a statutory withdrawal of the whole order the standard delivery charge must be refunded, and that only the excess over the cheapest standard option may be kept. Flagging the return-shipping deduction in 6.4 item 5 instead does not earn credit (that deduction is lawful).",
+      "acceptable_fix": "Add a policy rule: on statutory withdrawal of all lines of an order, refund the deliveryCharge up to the price of the least expensive standard delivery for that market; retain only the premium surcharge. Take legal advice on partial returns and encode the outcome in the per-market policy module with scenario tests."
+    },
+    {
+      "id": "D03",
+      "category": "Functional logic / internal inconsistency",
+      "severity": "High",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "7.4",
+          "3.1.1",
+          "3.1.3"
+        ],
+        "requirement_ids": [
+          "FR-RET-01",
+          "FR-ORD-06",
+          "CMP-02",
+          "AC-03"
+        ]
+      },
+      "title": "Return window computed from order placement date instead of delivery date",
+      "description": "Section 7.4 step 2 implements the window as now <= order.placedAt + 30 days, while FR-RET-01 defines it per shipment from delivery (and at least 14 days from delivery of the last item), and FR-ORD-06 allows backordered lines to be dispatched up to 28 days after placement.",
+      "why_it_matters": "A backordered item dispatched on day 28 can be delivered after the window has already closed, so the customer is denied both the commercial and the statutory 14-day-from-delivery right. Multi-shipment orders also lose the last-item rule. This is a systematic, customer-visible breach, and AC-03 only passes if the scenario catalogue happens to include late-delivery cases.",
+      "credit_requires": "Reviewer must identify that the implementation anchors on placedAt rather than delivery and that this contradicts FR-RET-01 and can deny the statutory right (backorders and multi-shipment orders are the clearest illustration).",
+      "acceptable_fix": "Compute eligibility from the line's shipment.deliveredAt: eligible until max(deliveredAt + 30 days, lastDeliveredAtOfOrder + 14 days). Define the behaviour for DELIVERY_UNCONFIRMED shipments. Add late-backorder and split-shipment cases to the AC-03 scenario catalogue."
+    },
+    {
+      "id": "D04",
+      "category": "Data model and platform limits",
+      "severity": "High",
+      "requires_external_fact": true,
+      "external_fact": "Amazon DynamoDB maximum item size is 400 KB, including attribute names and values.",
+      "location": {
+        "sections": [
+          "6.2",
+          "10"
+        ],
+        "requirement_ids": [
+          "FR-ORD-03",
+          "DEC-02",
+          "AC-02"
+        ]
+      },
+      "title": "Single-item order aggregate exceeds the DynamoDB 400 KB item limit for large B2B orders",
+      "description": "Section 6.2 stores header, up to 500 line maps (~600 bytes each, ~300 KB), shipments, payments and an append-only statusHistory (~120 bytes per transition, with line-scoped entries) in one item, and asserts this is within the limit.",
+      "why_it_matters": "A 500-line order starts at about 300 KB (75% of the limit) before any history. Line-scoped transitions (released, picked, packed, despatched, delivered, return, refund) add roughly 6-8 x 500 x 120 bytes = 360-480 KB, so the item reaches 400 KB part-way through fulfilment. From then on every conditional update fails with a ValidationException and the order can no longer progress, be cancelled or be refunded. Writing a ~300 KB item on every transition also consumes ~300 write units per update, which hurts cost and latency.",
+      "credit_requires": "Reviewer must cite the 400 KB item limit and show, or clearly argue, that a maximum-size order with its unbounded statusHistory exceeds it. Saying only 'single-item design is risky' or 'items are large' earns partial credit at most.",
+      "acceptable_fix": "Model the aggregate as an item collection under the same partition key (header item, one item per line or per line-block, history as separate time-ordered items or only in the event store), using TransactWriteItems or versioned header items for consistency. Alternatively cap and compress, but splitting is the expected answer. Add a size guard and a test at the 500-line maximum including full history."
+    },
+    {
+      "id": "D05",
+      "category": "Data model and platform limits",
+      "severity": "Medium",
+      "requires_external_fact": true,
+      "external_fact": "Amazon SQS message retention period is configurable from 60 seconds to 1,209,600 seconds (14 days); 30 days is not possible. For standard queues, a message moved to a DLQ keeps its original enqueue timestamp.",
+      "location": {
+        "sections": [
+          "9.3",
+          "13.1"
+        ],
+        "requirement_ids": [
+          "NFR-05"
+        ]
+      },
+      "title": "Dead-letter queue retention of 30 days exceeds the SQS maximum of 14 days",
+      "description": "Section 9.3 configures DLQs with 30-day retention to survive the peak change freeze and long weekends.",
+      "why_it_matters": "The setting is not possible (the IaC will fail, or a lower value will be substituted silently by a module default). The assumption it supports is wrong: the change freeze in 13.1 lasts about eight weeks, so failed order, refund or finance events left in a DLQ will be deleted permanently, breaching NFR-05 (no state change lost).",
+      "credit_requires": "Reviewer must state that SQS retention cannot exceed 14 days and that relying on the DLQ to hold messages longer risks permanent loss.",
+      "acceptable_fix": "Set DLQ retention to the 14-day maximum and add a parking-lot consumer that copies every DLQ message to durable storage (S3 or DynamoDB) with tooling to redrive from there. Alarm on DLQ age as well as depth. For standard queues, make DLQ retention longer than source-queue retention."
+    },
+    {
+      "id": "D06",
+      "category": "Messaging and scalability",
+      "severity": "Critical",
+      "requires_external_fact": true,
+      "external_fact": "SQS FIFO delivers messages within one message group strictly in order and will not return further messages from a group while earlier ones are in flight, so a single group is processed serially. Throughput quotas (300 msg/s per API action without batching; SNS FIFO per-message-group limit of 300 msg/s even in high-throughput mode) apply per group, not across many groups.",
+      "location": {
+        "sections": [
+          "5.4",
+          "9.2"
+        ],
+        "requirement_ids": [
+          "NFR-03",
+          "NFR-04",
+          "NFR-07",
+          "FR-ORD-07"
+        ]
+      },
+      "title": "Constant MessageGroupId serialises the entire order event stream",
+      "description": "Section 5.4 publishes every event with MessageGroupId = 'order-events'. Section 9.2 sizes the stream against the 300 msg/s FIFO quota (180 events/s at peak) and expects consumers to autoscale to 40 tasks.",
+      "why_it_matters": "With one message group, each consumer queue is processed one message (or one ordered batch) at a time regardless of task count. At 35 ms per event that is about 28 events/s against 180 events/s demand at peak, so backlog grows by about 150 events/s (over 500,000 per hour). The 60 s propagation SLO (NFR-04, FR-ORD-07), release to fulfilment and refunds all stall: a repeat of the Atlas Black Friday backlog. Even the publish side caps at 300 msg/s per group, below the 360 events/s needed for NFR-07 (2x peak). Autoscaling adds no throughput.",
+      "credit_requires": "Reviewer must identify that a single message group forces serial processing (or a per-group throughput ceiling) and that this cannot meet peak event rates; quantitative support is expected for full credit. Pointing only to the '300 TPS' figure without recognising the group serialisation earns partial credit.",
+      "acceptable_fix": "Use MessageGroupId = orderId (per-aggregate ordering is all that state transitions need; per-order seq already exists in the envelope). Change the Finance connector to track per-order sequence or to reconcile by eventId/occurredAt rather than a global high-water mark. Enable high-throughput FIFO mode, re-run the capacity model and load-test the asynchronous path."
+    },
+    {
+      "id": "D07",
+      "category": "Consistency and reliability",
+      "severity": "High",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "7.1",
+          "4"
+        ],
+        "requirement_ids": [
+          "FR-ORD-08",
+          "NFR-05",
+          "P2"
+        ]
+      },
+      "title": "Dual write without outbox: idempotent retry masks a lost OrderPlaced event",
+      "description": "Section 7.1 commits the order and the idempotency record (including the stored success response) in step 6, then publishes OrderPlaced in step 7. If the publish fails or the task crashes between steps 6 and 7, the client retry is answered from the idempotency record and the event is never published. The same 'update item, then publish' pattern is used for all later state changes.",
+      "why_it_matters": "The order exists and the customer is told it was accepted, but nothing downstream ever sees it: no release to fulfilment, no finance record, no status, and the authorisation eventually expires. This directly contradicts principle P2 and NFR-05, and the failure is silent.",
+      "credit_requires": "Reviewer must identify the non-atomic database write plus message publish (dual write) and explain that the event can be lost. Full credit requires noting that the idempotent retry path returns success without re-publishing, or the crash-between-steps case.",
+      "acceptable_fix": "Transactional outbox: write the event to an outbox item in the same TransactWriteItems as the order, or drive publication from DynamoDB Streams (for example via EventBridge Pipes or Lambda) with at-least-once delivery and dedup on eventId. Add a reconciliation sweeper that detects orders with no downstream progress."
+    },
+    {
+      "id": "D08",
+      "category": "Idempotency and financial integrity",
+      "severity": "Critical",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "5.5"
+        ],
+        "requirement_ids": [
+          "FR-REF-07",
+          "P3",
+          "AC-06"
+        ]
+      },
+      "title": "PSP idempotency key regenerated on every refund attempt",
+      "description": "Section 5.5 step 2 sets Idempotency-Key to a fresh attempt_id per attempt, and step 4 retries timeouts and 5xx responses for up to 24 hours.",
+      "why_it_matters": "A timeout or 5xx is ambiguous: the PSP may already have executed the refund. A retry with a new key is a new request to the PSP, so the customer is refunded twice. This is the duplicate-refund failure the programme is meant to eliminate (section 2.1), and it violates FR-REF-07 and P3. Retrying for 24 hours also sits at the edge of the PSP's 24-hour key retention, so even a stable key would need a status lookup before late retries.",
+      "credit_requires": "Reviewer must state that the idempotency key must be stable per refund (not per attempt) and that per-attempt keys produce duplicate refunds after ambiguous failures.",
+      "acceptable_fix": "Use Idempotency-Key = refund_id (or a deterministic key derived from it) for every attempt; carry attempt_id separately as trace metadata. Before any retry beyond the PSP key-retention window, or after MANUAL_REVIEW, query the Payments Gateway/PSP by merchant reference for an existing refund. Keep automatic retries well within the retention window."
+    },
+    {
+      "id": "D09",
+      "category": "Security",
+      "severity": "High",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "8.3",
+          "7.4",
+          "10"
+        ],
+        "requirement_ids": [
+          "DEC-09",
+          "NFR-10",
+          "CMP-01"
+        ]
+      },
+      "title": "Unauthenticated public return endpoint keyed by sequential IDs exposes personal data",
+      "description": "GET /public/returns/{returnId} requires no authentication and returns customer name, collection address, collection time slot and items. Return IDs are RTN-{market}-{7-digit sequence} (7.4 step 5, DEC-09). The only control is a per-IP WAF rate limit.",
+      "why_it_matters": "IDs are trivially enumerable, so anyone can harvest names, home addresses and the times people will be at home (or away), which is a personal data breach (UK/EU GDPR Art. 5(1)(f), 32) and a physical-security risk. This is broken object-level authorisation (OWASP API Security Top 10 API1). Per-IP rate limits are bypassed with distributed IPs and still allow about 29,000 lookups per IP per day.",
+      "credit_requires": "Reviewer must identify both the enumerable identifier and the unauthenticated exposure of personal data (name/address/slot). Flagging only 'human-readable IDs' without the endpoint exposure earns partial credit.",
+      "acceptable_fix": "Encode a separate opaque, high-entropy (>= 128-bit) or signed, expiring token in the QR code; keep the human-readable ID for display only. Minimise the public response to status only. Authenticate drivers through the carrier integration and store staff through SSO for any view that includes personal data. Add enumeration detection."
+    },
+    {
+      "id": "D10",
+      "category": "Privacy and data governance",
+      "severity": "Medium",
+      "requires_external_fact": true,
+      "external_fact": "GDPR Art. 5(1)(c),(e) (minimisation, storage limitation) and Art. 17(3)(b) (the legal-obligation exemption covers only data necessary for that obligation); S3 Object Lock compliance mode prevents deletion or shortening of retention by any user, including the root account.",
+      "location": {
+        "sections": [
+          "6.6",
+          "8.5",
+          "4"
+        ],
+        "requirement_ids": [
+          "CMP-01",
+          "CMP-03",
+          "NFR-11",
+          "P6",
+          "AC-11"
+        ]
+      },
+      "title": "Customer contact data copied into every event and locked in an immutable 10-year archive excluded from erasure",
+      "description": "Every event payload carries a customerContact block (name, email, phone, delivery address); all events are archived in S3 with Object Lock compliance mode for 10 years, used as the analytics source, and explicitly excluded from erasure on the grounds of CMP-03.",
+      "why_it_matters": "CMP-03 justifies keeping financial records, not contact details in every operational event (shipment scans, notifications and so on). Compliance mode makes the data impossible to delete, so erasure requests and storage limitation cannot be honoured. The 10-year period is applied to UK/IE/NL data whose own retention period is 6-7 years. It contradicts the 24-month anonymisation of the order aggregate and P6, and AC-11 cannot pass.",
+      "credit_requires": "Reviewer must identify that personal data is retained immutably beyond what is necessary and cannot be erased, and that the legal-obligation justification does not cover it.",
+      "acceptable_fix": "Remove contact data from event payloads (carry customerId; consumers resolve contact details from the identity platform), or encrypt PII fields with per-customer keys and crypto-shred on erasure. Keep invoices and credit notes in a dedicated financial-records store with per-market retention. Use per-market or governance-mode retention on the archive, and update the DPIA (OI-04)."
+    },
+    {
+      "id": "D11",
+      "category": "Availability and NFR feasibility",
+      "severity": "Medium",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "3.2",
+          "5.3",
+          "10",
+          "4"
+        ],
+        "requirement_ids": [
+          "NFR-01",
+          "DEC-07",
+          "FR-ORD-04",
+          "P5"
+        ]
+      },
+      "title": "99.95% placement availability unachievable with a fail-closed synchronous dependency on a 99.5% SLA",
+      "description": "NFR-01 targets 99.95% monthly, but section 5.3 and DEC-07 make FraudShield (contractual SLA 99.5%) a synchronous, fail-closed dependency that returns 503 when unavailable.",
+      "why_it_matters": "Serial availability is at most 99.5% x 99.95% (IAS), about 99.45%. The FraudShield SLA allows about 3.6 hours of downtime a month against a 99.95% error budget of about 22 minutes. The NFR is infeasible by design. FR-ORD-04 only requires screening before release to fulfilment, not before acceptance, so fail-closed placement is a self-imposed constraint.",
+      "credit_requires": "Reviewer must show the arithmetic, or clearly state, that a fail-closed dependency with a lower SLA caps placement availability below NFR-01.",
+      "acceptable_fix": "Accept orders into a PENDING_SCREENING state when FraudShield is unavailable and screen asynchronously before release (satisfying FR-ORD-04 and Finance Risk), with a local rules fallback and value caps. Alternatively, formally lower NFR-01 or obtain a higher SLA, with circuit breakers either way."
+    },
+    {
+      "id": "D12",
+      "category": "Data model and platform limits",
+      "severity": "Medium",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "6.3",
+          "6.4"
+        ],
+        "requirement_ids": [
+          "FR-REF-03",
+          "AC-13"
+        ]
+      },
+      "title": "Monetary amounts stored and computed as double precision",
+      "description": "refund.amount and all refund_line amount columns are double precision; pro-rata discount allocation is computed with floating-point division and then rounded on write.",
+      "why_it_matters": "Binary floating point cannot represent most decimal currency values exactly. Pro-rata allocations and sums drift by fractions of a penny, so refund lines do not sum to the refund, credit notes do not match invoices, and FR-REF-03 / AC-13 ('to the penny') fail. (PostgreSQL also has no two-argument round() for double precision, so the stated rounding approach would not work as written.)",
+      "credit_requires": "Reviewer must flag floating-point types for money and the reconciliation impact.",
+      "acceptable_fix": "Store amounts as integer minor units (bigint) or numeric with fixed scale; perform allocation in integer arithmetic with a deterministic remainder rule (largest remainder) so allocations sum exactly to the order discount; define rounding rules per currency."
+    },
+    {
+      "id": "D13",
+      "category": "Rollout and rollback",
+      "severity": "High",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "13.3",
+          "13.2"
+        ],
+        "requirement_ids": []
+      },
+      "title": "Rollback strands orders already created in Meridian",
+      "description": "Section 13.3 rolls back by routing new orders back to Atlas and claims no data migration is needed because Atlas data is untouched.",
+      "why_it_matters": "Up to four weeks of orders for the market exist only in Meridian, with in-flight fulfilment, cancellations, returns and refunds. Atlas has no knowledge of them, and the rollback triggers (for example duplicate refunds or a severity-1 Meridian defect) are exactly the conditions under which continuing to rely on Meridian for those orders is unsafe. The plan does not cover servicing those orders, IAS reservations, finance feeds or the merged 'My orders' view after rollback.",
+      "credit_requires": "Reviewer must identify that orders placed in Meridian before rollback have no home in Atlas, and that the rollback plan is therefore incomplete.",
+      "acceptable_fix": "Define rollback as 'stop new intake' while Meridian continues to service its existing orders (with a minimal, hardened path for refunds and returns), or build and rehearse a reverse migration of in-flight orders into Atlas. Rehearse rollback in phase 0/1, and state per-state handling and data reconciliation steps."
+    },
+    {
+      "id": "D14",
+      "category": "Testability and acceptance",
+      "severity": "Low",
+      "requires_external_fact": false,
+      "location": {
+        "sections": [
+          "12",
+          "3.2"
+        ],
+        "requirement_ids": [
+          "AC-05",
+          "NFR-02",
+          "NFR-03"
+        ]
+      },
+      "title": "Performance acceptance test runs at half of peak for 30 minutes",
+      "description": "AC-05 load-tests at 600 orders/min for 30 minutes, while NFR-02/NFR-03 require the latency targets at 1,200 orders/min, sustained for two hours with 30% headroom.",
+      "why_it_matters": "The acceptance criterion cannot demonstrate the NFRs it claims to verify, and it would not expose asynchronous-path saturation (such as D06), which shows only at sustained peak.",
+      "credit_requires": "Reviewer must note that AC-05's load level and/or duration does not verify NFR-02/NFR-03.",
+      "acceptable_fix": "Test at >= 1,560 orders/min (peak plus 30%) for at least two hours, including asynchronous consumers and event-propagation latency, with realistic dependency latency and failure injection."
+    }
+  ],
+  "deliberately_sound_sections": [
+    {
+      "location": "3.1.3 FR-RET-01",
+      "why_sound": "A 30-day commercial window per shipment, with a 14-days-from-last-delivery floor, is more generous than the statutory minimum and preserves the multi-item rule of CRD Art. 9(2)(b).",
+      "careless_flag": "Claiming the window must be 14 days, or that per-shipment windows breach the last-item rule (the floor clause handles it). The defect is the implementation in 7.4 (D03), not the requirement."
+    },
+    {
+      "location": "3.1.3 FR-RET-03 and 7.4 exclusions",
+      "why_sound": "Personalised/made-to-measure goods and hygiene-sealed goods unsealed after delivery are lawful exceptions (CRD Art. 16(c) and (e); CCR 2013 reg. 28). The listed items (pierced earrings, cosmetics) fall within the hygiene exception, and the exclusion is disclosed pre-contract.",
+      "careless_flag": "Saying any exclusion from returns is unlawful, or that personalised goods must be returnable."
+    },
+    {
+      "location": "3.1.4 FR-REF-01, 8.2, DEC-08",
+      "why_sound": "Refunding to the original payment method, with store credit only on the customer's express choice, matches CRD Art. 13(1); disallowing alternative refund destinations is a sound anti-fraud control.",
+      "careless_flag": "Claiming that offering store credit (even with a bonus) is non-compliant, or that refusing to refund to a different card is customer-hostile."
+    },
+    {
+      "location": "6.4 items 3 and 5 (diminished-value deduction and return shipping charge)",
+      "why_sound": "Consumers bear the direct cost of returning goods where informed in advance (CRD Art. 14(1)), and are liable for diminished value from handling beyond what is necessary (Art. 14(2)); the deduction is gated by inspection outcome, capped and supervisor-approved.",
+      "careless_flag": "Asserting that charging for return shipping or deducting for handling is illegal under EU/UK consumer law."
+    },
+    {
+      "location": "5.4 notification stream on standard SNS/SQS",
+      "why_sound": "Notifications are self-contained and deduplicated on (eventId, channel) with a TTL that far exceeds redelivery windows; ordering is not needed, and standard queues remove throughput limits.",
+      "careless_flag": "Demanding FIFO for notifications, or calling at-least-once delivery a duplicate-email defect."
+    },
+    {
+      "location": "6.2 optimistic concurrency and 6.5 read-model projection",
+      "why_sound": "Version-conditioned writes with retry give single-writer safety; the projector discards stale events by per-order seq, and a few seconds of eventual consistency is within FR-ORD-07's 60 s.",
+      "careless_flag": "Calling eventual consistency of the read model a defect, or demanding strong consistency for the customer status page."
+    },
+    {
+      "location": "6.7 placement idempotency records",
+      "why_sound": "A 24-hour TTL comfortably exceeds the BFF's 15-minute retry window; request-hash mismatch is rejected; the record is written atomically with the order.",
+      "careless_flag": "Conflating this with the refund idempotency defect (D08) or claiming 24 hours is too short."
+    },
+    {
+      "location": "8.7 PCI DSS scope and 7.7 goodwill approval",
+      "why_sound": "Meridian handles only tokens and references, so it is plausibly outside the CDE (confirmed with the QSA). Goodwill refunds use cumulative per-order limits and a four-eyes approval that excludes the requester, with audit events.",
+      "careless_flag": "Insisting Meridian must be PCI-assessed as a CDE system, or that goodwill refunds lack segregation of duties."
+    }
+  ]
+}

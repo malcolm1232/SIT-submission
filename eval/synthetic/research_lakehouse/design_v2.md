@@ -198,10 +198,11 @@ Every data operation, from every engine, for every researcher, passes through th
                                                      |
            Ingestion: rdlr-landing -> Airflow -> Spark -> audit branch -> validate -> publish
                                                      |
-           Sources: faculty file shares, instruments, ELN, CRIS / Institutional Repository, DSA partners
+           Sources: faculty shares, instruments, ELN, CRIS / Inst. Repository, DSA partners
 
-  Audit plane (separate AWS account): CloudTrail S3 data events, Trino event listener, Polaris events,
-  OPA decision logs, Scholar Assist retrieval logs, Registry events -> Firehose -> S3 Object Lock
+  Audit plane (separate AWS account): CloudTrail S3 data events, Trino event listener,
+  Polaris events, OPA decision logs, Scholar Assist retrieval logs, Registry events
+  -> Firehose -> S3 Object Lock
 ```
 
 *Figure 1 — Target architecture. Every arrow is an authenticated, audited hand-off.*
