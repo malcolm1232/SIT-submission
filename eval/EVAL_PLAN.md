@@ -6,7 +6,7 @@ Sources: the scope-cut table in `research/audit/fresh_eyes.md` §2.3 (FE), `rese
 
 **Cost basis.** The corrected per-run figures in `docs/BUDGET.md` §1 (all-Opus, hybrid ingestion, cached, 20 calls, 20K output): FULL $2.18, B0 $0.63, B0-$ $2.18 (cost-matched to FULL), A5 $1.02; heavy-thinking worst case $3.24. Instruments at the BUDGET §3 rates: matcher plus judges $1.05 per matched run (Opus 5.5 in batch, or the second provider at a similar UNVERIFIED rate), Opus 5.5 grader $0.57 per review (batch), Sonnet 5.5 control grader $0.30 per review (batch). All totals carry the BUDGET 30 % margin. The token base is still UNVERIFIED (audit U3); the pilot measures it.
 
-**Run time.** 8-10 minutes per run (BUDGET §4), 2-3 runs in parallel within rate limits, conditions interleaved in a seeded order.
+**Run time.** Measured on 2026-10-02, not estimated (`docs/HANDOVER_FULL.md` §8 and §10; artefacts under `docs/live_runs/live_cc_opus_payments_v1/`; arithmetic in `research/audit/verify_runtime_cli_editlog.md`). One FULL-shaped run at `high` on a 21-page PDF through the `claude -p` backend, document-only (no research) and without the refine stage, took 959 s (16.0 min) of successful work: ingest 2 s, understand 158 s, plan 158 s, assess 520 s, verify 33 s, report 88 s. Its wall time was 3,372 s (56.2 min), because four assess attempts were killed by a 600 s timeout that has since been raised to 1,800 s. Research and refine have not been timed, so 16.0 min is a floor for a FULL run, and the default deadline of 3,600 s (60 min, `config/stop_rules.yaml`) is the cap. The single-call conditions (B0, B0-$) have not been timed either; the nearest measured analogue is the 520 s (8.7 min) assess call. Scoring one review in the pre-registered setup took 245.6 s (4.1 min: 98 calls at concurrency 4, 943.7 s of call time), and grading one review took 549.3 s (9.2 min: two samples of Pass A and Pass B, run one after another), so the instruments add 794.9 s (13.2 min) per scored and graded run. The earlier estimate of 8-10 minutes per run (BUDGET §4) is withdrawn. Runs go 2-3 in parallel within rate limits (not yet tried on the `claude -p` backend), with conditions interleaved in a seeded order. The cost figures in this plan are still the estimates made before these measurements; `docs/BUDGET.md` is to be redone from the measured runs (`docs/HANDOVER_FULL.md` §10 step 4).
 
 ---
 
@@ -63,7 +63,7 @@ Instruments:
 
 **Tier A approval figure: $650** (covers both grader branches at the planning cost). The $701-776 sensitivity row is what the pilot checkpoint protects against: if the pilot median FULL cost exceeds $3.24, re-plan before freezing (BUDGET §5).
 
-Wall time: 132 runs × 8-10 min ≈ 18-22 h of run time, about 7-11 h of laptop wall time at 2-3 in parallel.
+Wall time, from the measurements in the run-time note above: the 132 runs are 93 FULL-shaped runs (84 FULL and 9 A5) and 39 single-call runs (24 B0 and 15 B0-$). Floor: 93 × 959 s + 39 × 520 s = 109,467 s = 30.4 h of run time, which is 10.1-15.2 h of laptop wall time at 2-3 in parallel. Cap: 132 × 3,600 s = 132 h of run time, which is 44-66 h of wall time at 2-3 in parallel. The pilot (A-2) times research and refine and replaces the floor with a measured median. Instruments: scoring 101 matched runs × 245.6 s = 6.9 h, and Opus grading 101 reviews × 549.3 s = 15.4 h; the Sonnet control grader has not been timed. The earlier line (132 runs × 8-10 min ≈ 18-22 h, about 7-11 h of wall time) is withdrawn.
 
 ### 1.3 Grading and human workload (one person, the owner)
 
@@ -129,7 +129,7 @@ The deadline is still unknown (FE N1). Days are counted from the first build day
 | B4 | Fix what the pilot shows; matcher validation; grader pipeline; robustness gate | T4 100 matcher pairs (1.75 h); T5 grader smoke (2.1 h); finish T8 (3.0 h total) | **A-2 pilot** (18), A-8 |
 | B5 | Pilot-driven fixes; leakage tooling (LC5-LC8, LC10, LC11) | Review matcher κ; if κ < 0.60 apply protocol §7 | A-1 (last), A-9 |
 | B6 | **Freeze**: fill the pilot fields in `prereg.yaml`, flip `frozen`, hash, external timestamp (LC1); tag the agent commit | Send the hash to the SIT officer, or push the signed tag | none |
-| E1 | — | — | **A-3** (36) and **A-5** (18), interleaved; about 3-4 h wall |
+| E1 | — | — | **A-3** (36) and **A-5** (18), interleaved; at least 4.1-6.1 h wall at 2-3 in parallel (floor: 36 FULL-shaped × 959 s + 18 single-call × 520 s = 12.2 h of run time) and up to 18-27 h if every run reaches the 3,600 s deadline, so E1 can run into a second day |
 | E2 | Leakage audit (LC10) → unseal (access 1) → render the held-out PDFs by script | T6a held-out `core_insight` sign-off after the runs (1.0 h) | **A-4** (18), **A-6** (3), **A-7** (3) |
 | E3 | Matching, adjudication first pass, grader batches, runtime access scan (LC11) | T6b held-out adjudication review (2.0 h); T5b R_base (0.5 h); T7 grader sample (1.8 h) | V-tests (grader only) |
 | E4 | `eval/score.py` once on the complete set; tables; write results and limitations | Read the results and sign the rater statement | none |

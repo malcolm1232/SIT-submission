@@ -10,8 +10,8 @@ min_independent_sources: 2
 # Every rule in `active` must be registered in agent/sit_review_agent/stop_rules.py and reports one
 # of the closed StopReasonCode values (spec/finding.schema.json, spec/taxonomy.yaml stop_reasons).
 # deadline_seconds (line 6) is the default for every run without --deadline or a profile (dev and
-# Tier A evaluation). eval/prereg.yaml and eval/EVAL_PLAN.md set no deadline for Tier A runs (only
-# an 8-10 min planning estimate, now contradicted by measurement). 3600 s because a high-effort run
+# Tier A evaluation). eval/prereg.yaml and eval/EVAL_PLAN.md set no deadline for Tier A runs (the
+# plan's 8-10 min estimate was withdrawn on 2026-10-03 for measured times). 3600 s because a high-effort run
 # needs it: measured 2026-10-02 (docs/HANDOVER_FULL.md §8, Opus 5.5 high, claude_code, no research):
 # understand 158 s + plan 158 s + assess ~520 s (one good attempt) + verify 33 s + report 88 s
 # = ~16 min of model time; refine (unmeasured, re-emits every finding, likely ~5-9 min) and research
