@@ -130,9 +130,9 @@ Atlas runs on a pair of on-premise Oracle 12c database servers and a cluster of 
 
 | ID | Requirement |
 |---|---|
-| FR-RET-01 | A customer may initiate a return for any eligible item within 30 days of the delivery of that item (H&R commercial returns policy). Where an order is delivered in more than one shipment, the window runs separately for each shipment from its delivery date. |
+| FR-RET-01 | A customer may initiate a return for any eligible item within 30 days of the delivery of that item (H&R commercial returns policy), or within 14 days of the delivery of the last item of the order, whichever ends later. Where an order is delivered in more than one shipment, the 30-day window runs separately for each shipment from its delivery date. |
 | FR-RET-02 | Return methods: prepaid carrier label for drop-off (all markets), home collection (UK and DE), and store drop-off (UK and IE). |
-| FR-RET-03 | The following items are excluded from return unless faulty: personalised or made-to-measure items, and hygiene-sealed items (pillows, duvets, mattress protectors, pierced jewellery) where the seal has been broken after delivery. The exclusion shall be shown on the product page and in the order confirmation. |
+| FR-RET-03 | The following items are excluded from return unless faulty: personalised or made-to-measure items, and hygiene-sealed items (pierced earrings, lip and eye cosmetics) where the seal has been broken after delivery. The exclusion shall be shown on the product page and in the order confirmation. |
 | FR-RET-04 | A customer shall be able to see the status of a return online without contacting the contact centre. |
 | FR-RET-05 | The returns centre shall record receipt and an inspection outcome per returned item: `OK`, `DAMAGED_IN_TRANSIT`, `HANDLED_BEYOND_NECESSARY`, `WRONG_ITEM` or `MISSING`. |
 | FR-RET-06 | Exchanges for a different size or colour of the same product shall be supported in phase 1 as a return plus a linked replacement order at zero charge. |
@@ -163,7 +163,7 @@ Atlas runs on a pair of on-premise Oracle 12c database servers and a cluster of 
 | NFR-07 | Scalability | The design shall scale to twice the 2027 forecast peak by configuration only. |
 | NFR-08 | Accessibility | Customer-facing order, return and refund journeys shall conform to WCAG 2.2 level AA. |
 | NFR-09 | Observability | Every request and event shall carry a correlation ID; all services shall emit structured logs, RED metrics and traces to the central observability platform. |
-| NFR-10 | Security | Internet-facing APIs shall meet OWASP ASVS 4.0 Level 2. |
+| NFR-10 | Security | Internet-facing APIs shall meet OWASP ASVS 5.0 Level 2. |
 | NFR-11 | Data retention | Personal data shall be retained no longer than required by the retention schedule in section 8.5. |
 | NFR-12 | Cost | Steady-state run cost shall not exceed 70% of the current Atlas run cost (infrastructure plus licences). |
 
@@ -173,7 +173,7 @@ Atlas runs on a pair of on-premise Oracle 12c database servers and a cluster of 
 |---|---|
 | CMP-01 | Meridian shall comply with the UK GDPR, the Data Protection Act 2018 and the EU GDPR, including data subject rights of access and erasure, storage limitation and data minimisation. |
 | CMP-02 | Meridian shall honour the statutory right of withdrawal for distance contracts under Directive 2011/83/EU (Consumer Rights Directive) as transposed in IE, DE, NL and FR, and under the UK Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013. For goods, the withdrawal period is 14 days from the day the consumer acquires physical possession of the goods, or of the last item where items of one order are delivered separately. |
-| CMP-03 | Financial records (invoices, credit notes, refund records) shall be retained for the statutory period of the market concerned: UK 6 years, IE 6 years, NL 7 years, DE 10 years, FR 10 years. |
+| CMP-03 | Financial records (invoices, credit notes, refund records) shall be retained for the statutory period of the market concerned: UK 6 years, IE 6 years, NL 7 years, DE 10 years for books and records (8 years for accounting vouchers, including invoices), FR 10 years. |
 | CMP-04 | Meridian shall remain outside the PCI DSS cardholder data environment. It shall not store, process or transmit primary account numbers; it shall hold only PSP tokens and references. |
 | CMP-05 | Customer-facing journeys in EU markets shall meet the accessibility requirements of the European Accessibility Act, which applies to e-commerce services from 28 June 2025. |
 
@@ -234,7 +234,7 @@ Meridian sits between the customer-facing channels and the operational back offi
 | Refund Service | Refund calculation, deductions, approvals, store credit, instruction of refunds through the Payments Gateway, refund status tracking. Owner of refund records. | ECS on Fargate, Aurora PostgreSQL |
 | Notification Service | Emails (via the H&R messaging platform) and push notifications for order, shipment, return and refund milestones. | ECS on Fargate |
 | Status API and read model | Denormalised, query-optimised view of orders and returns for customers and agents. | ECS on Fargate, DynamoDB |
-| Event Archive | Durable archive of all domain events for audit, replay and analytics. | Kinesis Data Firehose to S3 |
+| Event Archive | Durable archive of all domain events for audit, replay and analytics. | Amazon Data Firehose to S3 |
 
 ### 5.3 Synchronous dependencies at order placement
 
@@ -287,7 +287,7 @@ The Refund Service instructs refunds through the Payments Gateway, which forward
 | Order store | Amazon DynamoDB, on-demand capacity | See DEC-02 |
 | Returns and refunds store | Amazon Aurora PostgreSQL 16 | See DEC-03 |
 | Messaging | Amazon SNS and SQS | See DEC-04 |
-| Event archive | Kinesis Data Firehose to S3 | See DEC-05 |
+| Event archive | Amazon Data Firehose to S3 | See DEC-05 |
 | Policy module | Embedded rules library (Kotlin DSL), versioned per market | See DEC-06 |
 | Infrastructure as code | Terraform with the H&R module library | |
 | CI/CD | H&R standard pipeline (GitHub Actions to AWS CodeDeploy, blue/green for ECS) | |
@@ -388,7 +388,7 @@ Every domain event uses the H&R standard envelope:
 | `correlationId` | Propagated from the originating request |
 | `payload` | The changed fields, plus a `customerContact` block (name, email, phone, delivery address) so that the Notification Service and CRM connector do not need to call back to Meridian |
 
-The Event Archive consumer delivers every event through Kinesis Data Firehose to the S3 bucket `meridian-event-archive`, in Parquet format, partitioned by `dt` and `type`. The bucket has S3 Object Lock enabled in **compliance mode** with a default retention period of **10 years**, which satisfies CMP-03 for the strictest markets (DE, FR) and guarantees that the audit trail cannot be altered or deleted. The archive is used for audit, for replay into new consumers, and as the source for the analytics lake.
+The Event Archive consumer delivers every event through Amazon Data Firehose to the S3 bucket `meridian-event-archive`, in Parquet format, partitioned by `dt` and `type`. The bucket has S3 Object Lock enabled in **compliance mode** with a default retention period of **10 years**, which satisfies CMP-03 for the strictest markets (DE, FR) and guarantees that the audit trail cannot be altered or deleted. The archive is used for audit, for replay into new consumers, and as the source for the analytics lake.
 
 ### 6.7 Idempotency records
 
@@ -404,7 +404,7 @@ The `meridian-idempotency` table stores one item per placement `Idempotency-Key`
 2. The Order API looks up the idempotency record. If found with a matching request hash, it returns the stored response. If found with a different hash, it returns `422`.
 3. The Order API validates the request: schema, signatures on the tax quote and authorisation token, market rules, line count (≤ 500), and that the authorised amount equals the order total.
 4. The Order API calls FraudShield. On `REJECT` it returns `403` with a reason code; on `REVIEW` it continues and marks the order for `PENDING_REVIEW`.
-5. The Order API calls the IAS reservation API with all lines. Reservations are held for 30 minutes for orders in `PENDING_REVIEW` and converted to allocations on release. If any line cannot be reserved, the API returns `409` with the unavailable lines and releases any partial reservations.
+5. The Order API calls the IAS reservation API with all lines. Reservations for orders in `PENDING_REVIEW` are held for up to 48 hours (the fraud team's review SLA is 24 hours) and are converted to allocations on release. If any line cannot be reserved, the API returns `409` with the unavailable lines and releases any partial reservations.
 6. The Order API writes the order item and the idempotency record in a single DynamoDB `TransactWriteItems` call, with a condition that neither exists.
 7. The Order API publishes `OrderPlaced` to `order-events.fifo`.
 8. The Order API returns `201 Created` with the order ID and summary.
@@ -551,7 +551,7 @@ Dashboards per service show RED metrics, queue depth and age, DynamoDB throttles
 - **Order placement.** 1,200 orders per minute at peak is 20 orders per second. With 30% headroom (NFR-03), the Order API is sized for 26 orders per second. Each Fargate task (2 vCPU, 4 GB) handled 15 orders per second in the prototype at p95 210 ms; the service runs a minimum of 6 tasks and autoscales on CPU to 24 tasks.
 - **Order event stream.** An order generates on average 9 events over its lifecycle on the stream (placement, shipment creation, release, pick, pack, dispatch, delivery, plus returns and refunds averaged across orders). At peak this is 20 × 9 = 180 events per second on `order-events.fifo`. Amazon SNS and SQS FIFO support 300 messages per second per API action without batching, so the stream runs with 40% headroom. Publishing uses batching where possible, which raises the ceiling further.
 - **Consumers.** Each consumer service autoscales between 2 and 40 tasks based on `ApproximateNumberOfMessagesVisible` on its queue. The Orchestrator's average processing time per event is 35 ms (one DynamoDB conditional write and one publish).
-- **DynamoDB.** On-demand capacity, pre-warmed before peak by temporarily switching to provisioned capacity at peak-forecast levels and back, as recommended by AWS for predictable step changes.
+- **DynamoDB.** On-demand capacity, pre-warmed before peak by setting warm throughput on the table and its GSI to the peak-forecast read and write rates.
 - **Aurora.** Writer `db.r7g.2xlarge`, readers `db.r7g.xlarge`. Returns and refunds write load at the post-Christmas returns peak is estimated at 120 writes per second, well within capacity.
 
 ### 9.3 Failure handling and dead-letter queues
@@ -568,7 +568,7 @@ Dashboards per service show RED metrics, queue depth and age, DynamoDB throttles
 |---|---|---|---|
 | Loss of one AZ | Automatic (multi-AZ ECS, DynamoDB, Aurora) | 0 | Minutes |
 | Loss of primary region | Runbook-driven failover: promote Aurora secondary, switch DynamoDB writes, scale ECS in eu-central-1, enable standby SNS/SQS, flip Route 53 | DynamoDB ≈ 1 s; Aurora ≈ 1 s | ≤ 60 min (NFR-06) |
-| Data corruption by defect | DynamoDB point-in-time recovery (35 days); Aurora backtrack (24 h) and snapshots; replay from event archive | Point in time | Hours |
+| Data corruption by defect | DynamoDB point-in-time recovery (35 days); Aurora point-in-time restore (35 days) and snapshots; replay from event archive | Point in time | Hours |
 
 Regional failover is rehearsed twice a year, once before peak.
 
@@ -617,7 +617,7 @@ The estimated steady-state monthly cost is 41,000 GBP (compute 14,000; DynamoDB 
 
 | ID | Criterion | Verifies |
 |---|---|---|
-| AC-01 | A placement retried with the same `Idempotency-Key` up to 24 hours later returns the original response and creates no second order (automated test). | FR-ORD-02 |
+| AC-01 | A placement retried with the same `Idempotency-Key` up to 12 hours later returns the original response and creates no second order (automated test). | FR-ORD-02 |
 | AC-02 | A 500-line Trade Portal order is placed, released, partially cancelled, partially returned and refunded end-to-end in staging. | FR-ORD-03 |
 | AC-03 | All return eligibility scenarios in the Legal-approved scenario catalogue pass for every market. | FR-RET-01, FR-RET-03, CMP-02 |
 | AC-04 | A status change is visible on "My orders" within 60 seconds at p99 during the peak load test. | FR-ORD-07, NFR-04 |
@@ -644,7 +644,7 @@ The estimated steady-state monthly cost is 41,000 GBP (compute 14,000; DynamoDB 
 | 2. Netherlands and France | As phase 1 | 2027-04-12 | 4 weeks stable |
 | 3. Germany | As phase 1 | 2027-05-24 | 4 weeks stable |
 | 4. United Kingdom and Trade Portal | As phase 1 | 2027-07-05 | 8 weeks stable, peak readiness review passed |
-| 5. Atlas decommission | Atlas read-only, then switched off | 2027-11-30 | All Atlas-originated returns windows closed; data archived |
+| 5. Atlas decommission | Atlas read-only, then switched off | 2027-10-29 | All Atlas-originated returns windows closed; data archived |
 
 Peak trading change freeze runs from 2027-11-15 to 2028-01-08; no phase transitions are permitted during the freeze.
 
