@@ -15,6 +15,7 @@ call log) and validates against the full spec. Differences from the canonical ob
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -241,6 +242,16 @@ class AnchorRepairOutput(Draft):
 # --------------------------------------------------------------------------- report
 
 
+class AssessedVerdictLabel(StrEnum):
+    """The verdict labels the model may choose. ``VerdictLabel.NOT_ASSESSED`` is left out on purpose:
+    it is set by code only, when the run produced no assessment (``phases.report``), so the
+    LLM-facing schema never offers it and a draft that carries it fails validation."""
+
+    FIT = VerdictLabel.FIT.value
+    FIT_WITH_CONDITIONS = VerdictLabel.FIT_WITH_CONDITIONS.value
+    NOT_FIT = VerdictLabel.NOT_FIT.value
+
+
 class VerdictConditionDraft(Draft):
     text: str
     finding_ids: list[str]
@@ -248,12 +259,12 @@ class VerdictConditionDraft(Draft):
 
 class ObjectiveVerdictDraft(Draft):
     objective_ref: str
-    label: VerdictLabel
+    label: AssessedVerdictLabel
     finding_ids: list[str]
 
 
 class VerdictDraft(Draft):
-    label: VerdictLabel
+    label: AssessedVerdictLabel
     rationale: str
     confidence: float
     conditions: list[VerdictConditionDraft]

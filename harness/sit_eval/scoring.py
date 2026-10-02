@@ -24,6 +24,11 @@ from sit_eval.metrics import compute_metrics
 from sit_eval.paths import SCHEMAS_DIR
 
 SCORES_SCHEMA_VERSION = "1.0"
+#: The agent's code-set verdict of a run that produced no assessment (spec VerdictLabel).
+NOT_ASSESSED = "not_assessed"
+NOT_ASSESSED_NOTE = ("the review's verdict is not_assessed: the agent run produced no assessment (no findings, no "
+                     "sound areas). It is scored as it stands, intention-to-treat (prereg runs.population): recall "
+                     "0 against every key flaw; exclude it only in the per-protocol view")
 PLUMBING_NOTE = ("PLUMBING ONLY: produced with the deterministic fake judge; the numbers are hashes, not judgements, "
                  "and must never be reported as a score")
 
@@ -48,6 +53,10 @@ class ScoreOptions:
     embedding_prefilter: bool = False
     adaptive_samples: bool = False
     candidate_rule: str = "shortlist_bounded"   # union = DEVIATION (the pre-2026-10-02 rule, comparison only)
+
+
+def _verdict_label(rin: ReviewInput) -> str | None:
+    return (rin.data.get("verdict") or {}).get("label")
 
 
 def file_sha256(path: Path) -> str:
@@ -236,6 +245,8 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
         warnings.append("grounding judges switched off: G3 and citation support metrics are null")
     if opts.judge_kind == "fake":
         warnings.append(PLUMBING_NOTE)
+    if _verdict_label(rin) == NOT_ASSESSED:
+        warnings.append(NOT_ASSESSED_NOTE)
     doc = docin.document
     doc_text = doc.text
     base = _base(rin, key, key_path, docin, version, opts, prereg, prompts_info)
@@ -289,6 +300,7 @@ def _base(rin: ReviewInput, key: dict[str, Any], key_path: Path, docin: DocInput
             "report_path": str(rin.report_path), "report_sha256": file_sha256(rin.report_path),
             "review_id": rin.data["metadata"]["review_id"], "run_id": rin.data["metadata"]["run_id"],
             "review_mode": rin.data["metadata"]["review_mode"],
+            "verdict_label": _verdict_label(rin),
             "condition": opts.condition if opts.condition is not None else rm.get("condition"),
             "split": rm.get("split"),
             "key_path": str(key_path), "key_sha256": file_sha256(key_path), "item_id": key["item"]["item_id"],

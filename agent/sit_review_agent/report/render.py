@@ -23,7 +23,16 @@ from typing import Any
 import jinja2
 
 from sit_review_agent.llm.outputs import CriterionCoverage
-from sit_review_agent.models import SEVERITY_RANK, Disposition, Finding, Kind, Review, ReviewMode, Severity
+from sit_review_agent.models import (
+    SEVERITY_RANK,
+    Disposition,
+    Finding,
+    Kind,
+    Review,
+    ReviewMode,
+    Severity,
+    VerdictLabel,
+)
 
 #: (section key, heading). ``kind:<k>`` sections list findings of that kind.
 SECTION_ORDER: tuple[tuple[str, str], ...] = (
@@ -109,16 +118,23 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
 
 
 def not_assessed(review: Review) -> bool:
-    """The run deadline stopped the review before assessment (robustness LLM-05); the verdict label
-    is then a placeholder and is shown as "not assessed" (``phases.report.not_assessed_verdict``)."""
-    from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
-
-    return any(d.event.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for d in review.research_log.degradations)
+    """The run produced no assessment: the verdict label is ``not_assessed``
+    (``phases.report.not_assessed_verdict``; the deadline stopped the review before assessment,
+    robustness LLM-05, or the model declined the assess call, LLM-06)."""
+    return review.verdict.label is VerdictLabel.NOT_ASSESSED
 
 
 def verdict_label_text(review: Review) -> str:
+    """The verdict label as shown in ``report.md``; a not-assessed verdict names its reason."""
     if not_assessed(review):
-        return "not assessed (out of time before assessment)"
+        from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+
+        events = [d.event for d in review.research_log.degradations]
+        if any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events):
+            return f"not assessed ({OUT_OF_TIME_BEFORE_ASSESSMENT})"
+        if any(e.startswith("the model declined the assess call") for e in events):
+            return "not assessed (the model declined the assessment)"
+        return "not assessed"
     return review.verdict.label.value.replace("_", " ")
 
 

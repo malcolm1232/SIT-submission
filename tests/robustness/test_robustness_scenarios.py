@@ -368,6 +368,9 @@ def check_llm06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert any("declined the assess call" in d for d in degs(persistent))
     assert "declined" in limitations(persistent)
     assert r["intent_summary"]["statement"] and r["verdict"]["rationale"] and r["findings"] == []
+    # no assessment, so no verdict call and no fitness verdict (the model could only invent one)
+    assert r["verdict"]["label"] == "not_assessed" and not llm_calls(persistent, "report")
+    assert "Not assessed (the model declined the assessment)" in md(persistent)
     r2 = ok(once)
     retry = [e for e in llm_calls(once, "assess") if e.get("outcome") == "ok"]
     assert retry and retry[0]["purpose"] == "assess:refusal_retry"
@@ -452,7 +455,7 @@ def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     fault = [e for e in llm_calls(demo, "assess") if e.get("fault")]
     assert len(fault) == 1 and fault[0]["outcome"] == "LLMDeadlineError"         # cut, never retried
     assert demo.virtual_s <= cfg.deadline_seconds - cfg.report_reserve_seconds + 1
-    assert r["findings"] == [] and r["verdict"]["confidence"] == 0.0
+    assert r["findings"] == [] and r["verdict"]["confidence"] == 0.0 and r["verdict"]["label"] == "not_assessed"
     assert any(d.startswith("out of time before assessment") for d in degs(demo))
     text = md(demo)
     assert "Not assessed (out of time before assessment)" in text and "out of time before assessment" in text

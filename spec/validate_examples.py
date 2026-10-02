@@ -574,10 +574,39 @@ NEG_FINDING = {
 for name, inst in NEG_FINDING.items():
     check(bool(errors(V_FINDING, inst)), f"negative test not rejected (finding): {name}")
 
+
+
+def _not_assessed(x):
+    """A review of a run that produced no assessment: verdict not_assessed (set by code, never by the model),
+    confidence 0, no findings, no sound areas, and the reason disclosed as a degradation with its limitation."""
+    x["verdict"] = {"label": "not_assessed", "confidence": 0, "conditions": [], "per_objective": [],
+                    "rationale": "Not assessed: the run ran out of time before assessment, so the design was not reviewed.",
+                    "what_would_change_it": "Rerun the review with a longer deadline."}
+    x["findings"], x["sound_areas"], x["unresolved"] = [], [], []
+    x["research_log"]["degradations"] = [{"id": "DEG-001", "type": "budget_or_deadline_hit",
+                                          "event": "out of time before assessment: the assess call was cut by the run deadline",
+                                          "impact": "the design was not assessed: the report has no findings"}]
+    x["limitations"] = [{"text": "The run ran out of time before assessment.", "degradation_ids": ["DEG-001"]}]
+    x["stop_reason"] = {"code": "deadline", "group": "cap", "detail": None}
+
+
+NOT_ASSESSED_REVIEW = mutate(REVIEW, _not_assessed)
+for e in errors(V_REVIEW, NOT_ASSESSED_REVIEW):
+    FAILURES.append(f"not_assessed Review example: {e}")
+for e in review_semantics(NOT_ASSESSED_REVIEW):
+    FAILURES.append(f"not_assessed Review semantics: {e}")
+
 NEG_REVIEW = {
     "fit_with_conditions with no conditions": mutate(REVIEW, _set(["verdict", "conditions"], [])),
     "manifest with a dirty git tree": mutate(REVIEW, _set(["run_manifest", "git_dirty"], True)),
     "created_at not an RFC 3339 date-time": mutate(REVIEW, _set(["metadata", "created_at"], "yesterday")),
+    "not_assessed verdict on a review that has findings": mutate(NOT_ASSESSED_REVIEW, _set(["findings"], [F_NOCHANGE])),
+    "not_assessed verdict with a confidence above 0": mutate(NOT_ASSESSED_REVIEW, _set(["verdict", "confidence"], 0.5)),
+    "not_assessed verdict with no disclosed degradation": mutate(NOT_ASSESSED_REVIEW, lambda x: (
+        x["research_log"].__setitem__("degradations", []), x.__setitem__("limitations", []),
+        x.__setitem__("stop_reason", REVIEW["stop_reason"]))),
+    "per-objective verdict labelled not_assessed": mutate(REVIEW, _set(["verdict", "per_objective", 0, "label"], "not_assessed")),
+    "verdict label outside the taxonomy": mutate(REVIEW, _set(["verdict", "label"], "not assessed")),
 }
 for name, inst in NEG_REVIEW.items():
     check(bool(errors(V_REVIEW, inst)), f"negative test not rejected (review): {name}")
@@ -668,6 +697,7 @@ ADVERSARIAL = {
     "A26 external ledger entry whose tool call is not in the log": (V_REVIEW, review_semantics, _d(REVIEW, _set(["evidence_ledger", 2, "tool", "call_id"], "call-9999")), True),
     "A27 decision registry changed between iterations": (V_REVIEW, review_semantics, _d(REVIEW, _set(["research_log", "registry_sha256_by_iteration", 0, "sha256"], H)), True),
     "A28 manifest without review_config (criteria / stop rule)": (V_REVIEW, None, _d(REVIEW, lambda x: x["run_manifest"].pop("review_config")), True),
+    "A29 not_assessed review: no findings, confidence 0, reason disclosed (accept)": (V_REVIEW, review_semantics, NOT_ASSESSED_REVIEW, False),
 }
 for name, (v, sem, inst, want_reject) in ADVERSARIAL.items():
     s_err = errors(v, inst)

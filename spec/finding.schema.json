@@ -9,7 +9,8 @@
     "Category": {"enum": ["internal_contradiction", "unsupported_or_incorrect_claim", "external_constraint_violation", "missing_or_unverifiable_requirement", "security_privacy_gap", "scalability_or_failure_mode", "ambiguous_requirement", "acceptance_criterion_cannot_validate", "decision_depends_on_pending_item", "other"]},
     "Severity": {"enum": ["critical", "high", "medium", "low"]},
     "Disposition": {"enum": ["refinement_now", "needs_investigation", "needs_prototyping", "needs_testing", "governance_decision", "no_change"]},
-    "VerdictLabel": {"enum": ["fit", "fit_with_conditions", "not_fit"]},
+    "VerdictLabel": {"enum": ["fit", "fit_with_conditions", "not_fit", "not_assessed"],
+                     "description": "not_assessed is set by code only, when the run produced no assessment (deadline before or during assess, or the model declined the assess call); the model's structured output cannot choose it (agent llm/outputs.py AssessedVerdictLabel). It is not a judgement of the design."},
     "SourceType": {"enum": ["doc", "external", "inference"]},
     "SourceAuthority": {"enum": ["primary_official", "peer_reviewed", "secondary", "informal"]},
     "StopReasonCode": {"enum": ["sufficient_evidence", "no_marginal_gain", "budget_tool_calls", "budget_tokens", "deadline", "tool_failure", "error"]},
@@ -250,11 +251,14 @@
         "conditions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["text", "finding_ids"],
           "properties": {"text": {"$ref": "#/$defs/NonEmpty"}, "finding_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/FindingId"}}}}},
         "per_objective": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["objective_ref", "label", "finding_ids"],
-          "properties": {"objective_ref": {"$ref": "#/$defs/NonEmpty"}, "label": {"$ref": "#/$defs/VerdictLabel"}, "finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}}}}},
+          "properties": {"objective_ref": {"$ref": "#/$defs/NonEmpty"}, "label": {"$ref": "#/$defs/VerdictLabel", "not": {"const": "not_assessed"}}, "finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}}}}},
         "what_would_change_it": {"type": ["string", "null"]}
       },
       "allOf": [
-        {"if": {"properties": {"label": {"const": "fit_with_conditions"}}}, "then": {"properties": {"conditions": {"minItems": 1}}}}
+        {"if": {"properties": {"label": {"const": "fit_with_conditions"}}}, "then": {"properties": {"conditions": {"minItems": 1}}}},
+        {"$comment": "A not_assessed verdict carries no judgement: confidence 0, no conditions, no per-objective labels.",
+         "if": {"properties": {"label": {"const": "not_assessed"}}, "required": ["label"]},
+         "then": {"properties": {"confidence": {"const": 0}, "conditions": {"maxItems": 0}, "per_objective": {"maxItems": 0}}}}
       ]
     },
 
@@ -416,7 +420,11 @@
          "else": {"properties": {
            "metadata": {"properties": {"prior_review_id": {"type": "null"},
                                        "documents": {"not": {"contains": {"properties": {"role": {"const": "prior_version"}}, "required": ["role"]}}}}},
-           "findings": {"items": {"properties": {"reassessment": {"type": "null"}}}}}}}
+           "findings": {"items": {"properties": {"reassessment": {"type": "null"}}}}}}},
+        {"$comment": "A review whose verdict is not_assessed has no findings and no sound areas, and discloses why in a degradation (cited by a limitation, INV-07).",
+         "if": {"properties": {"verdict": {"properties": {"label": {"const": "not_assessed"}}, "required": ["label"]}}, "required": ["verdict"]},
+         "then": {"properties": {"findings": {"maxItems": 0}, "sound_areas": {"maxItems": 0},
+                                 "research_log": {"properties": {"degradations": {"minItems": 1}}}}}}
       ]
     },
 

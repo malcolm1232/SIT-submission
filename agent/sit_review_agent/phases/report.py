@@ -6,7 +6,8 @@ against the spec (INV-03) and the invariants, writes ``report.json``, ``ledger.j
 ``report.md`` (``report.render.render_markdown``), and finalises ``manifest.json``. Every
 degradation is cited by a limitation (INV-07). A capped run (deadline) still reports, with a
 partial-evidence caveat; if the model is unavailable the verdict text falls back to an LLM-free
-template that says so (fresh_eyes N3).
+template that says so (fresh_eyes N3). A run with no assessment (the deadline skipped or cut
+``assess``, or the model declined it) gets no verdict call: its verdict is ``not_assessed``.
 
 What assembly guarantees by construction (each is disclosed, never hidden):
 
@@ -174,16 +175,37 @@ def assessment_cut(degradation_events: list[str]) -> bool:
     return any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in degradation_events)
 
 
-def not_assessed_verdict() -> Verdict:
-    """The verdict of a run the deadline stopped before assessment. The schema's labels are closed
-    (fit / fit_with_conditions / not_fit) and none means "not assessed": ``not_fit`` at confidence
-    0 is used so an unreviewed design is never certified, and the rationale and ``report.md`` say
-    plainly that no assessment took place (``report.render``). No finding is made up."""
-    return Verdict(label=VerdictLabel.NOT_FIT, confidence=0.0, conditions=[], per_objective=[],
-                   rationale="Not assessed: the run ran out of time before assessment, so the design was not "
-                             "reviewed and no finding was produced. This is not a judgement that the design is "
-                             "unfit; it must not be read as a review result.",
-                   what_would_change_it="Rerun the review with a longer deadline.")
+#: Why a run has no assessment -> (what happened, what to do), used in the not-assessed verdict.
+_NOT_ASSESSED_TEXT = {
+    "deadline": ("the run ran out of time before assessment", "Rerun the review with a longer deadline."),
+    "declined": ("the model declined the assess call, also after one reframed retry",
+                 "Rerun the review; if the model declines again, review the cited sections by hand."),
+}
+
+
+def assessment_missing(degradation_events: list[str], declined_sections: list[str]) -> str | None:
+    """Why the run has no assessment, or ``None`` when ``assess`` produced model output:
+    ``"deadline"`` (the deadline skipped or cut assess, robustness LLM-05) or ``"declined"`` (the
+    model refused the assess call twice, LLM-06). In both cases there is nothing a verdict could
+    rest on, so ``report`` makes no verdict call and reports ``not_assessed``."""
+    if assessment_cut(degradation_events):
+        return "deadline"
+    if PhaseName.ASSESS.value in declined_sections:
+        return "declined"
+    return None
+
+
+def not_assessed_verdict(reason: str = "deadline") -> Verdict:
+    """The verdict of a run that produced no assessment (``reason`` from :func:`assessment_missing`).
+    The label is ``not_assessed`` (set by code only; the model's output schema does not offer it),
+    at confidence 0 with no conditions, so an unreviewed design is neither certified nor called
+    unfit. The rationale and ``report.md`` say plainly that no assessment took place
+    (``report.render``). No finding is made up."""
+    what, then = _NOT_ASSESSED_TEXT[reason]
+    return Verdict(label=VerdictLabel.NOT_ASSESSED, confidence=0.0, conditions=[], per_objective=[],
+                   rationale=f"Not assessed: {what}, so the design was not reviewed and no finding was produced. "
+                             "This is not a judgement of the design; it must not be read as a review result.",
+                   what_would_change_it=then)
 
 
 def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, list[UnresolvedItem], list[Limitation]]:
@@ -197,7 +219,7 @@ def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, l
         ids = list(dict.fromkeys(x for x in c.finding_ids if x in known))
         if c.text.strip() and ids:
             conditions.append(VerdictCondition(text=c.text.strip(), finding_ids=ids))
-    label = v.label
+    label = VerdictLabel(v.label.value)      # the draft type admits only the assessed labels
     notes: list[str] = []
     if label is VerdictLabel.FIT_WITH_CONDITIONS and not conditions:
         rule = fallback_verdict(ctx.state.findings, "conditions cited no verified finding")
@@ -210,7 +232,7 @@ def settle_report_output(ctx: RunContext, out: ReportOutput) -> tuple[Verdict, l
     verdict = Verdict(
         label=label, rationale=v.rationale.strip() or "No rationale was given.",
         confidence=min(1.0, max(0.0, float(v.confidence))), conditions=conditions,
-        per_objective=[ObjectiveVerdict(objective_ref=o.objective_ref.strip(), label=o.label,
+        per_objective=[ObjectiveVerdict(objective_ref=o.objective_ref.strip(), label=VerdictLabel(o.label.value),
                                         finding_ids=[x for x in dict.fromkeys(o.finding_ids) if x in known])
                        for o in v.per_objective if o.objective_ref.strip()],
         what_would_change_it=v.what_would_change_it)
@@ -406,12 +428,13 @@ class ReportPhase:
         if not ctx.documents:
             raise StageCrash(PhaseName.REPORT.value, InvariantViolation("no documents loaded"))
         model_unresolved: list[UnresolvedItem] = []
-        if assessment_cut([d.event for d in st.degradations]):
-            # Out of time before assessment (robustness LLM-05): no model verdict on an unassessed
-            # design; the time left is not spent on a call that could only invent one.
-            ctx.emit("out of time before assessment: no verdict call; the report says the design was not assessed",
-                     "warn")
-            st.verdict = not_assessed_verdict()
+        missing = assessment_missing([d.event for d in st.degradations], st.declined_sections)
+        if missing is not None and not st.findings and not st.sound_areas:
+            # No assessment (out of time, robustness LLM-05; or the model declined assess, LLM-06):
+            # no model verdict on an unassessed design. A verdict call could only invent one.
+            why = "out of time before assessment" if missing == "deadline" else "the model declined the assessment"
+            ctx.emit(f"{why}: no verdict call; the report says the design was not assessed", "warn")
+            st.verdict = not_assessed_verdict(missing)
             st.limitations = []
         else:
             out, reason = await _verdict_call(ctx)

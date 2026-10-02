@@ -27,7 +27,9 @@ Implementation notes (workstream A):
 * the phase replaces (not appends to) the four fields, so a re-run from the checkpoint is safe;
 * after a persistent refusal: no findings, every criterion's coverage row says it was not assessed;
 * when the run deadline cuts the call (robustness LLM-05): the same, disclosed as "out of time
-  before assessment"; nothing is made up, and ``report`` skips the model verdict.
+  before assessment";
+* in both cases nothing is made up, and ``report`` skips the model verdict call and reports the
+  verdict ``not_assessed`` (``phases.report.assessment_missing``).
 """
 
 from __future__ import annotations

@@ -367,6 +367,11 @@ verdicts:                     # audit C9
   - {id: fit, definition: "Fit for purpose as written; any findings are low severity or no-change."}
   - {id: fit_with_conditions, definition: "Fit for purpose if the listed conditions (linked to findings) are met."}
   - {id: not_fit, definition: "Not fit for purpose: at least one objective cannot be met without redesign."}
+  # not_assessed is set by code only (never offered to the model): the run produced no assessment
+  # (deadline before or during assess, or the model declined the assess call). It says nothing about
+  # the design: confidence 0, no conditions, no per-objective labels, no findings, and the reason is a
+  # disclosed degradation. The grader does not count it as an explicit verdict (G4).
+  - {id: not_assessed, definition: "No assessment was produced in this run; not a judgement of the design."}
 
 provenance_sources:           # audit C10: every evidence item and claim is tagged with one
   - {id: doc, definition: "Stated in the design document under review; must carry a resolvable doc anchor."}

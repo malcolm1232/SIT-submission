@@ -138,7 +138,7 @@ Sound sections: synthetic `{section_ref, why_sound, trap}`, item_a `{location, w
 | | `materiality` | grader-only; ≈ high→{critical, high}, medium→medium, low→low |
 | grading illustrative key (§6) | `key_items / traps / no_change_areas`, `expected_triage` | `flaws / sound_sections[].trap / sound_sections`, `expected_disposition` |
 | `robustness/scenarios.md` | BEH-16 `remedy_type`; ADV-14 `validation/prototype`; BEH-17 `source`; BEH-12 `challenges_decision: D-x` | `disposition`; `needs_prototyping`; `evidence[].source_type`; `affected_decisions[{relation: challenges}]` |
-| verdict | yes / partly / no; `fit_with_refinements` | fit / fit_with_conditions / not_fit; fit_with_conditions |
+| verdict | yes / partly / no; `fit_with_refinements` | fit / fit_with_conditions / not_fit; fit_with_conditions (`not_assessed` has no legacy source: it is set by the agent's code) |
 | stop reason | `budget`; `other`; agent decision / cap / error | budget_tool_calls or budget_tokens; error; `group` decision / cap / error |
 
 ### 2.4 Category → (category, kind)
@@ -248,7 +248,7 @@ Pending judgement fields may be drafted by an agent session (human_labelling_pro
 
 **C8 (triage enum).** Grading's enum is kept, but `mixed` and `none` are not values. `mixed` becomes a primary disposition plus `secondary_dispositions[]`. A bare "mixed" says nothing about which action comes first, and action-type accuracy needs a single gold value to compare against. `none` becomes `no_change`. `testing` is kept (lab §3.2). The key gains `expected_disposition`. Until a person authors it, BEH-16 and action-type accuracy remain BLOCKED, as the audit says.
 
-**C9 (verdict vocabulary).** The labels are fit / fit_with_conditions / not_fit. `fit_with_conditions` requires at least one condition linked to a finding (grader D2). Adopted.
+**C9 (verdict vocabulary).** The labels are fit / fit_with_conditions / not_fit. `fit_with_conditions` requires at least one condition linked to a finding (grader D2). Adopted. Added on 2026-10-03: a fourth label, `not_assessed`, for a run that produced no assessment (the deadline skipped or cut the assess stage, or the model declined it). It replaces the earlier placeholder (`not_fit` at confidence 0), which read as a judgement of the design. It is set by code only: the LLM-facing verdict schema offers the three fitness labels, never this one. The schema requires confidence 0, no conditions, no per-objective labels, no findings, no sound areas and at least one degradation (which INV-07 ties to a limitation); a per-objective label can never be `not_assessed`. The grader does not count it as an explicit verdict (gate G4), and the scorer flags the run and counts it intention-to-treat.
 
 **C10 (provenance tag).** Every evidence item carries one of `doc | external | inference`. Inference must name what it is derived from, so the agent's reasoning cannot pass as document content. Adopted.
 
@@ -357,7 +357,7 @@ A risk with a recommendation:
 }
 ```
 
-`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (a v1 flaw whose fix introduced a v2 regression, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 32 deliberately broken variants are rejected (26 by the schemas, 6 by the cross-field checks the schema cannot express: ledger membership, ID cross-references, stop-reason group, v2 derivations, readiness). It also runs 28 adversarial cases from `research/audit/verify_spec.md` (25 must be rejected, 3 accepted: an 8-token quote, an accepted risk with `no_change`, a disclosed degradation) and the INV-04 anchor oracle on a page-marked text (one valid Review, one invented quote, one quote cited on the wrong page).
+`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (a v1 flaw whose fix introduced a v2 regression, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 37 deliberately broken variants are rejected (31 by the schemas, 6 by the cross-field checks the schema cannot express: ledger membership, ID cross-references, stop-reason group, v2 derivations, readiness). It also runs 29 adversarial cases, 28 from `research/audit/verify_spec.md` plus the not-assessed review (25 must be rejected, 4 accepted: an 8-token quote, an accepted risk with `no_change`, a disclosed degradation, a `not_assessed` review with no findings and its reason disclosed) and the INV-04 anchor oracle on a page-marked text (one valid Review, one invented quote, one quote cited on the wrong page).
 
 ## 6. Running the checks
 

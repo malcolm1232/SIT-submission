@@ -79,6 +79,9 @@ class VerdictLabel(StrEnum):
     FIT = "fit"
     FIT_WITH_CONDITIONS = "fit_with_conditions"
     NOT_FIT = "not_fit"
+    #: Set by code only, when the run produced no assessment (``phases.report.not_assessed_verdict``).
+    #: The model cannot choose it: ``llm.outputs.AssessedVerdictLabel`` leaves it out.
+    NOT_ASSESSED = "not_assessed"
 
 
 class SourceType(StrEnum):
@@ -473,6 +476,12 @@ class ObjectiveVerdict(SpecModel):
     label: VerdictLabel
     finding_ids: list[FindingId]
 
+    @model_validator(mode="after")
+    def _assessed(self) -> ObjectiveVerdict:
+        if self.label is VerdictLabel.NOT_ASSESSED:
+            raise ValueError("a per-objective verdict cannot be not_assessed")
+        return self
+
 
 class Verdict(SpecModel):
     label: VerdictLabel
@@ -486,6 +495,9 @@ class Verdict(SpecModel):
     def _conditions(self) -> Verdict:
         if self.label is VerdictLabel.FIT_WITH_CONDITIONS and not self.conditions:
             raise ValueError("fit_with_conditions needs >= 1 condition")
+        if self.label is VerdictLabel.NOT_ASSESSED and (self.confidence != 0 or self.conditions
+                                                        or self.per_objective):
+            raise ValueError("not_assessed carries no judgement: confidence 0, no conditions, no per_objective")
         return self
 
 
@@ -743,4 +755,13 @@ class Review(SpecModel):
                 raise ValueError("full review must not include a prior_version document")
             if any(f.reassessment is not None for f in self.findings):
                 raise ValueError("full review must have reassessment = null on every finding")
+        return self
+
+    @model_validator(mode="after")
+    def _not_assessed_rules(self) -> Review:
+        if self.verdict.label is VerdictLabel.NOT_ASSESSED:
+            if self.findings or self.sound_areas:
+                raise ValueError("a not_assessed review has no findings and no sound areas")
+            if not self.research_log.degradations:
+                raise ValueError("a not_assessed review must disclose why in a degradation")
         return self

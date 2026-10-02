@@ -164,8 +164,14 @@ def verify_findings(proj: dict[str, Any], doc: Document) -> dict[str, dict[str, 
     return out
 
 
+#: Labels that are an explicit fitness-for-purpose verdict. ``not_assessed`` (spec VerdictLabel, set
+#: by the agent's code when a run produced no assessment) is deliberately not one of them.
+FITNESS_VERDICT_LABELS = ("fit", "fit_with_conditions", "not_fit")
+
+
 def verdict_present(proj: dict[str, Any]) -> bool:
-    """G4 fact computed in code for a structured review: an explicit label and a rationale."""
+    """G4 fact computed in code for a structured review: an explicit label and a rationale. A
+    ``not_assessed`` review has no fitness verdict, so G4 fails and D2 is capped at 0."""
     v = proj.get("verdict")
-    return (isinstance(v, dict) and v.get("label") in ("fit", "fit_with_conditions", "not_fit")
+    return (isinstance(v, dict) and v.get("label") in FITNESS_VERDICT_LABELS
             and bool(str(v.get("rationale") or "").strip()))

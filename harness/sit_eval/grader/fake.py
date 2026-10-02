@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from sit_eval.grader.verify import INJECTION_PATTERNS
+from sit_eval.grader.verify import FITNESS_VERDICT_LABELS, INJECTION_PATTERNS
 from sit_eval.judge import FakeJudge, JudgeRequest
 
 FAKE_MODEL = "fake-judge-heuristic"
@@ -136,7 +136,7 @@ def _pass_b(req: JudgeRequest) -> dict[str, Any]:
     halls = [{k: h[k] for k in ("finding_id", "type", "severity", "status", "review_quote", "design_quote",
                                 "reasoning", "what_to_check") if k in h} for h in table.get("hallucinations") or []]
     verdict = review.get("verdict") or {}
-    present = verdict.get("label") in ("fit", "fit_with_conditions", "not_fit")
+    present = verdict.get("label") in FITNESS_VERDICT_LABELS        # not_assessed is no verdict (G4)
     quote = str(verdict.get("rationale") or (review.get("intent_summary") or {}).get("statement") or "")
     scores = dict.fromkeys(["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10"], 3)
     if padding:

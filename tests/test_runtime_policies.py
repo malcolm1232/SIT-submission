@@ -358,7 +358,7 @@ def test_not_assessed_verdict_is_never_a_certification() -> None:
     from sit_review_agent.phases.report import assessment_cut, not_assessed_verdict
 
     v = not_assessed_verdict()
-    assert v.label.value == "not_fit" and v.confidence == 0.0 and v.rationale.startswith("Not assessed")
+    assert v.label.value == "not_assessed" and v.confidence == 0.0 and v.rationale.startswith("Not assessed")
     assert assessment_cut([f"{OUT_OF_TIME_BEFORE_ASSESSMENT}: the assess call was cut"])
     assert not assessment_cut(["stop rule deadline (deadline) before refine"])
 

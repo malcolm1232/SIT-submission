@@ -102,12 +102,14 @@ COVERAGE: dict[str, Coverage] = {
     "LLM-03": _o("529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent "
                  "variant: exit 3, then resume completes", schedule=True),
     "LLM-05": _o("assess hangs once. Demo profile (540 s): the attempt is cut at the verify + report reserve, "
-                 "not retried, 'out of time before assessment' disclosed, no finding, run within the deadline; "
+                 "not retried, 'out of time before assessment' disclosed, no finding, verdict not_assessed, run "
+                 "within the deadline; "
                  "default deadline: the full 1800 s timeout, then the retry succeeds", schedule=True,
                  covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); "
                             "test_runtime_policies.py (deadline-bounded attempts in both live gateways)"),
-    "LLM-06": _o("refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, other stages "
-                 "complete; once -> reframed retry succeeds", schedule=True,
+    "LLM-06": _o("refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, verdict "
+                 "not_assessed with no verdict call, other stages complete; once -> reframed retry succeeds",
+                 schedule=True,
                  laptop="sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06 (L1 refusal-prone "
                         "domain: the INP-14b protocol fixture is not authored yet)"),
     "LLM-07": _o("max_tokens on the first assess call: one retry with doubled max_tokens, same finding count as "

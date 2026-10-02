@@ -198,9 +198,11 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   `stop_rules.report_reserve_seconds` (verify + report) and, for research, also
   `assess_reserve_seconds`. A cut attempt raises `LLMDeadlineError` and is not retried; no attempt
   or retry starts with less than 10 s left. Research ends (`deadline`); a cut or skipped assess gives
-  a report that says "out of time before assessment" with no finding and a not-assessed verdict
-  (`not_fit` at confidence 0, shown as "Not assessed" in `report.md`; the schema has no such label);
-  a cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
+  a report that says "out of time before assessment" with no finding and the verdict `not_assessed`
+  (confidence 0, shown as "Not assessed (out of time before assessment)" in `report.md`); the same
+  verdict is reported when the model declines the assess call twice (LLM-06). `not_assessed` is set by
+  code only: the model's output schema offers `fit`, `fit_with_conditions` and `not_fit`
+  (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
 - **No network at start.** Connection-type errors on the first model call of a run get a 10 s window,
   then exit 3 "no network"; `anthropic_api` runs its no-retry preflight before `models.retrieve`.
 - **Missing MCP key.** Live tool transport, servers enabled, key unset: exit 2 before any model call.

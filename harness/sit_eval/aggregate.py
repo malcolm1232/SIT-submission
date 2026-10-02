@@ -34,6 +34,8 @@ def load_scores(paths: list[Path]) -> tuple[list[dict[str, Any]], list[str]]:
             warnings.append(f"{p}: PLUMBING ONLY (fake judge)")
         if s["status"] == "pilot_unfrozen":
             warnings.append(f"{p}: unfrozen pilot score")
+        if s["inputs"].get("verdict_label") == "not_assessed":
+            warnings.append(f"{p}: the review was not assessed (verdict not_assessed); counted intention-to-treat")
         s["_path"] = str(p)
         rows.append(s)
     return rows, warnings

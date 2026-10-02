@@ -21,6 +21,8 @@
     "doc_sha256_text": {"$ref": "#/$defs/Sha256"},
     "doc_version": {"enum": ["v1", "v2"]},
     "condition": {"type": ["string", "null"]},
+    "verdict_label": {"enum": ["fit", "fit_with_conditions", "not_fit", "not_assessed", null],
+                      "description": "the review's verdict label; not_assessed = the agent run produced no assessment (scored intention-to-treat, flagged in warnings)"},
     "scored_run_ready": {"type": "boolean"},
     "doc_sha256_text_matches_review": {"type": ["boolean", "null"]}
    }
