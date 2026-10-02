@@ -2,10 +2,22 @@
 
 Procedure:
 
-1. Candidates per flaw = location overlap (:mod:`sit_eval.locations`) union a listwise LLM shortlist
-   of up to ``shortlist_k`` findings (one call per flaw; findings shuffled per call with a recorded
-   seed). The optional embedding prefilter is not implemented (prereg: used only if an embedding
-   model is recorded at freeze).
+1. Candidates per flaw (``candidate_rule``):
+
+   * ``shortlist_bounded`` (default; metrics.md §2.3 and prereg ``matcher.candidates`` as amended by
+     the owner on 2026-10-02, docs/USER_DECISIONS.md #10): the listwise LLM shortlist of up to
+     ``shortlist_k`` findings (one call per flaw; findings shuffled per call with a recorded seed)
+     is the candidate set. Location overlap (:mod:`sit_eval.locations`) adds no pair by itself; the
+     shortlist prompt names the overlapping findings as a hint. If the shortlist call fails after
+     the runner's retries the flaw gets no candidates (it counts as unmatched, like a pair whose
+     samples all failed), the failure is listed, and it is never replaced by the overlap set.
+   * ``union`` (the earlier rule; a DEVIATION from the amended prereg, kept for comparison):
+     location overlap union the same shortlist (same prompt, so shortlist answers are shared with a
+     ``shortlist_bounded`` run through the result cache).
+
+   Per flaw, ``shortlist`` records the overlap hint and which shortlisted findings also overlap, so
+   the provenance of every candidate stays auditable. The optional embedding prefilter is not
+   implemented (prereg: used only if an embedding model is recorded at freeze).
 2. Pairwise 0-3 scores, ``samples`` per pair, median (lower median when a sample failed and an even
    number remains). With ``adaptive_third_sample`` (off by default; needs the owner's approval) the
    third sample is asked only when the first two disagree or one failed: the median of three is the
@@ -75,7 +87,7 @@ class FlawView:
 class PairScore:
     finding_id: str
     flaw_id: str
-    sources: list[str]                      # overlap, shortlist
+    sources: list[str]                      # shortlist and/or overlap (overlap alone: union rule only)
     samples: list[int | None] = field(default_factory=list)
     raw: list[dict[str, Any]] = field(default_factory=list)
     capped: int = 0
@@ -123,13 +135,19 @@ class MatchResult:
     findings: list[FindingView]
     flaws: list[FlawView]
     candidates: dict[str, dict[str, list[str]]]      # flaw_id -> finding_id -> sources
-    shortlist: dict[str, dict[str, Any]]             # flaw_id -> {ids, seed, ok}
+    shortlist: dict[str, dict[str, Any]]             # flaw_id -> {ids, seed, ok, overlap hint and provenance}
     pairs: dict[tuple[str, str], PairScore]
     assignments: dict[str, Assignment]
     adjudication: dict[str, dict[str, Adjudication]]  # setting -> finding_id -> Adjudication
     llm_adjudication: dict[str, dict[str, Any]]       # finding_id -> raw answer (or error)
     failures: list[str] = field(default_factory=list)
     granularity: str = "pairwise"
+    candidate_rule: str = "shortlist_bounded"
+
+    @property
+    def shortlist_failed(self) -> list[str]:
+        """Flaws whose shortlist call failed (under ``shortlist_bounded`` they had no candidates)."""
+        return [g for g, r in self.shortlist.items() if not r.get("ok")]
 
     def score(self, fid: str, gid: str) -> float:
         p = self.pairs.get((fid, gid))
@@ -220,9 +238,13 @@ def shuffled(items: list[Any], seed: int) -> list[Any]:
 # ----------------------------------------------------------------------------- the matcher
 
 
+CANDIDATE_RULES = ("shortlist_bounded", "union")
+
+
 @dataclass
 class MatcherSettings:
     granularity: str = "pairwise"
+    candidate_rule: str = "shortlist_bounded"   # union = the pre-2026-10-02 rule (DEVIATION; comparison only)
     samples: int = 3
     shortlist_k: int = 3
     severity_epsilon: float = 0.01
@@ -238,12 +260,16 @@ class Matcher:
 
     # -- candidates
     async def shortlist(self, g: FlawView, findings: list[FindingView]) -> dict[str, Any]:
+        overlap = [f.id for f in findings if f.loc.overlaps(g.loc)]          # rank order
         if self.s.shortlist_k <= 0 or not findings:
-            return {"ids": [], "seed": None, "ok": True}
+            return _with_provenance({"ids": [], "seed": None, "ok": True}, overlap)
         seed = derive_seed(self.s.seed, "shortlist", g.id)
         order = shuffled(findings, seed)
+        hinted = set(overlap)
+        hint = ", ".join(f.id for f in order if f.id in hinted) or "none"   # listed in the shuffled order
         user = prompts.render("matcher_shortlist", FLAW=render_flaw(g.data), K=str(self.s.shortlist_k),
-                              FINDINGS="\n".join(render_finding(f.data, self.doc) for f in order))
+                              FINDINGS="\n".join(render_finding(f.data, self.doc) for f in order),
+                              OVERLAP_IDS=hint)
         known = {f.id for f in findings}
         try:
             data = await self.runner.ask("shortlist", f"match.shortlist:{g.id}", prompts.template("matcher_system"),
@@ -251,10 +277,30 @@ class Matcher:
         except BudgetStop:
             raise
         except JudgeError as exc:
-            return {"ids": [], "seed": seed, "ok": False, "error": str(exc)[:300]}
+            return _with_provenance({"ids": [], "seed": seed, "ok": False, "error": str(exc)[:300]}, overlap)
         ids = [i for i in dict.fromkeys(data.get("candidate_ids", [])) if i in known][: self.s.shortlist_k]
-        return {"ids": ids, "seed": seed, "ok": True, "unknown_ids": [i for i in data.get("candidate_ids", [])
-                                                                      if i not in known]}
+        return _with_provenance({"ids": ids, "seed": seed, "ok": True,
+                                 "unknown_ids": [i for i in data.get("candidate_ids", []) if i not in known]},
+                                overlap)
+
+    def candidates_for(self, g: FlawView, findings: list[FindingView], sl: dict[str, Any]) -> dict[str, list[str]]:
+        """finding_id -> sources for one flaw under the configured candidate rule."""
+        overlap = set(sl["overlap_hint_ids"])
+        c: dict[str, list[str]] = {}
+        if self.s.candidate_rule == "union":
+            for f in findings:
+                if f.id in overlap:
+                    c.setdefault(f.id, []).append("overlap")
+            for fid in sl["ids"]:
+                c.setdefault(fid, []).append("shortlist")
+            return c
+        if self.s.candidate_rule != "shortlist_bounded":
+            raise ValueError(f"unknown candidate_rule {self.s.candidate_rule!r}")
+        # shortlist_bounded: only shortlisted findings; "overlap" records that the finding also shares a
+        # location with the flaw (provenance), it never adds a pair
+        for fid in sl["ids"]:
+            c[fid] = (["overlap"] if fid in overlap else []) + ["shortlist"]
+        return c
 
     # -- pairwise scoring
     @staticmethod
@@ -405,17 +451,14 @@ class Matcher:
         candidates: dict[str, dict[str, list[str]]] = {}
         pairs: dict[tuple[str, str], PairScore] = {}
         for g in flaws:
-            c: dict[str, list[str]] = {}
-            for f in findings:
-                if f.loc.overlaps(g.loc):
-                    c.setdefault(f.id, []).append("overlap")
-            for fid in shortlist[g.id]["ids"]:
-                c.setdefault(fid, []).append("shortlist")
+            c = self.candidates_for(g, findings, shortlist[g.id])
             candidates[g.id] = c
             for fid, src in c.items():
                 pairs[(fid, g.id)] = PairScore(fid, g.id, src)
             if not shortlist[g.id]["ok"]:
-                failures.append(f"shortlist {g.id}: {shortlist[g.id].get('error')}")
+                consequence = ("flaw has no candidates and counts as unmatched" if self.s.candidate_rule
+                               == "shortlist_bounded" else "candidates are location overlap only")
+                failures.append(f"shortlist {g.id}: {shortlist[g.id].get('error')} ({consequence})")
         # 2. pairwise scores
         by_id = {f.id: f for f in findings}
         batch_seeds: dict[str, list[int]] = {}
@@ -469,7 +512,18 @@ class Matcher:
                 adjudication[setting][fid] = d
         return MatchResult(findings=findings, flaws=flaws, candidates=candidates, shortlist=shortlist, pairs=pairs,
                            assignments=assignments, adjudication=adjudication, llm_adjudication=llm,
-                           failures=failures, granularity=self.s.granularity)
+                           failures=failures, granularity=self.s.granularity,
+                           candidate_rule=self.s.candidate_rule)
+
+
+def _with_provenance(res: dict[str, Any], overlap: list[str]) -> dict[str, Any]:
+    """Add the location hint and the candidate provenance to one flaw's shortlist record."""
+    ids, ov = res["ids"], set(overlap)
+    res["overlap_hint_ids"] = list(overlap)
+    res["shortlisted_with_overlap"] = [i for i in ids if i in ov]
+    res["shortlisted_without_overlap"] = [i for i in ids if i not in ov]
+    res["overlap_not_shortlisted"] = [i for i in overlap if i not in set(ids)]
+    return res
 
 
 def all_observations(key: dict[str, Any]) -> list[dict[str, Any]]:

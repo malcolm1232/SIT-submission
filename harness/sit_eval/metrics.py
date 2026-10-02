@@ -118,6 +118,14 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
     G = len(gold)
     gold_ids = {g.id for g in gold}
 
+    # shortlist_bounded: a flaw whose shortlist call failed had no candidates and counts as unmatched, so
+    # recall is a lower bound; the flaws are named on the recall metrics (and in scores.json failures)
+    failed_sl = [g for g in match.shortlist_failed if g in gold_ids] if match.candidate_rule == "shortlist_bounded" \
+        else []
+    unscored = {"shortlist_failed_flaws": failed_sl,
+                "note": "lower bound: these flaws had no candidates because their shortlist call failed"} \
+        if failed_sl else {}
+
     halluc_ground: set[str] = set()
     for setting in ("strict", "lenient"):
         a = match.assignments[setting]
@@ -131,7 +139,8 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
         R = ratio(TP, G)
         Ps = ratio(TP, N)
         Pa = ratio(TP + V, N) if not unadj else None
-        out[pfx + "recall"] = M(R, "G = 0 (fully sound document)" if G == 0 else None, status=st, tp=TP, g=G)
+        out[pfx + "recall"] = M(R, "G = 0 (fully sound document)" if G == 0 else None, status=st, tp=TP, g=G,
+                                **unscored)
         out[pfx + "precision_strict"] = M(Ps, "N = 0 (no findings)" if N == 0 else None, tp=TP, n=N)
         out[pfx + "precision_adjudicated"] = M(
             Pa, ("N = 0 (no findings)" if N == 0 else f"{unadj} unmatched findings could not be adjudicated"),

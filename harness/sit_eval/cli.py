@@ -53,6 +53,10 @@ def score(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the planned call count and cost; call nothing."),
     granularity: str | None = typer.Option(None, "--granularity", help="pairwise (prereg) | per_flaw_batch "
                                                                        "(deviation)"),
+    candidate_rule: str | None = typer.Option(None, "--candidate-rule",
+                                              help="shortlist_bounded (prereg as amended 2026-10-02: only shortlisted "
+                                                   "findings are scored; overlap is a hint) | union (DEVIATION: "
+                                                   "overlap union shortlist, comparison only)"),
     concurrency: int | None = typer.Option(None, "--concurrency", min=1),
     adaptive_samples: bool | None = typer.Option(None, "--adaptive-samples/--no-adaptive-samples",
                                                  help="Ask the third pairwise sample only when the first two "
@@ -84,10 +88,14 @@ def score(
     gran = granularity or cfg.matcher.call_granularity
     if gran not in ("pairwise", "per_flaw_batch"):
         _fail("--granularity must be pairwise or per_flaw_batch")
+    rule = candidate_rule or cfg.matcher.candidate_rule
+    if rule not in ("shortlist_bounded", "union"):
+        _fail("--candidate-rule must be shortlist_bounded or union")
     opts = ScoreOptions(
         judge_kind=kind, model=model or cfg.judge.model, effort=effort or cfg.judge.effort,
         max_tokens=cfg.judge.max_tokens, samples=samples or cfg.matcher.samples,
-        seed=cfg.run.seed if seed is None else seed, granularity=gran, shortlist_k=cfg.matcher.shortlist_k,
+        seed=cfg.run.seed if seed is None else seed, granularity=gran, candidate_rule=rule,
+        shortlist_k=cfg.matcher.shortlist_k,
         severity_epsilon=cfg.matcher.severity_epsilon, concurrency=concurrency or cfg.run.concurrency,
         max_cost_usd=max_cost_usd if max_cost_usd is not None else cfg.run.max_cost_usd,
         grounding_judges=cfg.grounding.judges if grounding_judges is None else grounding_judges,
@@ -106,7 +114,7 @@ def score(
 
     if dry_run:
         plan = plan_calls(rin, key_data, version, opts, cfg.cost_estimate.per_call_usd, cfg.cost_estimate.per_call_s,
-                          basis_model=cfg.cost_estimate.basis_model)
+                          basis_model=cfg.cost_estimate.basis_model, per_kind_usd=cfg.cost_estimate.per_kind_usd)
         plan["max_cost_usd"] = opts.max_cost_usd
         typer.echo(json.dumps(plan, indent=1))
         return

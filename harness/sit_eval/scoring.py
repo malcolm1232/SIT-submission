@@ -47,6 +47,7 @@ class ScoreOptions:
     condition: str | None = None
     embedding_prefilter: bool = False
     adaptive_samples: bool = False
+    candidate_rule: str = "shortlist_bounded"   # union = DEVIATION (the pre-2026-10-02 rule, comparison only)
 
 
 def file_sha256(path: Path) -> str:
@@ -67,7 +68,9 @@ def validate_scores(scores: dict[str, Any]) -> list[str]:
 
 def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreOptions,
                per_call_usd: dict[str, float], per_call_s: dict[str, float],
-               basis_model: str = "claude-opus-5-5") -> dict[str, Any]:
+               basis_model: str = "claude-opus-5-5", per_kind_usd: dict[str, float] | None = None) -> dict[str, Any]:
+    """Call counts (min and max) for scoring one review, priced per call kind when ``per_kind_usd`` is
+    given (else at the flat ``per_call_usd`` low / typical / high)."""
     findings = finding_views(rin.data)
     flaws = flaw_views(key, version)
     N, G = len(findings), len(flaws)
@@ -75,12 +78,18 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
     n_overlap = sum(len(v) for v in overlap.values())
     k = min(opts.shortlist_k, N)
     shortlist_calls = G if k > 0 and N > 0 else 0
-    pairs_min, pairs_max = n_overlap, sum(min(N, len(v) + k) for v in overlap.values())
+    union = opts.candidate_rule == "union"
+    if union:
+        per_flaw = {g: (len(v), min(N, len(v) + k)) for g, v in overlap.items()}
+    else:   # shortlist_bounded: the shortlist returns 0..k findings per flaw and nothing else is scored
+        per_flaw = {g: (0, k) for g in overlap}
+    pairs_min, pairs_max = sum(a for a, _ in per_flaw.values()), sum(b for _, b in per_flaw.values())
     adaptive = opts.adaptive_samples and opts.samples == 3
     lo_samples = 2 if adaptive else opts.samples
-    if opts.granularity == "per_flaw_batch":
-        flaws_min = sum(1 for v in overlap.values() if v)
-        flaws_max = sum(1 for v in overlap.values() if v or k > 0)
+    batch = opts.granularity == "per_flaw_batch"
+    if batch:
+        flaws_min = sum(1 for a, _ in per_flaw.values() if a)
+        flaws_max = sum(1 for _, b in per_flaw.values() if b)
         score_min, score_max = flaws_min * lo_samples, flaws_max * opts.samples
     else:
         score_min, score_max = pairs_min * lo_samples, pairs_max * opts.samples
@@ -92,33 +101,63 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
     lo = shortlist_calls + score_min + adj_min + premise + cite + rec
     hi = shortlist_calls + score_max + adj_max + premise + cite + rec
     conc = max(1, opts.concurrency)
+    score_kind = "batch" if batch else "pair"
+    kinds_min = {"shortlist": shortlist_calls, score_kind: score_min, "adjudicate": adj_min, "premise": premise,
+                 "citation": cite, "recommendation": rec}
+    kinds_max = {**kinds_min, score_kind: score_max, "adjudicate": adj_max}
+    if per_kind_usd:
+        def price(kind: str) -> float:
+            return per_kind_usd.get(kind, per_call_usd["typical"])
+
+        cost_lo = sum(n * price(kd) for kd, n in kinds_min.items())
+        cost_hi = sum(n * price(kd) for kd, n in kinds_max.items())
+        cost = {"low": round(cost_lo, 2), "typical": round((cost_lo + cost_hi) / 2, 2), "high": round(cost_hi, 2),
+                "by_kind_at_max": {kd: round(n * price(kd), 2) for kd, n in kinds_max.items() if n},
+                "basis": (f"per call kind {per_kind_usd} for {basis_model} at effort high via claude -p "
+                          "(config/eval.yaml cost_estimate.per_kind_usd): shortlist, batch and adjudicate measured "
+                          "on the 2026-10-02 pilot; pair, premise, citation and recommendation estimated. low = the "
+                          "min call plan, high = the max call plan")}
+    else:
+        cost = {"low": round(lo * per_call_usd["low"], 2), "typical": round((lo + hi) / 2 * per_call_usd["typical"], 2),
+                "high": round(hi * per_call_usd["high"], 2),
+                "basis": f"flat per call {per_call_usd} for {basis_model} (config/eval.yaml cost_estimate)"}
     caveats = ["retries of failed attempts are not counted (each live call may retry up to judge.max_retries "
                "times, and a failed attempt can still cost money)",
-               "adjudication and premise calls carry the whole document, so they cost several times a pair call; "
-               "the flat per-call price averages over call kinds",
-               "the shortlist decides where between min and max pair scoring lands",
-               "output (thinking) tokens dominate per-call cost and are unmeasured for the judge model at effort "
-               "high: a live claude-haiku-4-5 check at effort low produced 0.6k-4.8k output tokens per harness "
-               "call (2026-10-02); treat the USD range as a floor until a pilot measures it"]
+               ("prices per call kind (USD): " + ", ".join(f"{kd} {v:g}" for kd, v in per_kind_usd.items())
+                + "; shortlist, batch and adjudicate are pilot means (2026-10-02, claude -p, Opus high), the others "
+                "were not in the pilot and are estimates; whole-document calls (adjudicate, premise) cost about ten "
+                "times a pair call" if per_kind_usd else
+                "adjudication and premise calls carry the whole document, so they cost several times a pair call; "
+                "the flat per-call price averages over call kinds"),
+               ("candidate_rule union: the shortlist decides where between min (overlap only) and max (overlap plus "
+                "shortlist_k new findings per flaw) pair scoring lands" if union else
+                "candidate_rule shortlist_bounded: the shortlist decides how many findings per flaw are scored, "
+                f"between 0 and shortlist_k ({k}); the 2026-10-02 pilot shortlist returned 28 ids for 14 flaws "
+                "(2.0 per flaw, two thirds of the max)")]
     if opts.model != basis_model:
         caveats.insert(0, f"per-call prices are a planning basis for {basis_model} (effort high); this run uses "
                           f"{opts.model}, so the USD figures do not apply to it (calls do)")
+    if union:
+        note = ("candidate_rule union (DEVIATION from the amended prereg): min assumes the shortlist adds no pair "
+                "beyond location overlap and every flaw is matched; max assumes it adds shortlist_k new pairs per "
+                "flaw and every finding needs adjudication")
+    else:
+        note = ("candidate_rule shortlist_bounded (prereg matcher.candidates as amended 2026-10-02): only "
+                "shortlisted findings are scored, location overlap is a hint to the shortlist; min assumes every "
+                "shortlist is empty and every flaw is matched, max assumes shortlist_k findings per flaw and every "
+                "finding needs adjudication")
     return {
-        "judge": opts.judge_kind, "granularity": opts.granularity, "samples": opts.samples,
-        "adaptive_third_sample": adaptive,
+        "judge": opts.judge_kind, "granularity": opts.granularity, "candidate_rule": opts.candidate_rule,
+        "samples": opts.samples, "adaptive_third_sample": adaptive,
         "findings_scored": N, "key_flaws": G, "location_overlap_pairs": n_overlap,
+        "candidate_pairs": {"min": pairs_min, "max": pairs_max},
         "calls": {"shortlist": shortlist_calls, "pair_scoring": {"min": score_min, "max": score_max},
                   "adjudication": {"min": adj_min, "max": adj_max}, "premise_judge": premise,
                   "citation_judge": cite, "recommendation_judge": rec, "total": {"min": lo, "max": hi}},
-        "cost_usd_estimate": {"low": round(lo * per_call_usd["low"], 2),
-                              "typical": round((lo + hi) / 2 * per_call_usd["typical"], 2),
-                              "high": round(hi * per_call_usd["high"], 2),
-                              "basis": f"per call {per_call_usd} for {basis_model} (config/eval.yaml "
-                                       "cost_estimate; UNVERIFIED planning figures); live costs vary"},
+        "cost_usd_estimate": cost,
         "wall_time_min_estimate": {"low": round(lo * per_call_s["low"] / conc / 60, 1),
                                    "high": round(hi * per_call_s["high"] / conc / 60, 1), "concurrency": conc},
-        "note": ("min assumes the shortlist adds no pair beyond location overlap and every flaw is matched; "
-                 "max assumes it adds shortlist_k new pairs per flaw and every finding needs adjudication"),
+        "note": note,
         "caveats": caveats,
     }
 
@@ -142,6 +181,10 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
     if opts.granularity != "pairwise":
         warnings.append("call granularity per_flaw_batch is a DEVIATION from prereg matcher.pairwise_scoring "
                         "(one call per pair); it needs the owner's approval before any scored run")
+    if opts.candidate_rule == "union":
+        warnings.append("candidate_rule union (location overlap union shortlist) is a DEVIATION from prereg "
+                        "matcher.candidates as amended 2026-10-02 (the shortlist bounds pairwise scoring); "
+                        "comparison only")
     if opts.samples != 3:
         warnings.append(f"samples = {opts.samples}: prereg matcher.pairwise_scoring says 3 samples, median")
     elif opts.adaptive_samples:
@@ -157,7 +200,8 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
     base = _base(rin, key, key_path, docin, version, opts, prereg, prompts_info)
     if runner is None:
         raise ValueError("a judge runner is required")
-    matcher = Matcher(runner, MatcherSettings(granularity=opts.granularity, samples=opts.samples,
+    matcher = Matcher(runner, MatcherSettings(granularity=opts.granularity, candidate_rule=opts.candidate_rule,
+                                              samples=opts.samples,
                                               shortlist_k=opts.shortlist_k, severity_epsilon=opts.severity_epsilon,
                                               seed=opts.seed, adaptive_third_sample=opts.adaptive_samples),
                       doc=doc)
@@ -174,6 +218,10 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
     metrics = compute_metrics(match=match, grounding=grounding, key=key, version=version, review=rin.data,
                               manifest=rin.manifest, doc=doc, prior_scores=prior_scores)
     failures = match.failures + grounding.failures
+    if match.shortlist_failed and match.candidate_rule == "shortlist_bounded":
+        warnings.append(f"shortlist failed for {', '.join(match.shortlist_failed)}: under shortlist_bounded these "
+                        "flaws had no candidates and count as unmatched, so recall and the recall-based metrics "
+                        "are lower bounds; re-run into the same --out to retry only the failed calls")
     if failures:
         warnings.append(f"{len(failures)} judge calls failed after retries; affected metrics are null or noted")
     status = "plumbing_only" if opts.judge_kind == "fake" else (
@@ -224,7 +272,8 @@ def _details(match: MatchResult, grounding: Any, seed: int) -> dict[str, Any]:
     s_g2f, l_g2f = strict.flaw_to_finding, lenient.flaw_to_finding
     flaws = [{"flaw_id": g.id, "severity": g.severity, "category": g.data["category"],
               "v2_status": g.data.get("v2_status"), "matched_finding_strict": s_g2f.get(g.id),
-              "matched_finding_lenient": l_g2f.get(g.id), "best_score": best.get(g.id)} for g in match.flaws]
+              "matched_finding_lenient": l_g2f.get(g.id), "best_score": best.get(g.id),
+              "shortlist_ok": bool(match.shortlist.get(g.id, {}).get("ok", True))} for g in match.flaws]
     pair_rows = [{"finding_id": p.finding_id, "flaw_id": p.flaw_id, "sources": p.sources, "samples": p.samples,
                   "median": p.median, "capped_samples": p.capped, "skipped_samples": p.skipped,
                   "rationales": [r.get("rationale") for r in p.raw if r]}
@@ -242,7 +291,7 @@ def _details(match: MatchResult, grounding: Any, seed: int) -> dict[str, Any]:
     sample = sorted(rng.sample(rest, k=round(0.2 * len(rest)))) if rest else []
     return {
         "findings": findings, "flaws": flaws,
-        "matching": {"granularity": match.granularity,
+        "matching": {"granularity": match.granularity, "candidate_rule": match.candidate_rule,
                      "candidates": {g: dict(sorted(c.items())) for g, c in sorted(match.candidates.items())},
                      "shortlist": match.shortlist, "pair_scores": pair_rows,
                      "strict": [{"finding_id": f, "flaw_id": g, "score": s} for f, g, s in strict.pairs],

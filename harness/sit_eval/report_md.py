@@ -43,6 +43,7 @@ def render_scores_md(s: dict[str, Any]) -> str:
               f"- Document text: {inp['doc_source']} (sha256 {inp['doc_sha256_text'][:12]}, matches the review: "
               f"{_fmt(inp['doc_sha256_text_matches_review'])})",
               f"- Judge: {j['judge_kind']} / {j['model']} / effort {j['effort']}; {j['granularity']}, "
+              f"candidates {j.get('candidate_rule', 'union (pre-2026-10-02 run)')}, "
               f"{j['samples']} samples, seed {j['seed']}; grounding judges {_fmt(j['grounding_judges'])}",
               f"- Prompt bundle: {s['prompts']['bundle_sha256'][:12]} (lock ok: {_fmt(s['prompts']['lock_ok'])})",
               ""]

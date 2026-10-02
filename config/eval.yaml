@@ -20,6 +20,12 @@ grader:
                                  # 21-finding review hit the $1.0 judge default live (2026-10-02)
 
 matcher:
+  # candidate_rule (metrics.md §2.3, prereg matcher.candidates; owner decision 2026-10-02, USER_DECISIONS #10):
+  # shortlist_bounded = prereg-faithful: pairwise scoring runs only on the up-to-shortlist_k findings the
+  #                     listwise shortlist returns per flaw; location overlap is shown to the shortlist as a
+  #                     hint and never adds a pair by itself.
+  # union             = DEVIATION (the earlier rule, kept for comparison): location overlap union the shortlist.
+  candidate_rule: shortlist_bounded
   # pairwise       = prereg-faithful: one call per (finding, flaw) candidate pair per sample.
   # per_flaw_batch = DEVIATION: one call per flaw per sample scoring all of that flaw's candidates.
   call_granularity: pairwise
@@ -43,8 +49,22 @@ run:
   max_cost_usd: null             # hard stop for one `sit-eval score`; null = no stop
 
 cost_estimate:                   # used only by --dry-run and as the reserve when a client reports no cost
-  per_call_usd: {low: 0.05, typical: 0.10, high: 0.15}
-  per_call_s: {low: 20, high: 60}
+  # Mean USD per call by call kind, claude-opus-5-5 at effort high through `claude -p` (ADR-010 billing).
+  # Measured on the pilot scoring of the first live run (docs/live_runs/live_cc_opus_payments_v1/eval_pilot/
+  # judge_calls.jsonl, 57 calls, 2026-10-02; per_flaw_batch, adaptive samples, grounding judges off):
+  #   shortlist  0.110 (14 calls, 0.103-0.123; ~13.5k input, ~0.4k output tokens, ~6 s)
+  #   batch      0.062 (33 calls, 0.029-0.085 for 2-10 candidates; ~1k output tokens, ~11 s)
+  #   adjudicate 0.332 (10 calls, 0.322-0.341; whole document, ~39k input, ~1.2k output tokens, ~14 s)
+  # Not measured (no such call in the pilot), estimated:
+  #   pair       0.03  batch cost regressed on candidate count: 0.025 + 0.006 per candidate (n = 33 calls),
+  #                    so about 0.031 for one candidate (~3.6k input, ~0.5k output tokens); the cheapest
+  #                    batches (2 candidates) averaged 0.030
+  #   premise    0.33  carries the whole document, priced like adjudication
+  #   citation, recommendation 0.03  short prompts, priced like a pair call
+  per_kind_usd: {shortlist: 0.11, pair: 0.03, batch: 0.06, adjudicate: 0.33, premise: 0.33, citation: 0.03,
+                 recommendation: 0.03}
+  per_call_usd: {low: 0.03, typical: 0.11, high: 0.33}   # fallback for a kind missing above; spans the measured kinds
+  per_call_s: {low: 5, high: 20}   # pilot: 4.4-18.5 s per call, median 10.7 s; 57 calls in 159 s at concurrency 4
   basis_model: claude-opus-5-5   # per-call prices are for this model at effort high; --dry-run warns for others
 
 statistics:

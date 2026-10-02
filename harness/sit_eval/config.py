@@ -30,6 +30,9 @@ class JudgeCfg(_M):
 
 
 class MatcherCfg(_M):
+    # shortlist_bounded = metrics.md §2.3 / prereg matcher.candidates as amended 2026-10-02 (USER_DECISIONS #10);
+    # union = the earlier overlap-union-shortlist rule, a DEVIATION kept for comparison
+    candidate_rule: Literal["shortlist_bounded", "union"] = "shortlist_bounded"
     call_granularity: Literal["pairwise", "per_flaw_batch"] = "pairwise"
     samples: int = Field(3, ge=1)
     shortlist_k: int = Field(3, ge=0)
@@ -50,9 +53,16 @@ class RunCfg(_M):
     max_cost_usd: float | None = None
 
 
+#: Mean USD per call by call kind, claude-opus-5-5 at effort high through `claude -p`. shortlist, batch and
+#: adjudicate are measured (pilot judge_calls.jsonl, 2026-10-02); the others are estimates (see eval.yaml).
+PER_KIND_USD_DEFAULT = {"shortlist": 0.11, "pair": 0.03, "batch": 0.06, "adjudicate": 0.33, "premise": 0.33,
+                        "citation": 0.03, "recommendation": 0.03}
+
+
 class CostEstimateCfg(_M):
-    per_call_usd: dict[str, float] = Field(default_factory=lambda: {"low": 0.05, "typical": 0.10, "high": 0.15})
-    per_call_s: dict[str, float] = Field(default_factory=lambda: {"low": 20.0, "high": 60.0})
+    per_call_usd: dict[str, float] = Field(default_factory=lambda: {"low": 0.03, "typical": 0.11, "high": 0.33})
+    per_kind_usd: dict[str, float] | None = Field(default_factory=lambda: dict(PER_KIND_USD_DEFAULT))
+    per_call_s: dict[str, float] = Field(default_factory=lambda: {"low": 5.0, "high": 20.0})
     basis_model: str = "claude-opus-5-5"   # the model the per-call prices are meant for
 
 

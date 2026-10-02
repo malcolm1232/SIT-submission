@@ -55,6 +55,7 @@
   "matching": {"type": "object", "required": ["granularity", "candidates", "shortlist", "pair_scores", "strict",
                                               "lenient"],
                "properties": {
+                "candidate_rule": {"enum": ["shortlist_bounded", "union"]},
                 "pair_scores": {"type": "array", "items": {"type": "object",
                   "required": ["finding_id", "flaw_id", "sources", "samples", "median"],
                   "properties": {"samples": {"type": "array", "items": {"enum": [0, 1, 2, 3, null]}},
