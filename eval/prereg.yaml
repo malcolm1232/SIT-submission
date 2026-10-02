@@ -452,7 +452,7 @@ grader:   # UD #2; GR §5-§8; spec/README.md grader-facing projection
   primary:
     model: claude-opus-5-5
     effort: high
-    api: Message Batches (50 % price)
+    api: synchronous `claude -p` calls through the Claude Code backend (ADR-010; billed to the Claude Code login). Message Batches (50 % price) applies only to the anthropic_api judge and is not implemented (deviations entry 7)
     disclosure: same family as the agent; numbers labelled "same-family" and tied to the validity tier reached
   second_provider:
     available: false     # owner decision 2026-10-02 (UD #16): no second-provider judge; Anthropic only, so the same-family limitation is disclosed per research/models/README.md (ADR-003 closed)
@@ -483,7 +483,7 @@ matcher:   # MM §2; spec C4, C5
   only_source_of_recall: true
   model:
     branch_A: the second-provider model, if a key exists (cross-family)   # not available (UD #16, grader.second_provider.available false)
-    branch_B: claude-opus-5-5 via Message Batches, disclosed as same-family (FE §2.3 core; ADR-003 B3 shape). Local open-weight matchers are Tier C.
+    branch_B: claude-opus-5-5 via synchronous `claude -p` (ADR-010; Message Batches not implemented, deviations entry 7), disclosed as same-family (FE §2.3 core; ADR-003 B3 shape). Local open-weight matchers are Tier C.
   effort: high
   rule: core_insight_plus_location_v1 - one-to-one, core insight stated, location compatible, category labels ignored
   credit_mode: per flaw from the key (substance | all_of | any_of); it operationalises the core insight and is not a second rule

@@ -441,6 +441,8 @@ match_scores:
   - {score: 2, id: PARTIAL}
   - {score: 1, id: RELATED}
   - {score: 0, id: UNRELATED}
+# The six classes the LLM adjudicator may give. The harness also assigns a seventh, PARTIAL_KEY_MATCH, from the
+# matcher's own scores (never by the adjudicator): research/methodology/metrics.md §2.3 step 4, USER_DECISIONS #14.
 adjudication_classes: [DUPLICATE, VALID_UNPLANTED, HALLUCINATED, NON_SPECIFIC, INVALID_OPINION, OUT_OF_SCOPE]
 
 # Structural limits the verify stage enforces (audit G1-G3).

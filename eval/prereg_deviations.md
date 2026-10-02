@@ -164,3 +164,18 @@ already happened (none had for entries made before the freeze).
   the adjudicator). The rule of entry 1 is unchanged; only the reported numbers were wrong.
 - **Found by:** the matcher-rule verifier, 2026-10-02 (`research/audit/verify_matcher_rule_editlog.md`).
 - **Scored runs before the change:** none (`frozen: false`).
+
+---
+
+## 7. 2026-10-02: grader and matcher call path (Message Batches -> synchronous `claude -p`)
+
+- **Fields:** `grader.primary.api`; `matcher.model.branch_B`.
+- **Old text:** "Message Batches (50 % price)"; "claude-opus-5-5 via Message Batches, disclosed as same-family".
+- **New text:** synchronous `claude -p` calls through the Claude Code backend; Message Batches applies only to
+  the `anthropic_api` judge and is not implemented.
+- **Reason:** the owner chose to bill model calls to the Claude Code login rather than a Console API key
+  (`docs/DECISIONS.md` ADR-010, `docs/USER_DECISIONS.md` #6 and #9); the CLI has no batch interface. The model,
+  effort and prompts are unchanged; only the transport and price basis differ. Measured per-call costs on this
+  path are in `docs/HANDOVER_FULL.md` §9.
+- **Decided by:** the coordinator under the owner's delegation (`docs/USER_DECISIONS.md` #11).
+- **Scored runs before the change:** none (`frozen: false`).
