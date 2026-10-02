@@ -105,7 +105,8 @@ def score(
     version = doc_version or infer_doc_version(rin, key_data, doc)
 
     if dry_run:
-        plan = plan_calls(rin, key_data, version, opts, cfg.cost_estimate.per_call_usd, cfg.cost_estimate.per_call_s)
+        plan = plan_calls(rin, key_data, version, opts, cfg.cost_estimate.per_call_usd, cfg.cost_estimate.per_call_s,
+                          basis_model=cfg.cost_estimate.basis_model)
         plan["max_cost_usd"] = opts.max_cost_usd
         typer.echo(json.dumps(plan, indent=1))
         return

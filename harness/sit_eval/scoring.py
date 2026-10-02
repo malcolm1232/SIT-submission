@@ -66,7 +66,8 @@ def validate_scores(scores: dict[str, Any]) -> list[str]:
 
 
 def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreOptions,
-               per_call_usd: dict[str, float], per_call_s: dict[str, float]) -> dict[str, Any]:
+               per_call_usd: dict[str, float], per_call_s: dict[str, float],
+               basis_model: str = "claude-opus-5-5") -> dict[str, Any]:
     findings = finding_views(rin.data)
     flaws = flaw_views(key, version)
     N, G = len(findings), len(flaws)
@@ -91,6 +92,14 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
     lo = shortlist_calls + score_min + adj_min + premise + cite + rec
     hi = shortlist_calls + score_max + adj_max + premise + cite + rec
     conc = max(1, opts.concurrency)
+    caveats = ["retries of failed attempts are not counted (each live call may retry up to judge.max_retries "
+               "times, and a failed attempt can still cost money)",
+               "adjudication and premise calls carry the whole document, so they cost several times a pair call; "
+               "the flat per-call price averages over call kinds",
+               "the shortlist decides where between min and max pair scoring lands"]
+    if opts.model != basis_model:
+        caveats.insert(0, f"per-call prices are a planning basis for {basis_model} (effort high); this run uses "
+                          f"{opts.model}, so the USD figures do not apply to it (calls do)")
     return {
         "judge": opts.judge_kind, "granularity": opts.granularity, "samples": opts.samples,
         "adaptive_third_sample": adaptive,
@@ -101,11 +110,13 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
         "cost_usd_estimate": {"low": round(lo * per_call_usd["low"], 2),
                               "typical": round((lo + hi) / 2 * per_call_usd["typical"], 2),
                               "high": round(hi * per_call_usd["high"], 2),
-                              "basis": f"per call {per_call_usd} (config/eval.yaml cost_estimate); live costs vary"},
+                              "basis": f"per call {per_call_usd} for {basis_model} (config/eval.yaml "
+                                       "cost_estimate; UNVERIFIED planning figures); live costs vary"},
         "wall_time_min_estimate": {"low": round(lo * per_call_s["low"] / conc / 60, 1),
                                    "high": round(hi * per_call_s["high"] / conc / 60, 1), "concurrency": conc},
         "note": ("min assumes the shortlist adds no pair beyond location overlap and every flaw is matched; "
                  "max assumes it adds shortlist_k new pairs per flaw and every finding needs adjudication"),
+        "caveats": caveats,
     }
 
 

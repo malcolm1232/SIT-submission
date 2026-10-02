@@ -9,7 +9,8 @@ Procedure:
 2. Pairwise 0-3 scores, ``samples`` per pair, median (lower median when a sample failed and an even
    number remains). With ``adaptive_third_sample`` (off by default; needs the owner's approval) the
    third sample is asked only when the first two disagree or one failed: the median of three is the
-   agreed value whenever two agree, so the result is identical and about a third of calls are saved. ``call_granularity: pairwise`` (prereg-faithful) makes one call per pair and
+   agreed value whenever two agree, so the result is identical and about a third of calls are saved.
+   ``call_granularity: pairwise`` (prereg-faithful) makes one call per pair and
    sample; ``per_flaw_batch`` (a DEVIATION) makes one call per flaw and sample scoring all its
    candidates. A score of 3 with ``location_ok: false`` is capped at 2 (MATCH requires a
    compatible location, §2.2).

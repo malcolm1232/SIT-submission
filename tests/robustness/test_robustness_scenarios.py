@@ -195,6 +195,8 @@ def check_inf07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     r = ok(rec)
     worst = max(len(e["attempts"]) for e in tool_calls(rec))
     assert worst <= 2                                                       # at most 1 confirmation retry
+    tried = [e["call_id"] for e in tool_calls(rec) if e["attempts"]]
+    assert len(tried) == 1 and len(tool_calls(rec)) > 1, tried              # one confirmed 401 disables every server
     events = " ".join(degs(rec))
     assert "SIT_MCP_API_KEY" in events and "No external research was possible" in md(rec)
     assert rec.outbound == [] and not external(rec) and r["stop_reason"]["code"] == "tool_failure"

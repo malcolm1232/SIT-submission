@@ -53,6 +53,7 @@ class RunCfg(_M):
 class CostEstimateCfg(_M):
     per_call_usd: dict[str, float] = Field(default_factory=lambda: {"low": 0.05, "typical": 0.10, "high": 0.15})
     per_call_s: dict[str, float] = Field(default_factory=lambda: {"low": 20.0, "high": 60.0})
+    basis_model: str = "claude-opus-5-5"   # the model the per-call prices are meant for
 
 
 class StatisticsCfg(_M):

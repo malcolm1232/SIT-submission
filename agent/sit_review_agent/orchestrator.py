@@ -753,6 +753,11 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     cause = getattr(exc, "cause", None)
     if cause is not None:
         record["cause"] = f"{type(cause).__name__}: {str(cause)[:2000]}"
+    if code is ExitCode.STAGE_CRASH:
+        try:                                    # ADR-009 item 5, robustness BEH-25: a partial report
+            record["partial_report"] = _run_partial_report(ctx, phase, cause).name
+        except OSError:
+            pass
     try:
         write_json_atomic(rd.failure, record)
     except OSError:
