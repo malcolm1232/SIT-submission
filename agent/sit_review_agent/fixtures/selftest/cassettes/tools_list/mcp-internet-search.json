@@ -1,0 +1,4 @@
+[
+ {"name": "search", "description": "Web search (selftest fixture; shape UNVERIFIED until the laptop probe).",
+  "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}
+]

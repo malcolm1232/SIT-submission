@@ -16,8 +16,8 @@ from sit_review_agent.hashing import registry_sha256
 from sit_review_agent.llm.outputs import FindingDraft, RegistryEntryDraft
 from sit_review_agent.models import (
     DecisionRelation,
-    DocAnchor,
     Disposition,
+    DocAnchor,
     RegistryEntry,
     RegistryEntryType,
     RegistryHash,
@@ -56,7 +56,8 @@ class DecisionRegistry:
         if self._frozen:
             raise RegistryFrozenError("decision registry is frozen after understand (INV-10)")
         entry = RegistryEntry(registry_id=registry_id(len(self._entries) + 1), type=draft.type, doc_ref=draft.doc_ref,
-                              statement=draft.statement, doc_anchor=DocAnchor.model_validate(draft.doc_anchor.model_dump()))
+                              statement=draft.statement,
+                              doc_anchor=DocAnchor.model_validate(draft.doc_anchor.model_dump()))
         self._entries.append(entry)
         return entry
 

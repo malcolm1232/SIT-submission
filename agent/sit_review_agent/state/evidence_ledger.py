@@ -69,7 +69,8 @@ class EvidenceLedger:
             self._journal.append(entry.model_dump(mode="json"))
         return entry
 
-    def add_external(self, result: ToolResult, source: ExternalSource, *, snapshot_path: str | None = None) -> LedgerEntry:
+    def add_external(self, result: ToolResult, source: ExternalSource, *,
+                     snapshot_path: str | None = None) -> LedgerEntry:
         """One external source seen in an ``ok`` tool result (search hit, record, fetched page)."""
         if not result.ok:
             raise LedgerError(f"external evidence needs an ok tool call; {result.call_id} is {result.status}")

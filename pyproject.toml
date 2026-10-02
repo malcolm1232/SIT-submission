@@ -39,6 +39,9 @@ dra = "sit_review_agent.cli:main"   # alias used by docs/DEMO_DAY_RUNBOOK.md
 where = ["agent"]
 include = ["sit_review_agent*"]
 
+[tool.setuptools.package-data]
+sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/selftest/**/*"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"

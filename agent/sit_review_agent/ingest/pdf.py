@@ -36,7 +36,9 @@ MAX_REQUEST_BYTES = 32 * 1024 * 1024
 #: A page with fewer extracted characters than this but at least one image is "image-only" (INP-04).
 IMAGE_ONLY_MAX_CHARS = 50
 
-_HEADING_RE = re.compile(r"^(?P<num>\d{1,2}(?:\.\d{1,3}){0,4})\.?\s+(?P<title>[A-Z][^\n]*)$", re.M)
+#: Numbered heading at line start ("6.2 Notifications", "10.Alert management"). Heuristic: numbered
+#: lists can match too; duplicates are tolerated (find_sections returns every candidate).
+_HEADING_RE = re.compile(r"^(?P<num>\d{1,2}(?:\.\d{1,3}){0,4})(?:\.\s*|\s+)(?P<title>[A-Z][^\n]*)$", re.M)
 #: Requirement / decision / constraint IDs such as FR-9, NFR-7, AC-12, D-3, SEC-AUTH-2 (spec §2.2).
 REQUIREMENT_ID_RE = re.compile(r"\b[A-Z]{1,4}(?:-[A-Z]+)*-\d+\b")
 _SECTION_NUM_RE = re.compile(r"\d{1,2}(?:\.\d{1,3})*")
@@ -129,20 +131,24 @@ class Document:
         i = bisect.bisect_right(starts, offset) - 1
         return self.sections[i] if i >= 0 else None
 
-    def find_section(self, section_ref: str) -> Section | None:
-        """Resolve a ``DocAnchor.section_ref`` ("6.2", "§6.2", "20 Decisions", a heading)."""
+    def find_sections(self, section_ref: str) -> list[Section]:
+        """Every section a ``DocAnchor.section_ref`` ("6.2", "§6.2", "20 Decisions", a heading) may
+        mean, in document order. Several candidates are possible when numbering repeats (a table of
+        contents that survived filtering, numbered lists); the anchor check tries each."""
         m = _SECTION_NUM_RE.search(section_ref)
         if m:
-            for s in self.sections:
-                if s.section_id == m.group(0):
-                    return s
+            hits = [s for s in self.sections if s.section_id == m.group(0)]
+            if hits:
+                return hits
         ref = section_ref.strip().lower()
         if not ref:
-            return None
-        for s in self.sections:
-            if s.heading.lower() == ref or (len(ref) >= 4 and ref in s.heading.lower()):
-                return s
-        return None
+            return []
+        return [s for s in self.sections if s.heading.lower() == ref or (len(ref) >= 4 and ref in s.heading.lower())]
+
+    def find_section(self, section_ref: str) -> Section | None:
+        """The last candidate of :meth:`find_sections` (body text follows any table of contents)."""
+        hits = self.find_sections(section_ref)
+        return hits[-1] if hits else None
 
     # ------------------------------------------------------------------ model-facing blocks
     def document_block(self) -> dict[str, Any]:
@@ -249,10 +255,19 @@ def _parse_sections(text: str, pages: list[Page]) -> list[Section]:
         cut = title.find(". ")
         if 0 < cut <= 80:
             title = title[:cut]
-        heads.append((m.start(), m.group("num"), title[:120]))
+        heads.append((m.start(), m.group("num"), title[:120], m.end()))
+    # Drop table-of-contents entries: a heading with no body text before the next heading whose
+    # number appears again later in the document.
+    kept: list[tuple[int, str, str]] = []
+    for i, (start, num, title, line_end) in enumerate(heads):
+        next_start = heads[i + 1][0] if i + 1 < len(heads) else len(text)
+        empty_body = not PAGE_MARKER_RE.sub("", text[line_end:next_start]).strip()
+        if empty_body and any(h[1] == num for h in heads[i + 1:]):
+            continue
+        kept.append((start, num, title))
     out: list[Section] = []
-    for i, (start, num, title) in enumerate(heads):
-        end = heads[i + 1][0] if i + 1 < len(heads) else len(text)
+    for i, (start, num, title) in enumerate(kept):
+        end = kept[i + 1][0] if i + 1 < len(kept) else len(text)
         out.append(Section(order=i, section_id=num, heading=title.rstrip("."), level=num.count(".") + 1,
                            char_start=start, char_end=end, page_start=_page_of(pages, start),
                            page_end=_page_of(pages, max(start, end - 1))))

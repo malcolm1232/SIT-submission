@@ -17,7 +17,8 @@ from sit_review_agent.ingest.pdf import Document
 from sit_review_agent.llm.gateway import CacheBreakpoint
 
 
-def document_prefix_message(docs: Sequence[Document], *, native_pdf: bool = True) -> tuple[dict[str, Any], CacheBreakpoint]:
+def document_prefix_message(docs: Sequence[Document], *,
+                            native_pdf: bool = True) -> tuple[dict[str, Any], CacheBreakpoint]:
     """First user message (documents) and the cache breakpoint after its last block.
 
     Documents are emitted in the given order (under-review first, then prior version). A document
@@ -33,7 +34,8 @@ def document_prefix_message(docs: Sequence[Document], *, native_pdf: bool = True
     return {"role": "user", "content": blocks}, CacheBreakpoint(message_index=0, block_index=len(blocks) - 1)
 
 
-def start_conversation(docs: Sequence[Document], brief: str, *, native_pdf: bool = True) -> tuple[list[dict[str, Any]], CacheBreakpoint]:
+def start_conversation(docs: Sequence[Document], brief: str, *,
+                       native_pdf: bool = True) -> tuple[list[dict[str, Any]], CacheBreakpoint]:
     """Initial ``messages`` for a phase conversation: one user turn holding the document blocks,
     with the phase ``brief`` appended as a final text block *after* the breakpointed block, so the
     cached prefix is identical across phases. Returns the messages and the breakpoint to send."""

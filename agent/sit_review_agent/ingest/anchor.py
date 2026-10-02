@@ -99,19 +99,31 @@ def verify_anchor(doc: Document, quote: str, page: int | None, section: str,
     else:
         ws, we = 0, len(doc.text)
 
-    # ---- section window (cited section +/- 1 in document order)
+    # ---- section window (cited section +/- 1 in document order), per candidate section
     notes: list[str] = []
-    sec = doc.find_section(section)
-    if sec is None:
+    candidates = doc.find_sections(section)
+    windows: list[tuple[int, int, str | None]] = []
+    if not candidates:
         notes.append(SECTION_UNRESOLVED)
-    else:
+        windows.append((ws, we, None))
+    for sec in candidates:
         lo = doc.sections[max(0, sec.order - rules.section_window)]
         hi = doc.sections[min(len(doc.sections) - 1, sec.order + rules.section_window)]
-        ws, we = max(ws, lo.char_start), min(we, hi.char_end)
-        if ws >= we:
-            return _reject(SECTION_MISMATCH, section_id=sec.section_id, notes=notes)
-    sec_id = sec.section_id if sec else None
+        s0, s1 = max(ws, lo.char_start), min(we, hi.char_end)
+        if s0 < s1:
+            windows.append((s0, s1, sec.section_id))
+    if not windows:
+        return _reject(SECTION_MISMATCH, section_id=candidates[-1].section_id, notes=notes)
+    for s0, s1, sec_id in windows:
+        hit = _match(doc, q, s0, s1, sec_id, notes, rules)
+        if hit is not None:
+            return hit
+    return _reject(NOT_FOUND, section_id=windows[0][2], notes=notes)
 
+
+def _match(doc: Document, q: str, ws: int, we: int, sec_id: str | None, notes: list[str],
+           rules: AnchorRules) -> AnchorResult | None:
+    """Exact, then fuzzy match of normalised quote ``q`` in ``doc.text[ws:we]``."""
     hay = flatten_for_match(doc.text[ws:we])
     i = hay.find(q)
     if i >= 0:
@@ -125,7 +137,7 @@ def verify_anchor(doc: Document, quote: str, page: int | None, section: str,
             return AnchorResult(ok=True, method="fuzzy", score=al.score / 100,
                                 matched_page=doc.page_at(start) if doc.pages else None,
                                 char_start=start, char_end=end, section_id=sec_id, reasons=tuple(notes))
-    return _reject(NOT_FOUND, section_id=sec_id, notes=notes)
+    return None
 
 
 def verify_finding_anchors(docs: Mapping[str, Document], anchors: Sequence[DocAnchor],
