@@ -340,7 +340,7 @@ For each card payment, the Routing Engine computes the eligible acquirer set as 
 Eligible acquirers are ranked by a weighted score:
 
 ```
-score(a) = w_cost * normalised_cost(a, txn) + w_approval * approval_prior(a, scheme, bin_country, mcc) + w_latency * latency_p95(a)
+score(a) = w_approval * approval_prior(a, scheme, bin_country, mcc) - w_cost * normalised_cost(a, txn) - w_latency * latency_p95(a)    # highest score first
 ```
 
 `normalised_cost` uses the contracted MDR, interchange-plus components where applicable, and cross-border surcharges. `approval_prior` is the trailing 28-day approval rate for the (acquirer, scheme, BIN country, MCC) cell, falling back to coarser cells when the sample is under 500 attempts. Weights are configured per merchant account; the default emphasises cost.
