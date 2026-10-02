@@ -1,0 +1,13 @@
+# LLM-15 (S1, P0, L0): one assess shard truncates twice (concurrent stage 1, latency redesign 2026-10-03).
+# Shard 1 in launch order (requirements_and_consistency) stops at max_tokens on its first call and on
+# its one retry (the fallback path of LLM-07, per shard). Expected: no third call for that shard;
+# 'truncated twice at the output cap' disclosed as a degradation naming the shard; its criteria are
+# not assessed; the findings of shards 0, 2 and 3 survive; the verdict is assessed; report, exit 0.
+# shard_call [0, 1] = the shard's first call and its retry = nth [1, 4] with K = 4 shards.
+# Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
+id: LLM-15
+description: Assess shard 1 is truncated at max_tokens on its first call and on its retry.
+seed: 42
+llm:
+  - match: {stage: assess, shard: 1, shard_call: [0, 1]}
+    fault: {type: stop_reason, value: max_tokens, truncate_at_fraction: 0.6}

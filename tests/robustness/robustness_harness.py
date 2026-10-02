@@ -292,7 +292,8 @@ def long_design_pages(path: Path, pages: int = 150, lines_per_page: int = 30) ->
 
 @dataclass
 class Scenario:
-    """One end-to-end scenario run. ``faults`` names ``faults/<ID>.yaml`` (``None`` for scenarios
+    """One end-to-end scenario run. ``faults`` names ``faults/<ID>.yaml`` or a resolved ``.yaml`` path
+    (``concurrent_schedules.py``; ``None`` for scenarios
     driven by config or the scripted model only); ``variant`` patches the schedule data (a seed, a
     ``malformed_body`` kind) into a temp copy."""
 
@@ -349,7 +350,8 @@ class RunRecord:
 def schedule_path(sc: Scenario, workdir: Path) -> Path | None:
     if sc.faults is None:
         return None
-    src = FAULTS_DIR / f"{sc.faults}.yaml"
+    src = Path(sc.faults) if sc.faults.endswith(".yaml") else FAULTS_DIR / f"{sc.faults}.yaml"   # a resolved file
+    # (faults_concurrent/ schedules, written by concurrent_schedules.py) or a scenario ID under faults/
     if sc.variant is None:
         return src
     data = yaml.safe_load(src.read_text(encoding="utf-8"))

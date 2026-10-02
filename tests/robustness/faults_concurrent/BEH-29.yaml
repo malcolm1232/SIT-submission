@@ -1,0 +1,12 @@
+# BEH-29 (S1, P0, L0): one assess shard fails with an exception (process fault, concurrent stage 1,
+# latency redesign 2026-10-03). Shard 3 in launch order (risk_and_operations) raises at its start.
+# Expected: a partial review, never a crash: exit 0 with report.json (no failure.json, no
+# report.partial.md); the failure is a disclosed degradation naming the shard; its criteria are not
+# assessed; the findings of shards 0, 1 and 2 survive; the verdict is assessed.
+# The orchestrator applies `shard` to that shard alone (BEH-25 keeps the whole-member crash, exit 4).
+# Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
+id: BEH-29
+description: An exception is raised at the start of assess shard 3.
+seed: 42
+process:
+  - {type: raise_in_stage, stage: assess, shard: 3, at: start}

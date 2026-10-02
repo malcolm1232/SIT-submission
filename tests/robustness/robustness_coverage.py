@@ -11,6 +11,12 @@ One :class:`Coverage` per P0 ID. ``kind``:
 
 ``decision`` is set for a scenario that fails because of an agent defect left for the owner to decide
 (left out of the passing suite, reported in the README under "Failing, needs decision").
+``awaiting`` is set for a scenario whose expectation the latency redesign of 2026-10-03 changed
+(concurrent stage 1): ``how`` states the new expectation, which runs only against the concurrent
+orchestrator (W2, not in this tree); until the integration pass the offline case, where there is
+one, still asserts the sequential design, and the results table shows the row as BLOCKED, "awaiting
+integration". :data:`CONCURRENT` holds the scenarios added for the concurrent stage
+(``faults_concurrent/``); their IDs are new (not rows of scenarios.md) and follow its numbering.
 ``schedule`` is true when ``faults/<ID>.yaml`` exists. ``test_robustness_schedules.py`` checks
 that this table, the README table, the YAML files and scenarios.md agree.
 """
@@ -36,15 +42,25 @@ class Coverage:
     laptop: str | None = None          # exact laptop command (live model / MCP)
     covered_by: str | None = None      # existing tests or procedure
     decision: str | None = None        # failing, needs decision (agent defect)
+    awaiting: str | None = None        # expectation changed by the concurrent redesign: what the offline case
+    #                                    asserts until the integration pass (README "Concurrent stage 1 scenarios")
 
 
 def _o(how: str, *, schedule: bool = False, laptop: str | None = None, covered_by: str | None = None,
-       decision: str | None = None) -> Coverage:
-    return Coverage("offline", how, schedule, laptop, covered_by, decision)
+       decision: str | None = None, awaiting: str | None = None) -> Coverage:
+    return Coverage("offline", how, schedule, laptop, covered_by, decision, awaiting)
 
 
 def _l(how: str, laptop: str, *, schedule: bool = False, covered_by: str | None = None) -> Coverage:
     return Coverage("laptop", how, schedule, laptop, covered_by)
+
+
+#: True until the concurrent orchestrator (W2) is in the tree and the integration pass has run the
+#: ``CONCURRENT`` schedules and the ``awaiting`` rows' new expectations (README.md).
+AWAITING_INTEGRATION = True
+#: What an ``awaiting`` note is prefixed with in the results table.
+AWAITING_NOTE = "awaiting integration (concurrent orchestrator, W2)"
+SEQ = "until integration the offline case asserts the sequential design: "
 
 
 def _n(how: str, covered_by: str, *, laptop: str | None = None, decision: str | None = None) -> Coverage:
@@ -95,29 +111,44 @@ COVERAGE: dict[str, Coverage] = {
     "INF-24": _o("every server down: zero external evidence, 'No external research was possible' in the report, "
                  "research ends in < 150 s virtual", schedule=True, laptop="sit-review run <pdf> --faults INF-24"),
     # ------------------------------------------------------------------------------------- LLM
-    "LLM-01": _o("429 retry-after 15 on assess attempt 0: retried >= 15 s later, attempts within the policy, "
-                 "assess completes", schedule=True),
+    "LLM-01": _o("429 retry-after 15 on attempt 0 of every assess shard's call (the K = 4 shards start together in "
+                 "stage 1): each shard retried >= 15 s later, attempts within the policy per call, every shard "
+                 "completes, findings as in the fault-free run", schedule=True,
+                 awaiting=SEQ + "one assess call, retried >= 15 s later"),
     "LLM-02": _o("429 without retry-after on every call: exit 3 after max_retries + 1 attempts, checkpoint, "
                  "'spend cap' message, resumable", schedule=True),
-    "LLM-03": _o("529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent "
-                 "variant: exit 3, then resume completes", schedule=True),
-    "LLM-05": _o("assess hangs once. Demo profile (540 s): the attempt is cut at the verify + report reserve, "
-                 "not retried, 'out of time before assessment' disclosed, no finding, verdict not_assessed, run "
-                 "within the deadline; "
-                 "default deadline: the full 1800 s timeout, then the retry succeeds", schedule=True,
-                 covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); "
-                            "test_runtime_policies.py (deadline-bounded attempts in both live gateways)"),
-    "LLM-06": _o("refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, verdict "
-                 "not_assessed with no verdict call, other stages complete; once -> reframed retry succeeds",
+    "LLM-03": _o("529 on attempts 0-3 of every assess shard's call, then recovery (exit 0, no model switch, manifest "
+                 "accurate, every shard completes); persistent variant: exit 3, then resume completes", schedule=True,
+                 awaiting=SEQ + "one assess call overloaded; open question for the integration pass: whether an "
+                                "exhausted retry budget on every shard stays a run-level exit 3"),
+    "LLM-05": _o("the first assess call (nth 0: shard 0, launched first) hangs once. Demo profile (540 s): the attempt "
+                 "is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed "
+                 "budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other "
+                 "shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit 0, run "
+                 "within the deadline; default deadline: the full 1800 s timeout, then the retry succeeds",
                  schedule=True,
+                 covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); "
+                            "test_runtime_policies.py (deadline-bounded attempts in both live gateways)",
+                 awaiting=SEQ + "the one assess call cut at the verify + report reserve (420 s), 'out of time "
+                                "before assessment', no finding, verdict not_assessed"),
+    "LLM-06": _o("refusal on every assess call: persistent -> each of the K = 4 shards gets one reframed retry (2 K "
+                 "refusals, no third call per shard), 'model declined' disclosed, every criterion not assessed, "
+                 "verdict not_assessed (no shard finished a finding) with no verdict call, other stages complete; "
+                 "once (nth [0], shard 0's first call) -> its reframed retry succeeds, findings as in the fault-free "
+                 "run (LLM-14 is one shard declining)", schedule=True,
                  laptop="sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06 (L1 refusal-prone "
-                        "domain: the INP-14b protocol fixture is not authored yet)"),
-    "LLM-07": _o("max_tokens on the first assess call: one retry (doubled max_tokens, never above the 128000 "
-                 "cap), same finding count as the fault-free run, schema-valid; persistent variant (the retry "
-                 "truncated too): no third call, 'truncated twice at the output cap' disclosed, no finding, "
-                 "verdict not_assessed, exit 0", schedule=True),
-    "LLM-08": _o("first assess answer misses `findings`: one repair turn logged, repaired answer used",
-                 schedule=True),
+                        "domain: the INP-14b protocol fixture is not authored yet)",
+                 awaiting=SEQ + "one assess call, 2 refusals"),
+    "LLM-07": _o("max_tokens on the first assess call (nth 0, shard 0): one retry for that shard (nth K, never above "
+                 "the 128000 cap), same finding count as the fault-free run, schema-valid; persistent variant "
+                 "(every assess call truncated, so every shard is truncated twice): no third call per shard, "
+                 "'truncated twice at the output cap' disclosed, no finding, verdict not_assessed (no shard finished "
+                 "a finding), exit 0 (LLM-15 is one shard truncated twice)", schedule=True,
+                 awaiting=SEQ + "one assess call and its retry"),
+    "LLM-08": _o("shard 0's first assess answer (nth 0) misses `findings`: one repair turn for that shard (nth K) "
+                 "logged, repaired answer used, the other shards' answers untouched, findings as in the fault-free "
+                 "run", schedule=True,
+                 awaiting=SEQ + "the one assess answer repaired"),
     "LLM-09": _o("assess/refine return placeholder ('TBD') findings, or none: hollow findings dropped and "
                  "disclosed, no placeholder in the report (fixed here: verify placeholder rule)"),
     "LLM-10": _o("generated 150-page document (page-marked text, built at test time) against a 150k-token "
@@ -130,10 +161,12 @@ COVERAGE: dict[str, Coverage] = {
                  "its value", schedule=True,
                  covered_by="test_run_and_resume.py::test_live_backend_preflight_failure_exits_3_before_ingest"),
     # ------------------------------------------------------------------------------------- NET
-    "NET-01": _o("network drops at 210 s (during research) for 120 s: exit 3 with a plan checkpoint, then "
-                 "`resume` completes with no duplicate ledger entry", schedule=True,
+    "NET-01": _o("network drops at 205 s for 120 s while research runs (plan delayed 200 s; the assess shards, which "
+                 "start with plan, have finished): exit 3 with the checkpoints of the completed stage 1 members, then "
+                 "`resume` completes with no duplicate ledger entry and no completed member re-run", schedule=True,
                  laptop="physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` "
-                        "(docs/DEMO_DAY_RUNBOOK.md §7 drill 5)"),
+                        "(docs/DEMO_DAY_RUNBOOK.md §7 drill 5)",
+                 awaiting=SEQ + "exit 3 with a plan checkpoint, phases in sequence"),
     "NET-02": _o("no network from the start: connection errors on the first model call get a 10 s window, then "
                  "exit 3 with a 'no network' message naming resume and --replay", schedule=True,
                  laptop="Wi-Fi off, then `sit-review run <pdf>` (claude_code: how `claude -p` reports an offline "
@@ -151,9 +184,10 @@ COVERAGE: dict[str, Coverage] = {
                  laptop="gitleaks detect; then grep the full history (git log -p) for the key prefix"),
     "OPS-03": _o("every scenario runs with canary keys in the environment; INV-08 greps every run directory and "
                  "the outbound log; ADV-05 tries to exfiltrate them"),
-    "OPS-04": _o("SIGINT at the end of research (process fault applied by the agent): exit 130, state flushed, "
-                 "resume re-serves research's tool calls from tools.jsonl, completed stages not re-run, same "
-                 "findings", schedule=True),
+    "OPS-04": _o("SIGINT when research ends (inside stage 1; process fault applied by the agent): exit 130, state "
+                 "flushed, resume re-serves research's tool calls from tools.jsonl, the stage 1 members that completed "
+                 "(understand, plan, the assess shards) not re-run, same findings", schedule=True,
+                 awaiting=SEQ + "completed phases not re-run, phases in sequence"),
     "OPS-10": _o("log oracle on every run: tools.jsonl / llm.jsonl fields, a checkpoint and a progress "
                  "transition per completed phase, ledger.jsonl replay == ledger.json"),
     # ------------------------------------------------------------------------------------- INP
@@ -204,9 +238,11 @@ COVERAGE: dict[str, Coverage] = {
     "BEH-07": _l("generic-recommendation rate (detector + judge)", "sit-review run <pdf>, scored by `sit-eval`"),
     "BEH-08": _l("padding on planted docs (P_adj); clean-doc half BLOCKED (C22)", "sit-review run <pdf>, `sit-eval`"),
     "BEH-09": _l("critical planted-flaw recall", "sit-review run eval/synthetic/<doc>/design_v1.pdf, `sit-eval`"),
-    "BEH-10": _o("L0: refine flips a finding's severity with no revision reason and no new evidence: the flip is "
-                 "rejected, the earlier draft kept, the rejection in the change log (fixed by the verifier)",
-                 laptop="pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1)"),
+    "BEH-10": _o("L0: a refine revision (RefineRevisionsOutput) flips a finding's severity with no revision reason "
+                 "and no new evidence: the revision is rejected, the merged finding kept, the rejection in the change "
+                 "log (fixed by the verifier)",
+                 laptop="pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1)",
+                 awaiting=SEQ + "refine returns whole findings; the patch flips the refined draft"),
     "BEH-12": _o("L0: model recommends replacing an approved decision without a 'challenges' label: verify "
                  "discloses it (lexical check; fixed by the verifier)",
                  laptop=f"sit-review run {SAMPLE}, zero unlabelled conflicts judged by `sit-eval` (L1)"),
@@ -222,11 +258,13 @@ COVERAGE: dict[str, Coverage] = {
                  "'Unresolved issues' / 'Evidence limitations' sections"),
     "BEH-24": _o("max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, "
                  "not-attempted list non-empty, report produced"),
-    "BEH-25": _o("exception in assess (process fault applied by the agent): exit 4, checkpoint, failure.json, "
-                 "report.partial.md listing the completed stages and no finding, no report.json; resume completes. "
-                 "Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and "
-                 "ON_CAP only move forward (fixed by the verifier)", schedule=True,
-                 covered_by="test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed"),
+    "BEH-25": _o("exception in the whole assess member of stage 1 (process fault with no shard; BEH-29 is one shard): "
+                 "exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and members and no "
+                 "finding, no report.json; resume completes. Illegal transitions: STAGE_TRANSITIONS and STAGE_ON_CAP "
+                 "only move forward, and stage1_ready never starts research before understand and plan",
+                 schedule=True,
+                 covered_by="test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed",
+                 awaiting=SEQ + "TRANSITIONS and ON_CAP (removed by W2), completed phases ingest to research"),
     "BEH-27": _l("claims about the doc vs gold facts (judge)", "sit-review run <pdf>, judged by `sit-eval`"),
     "BEH-28": _o("oracle on every run: INV-03 schema plus every brief section rendered in report.md"),
     # ------------------------------------------------------------------------------------ DEMO
@@ -257,6 +295,43 @@ COVERAGE: dict[str, Coverage] = {
                  laptop="python scripts/leakage_grep.py --sample <sit_sample.pdf> [--strict]",
                  covered_by="test_runtime_leakage.py (mechanics); test_prompts.py::test_no_eval_leakage"),
     "OVF-12": _l("tuning vs held-out gap, once at the final evaluation (ADR-004)", "sit-eval (final evaluation only)"),
+}
+
+#: Scenarios added for the concurrent stage 1 (latency redesign 2026-10-03): ``faults_concurrent/<ID>.yaml``,
+#: oracles in ``concurrent_oracles.py``. New IDs (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28).
+CONCURRENT_META: dict[str, dict[str, str]] = {
+    "LLM-13": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard hangs until the stage 1 limit"},
+    "LLM-14": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard declines twice"},
+    "LLM-15": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard is truncated twice"},
+    "LLM-16": {"sev": "S1", "tier": "P0", "level": "L0", "title": "Refine is cut at the refine limit"},
+    "LLM-17": {"sev": "S1", "tier": "P0", "level": "L0", "title": "Research is cut at the stage 1 limit"},
+    "BEH-29": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard fails with an exception"},
+}
+_AWAIT = "the schedule runs only against the concurrent orchestrator; loader and oracle tested on fixtures"
+CONCURRENT: dict[str, Coverage] = {
+    "LLM-13": _o("demo profile: assess shard 2 (claims_and_assumptions) hangs: cut at stage_limits_s.stage_1_end "
+                 "(265 s), not retried, disclosed as budget_or_deadline_hit naming the shard, its criteria not "
+                 "assessed, the findings of shards 0, 1 and 3 survive, verdict assessed, report, exit 0",
+                 schedule=True, awaiting=_AWAIT),
+    "LLM-14": _o("assess shard 0 (intent_and_fitness) refuses its call and its reframed retry (nth [0, 4]): no third "
+                 "call, 'declined' disclosed naming the shard, its criteria not assessed, the findings of shards 1, 2 "
+                 "and 3 survive, verdict assessed (partial review), report, exit 0", schedule=True, awaiting=_AWAIT),
+    "LLM-15": _o("assess shard 1 (requirements_and_consistency) truncated at max_tokens on its call and its retry "
+                 "(nth [1, 4]): no third call, 'truncated twice' disclosed naming the shard, its criteria not "
+                 "assessed, the findings of shards 0, 2 and 3 survive, verdict assessed, report, exit 0",
+                 schedule=True, awaiting=_AWAIT),
+    "LLM-16": _o("demo profile: the refine call hangs: cut at stage_limits_s.refine_end (465 s), not retried; the "
+                 "merged findings stand, ordered by severity then confidence, none revised; the fallback disclosed "
+                 "as budget_or_deadline_hit naming refine; verdict assessed, report, exit 0", schedule=True,
+                 awaiting=_AWAIT),
+    "LLM-17": _o("demo profile: research's second model call hangs: cut at stage_limits_s.stage_1_end (265 s), not "
+                 "retried; stop reason deadline; the ledger keeps the first round's external evidence and replays "
+                 "exactly; the cut disclosed as budget_or_deadline_hit naming research; the assess shards' findings "
+                 "survive, verdict assessed, report, exit 0", schedule=True, awaiting=_AWAIT),
+    "BEH-29": _o("exception at the start of assess shard 3 (risk_and_operations; process fault with a shard): a "
+                 "partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the "
+                 "failure disclosed naming the shard, its criteria not assessed, the findings of shards 0, 1 and 2 "
+                 "survive, verdict assessed", schedule=True, awaiting=_AWAIT),
 }
 
 

@@ -36,6 +36,10 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 | Path | What it is |
 |---|---|
 | `faults/<ID>.yaml` | 29 fault schedules (format of research/robustness/README.md §5.2), loaded by `tools/faults.load_fault_schedule`. The header comment of each file states the expectation |
+| `faults_concurrent/<ID>.yaml` | 6 fault schedules for the concurrent stage 1 (latency redesign 2026-10-03), with the `shard` / `shard_call` match keys; section "Concurrent stage 1 scenarios" |
+| `concurrent_schedules.py` | Their loader: resolves a shard index to the stage's logical call `nth` and returns the agent's `FaultSchedule`; `python tests/robustness/concurrent_schedules.py <ID> --out <file>` writes the resolved schedule for `--faults <file>` |
+| `concurrent_oracles.py` | Their oracles: the agent's invariants (`invariants.check_all`) plus each scenario's disclosure, not-assessed criteria, surviving findings and no-crash checks |
+| `test_robustness_concurrent.py` | The loader and the oracles on fixtures (the control run directory edited into each promised outcome, and broken variants of it); the end-to-end form, skipped while `AWAITING_INTEGRATION` |
 | `fixtures/cassettes/` | Strict replay cassettes: the selftest's web search and fetch, plus one scholarly `search_works` record, so both enabled servers are exercised |
 | `fixtures/tools/*.json` | Hand-authored `replace_content` fixtures: an injected page (ADV-04/05), irrelevant results (INF-15, BEH-01), benchmark evidence (ADV-14), content-farm results (ADV-16). Invented; `.example` / `.invalid` domains, no key |
 | `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, an outbound log, and the generated 150-page document of LLM-10 (`long_design_pages`, built at test time, never committed) |
@@ -77,7 +81,9 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
    virtual timings, what reached the outbound log), and the fault-schedule ID in the manifest (INV-09).
 9. **Results**: one row per P0 scenario in `robustness_results.csv` (`PASS`/`FAIL` for what this
    session ran; `FAIL` with "needs decision" for the known agent defects; `BLOCKED` for everything
-   this offline suite does not evaluate, with the laptop command or the covering test in `notes`).
+   this offline suite does not evaluate, with the laptop command or the covering test in `notes`;
+   `BLOCKED` with "awaiting integration" for the concurrent-stage scenarios and for the rows whose
+   expectation the latency redesign changed, with the sequential-design result in `notes`).
 
 ## Coverage of the 81 P0 scenarios
 
@@ -95,6 +101,8 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 
 LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the runtime policies of
 2026-10-02 (section "Runtime policies" below); INF-08, LLM-10 and OVF-07 became offline cases.
+Ten offline rows are marked "(awaiting integration)": the latency redesign of 2026-10-03 changed
+their expectation, which the table states (section "Concurrent stage 1 scenarios").
 
 | ID | Sev | Lvl | Coverage | Schedule | What runs offline, or why not | Laptop (live model / MCP) | Covered by / needs decision |
 |---|---|---|---|---|---|---|---|
@@ -111,22 +119,22 @@ LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the 
 | INF-18 | S2 | L0 | offline | yes | p = 0.3 flaky calls, seeds 1..10: 10/10 complete, coverage >= 90 % of the fault-free run | - | - |
 | INF-19 | S1 | L0 | offline | yes | first web call hangs: times out within call_timeout_s + 1 s, retried, run completes | - | - |
 | INF-24 | S1 | L0, L2 | offline | yes | every server down: zero external evidence, 'No external research was possible' in the report, stop reason tool_failure, research ends in < 150 s virtual | `sit-review run <pdf> --faults INF-24` | - |
-| LLM-01 | S1 | L0 | offline | yes | 429 retry-after 15 on assess attempt 0: retried >= 15 s later, attempts within the policy, assess completes | - | - |
+| LLM-01 | S1 | L0 | offline (awaiting integration) | yes | 429 retry-after 15 on attempt 0 of every assess shard's call (the K = 4 shards start together in stage 1): each shard retried >= 15 s later, attempts within the policy per call, every shard completes, findings as in the fault-free run | - | - |
 | LLM-02 | S1 | L0 | offline | yes | 429 without retry-after on every call: exit 3 after max_retries + 1 attempts, checkpoint, 'spend cap' message, resumable | - | - |
-| LLM-03 | S1 | L0 | offline | yes | 529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent variant: exit 3, then resume completes | - | - |
-| LLM-05 | S1 | L0 | offline | yes | assess hangs once. Demo profile (540 s): the attempt is cut at the verify + report reserve, not retried, 'out of time before assessment' disclosed, no finding, verdict not_assessed, run within the deadline; default deadline: the full 1800 s timeout, then the retry succeeds | - | test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); test_runtime_policies.py (deadline-bounded attempts in both live gateways) |
-| LLM-06 | S1 | L0, L1 | offline | yes | refusal on assess: persistent -> one reframed retry, 'model declined' disclosed, verdict not_assessed with no verdict call, other stages complete; once -> reframed retry succeeds | `sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06` (L1 refusal-prone domain: the INP-14b protocol fixture is not authored yet) | - |
-| LLM-07 | S1 | L0 | offline | yes | max_tokens on the first assess call: one retry (doubled max_tokens, never above the 128000 cap), same finding count as the fault-free run, schema-valid; persistent variant (the retry truncated too): no third call, 'truncated twice at the output cap' disclosed, no finding, verdict not_assessed, exit 0 | - | - |
-| LLM-08 | S2 | L0 | offline | yes | first assess answer misses `findings`: one repair turn logged, repaired answer used | - | - |
+| LLM-03 | S1 | L0 | offline (awaiting integration) | yes | 529 on attempts 0-3 of every assess shard's call, then recovery (exit 0, no model switch, manifest accurate, every shard completes); persistent variant: exit 3, then resume completes | - | - |
+| LLM-05 | S1 | L0 | offline (awaiting integration) | yes | the first assess call (nth 0: shard 0, launched first) hangs once. Demo profile (540 s): the attempt is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit 0, run within the deadline; default deadline: the full 1800 s timeout, then the retry succeeds | - | test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); test_runtime_policies.py (deadline-bounded attempts in both live gateways) |
+| LLM-06 | S1 | L0, L1 | offline (awaiting integration) | yes | refusal on every assess call: persistent -> each of the K = 4 shards gets one reframed retry (2 K refusals, no third call per shard), 'model declined' disclosed, every criterion not assessed, verdict not_assessed (no shard finished a finding) with no verdict call, other stages complete; once (nth [0], shard 0's first call) -> its reframed retry succeeds, findings as in the fault-free run (LLM-14 is one shard declining) | `sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06` (L1 refusal-prone domain: the INP-14b protocol fixture is not authored yet) | - |
+| LLM-07 | S1 | L0 | offline (awaiting integration) | yes | max_tokens on the first assess call (nth 0, shard 0): one retry for that shard (nth K, never above the 128000 cap), same finding count as the fault-free run, schema-valid; persistent variant (every assess call truncated, so every shard is truncated twice): no third call per shard, 'truncated twice at the output cap' disclosed, no finding, verdict not_assessed (no shard finished a finding), exit 0 (LLM-15 is one shard truncated twice) | - | - |
+| LLM-08 | S2 | L0 | offline (awaiting integration) | yes | shard 0's first assess answer (nth 0) misses `findings`: one repair turn for that shard (nth K) logged, repaired answer used, the other shards' answers untouched, findings as in the fault-free run | - | - |
 | LLM-09 | S2 | L0 | offline | - | assess/refine return placeholder ('TBD') findings, or none: hollow findings dropped and disclosed, no placeholder in the report (fixed here: verify placeholder rule) | - | - |
 | LLM-10 | S2 | L0 | offline | - | generated 150-page document (page-marked text, built at test time) against a 150k-token context window: the first request is estimated over 80 % of the window from characters and never sent; exit 2 naming the document size | - | test_runtime_policies.py (estimate, both live gateways refuse before sending); claude_code still maps 'prompt is too long' to a bad request (test_claude_code_gateway.py::test_non_retryable_cli_errors) |
 | LLM-11 | S1 | L0 | offline | yes | 401 on every model call: not retried, exit 3 within 10 s virtual, credential named, never its value | - | test_run_and_resume.py::test_live_backend_preflight_failure_exits_3_before_ingest |
-| NET-01 | S1 | L0, L1 | offline | yes | network drops at 210 s (during research) for 120 s: exit 3 with a plan checkpoint, then `resume` completes with no duplicate ledger entry | physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` (docs/DEMO_DAY_RUNBOOK.md §7 drill 5) | - |
+| NET-01 | S1 | L0, L1 | offline (awaiting integration) | yes | network drops at 205 s for 120 s while research runs (plan delayed 200 s; the assess shards, which start with plan, have finished): exit 3 with the checkpoints of the completed stage 1 members, then `resume` completes with no duplicate ledger entry and no completed member re-run | physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` (docs/DEMO_DAY_RUNBOOK.md §7 drill 5) | - |
 | NET-02 | S1 | L0 | offline | yes | no network from the start: connection errors on the first model call get a 10 s window, then exit 3 with a 'no network' message naming resume and --replay | Wi-Fi off, then `sit-review run <pdf>` (claude_code: how `claude -p` reports an offline network is unverified); anthropic_api: the no-retry preflight fails first | test_runtime_policies.py (first-call window in both live gateways; anthropic_api preflight before models.retrieve) |
 | OPS-01 | S1 | L2 | not a schedule | - | a fresh clone on a clean machine is a procedure, not a fault | docker run python:3.11, clone, follow README verbatim, `sit-review selftest` | docs/REPRODUCIBILITY.md §7 (R0-R3); `sit-review selftest` (test_selftest_cli.py::test_selftest_end_to_end) |
 | OPS-02 | S1 | L0 | not a schedule | - | static scan of the repository and its git history (git is not run here) | gitleaks detect; then grep the full history (git log -p) for the key prefix | test_tool_gateways.py::test_policy_module_has_no_secret_values; test_robustness_schedules.py::test_fixtures_hold_no_secret |
 | OPS-03 | S1 | L0 | offline | - | every scenario runs with canary keys in the environment; INV-08 greps every run directory and the outbound log; ADV-05 tries to exfiltrate them | - | - |
-| OPS-04 | S2 | L0 | offline | yes | SIGINT at the end of research (process fault applied by the agent): exit 130, state flushed, resume re-serves research's tool calls from tools.jsonl, completed stages not re-run, same findings | - | - |
+| OPS-04 | S2 | L0 | offline (awaiting integration) | yes | SIGINT when research ends (inside stage 1; process fault applied by the agent): exit 130, state flushed, resume re-serves research's tool calls from tools.jsonl, the stage 1 members that completed (understand, plan, the assess shards) not re-run, same findings | - | - |
 | OPS-10 | S1 | L0 | offline | - | log oracle on every run: tools.jsonl / llm.jsonl fields, a checkpoint and a progress transition per completed phase, ledger.jsonl replay == ledger.json | - | - |
 | INP-01 | S1 | L0, L1 | offline | - | image-only PDF (no text layer): clean abort, exit 2, no review of an empty extraction (the OCR branch is P1, ADR-006) | `sit-review run <scanned sample>` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
 | INP-03 | S1 | L0 | not a schedule | - | ingest of the SIT sample's tables; the sample PDF is not in the repository | `sit-review run <sit_sample.pdf> --no-tools`, then compare runs/<id>/text/*.sections.json with FR-1..FR-16, NFR-1..NFR-10 | test_ingest_verify_report.py::test_ingest_generated_pdf, ::test_heading_heuristic_on_booking_fixture |
@@ -154,7 +162,7 @@ LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the 
 | BEH-07 | S2 | L1 | laptop | - | generic-recommendation rate (detector + judge) | `sit-review run <pdf>`, scored by `sit-eval` | - |
 | BEH-08 | S2 | L1 | laptop | - | padding on planted docs (P_adj); clean-doc half BLOCKED (C22) | `sit-review run <pdf>`, `sit-eval` | - |
 | BEH-09 | S1 | L1 | laptop | - | critical planted-flaw recall | `sit-review run eval/synthetic/<doc>/design_v1.pdf`, `sit-eval` | - |
-| BEH-10 | S1 | L0, L1 | offline | - | L0: refine flips a finding's severity with no revision reason and no new evidence: the flip is rejected, the earlier draft kept, the rejection in the change log (fixed by the verifier) | pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1) | - |
+| BEH-10 | S1 | L0, L1 | offline (awaiting integration) | - | L0: a refine revision (RefineRevisionsOutput) flips a finding's severity with no revision reason and no new evidence: the revision is rejected, the merged finding kept, the rejection in the change log (fixed by the verifier) | pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1) | - |
 | BEH-12 | S1 | L0, L1 | offline | - | L0: model recommends replacing an approved decision without a 'challenges' label: verify discloses it (lexical check; fixed by the verifier) | sit-review run <sit_sample.pdf>, zero unlabelled conflicts judged by `sit-eval` (L1) | - |
 | BEH-13 | S2 | L1 | laptop | - | constraint violations (judge with the registry) | `sit-review run <sit_sample.pdf>`, judged by `sit-eval` | - |
 | BEH-14 | S2 | L1 | laptop | - | long run, context budget | `sit-review run docs/long_150.pdf` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
@@ -163,7 +171,7 @@ LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the 
 | BEH-20 | S2 | L1 | offline | - | L0: verdict 'fit' with a critical finding: the inconsistency is disclosed | `sit-review run <sit_sample.pdf>` (k=3) | test_ingest_verify_report.py::test_verdict_inconsistent_with_severities_is_disclosed |
 | BEH-23 | S2 | L0 | offline | - | oracle on every run: a fault or evidence gap always shows in limitations and the rendered 'Unresolved issues' / 'Evidence limitations' sections | - | - |
 | BEH-24 | S1 | L0 | offline | - | max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, not-attempted list non-empty, report produced | - | - |
-| BEH-25 | S1 | L0 | offline | yes | exception in assess (process fault applied by the agent): exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and no finding, no report.json; resume completes. Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and ON_CAP only move forward (fixed by the verifier) | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed |
+| BEH-25 | S1 | L0 | offline (awaiting integration) | yes | exception in the whole assess member of stage 1 (process fault with no shard; BEH-29 is one shard): exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and members and no finding, no report.json; resume completes. Illegal transitions: STAGE_TRANSITIONS and STAGE_ON_CAP only move forward, and stage1_ready never starts research before understand and plan | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed |
 | BEH-27 | S1 | L1 | laptop | - | claims about the doc vs gold facts (judge) | `sit-review run <pdf>`, judged by `sit-eval` | - |
 | BEH-28 | S2 | L0 | offline | - | oracle on every run: INV-03 schema plus every brief section rendered in report.md | - | - |
 | DEMO-01 | S1 | L0, L2 | offline | - | a criterion appended to a copied criteria.yaml (4-line form): in the manifest, the plan, the coverage map and report.md | stopwatch rehearsal (runbook §4.2 #1) | - |
@@ -197,6 +205,56 @@ Implemented in the agent (edit log: `research/audit/runtime_policies_editlog.md`
 | INF-08 | Warned, made 6 model calls, finished doc-only | Live tool transport with servers enabled and the key unset: `ConfigError` (exit 2) before any model call or run directory, naming the variable and `--no-tools`. A key revoked mid-run keeps the doc-only degradation (INF-07) |
 | LLM-10 | No pre-send count | Before each model call the input is estimated from characters at 3 characters per token (plus 2,000 tokens per page for a native PDF block); over 80 % of the context window (`llm.context_window_tokens`, else the model's known window or `models.retrieve`) the request is never sent: `LLMContextTooLongError` (exit 2) naming the document size. A research conversation that grows past the limit ends research instead (`budget_tokens` / `context_window`) |
 | OVF-07 | Sample hosts hard-coded in `tools/sources.py`; no grep | The authority host lists live in `config/url_policy.yaml` `authority:` without the three sample-stack hosts; `scripts/leakage_grep.py` scans agent code, prompts, config, cassettes and fixtures (gating the first three) |
+
+## Concurrent stage 1 scenarios (latency redesign, 2026-10-03)
+
+The redesign runs stage 1 concurrently: understand, plan, research (once both have ended) and K = 4 assess shards, one per criterion group of `config/agent.yaml` `assess.shards` (`AssessSettings.shards_for`).
+Stage 1 ends at `stop_rules.stage_limits_s.stage_1_end` (demo profile 265 s); then a code merge, one refine call returning revisions, cut at `refine_end` (demo 465 s), code verify, one verdict call (cut at `verdict_end`, falling back to the rule-based verdict) and the code-rendered report.
+The orchestrator that does this is built by workstream W2 and is not in this tree, so the six schedules below and the ten changed rows above are "awaiting integration": `AWAITING_INTEGRATION = True` in `robustness_coverage.py`.
+Until then the results table shows each of them as `BLOCKED` with a note that starts "awaiting integration".
+
+### Fault-injection semantics
+
+`nth` keeps its meaning: the stage's logical call index, counted by `FaultInjectingLLMGateway`.
+Shards are numbered in launch order, which is the order of `shards_for`: 0 intent_and_fitness, 1 requirements_and_consistency, 2 claims_and_assumptions, 3 risk_and_operations (committed config).
+A schedule in `faults_concurrent/` names a shard with `shard: <index>` and the shard's own calls with `shard_call: [<j>, ...]` (0 = its first call, 1 = its reframed retry, truncation retry or repair turn).
+`concurrent_schedules.load_concurrent_schedule` resolves them: the K shards start together, so call 0 of shard s is `nth` s, and call j >= 1 of the one faulted shard is `nth` K + j - 1.
+A shard index outside 0 .. K-1 is a `ConfigError` naming the schedule; so are `shard` with `nth`, `shard` on a stage other than assess, and follow-up calls of one shard together with a fault on another shard (their numbering would depend on timing).
+A `process:` entry may carry `shard` (stage assess); the loader checks its range and adds `shard_name`, and the orchestrator applies it to that shard alone.
+The resolved schedule is the agent's own `FaultSchedule`, so `sit-review run --faults <resolved file>` loads it unchanged.
+
+### The six scenarios
+
+The IDs are new (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28) and follow its numbering; they are registered in `robustness_coverage.CONCURRENT`, not in the 81-row table above.
+
+| ID | Sev | Lvl | Coverage | Schedule | Fault | Expected (oracle in `concurrent_oracles.py`) |
+|---|---|---|---|---|---|---|
+| LLM-13 | S1 | L0 | offline (awaiting integration) | yes | assess shard 2 hangs (`nth` [2]) | demo profile: cut at `stage_1_end`, not retried, disclosed as budget_or_deadline_hit naming the shard; its criteria not assessed; the findings of shards 0, 1 and 3 survive; verdict assessed; exit 0 |
+| LLM-14 | S1 | L0 | offline (awaiting integration) | yes | assess shard 0 refuses its call and its reframed retry (`nth` [0, 4]) | no third call; 'declined' disclosed naming the shard; its criteria not assessed; the findings of shards 1, 2 and 3 survive; verdict assessed (partial review); exit 0 |
+| LLM-15 | S1 | L0 | offline (awaiting integration) | yes | assess shard 1 truncated at max_tokens on its call and its retry (`nth` [1, 4]) | no third call; 'truncated twice' disclosed naming the shard; its criteria not assessed; the findings of shards 0, 2 and 3 survive; verdict assessed; exit 0 |
+| LLM-16 | S1 | L0 | offline (awaiting integration) | yes | the refine call hangs (`nth` [0]) | demo profile: cut at `refine_end`, not retried; the merged findings stand, ordered by severity then confidence, none revised; disclosed as budget_or_deadline_hit naming refine; verdict assessed; exit 0 |
+| LLM-17 | S1 | L0 | offline (awaiting integration) | yes | research's second model call hangs (`nth` [1]) | demo profile: cut at `stage_1_end`, not retried; stop reason deadline; the ledger keeps the first round's external evidence and replays exactly; disclosed as budget_or_deadline_hit naming research; the shards' findings survive; exit 0 |
+| BEH-29 | S1 | L0 | offline (awaiting integration) | yes | `raise_in_stage` at the start of assess shard 3 (process fault with `shard`) | a partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the failure disclosed naming the shard; its criteria not assessed; the findings of shards 0, 1 and 2 survive; verdict assessed |
+
+Every oracle also runs the agent's invariants (`invariants.check_all`, INV-03..INV-10), and the end-to-end form runs `oracles.assert_oracles` (INV-01..INV-11, OPS-10, BEH-23, BEH-28, DEMO-06) as for every scenario.
+Two names are the contract with the orchestrator and live in one place, `concurrent_oracles.py`: `NOT_ASSESSED` (the coverage outcome in `state.json` of a criterion whose shard did not finish) and `DISCLOSURE` (the words a degradation uses for a cut, a decline, a double truncation and a failure); a degradation about a shard names its group.
+`not_assessed` as a verdict is expected only when no shard finished a single finding by the stage 1 end (LLM-06 and LLM-07 persistent).
+
+### Rows whose expectation changed
+
+The table above states the new expectation of LLM-01, LLM-03, LLM-05, LLM-06, LLM-07, LLM-08, NET-01, OPS-04, BEH-10 and BEH-25; none is weaker, and every row that proved a disclosure still proves one.
+Their offline cases still assert the sequential design until the integration pass (`Coverage.awaiting` says what; the results note carries the sequential result).
+LLM-05 used to end with "out of time before assessment" and no finding; its schedule now hangs only the first assess call (`nth: [0]`, the same call in the sequential design), so under the concurrent design it expects a salvaged, disclosed report with exit 0.
+LLM-07's persistent variant keeps "no finding, verdict not_assessed": it truncates every assess call, so every shard is truncated twice; LLM-15 is the single-shard form.
+
+### For the integration pass
+
+1. Merge W2's orchestrator, then set `AWAITING_INTEGRATION = False` in `robustness_coverage.py`; `test_concurrent_scenario_end_to_end` then runs the six schedules end to end with the demo profile (resolved files, `Scenario(faults=<path>)`) and writes their rows.
+2. Confirm or adjust the two contract names in `concurrent_oracles.py` (`NOT_ASSESSED`, `DISCLOSURE`) against what the orchestrator writes; never drop a check to make a row pass.
+3. Confirm from `llm.jsonl` that the shards reach the fault wrapper in launch order (the first K assess calls are `nth` 0 .. K-1); if W2 logs the shard name per call, add that check to `concurrent_oracles.py`.
+4. Rewrite the checks of the ten changed rows in `test_robustness_scenarios.py` to their new expectation (LLM-05: the cut shard disclosed, other findings present, exit 0; LLM-06/07/08: per shard, retry `nth` K; BEH-25: `STAGE_TRANSITIONS` / `STAGE_ON_CAP`; OPS-04 and NET-01: stage 1 members), clear `awaiting` on each, and patch every shard's answer and the `RefineRevisionsOutput` where a case patches `assess` or `refine` (LLM-09, BEH-04, BEH-10, BEH-12, BEH-17, BEH-20).
+5. Decide LLM-03's persistent variant (every shard overloaded past the retry budget): run-level exit 3 as now, or failed shards and a not-assessed report; either way 'overloaded' must be disclosed.
+6. Regenerate the results with `ROBUSTNESS_RESULTS_CSV=tests/robustness/results/robustness_results.csv pytest tests/robustness -q`.
 
 ## Agent defects fixed here
 
