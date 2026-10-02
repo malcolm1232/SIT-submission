@@ -199,6 +199,7 @@ Opus 5.5 before any build work; all six subagents ran on Opus 5.5. Every report 
 | Matcher verifier, Haiku end to end | 27 | $0.32 | cost stop and resume confirmed |
 | Pilot scoring of the first live run, Opus high, `per_flaw_batch`, adaptive samples, grounding judges off | 57 | $6.89 | shortlist $0.11 / 6 s, pair batch $0.06 / 11 s, adjudication $0.33 / 14 s per call; about 1k output tokens each |
 | Live grader, first attempt | 1 | about $1 | Pass A stopped at the $1 per-call cap; grader cap raised to $4 |
+| Live grader on the first live run, Opus high, key-blind, 2 samples | 4 | $4.85 | Pass A $1.07-1.15 / 159-194 s / 19-23k output tokens; Pass B $1.30-1.32 / 92-105 s / 11-12k output |
 
 Pilot scores (exploratory only: prereg unfrozen, key not `scored_run_ready`; artefacts in
 `docs/live_runs/live_cc_opus_payments_v1/eval_pilot/`): strict recall 10/14, lenient 14/14, adjudicated
@@ -206,3 +207,10 @@ precision 0.95, severity-weighted recall 0.72, critical recall 0.75, severity ag
 four partial matches are F04, F06, F07 and F12; the matcher agrees with the by-eye reading in §8. Open
 question for the owner: findings that partially match a planted flaw are adjudicated VALID_UNPLANTED,
 which keeps adjudicated precision high; decide whether that is the intended reading of metrics.md.
+
+Grader pilot (unvalidated tier, same-family grader; artefacts in `.../grade_pilot/`): S = 83.8, grade B,
+PASS, all gates pass. D8 research sufficiency 1 (expected: the run was doc-only), D9 output integrity 2,
+D4 evidence 3, everything else 3.5-4; samples agreed within one point per dimension. Six hallucination
+flags: two verified wrong document locations (FND-004 cites p1/s12.4, the same defect the matcher found
+in EV-016; FND-006 cites p13/s3) and four suspected misreadings (FND-013 material) that need a human
+check (GR §4.3). Live spend this session on model calls was about $13.3, on top of the subagents.

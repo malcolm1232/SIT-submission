@@ -1,0 +1,4 @@
+Grader-derived score; validity tier: unvalidated (GR §7 smoke calibration not yet run); same-family grader
+S = 83.8 grade B PASS; calls 4; spent $4.8494; needs human review: True
+wrote runs/eval/grade_pilot2_payments_v1/grade.json, runs/eval/grade_pilot2_payments_v1/grade.md, runs/eval/grade_pilot2_payments_v1/grader_calls.jsonl
+exit 0

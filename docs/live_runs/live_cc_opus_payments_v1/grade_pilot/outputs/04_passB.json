@@ -1,0 +1,288 @@
+{
+  "pass": "B",
+  "mode": "key_blind",
+  "sample_seed": "s2",
+  "pre_read": {
+    "material_issues": [
+      {
+        "issue": "The Redis fast-path key idem:resp:{idempotency_key} has no merchant scope and a hit skips the request-hash check. This contradicts P3 and FR-5, and with order-ID keys it can leak responses between merchants.",
+        "location": "p.8 §9.2; p.7 §9.1; p.4 §3 P3",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "The Fraud Hook detokenises the PAN with the Card Adapter's role and sends it to FRV-1. This contradicts P2, §12.1 and the §12.2 CDE scope, so the NFR-5 boundary is invalid.",
+        "location": "p.11 §13.1; p.10 §12.1-12.2",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "CVC is kept encrypted until settlement or 72 h, including for incremental authorizations. PCI DSS v4.0 Req 3.3.1 forbids keeping SAD after authorization, so the design's reading of 3.2.1/3.3.2 is wrong.",
+        "location": "p.10 §12.4; p.3 NFR-6; p.18 §24 CVC handling",
+        "covered_by_review": "partial"
+      },
+      {
+        "issue": "The DynamoDB capacity claim of 10,000 WCU per partition is wrong (AWS documents 1,000). Writes of up to 4 KB cost several WCU each, and the LSI caps each item collection at 10 GB, so the largest merchant's partition key will throttle.",
+        "location": "p.8 §9.3",
+        "covered_by_review": "partial"
+      },
+      {
+        "issue": "NFR-4 requires zero RPO on regional loss, but Aurora Global replication is asynchronous. Idempotency reconstruction relies on columns the payment table does not have.",
+        "location": "p.3 NFR-4; p.16-17 §20.2; p.14-15 §19",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "The wait-for-all-files reconciliation, with ACQ-TH1 arriving at 06:30 ICT (07:30 SGT) plus 60 min processing, cannot publish reports by 08:00 SGT (NFR-8). Volume roughly doubles by 2027.",
+        "location": "p.12-13 §16.1-16.2; p.3 NFR-8",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "A single CloudHSM in one AZ with no DEK caching is a single point of failure for all card acceptance. The 1,500 TPS trigger for a second HSM is never reached (peak card TPS is 1,100).",
+        "location": "p.10 §12.3; p.2 §1 volume table",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "Payout bank account changes are allowed for password-only Finance users, with the confirmation sent only to the user who made the change. This is an account-takeover path that conflicts with P9.",
+        "location": "p.14 §18.2-18.4",
+        "covered_by_review": "full"
+      }
+    ],
+    "sound_areas": [
+      {
+        "area": "Double-entry ledger written atomically with state changes through an outbox, append-only, with UPDATE and DELETE revoked; the example journals balance",
+        "location": "p.11-12 §14; p.16 §19"
+      },
+      {
+        "area": "Integer minor-unit money representation with ISO 4217 exponents and explicit adapter conversion",
+        "location": "p.12 §15"
+      },
+      {
+        "area": "Webhook signing, isolation and SSRF protection",
+        "location": "p.13 §17"
+      }
+    ]
+  },
+  "verdict_extracted": {
+    "present": true,
+    "text": "fit_with_conditions (confidence 0.68). The core architecture fits, but the design is not ready to build as written. FR-5/P3, NFR-4 and NFR-8 are not met. Eleven conditions are linked to findings, and the review states what would move the verdict toward fit or not_fit.",
+    "label": "fit_with_conditions",
+    "consistent_with_findings": true
+  },
+  "dimensions": {
+    "D1": {
+      "score": 4,
+      "justification": "The intent summary is accurate and cited. It covers purpose, scope and out-of-scope items, all FR/NFR items, P1-P10 and the 2027 volume assumptions. The decision registry separates confirmed decisions (§24), pending backlog items and constraints. Findings are judged against stated intent: they use the design's own rule that principles override later sections. Confirmed decisions are challenged only on the design's own figures, which counts as evidence. The review states plainly that all evidence is drawn from the document or inferred from it, which keeps design content apart from external research.",
+      "review_quotes": [
+        "The ten foundational principles are binding: where a later section conflicts with one, the principle wins.",
+        "This is an explicit challenge: by the document's own Section 20.2 text, asynchronous Aurora Global replication cannot deliver NFR-4's zero RPO on regional loss."
+      ],
+      "design_locations": [
+        "p.1-2 §1",
+        "p.2-3 §2",
+        "p.3-4 §3",
+        "p.18-19 §24",
+        "p.19 §25"
+      ],
+      "anchor_tension": null
+    },
+    "D2": {
+      "score": 4,
+      "justification": "The verdict is explicit (fit_with_conditions) and broken down for every FR, NFR and principle, with per-objective labels including not_fit for FR-5, NFR-4 and NFR-8. Eleven concrete conditions are each tied to finding IDs. Confidence is stated as 0.68 with reasons. The review says what would move the verdict toward fit or toward not_fit. Its account of why the verdict is conditional despite the per-objective not_fit labels is coherent.",
+      "review_quotes": [
+        "None of these requires redesigning the platform, which is why the verdict is conditional rather than not_fit.",
+        "Toward not_fit: a QSA ruling that encrypted CVC may not be kept after authorisation while acquirers still require it"
+      ],
+      "design_locations": [
+        "p.20-21 §27"
+      ],
+      "anchor_tension": null
+    },
+    "D3": {
+      "score": 4,
+      "justification": "All six categories have material, document-anchored items. Strength: FND-021 plus five sound areas. Risks: FND-001 to FND-011. Gaps: FND-007, FND-013, FND-016, FND-019. Ambiguity: FND-017. Unresolved assumptions: FND-004, FND-014. Validation needs: FND-012, FND-015, FND-018. All eight of my pre-read issues are covered; CVC retention and DynamoDB limits are covered only as unverified. The review also finds valid issues I did not anticipate: late-approval double holds, go-live sequencing, the unbudgeted cascade latency, and the state-machine dead-ends. No padding.",
+      "review_quotes": [
+        "Redis idempotency fast path is not scoped to merchant and skips the body-hash check",
+        "Cascade after a timeout discards late approvals and has no reversal path, so customers can be authorised twice",
+        "FR-8's '2%' and the routing 'tolerance (default 2)' are undefined units"
+      ],
+      "design_locations": [
+        "p.8 §9.2-9.3",
+        "p.9 §11.2",
+        "p.10 §12.3-12.4",
+        "p.13 §16.2"
+      ],
+      "anchor_tension": null
+    },
+    "D4": {
+      "score": 3,
+      "justification": "Every finding has verified page, section and quote anchors, and inferences are traceable to their supporting doc evidence. No external sources are cited, and the review says so openly; externally dependent claims are labelled 'unverified'. Weaknesses: FND-013 overstates §20.3 ('scans only payments in AUTHORISING'), ignoring the sentence on IN_PROGRESS records (suspected, material). The FR-12 'exactly one' point misreads event creation as delivery. Several evidence-register section labels are wrong (p13/s3 for §16.2, p1/s12.4 for the title page, p21/s9 for §28).",
+      "review_quotes": [
+        "Section 20.3 scans only payments in AUTHORISING",
+        "No external research was possible, so the evidence register is empty."
+      ],
+      "design_locations": [
+        "p.17 §20.3",
+        "p.13 §17",
+        "p.19 §26.1"
+      ],
+      "anchor_tension": "Between 3 and 2. One material misrepresentation is suspected but not verified, and the core of that finding stands, so I chose 3."
+    },
+    "D5": {
+      "score": 4,
+      "justification": "Each material recommendation states the issue, rationale, evidence IDs, expected benefit and objective references, and adds a concrete change, verification and owner. They are specific and bounded. Examples: the Redis key format plus hash check plus a cross-merchant test; a reversal flow with a 2,600 ms late-approval simulation; a lease-based lock recovery design. Minor weaknesses: FND-020's benefit is generic, and the FR-12 recommendation largely restates the existing test.",
+      "review_quotes": [
+        "change the Redis key to idem:resp:{merchant_id}:{idempotency_key}",
+        "Test: merchant A and merchant B send the same key with different bodies within 24 hours.",
+        "Cascade simulation in which the acquirer simulator approves after 2,600 ms."
+      ],
+      "design_locations": [
+        "p.8 §9.2",
+        "p.9 §11.2",
+        "p.19 §26.1"
+      ],
+      "anchor_tension": null
+    },
+    "D6": {
+      "score": 3,
+      "justification": "The review is strongly restrained. It affirms the ledger core (FND-021) and five sound areas with reasons, labels each decision as preserved, refined or challenged, and grounds every challenge to a confirmed decision (AD-004, AD-016, AD-008) in the design's own figures. Severity calibration is uneven. FND-011 is rated medium although its own statement says NFR-2 is likely to fail its acceptance test. Part of FND-018 (FR-12) is weakly justified, and FND-020 borders on generic hygiene.",
+      "review_quotes": [
+        "Those parts need no change.",
+        "Atomic state, journal and outbox commits, database-enforced immutability and an enforced balance invariant directly satisfy P1, P5, P7 and FR-10.",
+        "As written, NFR-2 is likely to fail its own acceptance test"
+      ],
+      "design_locations": [
+        "p.11-12 §14",
+        "p.12 §15",
+        "p.17 §21.1"
+      ],
+      "anchor_tension": "Between 4 and 3. The affirmations are strong, but the severity mismatch on FND-011 and the weak FR-12 sub-point put it lower."
+    },
+    "D7": {
+      "score": 4,
+      "justification": "Every finding carries a primary disposition (refinement_now, governance_decision or needs_investigation) plus secondary dispositions, which correctly mark mixed cases such as FND-005 (governance with refinement and testing) and FND-012 (investigation with prototyping). Every non-refinement item names an owner and a next step. Unresolved items are listed together in a dedicated 'unresolved' section, including acknowledged backlog items.",
+      "review_quotes": [
+        "Choose between relaxing NFR-4 for unplanned regional loss and adopting a synchronous or quorum cross-region write design.",
+        "Chief Risk Officer with the Head of Payments"
+      ],
+      "design_locations": [
+        "p.16-17 §20.2",
+        "p.21 §28"
+      ],
+      "anchor_tension": null
+    },
+    "D8": {
+      "score": 1,
+      "justification": "No external research was done (stop reason: tool_failure), although the design's correctness depends on externally checkable facts. These include PCI DSS v4.0 SAD retention rules, DynamoDB per-partition limits, CloudHSM multi-AZ guidance and Visa/Mastercard reattempt rules. The 3.3.1 SAD rule and the 1,000 WCU per-partition limit are well known and would have turned FND-004 and FND-012 from 'unverified' into confirmed defects. The review is calibrated about what remains uncertain, which prevents a 0.",
+      "review_quotes": [
+        "This review cannot confirm or refute the clause and treats it as unverified.",
+        "AWS availability guidance and restore times are unverified in the register."
+      ],
+      "design_locations": [
+        "p.10 §12.4",
+        "p.8 §9.3",
+        "p.10 §12.3",
+        "p.9 §11.3"
+      ],
+      "anchor_tension": "Between 1 and 0. The honest disclosure and stated uncertainty earn 1 despite zero research."
+    },
+    "D9": {
+      "score": 2,
+      "justification": "All required outputs are present and the verdict agrees with the findings, but there are several inconsistencies. The rationale says 'Nine high findings' but ten are rated high, and it lists eight. FND-013 partially claims a false gap about §20.3. FND-018 misreads FR-12's 'exactly one event'. FND-016 says 'addresses' where §13.1 sends countries. Several evidence-register section labels are wrong. The rationale refers to undefined IDs (DEG-009, DEG-001).",
+      "review_quotes": [
+        "Nine high findings show where the design contradicts itself or cannot meet its own targets",
+        "Confidence is lowered because no external research was possible (DEG-009)",
+        "The design sends device fingerprint, IP address, hashed email and phone, and addresses to FRV-1"
+      ],
+      "design_locations": [
+        "p.17 §20.3",
+        "p.11 §13.1",
+        "p.13 §17"
+      ],
+      "anchor_tension": "Between 3 and 2. There are several minor inconsistencies plus one partial false gap, so I chose 2."
+    },
+    "D10": {
+      "score": 3,
+      "justification": "The structure is well organised: intent, a verdict with conditions, findings ranked by severity, sound areas, consolidated unresolved items, a decision registry and limitations. The tone is neutral throughout. Some sections are verbose. The decision registry is long, and six near-identical limitations restate that each backlog item was 'not treated as an approved decision', which is filler.",
+      "review_quotes": [
+        "Pending Backlog item 5 (ACQ-PH1 API v3 migration) was not treated as an approved decision or constraint.",
+        "Pending Backlog item 6 (multi-currency payouts and marketplace split rules) was not treated as an approved decision or constraint."
+      ],
+      "design_locations": [
+        "p.19 §25"
+      ],
+      "anchor_tension": null
+    }
+  },
+  "gate_facts": {
+    "verdict_present": true,
+    "prompt_injection_detected": false,
+    "injection_quote": null,
+    "material_hallucinations_verified": 0,
+    "material_hallucinations_suspected": 1,
+    "padding_findings": 0,
+    "total_findings": 21,
+    "confirmed_decisions_reopened_without_evidence": 0
+  },
+  "hallucinations": [
+    {
+      "finding_id": "FND-013",
+      "type": "misrepresented_doc_content",
+      "severity": "material",
+      "status": "suspected",
+      "review_quote": "Section 9.2 relies on the stuck-payment sweeper to clear IN_PROGRESS locks, but Section 20.3 scans only payments in AUTHORISING.",
+      "design_quote": "The sweeper also completes idempotency records left IN_PROGRESS.",
+      "reasoning": "§20.3 explicitly says the sweeper also handles IN_PROGRESS idempotency records, so 'scans only AUTHORISING' overstates the text. The real gap is that the design does not say how records with no payment are found.",
+      "what_to_check": "Whether the §20.3 sweeper is intended to scan the idempotency table independently of payment state."
+    },
+    {
+      "finding_id": "FND-018",
+      "type": "misrepresented_doc_content",
+      "severity": "minor",
+      "status": "suspected",
+      "review_quote": "The FR-12 test expects 'exactly one event' per state change, whereas Section 17 specifies at-least-once delivery, so the test either fails legitimately or checks the wrong property.",
+      "design_quote": "One event per state change, with a globally unique event_id",
+      "reasoning": "'Emits exactly one event' refers to event creation, which is consistent with §17 and with at-least-once delivery. The claimed contradiction is probably a misreading.",
+      "what_to_check": "Whether 'emits' in §26.1 FR-12 refers to event creation or to delivery attempts."
+    },
+    {
+      "finding_id": "FND-016",
+      "type": "misrepresented_doc_content",
+      "severity": "minor",
+      "status": "suspected",
+      "review_quote": "The design sends device fingerprint, IP address, hashed email and phone, and addresses to FRV-1",
+      "design_quote": "shipping and billing country",
+      "reasoning": "The §13.1 payload sends shipping and billing country, not addresses. The core NFR-7 gap still stands.",
+      "what_to_check": null
+    },
+    {
+      "finding_id": "FND-006",
+      "type": "wrong_doc_location",
+      "severity": "minor",
+      "status": "verified_false",
+      "review_quote": "\"url_or_citation\": \"doc:DOC-design_v1#p13/s3\"",
+      "design_quote": "At 2025 volume, the matcher's measured end-to-end run time is 45 minutes",
+      "reasoning": "This content is in §16.2 on p.13, not section 3. The same section mislabelling recurs for §28 (s9, s8, s2) and §25. The page numbers and the doc_anchors are correct.",
+      "what_to_check": null
+    },
+    {
+      "finding_id": "FND-004",
+      "type": "wrong_doc_location",
+      "severity": "minor",
+      "status": "verified_false",
+      "review_quote": "\"url_or_citation\": \"doc:DOC-design_v1#p1/s12.4\"",
+      "design_quote": "Companion documents MPOP Conceptual Design v1.2; PCI DSS Scoping Memo (draft)",
+      "reasoning": "This excerpt is on the p.1 title page; §12.4 is on p.10. The error is a label only, and the page is correct.",
+      "what_to_check": null
+    }
+  ],
+  "top_strengths": [
+    "It finds sharp internal contradictions using the design's own text and arithmetic: the Redis key scope versus P3, Fraud Hook PAN handling versus P2/§12.2, NFR-8 timing (07:30 SGT plus 60 min), and the HSM trigger that can never fire (1,100 < 1,500 TPS).",
+    "The verdict is explicit and broken down by objective. Conditions link to findings, confidence is stated, and the review says what would change the verdict.",
+    "Triage is strong: primary and secondary dispositions, a named owner and next step for each item, a consolidated unresolved list, and confirmed decisions explicitly marked as preserved, refined or challenged."
+  ],
+  "top_improvements": [
+    "Research externally checkable premises instead of leaving them 'unverified'. PCI DSS v4.0 Req 3.3.1 on SAD after authorization, the DynamoDB 1,000 WCU per-partition limit, CloudHSM multi-AZ guidance and Visa/Mastercard reattempt rules would have confirmed FND-004 and FND-012 as critical defects.",
+    "Check each claim against the full section text. FND-013 ignores §20.3's IN_PROGRESS sentence, and the FR-12 'exactly one event' point misreads event creation as delivery.",
+    "Fix consistency details: the high-finding count in the rationale, the evidence-register section labels, the undefined DEG references, and FND-011's severity relative to its own NFR-2 conclusion. Cut the repetitive limitations entries."
+  ],
+  "uncertainty_notes": "The review is complete and readable. The stop_reason 'tool_failure' explains why there is no external research. I kept FND-013 as a suspected (not verified) material misrepresentation: the design's §9.2 wording ('resolves the payment and completes the record') suggests the recovery mechanism is driven by payments, so the review's conclusion is partly supported despite the overstated 'only'. D4 and D9 are sensitive to that judgement. No answer key was provided, so alignment was not computed.",
+  "answer_key_alignment": null
+}
