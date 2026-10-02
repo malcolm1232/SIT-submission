@@ -24,7 +24,7 @@ Live calls: four Haiku 4.5 calls through `claude -p` with `ANTHROPIC_API_KEY` un
 | 9 | `2aba936` | `tests/test_claude_code_gateway.py` | The argv test expects `stream-json`, `--verbose`, `--include-partial-messages` and `--setting-sources ""` on the first and the resumed call. | Items 1 and 5. |
 | 10 | `2aba936` | `tests/test_stream_gateway.py` (new) | 19 tests. | Failing first (import error on `StreamTimeout`), then green. |
 | 11 | `2aba936` | `tests/test_stream_fixtures.py` (new), `tests/fixtures/stream/haiku_short.jsonl`, `haiku_cut.jsonl`, `haiku_trivial.jsonl`, `scrub_stream.py` | Three real streams recorded through the gateway, scrubbed by script; 11 tests replay them. | Item 7. |
-| 12 | last commit, separate | `config/profiles/demo.yaml`, `tests/test_runtime_policies.py` | `report_reserve_seconds` 120 to 75 (refine stays 200) with comments; tests pin the reserves against the limits and the `--deadline 300` warning. | Item 6; held back-able: it turns two tests owned by others red until the runbook changes (report, "for the other workstream"). |
+| 12 | last commit, separate | `config/profiles/demo.yaml`, `tests/test_runtime_policies.py` | `report_reserve_seconds` 120 to 75 (refine stays 200) with comments; tests pin the reserves against the limits and the `--deadline 300` warning. | Item 6; held back-able: it turns three tests owned by others red (`test_config.py`, `test_config_layout.py`, `test_cli_kruns.py`; 1290 passed, 3 failed) until the changes in the report's "for the other workstream" land. |
 
 The order was not strictly test-first for `llm/partial.py`: its code was written before its unit tests; every guard was then mutation-checked (below).
 

@@ -28,7 +28,7 @@ Edit log: `research/audit/latency_w1_editlog.md` (edits, live numbers, scrub, mu
    `--setting-sources ""` comes from `claude_code.extra_args` and is asserted on the first and the resumed argv in `tests/test_claude_code_gateway.py` and on every argv in `tests/test_stream_gateway.py`.
 6. Demo reserves: DONE in the last commit, kept separate.
    `report_reserve_seconds` 120 to 75, `refine_reserve_seconds` stays 200; 540 - 75 - 200 = 265 and 540 - 75 = 465 match the stage limits (pinned by a new test).
-   It turns `tests/test_config.py::test_refine_reserve_replaces_assess_reserve` and `tests/test_config_layout.py::test_demo_profile_lines_named_by_the_runbook` red until the changes listed below land; the commit can be held back on its own.
+   It turns three tests owned by others red until the changes listed below land: `tests/test_config.py::test_refine_reserve_replaces_assess_reserve`, `tests/test_config_layout.py::test_demo_profile_lines_named_by_the_runbook` and `tests/test_cli_kruns.py::test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves`; the commit can be held back on its own.
 7. Live check on Haiku: DONE, under $0.02.
    Three streams recorded through the gateway into `tests/fixtures/stream/` (a three-finding answer, an answer cut by a 10.5 s stage limit with 5 findings salvaged, a trivial text answer), scrubbed by `scrub_stream.py`; all grep counts 0.
    Hermetic input tokens on the trivial call: 1,131 (design M3: 1,137 with a different prompt and schema; 2,570 with the user settings, M2).
@@ -36,7 +36,7 @@ Edit log: `research/audit/latency_w1_editlog.md` (edits, live numbers, scrub, mu
 ## Tests and gates
 
 1292 passed, 0 skipped at `51a25c4` (1231 at `7be556d`: 61 new tests); ruff, `sit-review selftest`, `make smoke` and `make test` exit 0.
-At the reserve commit the two tests named in item 6 fail by design.
+At the reserve commit the three tests named in item 6 fail by design (1290 passed, 3 failed); ruff passes.
 Fourteen mutations, all killed; the first (the scanner's escape handling) survived until `51a25c4` added a string with an escaped quote before structure.
 
 ## Not verified
@@ -68,5 +68,6 @@ W3 (replay, manifest, docs, robustness):
 - Runbook line 128: "Research stops by 220 s at the latest, so that assess keeps 200 s. Every model call before verify is cut at 420 s, so that verify and report keep 120 s." becomes "Stage 1 (understand, plan, research and the four assess shards) ends by 265 s, so that refine keeps 200 s. Refine is cut at 465 s, so that verify and the verdict keep 75 s."; lines 130 and 131 need the same times (4:10 and 7:30 become the stage 1 and refine limits) once W2's order is final.
 - Then `tests/test_config_layout.py` line 67: `"report_reserve_seconds: 120"` becomes `"report_reserve_seconds: 75"`; lines 69-70: the needles `"Research stops by 220 s"`, `"is cut at 420 s"`, `"verify and report keep 120 s"` become `"Stage 1 (understand, plan, research and the four assess shards) ends by 265 s"`, `"Refine is cut at 465 s"`, `"verify and the verdict keep 75 s"`.
 - `tests/test_config.py` line 180 (W0's file, integration pass): `(200, 120)` becomes `(200, 75)`.
+- `tests/test_cli_kruns.py` (integration pass): line 165 `(540, 120, 200)` becomes `(540, 75, 200)`; line 176 becomes `assert "WARN deadline 300 s is not above this profile's stage limits" in res.output and "scaled by 300/540 to 147 / 258 / 294 s" in res.output and "leaves research no time" not in res.output` (with the demo reserves of 75 s and 200 s, research keeps 25 s at 300 s, so only the scaling note is printed). Line 173 (default reserves) still holds.
 - `agent/README.md` module map: `llm/partial.py` (new), `llm/runtime.py` stage limits, `progress.py` `CallTracker`, draft lines and milestones. No frozen interface changed (`llm/gateway.py` gained only a call to `announce_bound`).
 - `tests/robustness`: LLM-05 can now expect `err.partial` from a recorded cut; `tests/fixtures/stream/haiku_cut.jsonl` with `StreamTimeout` is a ready input.
