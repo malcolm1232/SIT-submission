@@ -280,8 +280,9 @@ async def test_truncation_retry_at_and_below_the_output_cap(tmp_path: Path, cfg:
                                                            retry_at: int) -> None:
     """One retry whatever the configured cap: wider when a wider value exists, else at the cap
     itself (config/agent.yaml is at the 128000 cap since 2026-10-03). A second truncation is never
-    retried again and never repaired: it propagates (robustness LLM-07)."""
-    from sit_review_agent.errors import LLMTruncatedError
+    retried again and never repaired: the phase degrades like a deadline cut and discloses the
+    truncation (robustness LLM-07, Session 4 ruling)."""
+    from sit_review_agent.models import DegradationType
 
     capped = cfg.model_copy(update={"agent": cfg.agent.model_copy(update={"max_tokens": configured})})
     ctx = make_ctx(tmp_path, capped, {PhaseName.UNDERSTAND: [FakeResponse(stop_reason="max_tokens"),
@@ -291,9 +292,13 @@ async def test_truncation_retry_at_and_below_the_output_cap(tmp_path: Path, cfg:
     assert (first.max_tokens, second.max_tokens) == (configured, retry_at)
     assert second.purpose == "understand:max_tokens_retry" and ctx.state.intent_summary is not None
     twice = make_ctx(tmp_path / "b", capped, {PhaseName.UNDERSTAND: [FakeResponse(stop_reason="max_tokens")] * 3})
-    with pytest.raises(LLMTruncatedError):
-        await UnderstandPhase().run(twice)
-    assert len(twice.llm.calls) == 2
+    await UnderstandPhase().run(twice)
+    assert len(twice.llm.calls) == 2 and twice.state.intent_summary is None and twice.registry.frozen
+    (deg,) = twice.state.degradations
+    assert deg.type is DegradationType.OTHER
+    assert deg.event.startswith("the understand answer was truncated twice at the output cap "
+                                f"(max_tokens={retry_at};")
+    assert twice.state.declined_sections == [] and len(twice.state.llm_calls["understand"]) == 2
 
 
 def test_configured_output_cap_is_the_model_maximum_and_fits_the_context_margin(cfg: EffectiveConfig) -> None:

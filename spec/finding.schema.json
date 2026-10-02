@@ -10,7 +10,7 @@
     "Severity": {"enum": ["critical", "high", "medium", "low"]},
     "Disposition": {"enum": ["refinement_now", "needs_investigation", "needs_prototyping", "needs_testing", "governance_decision", "no_change"]},
     "VerdictLabel": {"enum": ["fit", "fit_with_conditions", "not_fit", "not_assessed"],
-                     "description": "not_assessed is set by code only, when the run produced no assessment (deadline before or during assess, or the model declined the assess call); the model's structured output cannot choose it (agent llm/outputs.py AssessedVerdictLabel). It is not a judgement of the design."},
+                     "description": "not_assessed is set by code only, when the run produced no assessment (deadline before or during assess, the assess answer truncated at the output cap on the call and its one retry, or the model declined the assess call); the model's structured output cannot choose it (agent llm/outputs.py AssessedVerdictLabel). It is not a judgement of the design."},
     "SourceType": {"enum": ["doc", "external", "inference"]},
     "SourceAuthority": {"enum": ["primary_official", "peer_reviewed", "secondary", "informal"]},
     "StopReasonCode": {"enum": ["sufficient_evidence", "no_marginal_gain", "budget_tool_calls", "budget_tokens", "deadline", "tool_failure", "error"]},

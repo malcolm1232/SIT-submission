@@ -22,11 +22,14 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   repair call, then propagates; a ``max_tokens`` truncation gets one more call with doubled
   ``max_tokens`` (capped at 128k; with the configured value already at that cap, as in
   ``config/agent.yaml`` since 2026-10-03, the one retry runs at the same cap, because nothing wider
-  exists and output length varies from call to call), then propagates. A call cut by the run deadline
-  (:class:`LLMDeadlineError`, robustness LLM-05) is not retried: it is disclosed as a
-  ``budget_or_deadline_hit`` degradation and the phase continues with its code fallback (assess:
-  "out of time before assessment", no findings; refine: the assess drafts unchanged). Other
-  :class:`LLMError`\\ s propagate.
+  exists and output length varies from call to call). A second truncation is not retried again and
+  never repaired: it is disclosed as an ``other`` degradation "the <phase> answer was truncated
+  twice at the output cap" and the phase continues with the same code fallback as a deadline cut
+  (Session 4 ruling). A call cut by the run deadline (:class:`LLMDeadlineError`, robustness LLM-05)
+  is not retried: it is disclosed as a ``budget_or_deadline_hit`` degradation and the phase
+  continues with its code fallback (understand: no intent or registry; plan: one document-only
+  question per criterion; assess: "out of time before assessment", no findings; refine: the
+  assess drafts unchanged). Other :class:`LLMError`\\ s propagate.
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
@@ -98,10 +101,11 @@ class PhaseCall:
     brief: RenderedPrompt
     refusal_category: str | None = None
     cut: bool = False                    # the run deadline cut the call (robustness LLM-05)
+    truncated: bool = False              # the answer was cut off at max_tokens twice (LLM-07)
 
     @property
     def declined(self) -> bool:
-        return self.result is None and not self.cut
+        return self.result is None and not self.cut and not self.truncated
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -233,6 +237,26 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
     ctx.emit(f"{phase.value}: model call cut by the run deadline; {impact}", "warn")
 
 
+def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids: Sequence[str | None]) -> None:
+    """Disclose a stage whose answer was cut off at the output cap on its call and on the one retry
+    (robustness LLM-07, persistent variant; INV-07). The stage then continues with the same code
+    fallback as a deadline cut, so the event names the truncation and never the deadline."""
+    from sit_review_agent.llm.runtime import truncated_twice_event
+
+    ids = ", ".join(c for c in call_ids if c) or "no call IDs"
+    event = (f"{truncated_twice_event(phase)} (max_tokens={max_tokens}; the call and its one retry, {ids}); "
+             "the truncated output was discarded, not repaired")
+    if phase is PhaseName.ASSESS:
+        impact = ("the design was not assessed: the report has no findings and its verdict is not a judgement of "
+                  "the design; rerun the review (answer length varies between calls)")
+    elif phase is PhaseName.REFINE:
+        impact = "the assess findings are reported as drafted, without the self-critique pass"
+    else:
+        impact = f"the {phase.value} step was completed by code without model output"
+    ctx.state.add_degradation(DegradationType.OTHER, event, impact)
+    ctx.emit(f"{phase.value}: answer truncated twice at the output cap (max_tokens={max_tokens}); {impact}", "warn")
+
+
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
@@ -250,6 +274,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     refusals_left = ctx.config.agent.llm.refusal_retries
     repaired = widened = False
     k, reason = 0, ""
+    truncated_ids: list[str | None] = []
     while True:
         brief = render(reframed=reframed, schema_error=schema_error)
         messages, bp = start_conversation(docs, brief.text, native_pdf=native)
@@ -296,8 +321,10 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             return PhaseCall(result=None, brief=brief, cut=True)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
-            if widened:
-                raise
+            truncated_ids.append(exc.call_id)
+            if widened:                     # second truncation: degrade like a deadline cut, no third call
+                truncated_twice(ctx, phase, max_tokens, truncated_ids)
+                return PhaseCall(result=None, brief=brief, truncated=True)
             wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
             how = (f"with max_tokens={wider}" if wider > max_tokens
                    else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")

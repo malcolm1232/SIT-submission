@@ -28,6 +28,9 @@ Implementation notes (workstream A):
 * after a persistent refusal: no findings, every criterion's coverage row says it was not assessed;
 * when the run deadline cuts the call (robustness LLM-05): the same, disclosed as "out of time
   before assessment";
+* when the answer is truncated at the output cap on the call and on its one retry (LLM-07,
+  persistent variant): the same, disclosed as "the assess answer was truncated twice at the
+  output cap";
 * in both cases nothing is made up, and ``report`` skips the model verdict call and reports the
   verdict ``not_assessed`` (``phases.report.assessment_missing``).
 """
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 from sit_review_agent.context import RunContext
 from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage
+from sit_review_agent.llm.runtime import truncated_twice_event
 from sit_review_agent.phases._model_calls import (
     answer_vars,
     call_model,
@@ -81,8 +85,12 @@ class AssessPhase:
             ctx.state.finding_drafts = []
             ctx.state.finding_meta = {}
             ctx.state.sound_area_drafts = []
-            note = ("not assessed: out of time before assessment (run deadline)" if call.cut
-                    else "not assessed: the model declined the assess call")
+            if call.cut:
+                note = "not assessed: out of time before assessment (run deadline)"
+            elif call.truncated:
+                note = f"not assessed: {truncated_twice_event(phase)}"
+            else:
+                note = "not assessed: the model declined the assess call"
             ctx.state.coverage = [CriterionCoverage(criterion_id=c, outcome="not_applicable", finding_ids=[],
                                                     note=note) for c in known_criteria(ctx)]
             return ctx

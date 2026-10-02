@@ -4,8 +4,8 @@ judgement of the design and which the grader counted as an explicit fitness verd
 
 * spec, taxonomy and models agree, and reject a ``not_assessed`` verdict that carries a judgement;
 * the model cannot choose it: no LLM-facing schema offers it and a draft that carries it is refused;
-* ``report`` sets it in code on both no-assessment paths (deadline, declined assess) without a
-  verdict call, and ``report.md`` says so;
+* ``report`` sets it in code on every no-assessment path (deadline, assess answer truncated twice
+  at the output cap, declined assess) without a verdict call, and ``report.md`` says which;
 * the harness loads such a review, the scorer flags it, and the grader's G4 gate does not count it
   as a fitness verdict.
 """
@@ -24,7 +24,7 @@ from sit_review_agent import models as m
 from sit_review_agent.invariants import check_all, spec_validator
 from sit_review_agent.llm.gateway import FakeResponse
 from sit_review_agent.llm.outputs import PHASE_OUTPUT_TYPES, AssessedVerdictLabel, ReportOutput, llm_facing_schema
-from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT, truncated_twice_event
 from sit_review_agent.manifest import start_manifest
 from sit_review_agent.models import DegradationType, Review, VerdictLabel
 from sit_review_agent.phases.report import ReportPhase, assessment_missing, not_assessed_verdict
@@ -35,6 +35,8 @@ from test_ingest_verify_report import REPORT_OK, ingested
 
 NOT_ASSESSED = "not_assessed"
 DECLINED_EVENT = "the model declined the assess call after a reframed retry (refusal category: cyber)"
+TRUNCATED_EVENT = (f"{truncated_twice_event(PhaseName.ASSESS)} (max_tokens=128000; the call and its one retry, "
+                   "llm-0006, llm-0007); the truncated output was discarded, not repaired")
 
 
 def schema_errors(obj: Any) -> list[str]:
@@ -64,6 +66,10 @@ def test_not_assessed_verdict_carries_no_judgement() -> None:
     assert v.rationale.startswith("Not assessed") and "not a judgement" in v.rationale
     declined = not_assessed_verdict("declined")
     assert declined.label is VerdictLabel.NOT_ASSESSED and "declined the assess call" in declined.rationale
+    truncated = not_assessed_verdict("truncated")
+    assert truncated.label is VerdictLabel.NOT_ASSESSED and truncated.confidence == 0.0
+    assert "cut off at the output cap twice" in truncated.rationale and "time" not in truncated.rationale
+    assert "declined" not in truncated.rationale and "fewer criteria" in (truncated.what_would_change_it or "")
 
 
 @pytest.mark.parametrize("patch,needle", [
@@ -140,6 +146,8 @@ async def unassessed(tmp_path: Path, script: dict[str, list[FakeResponse]], *, r
         ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
                                   f"{OUT_OF_TIME_BEFORE_ASSESSMENT}: the assess call was cut by the run deadline",
                                   "the design was not assessed")
+    elif reason == "truncated":
+        ctx.state.add_degradation(DegradationType.OTHER, TRUNCATED_EVENT, "the design was not assessed")
     else:
         ctx.state.add_degradation(DegradationType.OTHER, DECLINED_EVENT,
                                   "the assess step was completed without model output")
@@ -153,6 +161,7 @@ async def unassessed(tmp_path: Path, script: dict[str, list[FakeResponse]], *, r
 @pytest.mark.parametrize("reason,shown", [
     ("deadline", "Not assessed (out of time before assessment)"),
     ("declined", "Not assessed (the model declined the assessment)"),
+    ("truncated", "Not assessed (answer truncated twice at the output cap)"),
 ])
 async def test_report_sets_not_assessed_in_code_without_a_verdict_call(tmp_path: Path, reason: str,
                                                                        shown: str) -> None:
@@ -179,6 +188,9 @@ def test_assessment_missing_names_the_reason() -> None:
     assert assessment_missing(cut, []) == "deadline"
     assert assessment_missing([DECLINED_EVENT], ["assess"]) == "declined"
     assert assessment_missing(cut, ["assess"]) == "deadline"
+    assert assessment_missing([TRUNCATED_EVENT], []) == "truncated"
+    other = TRUNCATED_EVENT.replace("the assess answer", "the refine answer")   # refine keeps the findings
+    assert assessment_missing([other], []) is None
     assert assessment_missing(["stop rule deadline (deadline) before refine"], ["research", "refine"]) is None
 
 

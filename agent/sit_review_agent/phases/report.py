@@ -7,7 +7,8 @@ against the spec (INV-03) and the invariants, writes ``report.json``, ``ledger.j
 degradation is cited by a limitation (INV-07). A capped run (deadline) still reports, with a
 partial-evidence caveat; if the model is unavailable the verdict text falls back to an LLM-free
 template that says so (fresh_eyes N3). A run with no assessment (the deadline skipped or cut
-``assess``, or the model declined it) gets no verdict call: its verdict is ``not_assessed``.
+``assess``, its answer was truncated twice at the output cap, or the model declined it) gets no
+verdict call: its verdict is ``not_assessed``.
 
 What assembly guarantees by construction (each is disclosed, never hidden):
 
@@ -178,18 +179,34 @@ def assessment_cut(degradation_events: list[str]) -> bool:
 #: Why a run has no assessment -> (what happened, what to do), used in the not-assessed verdict.
 _NOT_ASSESSED_TEXT = {
     "deadline": ("the run ran out of time before assessment", "Rerun the review with a longer deadline."),
+    "truncated": ("the model's assessment was cut off at the output cap twice (the assess call and its one "
+                  "retry), and a truncated answer is never repaired",
+                  "Rerun the review (answer length varies between calls); if the assessment is cut off again, "
+                  "assess fewer criteria per run."),
     "declined": ("the model declined the assess call, also after one reframed retry",
                  "Rerun the review; if the model declines again, review the cited sections by hand."),
+}
+
+#: Why a run has no assessment -> the short form in progress lines and ``report.md`` labels.
+NOT_ASSESSED_WHY = {
+    "deadline": "out of time before assessment",
+    "truncated": "answer truncated twice at the output cap",
+    "declined": "the model declined the assessment",
 }
 
 
 def assessment_missing(degradation_events: list[str], declined_sections: list[str]) -> str | None:
     """Why the run has no assessment, or ``None`` when ``assess`` produced model output:
-    ``"deadline"`` (the deadline skipped or cut assess, robustness LLM-05) or ``"declined"`` (the
-    model refused the assess call twice, LLM-06). In both cases there is nothing a verdict could
-    rest on, so ``report`` makes no verdict call and reports ``not_assessed``."""
+    ``"deadline"`` (the deadline skipped or cut assess, robustness LLM-05), ``"truncated"`` (the
+    assess answer was cut off at the output cap on the call and its one retry, LLM-07) or
+    ``"declined"`` (the model refused the assess call twice, LLM-06). In each case there is nothing
+    a verdict could rest on, so ``report`` makes no verdict call and reports ``not_assessed``."""
+    from sit_review_agent.llm.runtime import truncated_twice_event
+
     if assessment_cut(degradation_events):
         return "deadline"
+    if any(e.startswith(truncated_twice_event(PhaseName.ASSESS)) for e in degradation_events):
+        return "truncated"
     if PhaseName.ASSESS.value in declined_sections:
         return "declined"
     return None
@@ -430,9 +447,9 @@ class ReportPhase:
         model_unresolved: list[UnresolvedItem] = []
         missing = assessment_missing([d.event for d in st.degradations], st.declined_sections)
         if missing is not None and not st.findings and not st.sound_areas:
-            # No assessment (out of time, robustness LLM-05; or the model declined assess, LLM-06):
+            # No assessment (out of time, robustness LLM-05; truncated twice, LLM-07; declined, LLM-06):
             # no model verdict on an unassessed design. A verdict call could only invent one.
-            why = "out of time before assessment" if missing == "deadline" else "the model declined the assessment"
+            why = NOT_ASSESSED_WHY[missing]
             ctx.emit(f"{why}: no verdict call; the report says the design was not assessed", "warn")
             st.verdict = not_assessed_verdict(missing)
             st.limitations = []

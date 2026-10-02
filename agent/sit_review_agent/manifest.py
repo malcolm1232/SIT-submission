@@ -11,7 +11,10 @@ Decisions taken here:
 * The manifest written at start has ``outcome: crashed`` and ``end_utc: null``; a run that dies
   without finalising therefore reads as crashed, never as completed.
 * Usage, served models and cost are summed from ``llm.jsonl`` (every attempt, across resumes),
-  not from the in-process gateway, so a resumed run reports the whole run.
+  not from the in-process gateway, so a resumed run reports the whole run. Failed attempts count
+  too: a call truncated at ``max_tokens`` was billed, so its usage and cost are in the totals, and
+  every truncated call is listed in ``extra.model.truncations`` (``call_id``, ``stage``,
+  ``purpose``; robustness LLM-07).
 * ``git_dirty`` is ``const false`` in the spec. Outside eval mode the tree is not inspected (no
   ``git`` subprocess): the commit is read from ``.git`` files and ``extra.code.git_dirty`` is
   ``null`` ("not checked"). Eval mode runs ``git status --porcelain`` and refuses a dirty tree.
@@ -125,14 +128,17 @@ def _file_sha(path: Path) -> str | None:
 
 
 def journal_usage(run_dir: RunDir) -> dict[str, Any]:
-    """Usage, served models, refusals and cost summed over every entry of ``llm.jsonl``."""
+    """Usage, served models, truncated calls and cost summed over every entry of ``llm.jsonl``."""
     tot = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
     served: set[str] = set()
     cost_logged = 0.0
     have_cost = False
     calls = 0
+    truncations: list[dict[str, Any]] = []
     for e in JsonlWriter(run_dir.llm_log).read():
         calls += 1
+        if e.get("outcome") == "LLMTruncatedError":
+            truncations.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose")})
         for k in tot:
             tot[k] += int((e.get("usage") or {}).get(k) or 0)
         if e.get("outcome", "ok") == "ok" and e.get("model"):
@@ -144,7 +150,7 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     p = PRICE_TABLE["usd_per_mtok"]
     estimate = (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
                 + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
-    return {**tot, "calls": calls, "served_models": sorted(served),
+    return {**tot, "calls": calls, "served_models": sorted(served), "truncations": truncations,
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
 
@@ -330,7 +336,7 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "betas": betas, "fallbacks": "default" if cfg.agent.allow_fallback else "none",
                "fallback_events": [{"role": f.role, "from_model": f.from_model, "to_model": f.to_model,
                                     "category": f.reason} for f in fallbacks],
-               "refusals": refusals,
+               "refusals": refusals, "truncations": usage["truncations"],
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
                "calls_logged": usage["calls"]},

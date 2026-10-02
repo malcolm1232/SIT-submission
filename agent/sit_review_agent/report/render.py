@@ -117,24 +117,34 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
     }
 
 
+def _coverage_outcome(outcome: str, note: str | None) -> str:
+    """The coverage table's outcome cell. A run with no assessment stores ``not_applicable`` with a
+    note starting "not assessed" (``phases.assess``); the cell says "not assessed", as ``dra
+    coverage`` does, because the criterion was never judged inapplicable."""
+    from sit_review_agent.report.coverage import NOT_ASSESSED_NOTE
+
+    if outcome == "not_applicable" and (note or "").lower().startswith(NOT_ASSESSED_NOTE):
+        return NOT_ASSESSED_NOTE
+    return outcome.replace("_", " ")
+
+
 def not_assessed(review: Review) -> bool:
     """The run produced no assessment: the verdict label is ``not_assessed``
     (``phases.report.not_assessed_verdict``; the deadline stopped the review before assessment,
-    robustness LLM-05, or the model declined the assess call, LLM-06)."""
+    robustness LLM-05, the assess answer was truncated twice at the output cap, LLM-07, or the
+    model declined the assess call, LLM-06)."""
     return review.verdict.label is VerdictLabel.NOT_ASSESSED
 
 
 def verdict_label_text(review: Review) -> str:
     """The verdict label as shown in ``report.md``; a not-assessed verdict names its reason."""
     if not_assessed(review):
-        from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+        from sit_review_agent.phases.report import NOT_ASSESSED_WHY, assessment_missing
 
         events = [d.event for d in review.research_log.degradations]
-        if any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events):
-            return f"not assessed ({OUT_OF_TIME_BEFORE_ASSESSMENT})"
-        if any(e.startswith("the model declined the assess call") for e in events):
-            return "not assessed (the model declined the assessment)"
-        return "not assessed"
+        declined = ["assess"] if any(e.startswith("the model declined the assess call") for e in events) else []
+        missing = assessment_missing(events, declined)
+        return f"not assessed ({NOT_ASSESSED_WHY[missing]})" if missing else "not assessed"
     return review.verdict.label.value.replace("_", " ")
 
 
@@ -244,7 +254,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
                       "tool": f"{e.tool.server}/{e.tool.tool_name} {e.tool.call_id}" if e.tool else None,
                       "cited": e.evidence_id in used, "derived_from": e.derived_from}
                      for e in review.evidence_ledger],
-        "coverage": [{"id": c.criterion_id, "outcome": c.outcome.replace("_", " "), "ids": c.finding_ids,
+        "coverage": [{"id": c.criterion_id, "outcome": _coverage_outcome(c.outcome, c.note), "ids": c.finding_ids,
                       "note": _cell(c.note)} for c in cov],
         "appendix": [views[f.id] for f in appendix],
         "appendix_heading": APPENDIX_HEADING,

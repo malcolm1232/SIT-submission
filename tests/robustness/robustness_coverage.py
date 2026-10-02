@@ -113,7 +113,9 @@ COVERAGE: dict[str, Coverage] = {
                  laptop="sit-review run eval/synthetic/clinical_rpm/design_v1.pdf --faults LLM-06 (L1 refusal-prone "
                         "domain: the INP-14b protocol fixture is not authored yet)"),
     "LLM-07": _o("max_tokens on the first assess call: one retry (doubled max_tokens, never above the 128000 "
-                 "cap), same finding count as the fault-free run, schema-valid", schedule=True),
+                 "cap), same finding count as the fault-free run, schema-valid; persistent variant (the retry "
+                 "truncated too): no third call, 'truncated twice at the output cap' disclosed, no finding, "
+                 "verdict not_assessed, exit 0", schedule=True),
     "LLM-08": _o("first assess answer misses `findings`: one repair turn logged, repaired answer used",
                  schedule=True),
     "LLM-09": _o("assess/refine return placeholder ('TBD') findings, or none: hollow findings dropped and "
