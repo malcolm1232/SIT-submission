@@ -379,6 +379,20 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
 
 
+def test_deadline_warning_boundary_is_one_model_attempt(base: EffectiveConfig) -> None:
+    """Research needs room for one model attempt (``MIN_ATTEMPT_S``), not merely a positive
+    remainder: a deadline that leaves it 5 s is announced, one that leaves exactly one attempt is
+    not. (Session 4 verifier: the boundary `< min_attempt_s` could be weakened to `< 0` with every
+    other test passing.)"""
+    from sit_review_agent.llm.runtime import MIN_ATTEMPT_S, deadline_warnings
+
+    sr = base.stop_rules
+    fit = sr.report_reserve_seconds + sr.assess_reserve_seconds
+    tight = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S / 2}))
+    assert len(tight) == 1 and "leaves research no time" in tight[0]
+    assert deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S})) == []
+
+
 def test_not_assessed_verdict_is_never_a_certification() -> None:
     from sit_review_agent.phases.report import assessment_cut, not_assessed_verdict
 

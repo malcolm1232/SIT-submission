@@ -210,6 +210,40 @@ def test_no_partial_report_when_the_model_is_unavailable(tmp_path: Path) -> None
     assert "partial_report" not in rec.failure
 
 
+
+def _truncate_every(stage: str) -> Any:
+    def patch(data: dict[str, Any]) -> None:
+        data["llm"] = [{"match": {"stage": stage},
+                        "fault": {"type": "stop_reason", "value": "max_tokens", "truncate_at_fraction": 0.6}}]
+    return patch
+
+
+@pytest.mark.parametrize("stage", ["understand", "assess", "refine"])
+def test_a_stage_that_truncates_twice_never_ends_in_a_silent_success(stage: str, tmp_path: Path) -> None:
+    """LLM-07, persistent variant ("truncates twice"; Session 4 verifier). The one retry runs at
+    the same 128000 cap, so a second truncation is possible. Whatever the run then does, it makes
+    no third call at the same cap, accepts no truncated object and never exits 0 with a report
+    that hides the truncation. Today it ends in a typed, resumable exit 3 with no report (the
+    disclosed-degraded-report alternative is an open design question,
+    research/audit/verify_runtime_cli_editlog.md "Session 4 verifier"); if that changes, the
+    report must say the stage was not completed and an unassessed review must be not_assessed."""
+    rec = run(Scenario(id=f"REG-TRUNC2-{stage}", faults="LLM-07", variant=_truncate_every(stage)), tmp_path)
+    calls = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == stage]
+    assert [e.get("outcome") for e in calls] == ["LLMTruncatedError", "LLMTruncatedError"]
+    assert [e.get("purpose") for e in calls] == [stage, f"{stage}:max_tokens_retry"]
+    assert rec.raised is None                                           # INV-11: typed exit, never a traceback
+    if rec.exit_code == 0:
+        report = rec.report
+        assert report is not None
+        assert any("truncat" in d["event"] for d in report["research_log"]["degradations"])
+        if stage != "refine":
+            assert report["verdict"]["label"] == "not_assessed" and report["findings"] == []
+    else:
+        assert rec.exit_code == 3 and rec.report is None
+        failure = rec.failure
+        assert failure is not None and failure["error"] == "LLMTruncatedError" and failure["phase"] == stage
+        assert failure["resumable"] is True
+
 # ============================================================================= 8. refine (BEH-10)
 
 

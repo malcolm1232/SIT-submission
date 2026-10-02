@@ -70,3 +70,16 @@ def test_demo_profile_lines_named_by_the_runbook() -> None:
                    "verify and report keep 120 s", "`config/profiles/demo.yaml` lines 19-24"):
         assert needle in runbook, needle
     assert "--deadline 540" not in runbook            # the demo deadline comes from the profile
+
+
+def test_runbook_source_paths_exist() -> None:
+    """Every repository path the runbook names in backticks (agent/, config/, harness/, spec/,
+    eval/, tests/, scripts/, docs/) exists. Before 2026-10-03 §4 and §9 sent a live stop-rule edit
+    to `agent/stop_rules.py` and the executive summary to `agent/templates/report.md.j2`, neither
+    of which exists (the package lives under agent/sit_review_agent/)."""
+    text = RUNBOOK.read_text(encoding="utf-8")
+    named = set(re.findall(r"`((?:agent|config|harness|spec|eval|tests|scripts|docs)/[\w./-]+\.\w+)`", text))
+    named = {p for p in named if "NAME" not in p}           # a placeholder: `config/profiles/NAME.yaml`
+    assert "agent/sit_review_agent/stop_rules.py" in named
+    missing = sorted(p for p in named if not (repo_root() / p).exists())
+    assert not missing, f"runbook names files that do not exist: {missing}"

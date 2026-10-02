@@ -129,7 +129,7 @@ The deadline is still unknown (FE N1). Days are counted from the first build day
 | B4 | Fix what the pilot shows; matcher validation; grader pipeline; robustness gate | T4 100 matcher pairs (1.75 h); T5 grader smoke (2.1 h); finish T8 (3.0 h total) | **A-2 pilot** (18), A-8 |
 | B5 | Pilot-driven fixes; leakage tooling (LC5-LC8, LC10, LC11) | Review matcher κ; if κ < 0.60 apply protocol §7 | A-1 (last), A-9 |
 | B6 | **Freeze**: fill the pilot fields in `prereg.yaml`, flip `frozen`, hash, external timestamp (LC1); tag the agent commit | Send the hash to the SIT officer, or push the signed tag | none |
-| E1 | — | — | **A-3** (36) and **A-5** (18), interleaved; at least 4.1-6.1 h wall at 2-3 in parallel (floor: 36 FULL-shaped × 959 s + 18 single-call × 520 s = 12.2 h of run time) and up to 18-27 h if every run reaches the 3,600 s deadline, so E1 can run into a second day |
+| E1 | none | none | **A-3** (36) and **A-5** (18), interleaved; at least 4.1-6.1 h wall at 2-3 in parallel (floor: 36 FULL-shaped × 959 s + 18 single-call × 520 s = 12.2 h of run time) and up to 18-27 h if every run reaches the 3,600 s deadline, so E1 can run into a second day |
 | E2 | Leakage audit (LC10) → unseal (access 1) → render the held-out PDFs by script | T6a held-out `core_insight` sign-off after the runs (1.0 h) | **A-4** (18), **A-6** (3), **A-7** (3) |
 | E3 | Matching, adjudication first pass, grader batches, runtime access scan (LC11) | T6b held-out adjudication review (2.0 h); T5b R_base (0.5 h); T7 grader sample (1.8 h) | V-tests (grader only) |
 | E4 | `eval/score.py` once on the complete set; tables; write results and limitations | Read the results and sign the rater statement | none |

@@ -216,8 +216,11 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
 - **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
 - **Output cap (2026-10-03).** `config/agent.yaml` `max_tokens` is 128000, the model's maximum and the
   largest value `config.py` accepts. A truncated answer gets one retry: at double the cap when the
-  configured value is below 128000, else at the same cap; a second truncation ends the stage (exit 4),
-  never a repaired object (LLM-07). `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+  configured value is below 128000, else at the same cap; a second truncation ends the run with a typed,
+  resumable exit 3 (`failure.json` names the stage; no `report.md`, no partial report), never a repaired
+  object (LLM-07; `tests/robustness/test_robustness_regressions.py`, "truncates twice"). Known limitation:
+  a second truncation is not recovered by splitting the stage, and `sit-review resume` repeats the same
+  call at the same cap. `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
   (checked on Haiku with Claude Code 2.1.287: a cap of 256 was enforced). When the cap is hit, `claude -p`
   does not report `stop_reason: max_tokens`: after its own recovery turns it returns an error result
   ("... exceeded the N output token maximum ..."), which the gateway types as `LLMTruncatedError` and does
