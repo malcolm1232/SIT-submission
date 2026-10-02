@@ -162,7 +162,7 @@ def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path
     for i in (1, 2):
         eff = json.loads((runs / f"demo-k{i}" / "effective_config.json").read_text(encoding="utf-8"))
         sr = eff["stop_rules"]
-        assert (sr["deadline_seconds"], sr["report_reserve_seconds"], sr["refine_reserve_seconds"]) == (540, 120, 200)
+        assert (sr["deadline_seconds"], sr["report_reserve_seconds"], sr["refine_reserve_seconds"]) == (540, 75, 200)
         assert eff["agent"]["effort"]["assess"] == "medium" and eff["agent"]["effort"]["research"] == "low"
         man = json.loads((runs / f"demo-k{i}" / "manifest.json").read_text(encoding="utf-8"))
         assert man["budgets"]["deadline_s"] == 540 and man["extra"]["config"]["cli_args"]["profile"] == "demo"
@@ -171,9 +171,11 @@ def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path
     res = invoke(["review", str(PDF), *base(cfgdir), "--deadline", "300", "--run-id", "short"])
     assert res.exit_code == 0, res.output
     assert "WARN deadline 300 s leaves research no time" in res.output and "share 120 s" in res.output
+    # with the demo reserves (75 s and 200 s) research keeps 25 s at 300 s, so only the scaling is announced
     res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "demo", "--deadline", "300", "--run-id", "short2"])
     assert res.exit_code == 0, res.output
-    assert "WARN deadline 300 s leaves research no time" in res.output and "share 180 s" in res.output
+    assert "WARN deadline 300 s is not above this profile's stage limits" in res.output
+    assert "scaled by 300/540 to 147 / 258 / 294 s" in res.output and "leaves research no time" not in res.output
 
 
 def test_not_assessed_runs_are_not_a_verdict_in_the_group_summary() -> None:

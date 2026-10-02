@@ -177,7 +177,7 @@ def test_refine_reserve_replaces_assess_reserve() -> None:
     cfg = load_config()
     assert cfg.stop_rules.refine_reserve_seconds == 600 and cfg.stop_rules.report_reserve_seconds == 180
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (demo.refine_reserve_seconds, demo.report_reserve_seconds) == (200, 120)
+    assert (demo.refine_reserve_seconds, demo.report_reserve_seconds) == (200, 75)
     assert not hasattr(cfg.stop_rules, "assess_reserve_seconds")
 
 
