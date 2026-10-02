@@ -9,6 +9,8 @@ This folder resolves two P0 blockers from `research/audit/research_audit.md` §6
 | `spec/answer_key.schema.json` | JSON Schema 2020-12 for one sealed **answer key**. Reuses `Kind`, `Category`, `Severity`, `Disposition` from the finding schema by `$ref`. | What a gold flaw, sound section and still-valid observation look like |
 | `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative tests, and checks that `legacy_mappings` covers every label in the five existing keys. | — |
 
+**Handling.** `taxonomy.yaml` outside `legacy_mappings` is prompt-safe: its examples are invented and avoid every mechanism in the eval keys. This README and `legacy_mappings` name eval-key labels and some flaw details, and §2.6-2.7 cover the S-heldout (ex-blind) items. Never place either in an agent, matcher or grader prompt. When the S-heldout keys are sealed (audit P0 action 7), move §2.4 rows for item_a/item_b, §2.6 and §2.7 into the sealed archive.
+
 ## 1. How the three artefacts relate
 
 ```
@@ -35,6 +37,7 @@ Key design choices:
 - **Traceability**: 1-3 `doc_anchors` per finding (audit G1, G3), each with `doc_id`, `section_ref`, `requirement_ids`, a verbatim `quote` of ≥ 8 tokens (G2) and `page`.
 - **Evidence by ledger ID** (audit C11). The model writes `evidence_id`, `source_type`, `quote`, `supports_claim`; the renderer copies `url_or_citation` and `retrieved_at` from the ledger (these are `readOnly` in the schema). Every evidence item is tagged `doc | external | inference` (C10); inference must list `derived_from`.
 - **Approved decisions** live in `Review.decision_registry[]` (robustness §10 item 5). A finding lists `affected_decisions[]` with relation `preserves | refines | challenges`; `challenges` requires ≥ 2 evidence items and a non-`no_change` disposition (BEH-12, INV-10).
+- **Cross-field rules** that JSON Schema cannot express are enforced in code (`review_semantics` and `key_semantics` in `validate_examples.py`, to be reused by the verify stage and the key converter): every `evidence_id` and `derived_from` is in the ledger and hydrated from it; `supporting_evidence_ids` is a subset of the finding's evidence; anchor `doc_id`s exist in `metadata.documents`; every finding needing investigation, prototyping, testing or governance appears in `unresolved[]` (lab §2.4); `stop_reason.group` matches the taxonomy; key overlap and regression links are mirrored; `v2.expected_open_flaw_ids` equals the derived set; a `scored_run_ready` key has no null provenance, `core_insight`, `anchor_quote` or `expected_disposition`.
 - **Re-review** (lab §1.5): `metadata.review_mode = delta`, documents with `role: prior_version`, and per-finding `reassessment {prior_finding_id, status}`.
 
 ### LLM-facing schema
@@ -259,20 +262,20 @@ A strength with `disposition: no_change`:
 <!-- example:finding:no_change -->
 ```json
 {
-  "id": "FND-007", "rank": 7, "kind": "strength", "category": null, "severity": null, "confidence": 0.85,
+  "id": "FND-007", "rank": 2, "kind": "strength", "category": null, "severity": null, "confidence": 0.85,
   "disposition": "no_change", "secondary_dispositions": [],
-  "title": "Database constraint prevents double-booking",
-  "statement": "Double-booking is prevented by a unique constraint on (room_id, slot_start) rather than by application checks, which meets FR-3 under concurrent requests.",
-  "doc_anchors": [{"doc_id": "DOC-booking-v1", "section_ref": "6.2", "requirement_ids": ["FR-3"],
-                   "quote": "Each booking row is protected by a unique constraint on room_id and slot_start.", "page": 9}],
-  "evidence": [{"evidence_id": "EV-004", "source_type": "doc", "url_or_citation": "doc:DOC-booking-v1#p9/s6.2",
-                "quote": "Each booking row is protected by a unique constraint on room_id and slot_start.",
+  "title": "Accessibility is verified, not just promised",
+  "statement": "NFR-7 (WCAG 2.2 AA) is backed by an acceptance criterion that combines automated checks with a manual screen-reader pass on every booking screen, so the accessibility objective is verifiable as written.",
+  "doc_anchors": [{"doc_id": "DOC-booking-v1", "section_ref": "11.3", "requirement_ids": ["NFR-7", "AC-12"],
+                   "quote": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.", "page": 18}],
+  "evidence": [{"evidence_id": "EV-004", "source_type": "doc", "url_or_citation": "doc:DOC-booking-v1#p18/s11.3",
+                "quote": "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual screen-reader pass.",
                 "supports_claim": true, "retrieved_at": null, "derived_from": []}],
   "recommendation": null,
-  "no_change_rationale": "The constraint is enforced by the database for every write path, so no application change can bypass it; alternatives (locks, queues) add latency without extra safety.",
+  "no_change_rationale": "Automated checks alone miss screen-reader problems; the manual pass covers them and the criterion is traced to NFR-7. More tooling would not change the outcome.",
   "next_step": null,
-  "affected_decisions": [{"registry_id": "AD-002", "relation": "preserves", "justification": "Affirms decision D-3 (PostgreSQL as the booking store)."}],
-  "acknowledged_in_doc": false, "tags": ["data-integrity"], "reassessment": null,
+  "affected_decisions": [{"registry_id": "AD-002", "relation": "preserves", "justification": "Affirms decision D-3 (front end built from the campus design-system components)."}],
+  "acknowledged_in_doc": false, "tags": ["accessibility"], "reassessment": null,
   "provenance": {"phase": "verify", "iteration": 1, "model": "claude-opus-5-5",
                  "prompt_hash": "3f1c0e5a9b7d2c4e6f8a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e"}
 }
@@ -283,37 +286,37 @@ A risk with a recommendation:
 <!-- example:finding:recommendation -->
 ```json
 {
-  "id": "FND-001", "rank": 1, "kind": "risk", "category": "external_constraint_violation", "severity": "high", "confidence": 0.9,
+  "id": "FND-001", "rank": 1, "kind": "risk", "category": "unsupported_or_incorrect_claim", "severity": "high", "confidence": 0.9,
   "disposition": "refinement_now", "secondary_dispositions": ["needs_testing"],
-  "title": "Dead-letter retention exceeds the broker maximum",
-  "statement": "Section 8.4 sets 30-day dead-letter retention to cover the term break, but the broker's documented maximum is 14 days, so failed reminders older than 14 days are deleted and FR-9 ('no reminder is lost') fails.",
-  "doc_anchors": [{"doc_id": "DOC-booking-v1", "section_ref": "8.4", "requirement_ids": ["FR-9"],
-                   "quote": "Dead-letter queues retain failed reminder messages for 30 days to cover the term break.", "page": 14}],
+  "title": "E-mail plan cannot send peak-day reminders",
+  "statement": "Section 6.2 states the e-mail service has no daily sending limit, but its published plan allows 2,000 messages a day, below the 5,000 reminders the design sends on exam-week peak days, so most reminders are rejected and FR-9 ('every booking gets a reminder one hour before') fails.",
+  "doc_anchors": [{"doc_id": "DOC-booking-v1", "section_ref": "6.2", "requirement_ids": ["FR-9"],
+                   "quote": "The selected e-mail service has no daily sending limit, so reminders are sent individually as each slot approaches.", "page": 11}],
   "evidence": [
-    {"evidence_id": "EV-011", "source_type": "external", "url_or_citation": "https://docs.example-broker.invalid/limits#retention",
-     "quote": "Message retention can be set from 60 seconds to 14 days.", "supports_claim": true,
+    {"evidence_id": "EV-011", "source_type": "external", "url_or_citation": "https://docs.example-mail.invalid/plans#limits",
+     "quote": "The Starter plan allows up to 2,000 messages per day.", "supports_claim": true,
      "retrieved_at": "2026-10-02T09:14:00Z", "derived_from": []},
     {"evidence_id": "EV-012", "source_type": "inference", "url_or_citation": "inference:EV-012",
-     "quote": "30 days > 14-day maximum, so messages aged 15-30 days are lost.", "supports_claim": true,
+     "quote": "5,000 peak-day reminders (section 4.1) exceed the 2,000-per-day plan limit.", "supports_claim": true,
      "retrieved_at": null, "derived_from": ["EV-011", "EV-005"]}
   ],
   "recommendation": {
-    "issue": "Dead-letter retention is configured above the broker's limit.",
-    "rationale": "The broker silently caps retention, so the 30-day assumption behind the term-break plan is false.",
-    "expected_benefit": "FR-9 holds across the term break: failed reminders stay recoverable.",
-    "change_summary": "In 8.4, set retention to 14 days and move messages older than 7 days to the object-store archive with a replay job.",
+    "issue": "The reminder design depends on a sending limit the chosen plan does not provide.",
+    "rationale": "Reminders over the daily quota are rejected, so the plan, not the design, decides which students get reminders.",
+    "expected_benefit": "FR-9 holds on peak days: every booking receives its reminder.",
+    "change_summary": "In 6.2, state the plan's quota and either move to a plan with at least 10,000 messages a day or send overflow reminders as campus-app push notifications.",
     "objective_refs": ["FR-9"], "supporting_evidence_ids": ["EV-011", "EV-012"],
-    "verification": "Acceptance test: a message dead-lettered 20 days ago is replayed successfully."
+    "verification": "Peak-day load test: 5,000 reminders in one day, all delivered."
   },
   "no_change_rationale": null,
-  "next_step": {"owner": "Build Phase 2 test lead", "action": "Add the 20-day replay acceptance test traced to FR-9."},
-  "affected_decisions": [], "acknowledged_in_doc": false, "tags": ["messaging"], "reassessment": null,
+  "next_step": {"owner": "Build Phase 2 test lead", "action": "Add the peak-day reminder load test traced to FR-9."},
+  "affected_decisions": [], "acknowledged_in_doc": false, "tags": ["notifications"], "reassessment": null,
   "provenance": {"phase": "research", "iteration": 2, "model": "claude-opus-5-5",
                  "prompt_hash": "9a8b7c6d5e4f30211203f4e5d6c7b8a99a8b7c6d5e4f30211203f4e5d6c7b8a9"}
 }
 ```
 
-`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (one flaw, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 16 deliberately broken variants are rejected.
+`validate_examples.py` also builds a complete `Review` around these two findings and a complete answer key (a v1 flaw whose fix introduced a v2 regression, one sound section with a still-valid observation, one approved decision, a v2 block), and checks that 32 deliberately broken variants are rejected (26 by the schemas, 6 by the cross-field checks the schema cannot express: ledger membership, ID cross-references, stop-reason group, v2 derivations, readiness).
 
 ## 6. Running the checks
 

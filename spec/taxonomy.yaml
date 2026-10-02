@@ -35,8 +35,8 @@ kinds:
       Praise with no doc anchor or no reason ("well written"); restatement of the design without
       assessment. A strength never carries a recommendation, a severity or a defect category.
     example: >
-      "Booking writes use a unique constraint on (room_id, slot_start), so double-booking is prevented
-      by the database rather than by application checks (§6.2, FR-3). No change needed."
+      "Every booking screen is tested against WCAG 2.2 level AA with automated checks and a manual
+      screen-reader pass (§11.3, AC-12), which directly verifies NFR-7. No change needed."
     constraints: {severity: null, category: null, disposition: [no_change]}
 
   - id: risk
@@ -53,8 +53,8 @@ kinds:
       reading (use ambiguity); untested-but-plausible claims whose truth is unknown (use
       validation_need or unresolved_assumption).
     example: >
-      "Reminder e-mails are sent by one cron worker with no lease or leader election (§9.1); if two
-      replicas run, every reminder is sent twice, contradicting FR-7 'exactly one reminder'."
+      "Room status from the estates feed is cached for 24 hours (§7.2), so a room closed for safety
+      reasons this morning stays bookable until tomorrow, contradicting FR-6 'closed rooms are never bookable'."
 
   - id: gap
     name: Gap
@@ -68,8 +68,8 @@ kinds:
       Content that exists elsewhere in the document (that is a false gap and is graded as a
       hallucination); content that is present but wrong (use risk).
     example: >
-      "The design defines no retention period for booking audit logs, although P4 commits to 'data
-      minimisation' and the logs contain student IDs (§11)."
+      "Nothing defines what happens to future bookings when a room is permanently decommissioned:
+      no reassignment rule, owner or notification to the students holding them (§5)."
 
   - id: ambiguity
     name: Ambiguity
@@ -83,8 +83,8 @@ kinds:
       Two statements that cannot both hold (use risk, category internal_contradiction); harmless
       stylistic vagueness with no effect on build or test.
     example: >
-      "FR-5 'rooms shall be available 99% of the time' does not say whether maintenance closures
-      count as unavailable or over what window availability is measured."
+      "FR-5 'a student may hold up to three bookings' does not say whether the limit is per day, per
+      week or concurrent, or whether cancelled bookings count."
 
   - id: unresolved_assumption
     name: Unresolved assumption
@@ -98,8 +98,8 @@ kinds:
       Assumptions the document explicitly lists with an owner and a closure date (affirm them or rate
       their risk instead); claims already shown false by evidence (use risk).
     example: >
-      "Decision D-4 adopts the campus SSO groups for authorisation, but open item OI-2 ('confirm the
-      registry exposes department groups') is still pending and Phase 1 depends on it."
+      "The rule 'teaching rooms are excluded during lectures' (FR-8) assumes the timetable office
+      publishes schedules nightly (A-3), but no agreement, owner or format is named."
 
   - id: validation_need
     name: Validation need
@@ -108,15 +108,14 @@ kinds:
       a test, benchmark, prototype or measurement, or an acceptance criterion that cannot verify the
       requirement it is traced to.
     include: >
-      Acceptance tests run below the required load or duration; latency claims with no benchmark;
-      requirements with no acceptance criterion; criteria that test a different path than the
-      requirement.
+      Performance or capacity claims with no measurement; requirements with no acceptance criterion;
+      criteria whose conditions differ from those the requirement specifies.
     exclude: >
       Claims that external evidence already shows to be false (use risk); claims a reviewer can
       settle by reasoning over the document (use risk or ambiguity).
     example: >
-      "AC-3 load-tests search at 50 requests/s for 5 minutes, while NFR-2 requires p95 < 300 ms at
-      200 requests/s sustained over the exam-week peak."
+      "§6.4 claims search ranks the nearest free room first, but the walking-distance model behind it
+      has never been measured on campus and no acceptance criterion covers ranking quality."
 
 # ---------------------------------------------------------------------------------------------
 # AXIS 2: defect mechanism (category). Orthogonal to kind. Drives per-category recall, the
@@ -131,11 +130,11 @@ categories:
       tables, acceptance criteria) cannot all hold at once.
     include: >
       A flow that violates a stated principle; a requirement contradicted by the mechanism meant to
-      meet it; an NFR that a stated dependency's own figures make unachievable.
+      meet it; figures in one section that make a target in another unachievable.
     exclude: >
       A conflict with an external fact (use unsupported_or_incorrect_claim or
       external_constraint_violation).
-    example: "P2 says 'no synchronous calls to the timetable service', but the booking flow in §7.3 calls it synchronously."
+    example: "§3 says bookings open 14 days ahead, but the booking API in §7.1 rejects requests more than 7 days ahead."
     default_kind: risk
     acceptable_kinds: [risk, ambiguity, gap]
 
@@ -145,12 +144,12 @@ categories:
       The design asserts a fact, figure, capability or compliance status (quantitative or not) that is
       false, or that it relies on without derivation or source, and the design depends on it.
     include: >
-      Wrong product limits stated as true; arithmetic that does not add up; "compliant with standard X"
-      when X says otherwise; capacity margins that ignore a stated reserve.
+      Stated product or standard facts that are wrong; calculations that do not add up; compliance
+      claims the cited source does not support; margins computed from the wrong inputs.
     exclude: >
       Configurations that break an external limit without the design asserting anything about the
       limit (use external_constraint_violation).
-    example: "§8 states the message broker 'retains messages for 30 days by default'; the product's documented maximum is 14 days."
+    example: "§6 states the chosen e-mail service 'has no daily sending limit'; its published plan allows 2,000 messages a day, below the 5,000 reminders sent on peak days."
     default_kind: risk
     acceptable_kinds: [risk, unresolved_assumption, validation_need]
 
@@ -160,17 +159,16 @@ categories:
       The design, as configured or specified, breaks an external constraint (law, regulation, standard,
       protocol limit, platform quota or contract term) that it does not explicitly discuss.
     include: >
-      A statutory deadline anchored to the wrong event; a protocol read larger than the protocol permits;
-      a retention setting above a platform maximum; behaviour a cited contract forbids.
+      Design choices that a law, standard, protocol, platform quota or contract term does not permit,
+      where the design is silent about that constraint.
     exclude: >
       Cases where the design states a false belief about the constraint (use
       unsupported_or_incorrect_claim); security-control omissions (use security_privacy_gap).
-    example: "Refunds are scheduled 30 days after the request, but the applicable consumer-protection rule requires 14."
+    example: "Group bookings may set any headcount up to the furniture count (30), but the room's fire-code occupancy limit is 20."
     default_kind: risk
     acceptable_kinds: [risk, gap]
     note: >
-      Added beyond the synthetic set's 8 labels because 4 of the 28 blind-item flaws (protocol limits,
-      statutory rules, platform quotas) otherwise fall into `other` (see spec/README.md, deviation D3).
+      Added beyond the original 8 mechanism labels; rationale in spec/README.md, deviation D3.
 
   - id: missing_or_unverifiable_requirement
     name: Missing or unverifiable requirement
@@ -182,7 +180,7 @@ categories:
       with no measurable threshold.
     exclude: >
       Requirements with a criterion that tests the wrong thing (use acceptance_criterion_cannot_validate).
-    example: "The goals promise accessibility for screen-reader users, but no requirement or test references any accessibility standard."
+    example: "The goals promise priority booking for students with disabilities, but no requirement defines the priority rule or how eligibility is checked."
     default_kind: gap
     acceptable_kinds: [gap, validation_need]
 
@@ -192,12 +190,11 @@ categories:
       A missing or inadequate control for confidentiality, integrity, authentication, authorisation,
       auditability, data protection or safety-relevant access.
     include: >
-      Unauthenticated endpoints exposing personal data; enumerable identifiers; plaintext protocols where a
-      standard mandates TLS; remote-access paths that bypass the stated control boundary; personal data
-      retained without a lawful basis.
+      Missing or bypassable authentication or authorisation; exposure of personal or sensitive data;
+      weak transport or key handling; data kept or shared beyond its stated purpose.
     exclude: >
       Generic advice ("add encryption") where the design already justifies its controls.
-    example: "GET /bookings/{id} needs no authentication and returns the student's name and phone number; IDs are sequential."
+    example: "Door QR codes encode a static check-in URL with no expiry, so a photographed code lets anyone check in to another student's slot."
     default_kind: gap
     acceptable_kinds: [gap, risk]
 
@@ -207,12 +204,12 @@ categories:
       The mechanism as designed behaves incorrectly or unsafely under load, concurrency, partial failure,
       retry, failover, rollback or numeric edge cases.
     include: >
-      Hot partitions; serialised queues; single points of failure; dual writes without an outbox;
-      non-idempotent retries; unbounded hold-last-state behaviour; floating-point money; rollback plans that
-      strand data.
+      Contention and throughput ceilings; single points of failure; inconsistent state after partial
+      failure; duplicate or lost work on retry; unsafe behaviour when a dependency is lost; numeric
+      precision errors; incomplete rollback or migration paths.
     exclude: >
       Capacity problems caused by a false stated limit (use unsupported_or_incorrect_claim).
-    example: "Reminder jobs retry on timeout with a new idempotency key per attempt, so a slow mail gateway produces duplicate e-mails."
+    example: "300 kiosks poll availability every second with no backoff; the single read replica in §8 is sized for 100 requests/s."
     default_kind: risk
     acceptable_kinds: [risk, gap]
 
@@ -232,9 +229,9 @@ categories:
     definition: >
       An acceptance criterion or test traced to a requirement cannot demonstrate that the requirement is
       met (wrong load, duration, path, environment or measurement).
-    include: "Tests at half load; tests of the planned path for an unplanned-failure requirement; manual checks for statistical claims."
+    include: "Tests run under weaker conditions than the requirement states (load, duration, failure type, environment); tests that inspect configuration instead of behaviour."
     exclude: "Requirements with no criterion at all (use missing_or_unverifiable_requirement)."
-    example: "AC-6 tests failover by stopping the service gracefully; NFR-4 concerns an abrupt host loss."
+    example: "AC-9 checks the no-show release rule by reading the configuration file instead of observing that an unclaimed room is released after 15 minutes."
     default_kind: validation_need
     acceptable_kinds: [validation_need, gap]
 
@@ -243,9 +240,9 @@ categories:
     definition: >
       A decision marked confirmed or a build phase marked ready depends on a backlog item, open issue or
       approval that is still pending, or that is scheduled after the work that needs it.
-    include: "Confirmed decisions resting on open items; Phase N needing an output scheduled for Phase N+1."
+    include: "Confirmed decisions or ready-marked phases resting on open items; dependencies scheduled after the work that needs them."
     exclude: "Pending items that the plan correctly sequences before their dependants."
-    example: "Phase 1 goes live with SSO-group authorisation, but confirming the group feed is backlog item B-3 scheduled for Phase 2."
+    example: "Decision D-6 commits to releasing no-show rooms after 15 minutes, but backlog item B-4 'agree the no-show policy with the student union' is still open."
     default_kind: unresolved_assumption
     acceptable_kinds: [unresolved_assumption, risk]
 
@@ -278,7 +275,7 @@ severities:
     definition: >
       A requirement, regulatory or contractual obligation will not be met as designed, or there is a
       significant security exposure or major functional failure. Fix before building the affected component.
-    example: "Refund timing breaches the applicable statutory deadline for every request."
+    example: "Group bookings can exceed a room's fire-code occupancy limit."
   - id: medium
     rank: 2
     weight_primary: 2
@@ -286,7 +283,7 @@ severities:
     definition: >
       A requirement is unmet or unverifiable, or a claim is incorrect, with bounded consequence. Fix before
       acceptance or go-live; does not invalidate the architecture.
-    example: "The availability target is unachievable by a small margin given planned maintenance windows."
+    example: "The no-show release rule cannot be verified as specified, so the utilisation objective cannot be demonstrated."
   - id: low
     rank: 1
     weight_primary: 1
@@ -294,7 +291,7 @@ severities:
     definition: >
       A weakness in clarity, governance or verification that should be fixed but does not by itself cause
       failure.
-    example: "A performance test runs for 30 minutes rather than the full peak window."
+    example: "Requirement ID FR-7 is used twice for different requirements, which confuses traceability."
 severity_rules:
   - "Severity is the expected impact if the design is built as written, not the effort to fix."
   - "kind = strength -> severity = null. Every other kind requires a severity."
@@ -335,33 +332,33 @@ dispositions:
     name: Design refinement
     definition: "Fixable now by changing the design text, with no new information needed."
     requires: [recommendation]
-    example: "Change the reminder idempotency key from per-attempt to per-reminder."
+    example: "Align the API's booking horizon in §7.1 with the 14 days stated in §3."
   - id: needs_investigation
     name: Needs investigation
     definition: "A fact must be established (documentation, vendor confirmation, legal reading) before the right change is known."
     requires: [recommendation, next_step]
-    example: "Confirm with the registry team whether department groups are exposed via SCIM."
+    example: "Confirm with the e-mail provider which plan limits apply to the university's contract."
   - id: needs_prototyping
     name: Needs prototyping or benchmark
     definition: "Feasibility or performance can only be settled by building and measuring a spike or benchmark."
     requires: [recommendation, next_step]
-    example: "Benchmark filtered vector search at the projected corpus size before committing to the index type."
+    example: "Prototype the walking-distance ranking on three buildings and compare it with observed routes."
   - id: needs_testing
     name: Needs testing
     definition: "The design may be right, but an acceptance test, chaos test or load test must demonstrate it; often paired with fixing the criterion."
     requires: [recommendation, next_step]
-    example: "Add an abrupt-host-loss failover test traced to NFR-4."
+    example: "Add a test that an unclaimed room is released 15 minutes after the slot starts."
   - id: governance_decision
     name: Needs governance decision
     definition: "Requires an accountable owner (DPO, architecture board, budget holder, regulator) to decide policy, risk acceptance or a trade-off."
     requires: [recommendation, next_step]
-    example: "The data-protection officer must decide the retention period for audit logs containing student IDs."
+    example: "The student union and the estates office must agree the no-show penalty policy."
   - id: no_change
     name: No change needed
     definition: "The design is appropriate as written; the finding records why (lab §1.4, §2.3)."
     requires: [no_change_rationale]
     forbids: [recommendation]
-    example: "The unique constraint already prevents double-booking; no change."
+    example: "Accessibility testing already verifies NFR-7 at level AA; no change."
 
 # ---------------------------------------------------------------------------------------------
 # Other enums shared across the pipeline.
