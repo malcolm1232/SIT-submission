@@ -117,6 +117,7 @@ class RunState(_State):
     created_utc: str
     prior_review_id: str | None = None
     previous_run_dir: str | None = None
+    k_index: int | None = None          # 1..k within a k-run group (REPRODUCIBILITY §8; set by RunRequest)
 
     documents: list[DocumentRef] = Field(default_factory=list)
     intent_summary: IntentSummary | None = None

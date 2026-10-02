@@ -1207,16 +1207,31 @@ class PolicyToolGateway:
         await self.inner.aclose()
 
 
-class LoggingToolGateway:
-    """Outermost layer: appends every ToolResult to ``tools.jsonl`` (redacted) and returns it."""
+#: One line per ``list_tools`` call: what the model was offered (read by ``sit-review replay``).
+TOOLS_LIST_LOG = "tools_list.jsonl"
 
-    def __init__(self, inner: ToolGateway, run_dir: RunDir, redactor: Redactor) -> None:
+
+class LoggingToolGateway:
+    """Outermost layer: appends every ToolResult to ``tools.jsonl`` (redacted) and returns it, and
+    every tool listing to ``tools_list.jsonl`` as ``{"listed_at", "tools": [{server, name,
+    description, input_schema, capability}]}`` (redacted), so a live run's research turns can be
+    replayed with the exact catalogue the model saw."""
+
+    def __init__(self, inner: ToolGateway, run_dir: RunDir, redactor: Redactor, *,
+                 clock: Clock | None = None) -> None:
         self.inner = inner
         self.writer = JsonlWriter(run_dir.tools_log)
+        self.list_writer = JsonlWriter(run_dir.root / TOOLS_LIST_LOG)
         self.redactor = redactor
+        self.clock = clock or SystemClock()
 
     async def list_tools(self) -> list[ToolSpec]:
-        return await self.inner.list_tools()
+        specs = await self.inner.list_tools()
+        self.list_writer.append(self.redactor.deep({
+            "listed_at": isoformat_z(self.clock.now_utc()),
+            "tools": [{"server": t.server, "name": t.name, "description": t.description,
+                       "input_schema": t.input_schema, "capability": t.capability} for t in specs]}))
+        return specs
 
     async def call(self, tool_name: str, args: dict[str, Any], *, phase: PhaseName | None = None) -> ToolResult:
         res = await self.inner.call(tool_name, args, phase=phase)
@@ -1256,4 +1271,4 @@ def build_tool_gateway(config: EffectiveConfig, run_dir: RunDir, *, clock: Clock
     if resume_offset is not None:
         gw = SelfReplayGateway(gw, run_dir, upto_offset=resume_offset)
     gw = PolicyToolGateway(gw, config, redactor, clock=clock, progress=progress)
-    return LoggingToolGateway(gw, run_dir, redactor)
+    return LoggingToolGateway(gw, run_dir, redactor, clock=clock)

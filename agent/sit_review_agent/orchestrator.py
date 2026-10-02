@@ -139,6 +139,7 @@ class RunRequest:
     mode: RunMode = "dev"
     plan_only: bool = False
     run_id: str | None = None
+    k_index: int | None = None            # 1..k within a k-run group; recorded as manifest extra.k_index
 
 
 @dataclass(frozen=True)
@@ -204,7 +205,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      review_mode=ReviewMode.DELTA if len(refs) > 1 else ReviewMode.FULL,
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
-                     documents=refs)
+                     k_index=request.k_index, documents=refs)
     ctx: RunContext | None = None
     warm: asyncio.Task[None] | None = None
     try:
@@ -280,7 +281,7 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
         old = RunState.model_validate(_json.loads(rd.state.read_text(encoding="utf-8")))
         state = RunState(run_id=old.run_id, mode=old.mode, review_mode=old.review_mode, created_utc=old.created_utc,
                          prior_review_id=old.prior_review_id, previous_run_dir=old.previous_run_dir,
-                         documents=old.documents)
+                         k_index=old.k_index, documents=old.documents)
         truncate_journal(rd.ledger_journal, 0)
         ledger_upto = 0
         start_at: PhaseName | None = PhaseName.INGEST

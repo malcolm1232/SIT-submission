@@ -37,7 +37,7 @@ class ConsoleProgress:
     """Prints progress lines to ``stream`` and mirrors them to ``log_path`` (``progress.log``)."""
 
     clock: Clock = field(default_factory=SystemClock)
-    stream: TextIO = sys.stderr
+    stream: TextIO = field(default_factory=lambda: sys.stderr)   # read at construction, not import
     log_path: Path | None = None
     events: list[ProgressEvent] = field(default_factory=list)
     _t0: float | None = None

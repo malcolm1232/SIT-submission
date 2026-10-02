@@ -310,7 +310,8 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
         except ConfigError:
             sched_id = Path(cfg.agent.fault_schedule).stem
     extra = ManifestExtra(
-        mode=st.mode, previous_run_id=Path(st.previous_run_dir).name if st.previous_run_dir else None,
+        mode=st.mode, k_index=st.k_index,
+        previous_run_id=Path(st.previous_run_dir).name if st.previous_run_dir else None,
         doc=doc_extra,
         code={"git_commit": git["commit"], "git_branch": git["branch"], "git_dirty": git["dirty"],
               "package_lock_sha256": _file_sha(lock) if lock else None,

@@ -40,11 +40,13 @@ CAPABILITY_NONE = "none"
 
 
 def enabled_capabilities(ctx: RunContext) -> list[str]:
-    """Capabilities whose server is enabled, in config order; none for a doc-only run."""
+    """Capabilities whose server is enabled, sorted by name (so the plan prompt does not depend on
+    the order of ``tools.capabilities``: ``effective_config.json`` is written with sorted keys and
+    replay rebuilds the config from it); none for a doc-only run."""
     if ctx.tools is None:
         return []
     out = []
-    for cap, server in ctx.config.tools.capabilities.items():
+    for cap, server in sorted(ctx.config.tools.capabilities.items()):
         s = ctx.config.tools.server(server)
         if s is not None and s.enabled and cap != CAPABILITY_NONE:
             out.append(cap)

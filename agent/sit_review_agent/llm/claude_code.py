@@ -70,6 +70,7 @@ from sit_review_agent.llm.gateway import (
     LLMResult,
     ToolUse,
     Usage,
+    log_unsent,
     request_sha256,
 )
 from sit_review_agent.llm.runtime import (
@@ -243,6 +244,15 @@ class _Conversation:
     @property
     def started(self) -> bool:
         return self.session_uuid is not None
+
+
+class _Unsent(Exception):
+    """Internal: ``error`` ends the call before attempt ``attempt`` was made (logged ``sent: false``)."""
+
+    def __init__(self, error: LLMError, attempt: int = 0) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.attempt = attempt
 
 
 class _AttemptFailed(Exception):
@@ -559,24 +569,38 @@ class ClaudeCodeGateway:
         deadline and a cut attempt is not retried (LLM-05), and connection errors on the first call
         of the run are retried only within ``llm.first_call_network_window_s`` (NET-02)."""
         self._guard.check(request)
-        check_context(self.runtime, request, model=self.model, native_pdf=False)
-        first = self._net.start_call()
         call_id = self.next_call_id()
+        try:
+            return await self._call(request, call_id)
+        except _Unsent as u:
+            u.error.call_id = u.error.call_id or call_id
+            log_unsent(self.log, request, call_id, u.error, attempt=u.attempt, backend=BACKEND)
+            raise u.error from None
+
+    async def _call(self, request: LLMRequest, call_id: str) -> LLMResult[Any]:
+        try:
+            check_context(self.runtime, request, model=self.model, native_pdf=False)
+        except LLMError as exc:
+            raise _Unsent(exc) from None
+        first = self._net.start_call()
         phase = request.phase.value
         conv = self._conversations.get(request.conversation_id)
         if conv is None:
             conv = _Conversation()
             self._conversations[request.conversation_id] = conv
-        new_turns = self._new_turns(request, conv)
+        try:
+            new_turns = self._new_turns(request, conv)
+        except LLMError as exc:
+            raise _Unsent(exc) from None
         prompt, pdf_dropped = self.render_user_turns(new_turns)
 
         system_text = self.system_text(request)
         schema_json = json.dumps(self.schema(request), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         for label, value in (("system prompt", system_text), ("JSON schema", schema_json)):
             if len(value) > MAX_ARGV_TEXT_CHARS:
-                raise LLMBadRequestError(f"{label} is {len(value)} characters; the Claude Code backend passes it "
-                                         f"on argv and accepts at most {MAX_ARGV_TEXT_CHARS}",
-                                         call_id=call_id, phase=phase)
+                raise _Unsent(LLMBadRequestError(f"{label} is {len(value)} characters; the Claude Code backend "
+                                                 f"passes it on argv and accepts at most {MAX_ARGV_TEXT_CHARS}",
+                                                 call_id=call_id, phase=phase))
         req_hash = request_sha256({"backend": BACKEND, "model": self.model, "system": request.system,
                                    "messages": request.messages, "tools": request.tools, "effort": request.effort,
                                    "max_tokens": request.max_tokens})
@@ -593,8 +617,7 @@ class ClaudeCodeGateway:
             try:
                 timeout_s, cut = attempt_timeout(self.runtime, request.phase, self.timeout_s)
             except LLMDeadlineError as exc:
-                exc.call_id = call_id
-                raise
+                raise _Unsent(exc, attempt) from None
             attempt_uuid = str(uuid.uuid4())
             argv = self.build_argv(request, system_text=system_text, schema_json=schema_json,
                                    session_uuid=attempt_uuid, resume_from=conv.session_uuid)
@@ -624,8 +647,8 @@ class ClaudeCodeGateway:
                         raise self._net.error(fail.error, attempt + 1) from None
                     if not retry_allowed(self.runtime, request.phase, delay):
                         assert self.runtime is not None and self.runtime.deadline is not None
-                        raise self.runtime.deadline.no_time(request.phase, after=type(fail.error).__name__,
-                                                            call_id=call_id) from None
+                        raise _Unsent(self.runtime.deadline.no_time(request.phase, after=type(fail.error).__name__,
+                                                                    call_id=call_id), attempt + 1) from None
                     if self.progress is not None:
                         self.progress.emit(phase, f"{type(fail.error).__name__} on {call_id}; retry "
                                                   f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")

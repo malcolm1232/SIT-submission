@@ -274,6 +274,22 @@ class LLMCallLog:
         return self.writer.append(redact_log_entry(entry, self.redactor))
 
 
+def log_unsent(log: LLMCallLog | None, request: LLMRequest, call_id: str | None, exc: BaseException, *,
+               attempt: int = 0, backend: str | None = None) -> None:
+    """Log an error raised before an attempt was made (nothing was sent): a run-limit refusal
+    (``LLMDeadlineError``, ``LLMContextTooLongError``) or a request the gateway rejects itself.
+    ``sit-review replay`` reads these entries, so a replayed run raises the same error at the
+    same call. ``sent: false`` marks them."""
+    if log is None:
+        return
+    entry: dict[str, Any] = {"call_id": call_id, "phase": request.phase.value, "purpose": request.purpose,
+                             "conversation_id": request.conversation_id, "attempt": attempt,
+                             "outcome": type(exc).__name__, "error": str(exc)[:500], "sent": False}
+    if backend is not None:
+        entry["backend"] = backend
+    log.log(entry)
+
+
 class EffortGuard:
     """Enforces one effort level per conversation (ADR-002 option a)."""
 
@@ -608,11 +624,16 @@ class AnthropicGateway:
         from sit_review_agent.errors import LLMConnectionError, LLMDeadlineError
 
         self._guard.check(request)
-        check_context(self.runtime, request, model=self.model)
-        first = self._net.start_call()
         call_id = self.next_call_id()
         phase = request.phase.value
-        body = self.build_body(request)
+        try:
+            check_context(self.runtime, request, model=self.model)
+            body = self.build_body(request)
+        except LLMError as exc:
+            exc.call_id = exc.call_id or call_id
+            log_unsent(self.log, request, call_id, exc, backend=_ANTHROPIC_BACKEND)
+            raise
+        first = self._net.start_call()
         logged_body, pdf_hashes = strip_pdf_bytes(body)
         req_hash = sha256_json(logged_body)
         attempts: list[LLMAttempt] = []
@@ -623,6 +644,7 @@ class AnthropicGateway:
                 timeout_s, cut = attempt_timeout(self.runtime, request.phase, self.timeout_s)
             except LLMDeadlineError as exc:
                 exc.call_id = call_id
+                log_unsent(self.log, request, call_id, exc, attempt=attempt, backend=_ANTHROPIC_BACKEND)
                 raise
             started_at = isoformat_z(self.clock.now_utc())
             t0 = self.clock.monotonic()
@@ -665,8 +687,10 @@ class AnthropicGateway:
                         raise self._net.error(err, attempt + 1) from None
                     if not retry_allowed(self.runtime, request.phase, delay):
                         assert self.runtime is not None and self.runtime.deadline is not None
-                        raise self.runtime.deadline.no_time(request.phase, after=type(err).__name__,
-                                                            call_id=call_id) from None
+                        late = self.runtime.deadline.no_time(request.phase, after=type(err).__name__,
+                                                             call_id=call_id)
+                        log_unsent(self.log, request, call_id, late, attempt=attempt + 1, backend=_ANTHROPIC_BACKEND)
+                        raise late from None
                     if self.progress is not None:
                         self.progress.emit(phase, f"{type(err).__name__} on {call_id}; retry "
                                                   f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")
@@ -869,8 +893,13 @@ class FakeGateway:
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         self._guard.check(request)
-        check_context(self.runtime, request, model=self.model)
-        attempt_timeout(self.runtime, request.phase, float("inf"))      # raises LLMDeadlineError without time
+        try:
+            check_context(self.runtime, request, model=self.model)
+            attempt_timeout(self.runtime, request.phase, float("inf"))  # raises LLMDeadlineError without time
+        except LLMError as exc:
+            exc.call_id = self.next_call_id()
+            log_unsent(self.log, request, exc.call_id, exc)
+            raise
         self.calls.append(request)
         call_id = self.next_call_id()
         queue = self.script.get(str(request.phase))
@@ -1027,7 +1056,12 @@ class FaultInjectingLLMGateway:
         )
         from sit_review_agent.tools import fault_apply as fa
 
-        check_context(self.runtime, request, model=str(getattr(self.inner, "model", "")))
+        try:
+            check_context(self.runtime, request, model=str(getattr(self.inner, "model", "")))
+        except LLMError as exc:
+            exc.call_id = self._terminal_call_id()
+            log_unsent(getattr(self.inner, "log", None), request, exc.call_id, exc)
+            raise
         net = self._net
         first = net.start_call()
         t_call = self.clock.monotonic()
@@ -1072,7 +1106,12 @@ class FaultInjectingLLMGateway:
             if spec is None:
                 return self._with_injected(await self.inner.call(request), injected)
             kind = spec if isinstance(spec, str) else spec.type.value
-            attempt_s, cut = attempt_timeout(self.runtime, request.phase, timeout_s)
+            try:
+                attempt_s, cut = attempt_timeout(self.runtime, request.phase, timeout_s)
+            except LLMError as exc:
+                exc.call_id = self._terminal_call_id()
+                log_unsent(log, request, exc.call_id, exc, attempt=attempt)
+                raise
             t_attempt, started_attempt = self.clock.monotonic(), isoformat_z(self.clock.now_utc())
             status_code: int | None = None
             err: LLMError

@@ -265,12 +265,41 @@ def _parse_sections(text: str, pages: list[Page]) -> list[Section]:
         if empty_body and any(h[1] == num for h in heads[i + 1:]):
             continue
         kept.append((start, num, title))
+    kept = _drop_list_items(kept)
     out: list[Section] = []
     for i, (start, num, title) in enumerate(kept):
         end = kept[i + 1][0] if i + 1 < len(kept) else len(text)
         out.append(Section(order=i, section_id=num, heading=title.rstrip("."), level=num.count(".") + 1,
                            char_start=start, char_end=end, page_start=_page_of(pages, start),
                            page_end=_page_of(pages, max(start, end - 1))))
+    return out
+
+
+def _sentence_like(title: str) -> bool:
+    """A numbered line that reads like a list item rather than a heading: long, or a full sentence."""
+    t = title.strip()
+    return len(t) > 80 or t.endswith(".") or ": " in t or "; " in t
+
+
+def _drop_list_items(heads: list[tuple[int, str, str]]) -> list[tuple[int, str, str]]:
+    """Drop numbered list items that the heading pattern also matches (``1. Register ...`` inside
+    section 13). Section numbers only go forward: a top-level number lower than the current one is
+    a list item, and so is a sub-section whose top-level part is lower than the current one. A
+    top-level number that repeats later (a list item ``4.`` inside section 3, then the real
+    ``4 Heading``) keeps the candidate that reads like a heading when exactly one of them does."""
+    out: list[tuple[int, str, str]] = []
+    cur = 0
+    for i, (start, num, title) in enumerate(heads):
+        parts = num.split(".")
+        top = int(parts[0])
+        if top < cur:
+            continue
+        if len(parts) == 1 and top > cur and _sentence_like(title):
+            later = [t for _, n, t in heads[i + 1:] if n == num]
+            if later and not all(_sentence_like(t) for t in later):
+                continue                               # the real heading with this number comes later
+        out.append((start, num, title))
+        cur = top
     return out
 
 
