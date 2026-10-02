@@ -68,3 +68,68 @@ The test resolves the recorded PDF path from the working directory; from the rep
 | M14 | estimate kept apart from measured usage | caught |
 
 `git status` was clean after the run.
+
+# Edit log, part 2: the config keys of W0
+
+Date: 2026-10-03 (Singapore time; clock read 2026-10-02 21:58 UTC).
+Worker: a second fresh-context agent session (`claude-fable-5-1`), same branch and worktree, base `da3907c`.
+Every document and config file was read with the Read tool, one file per call; no Bash call bundled a config file with anything else, and the refused call of part 1 was not resent.
+
+Isolation: nothing under `eval/blind/` was opened or listed; `docs/transcripts/session3_coordinator.md` was not read; no `llm.jsonl` was opened.
+No model call and no agent run was made.
+`models.py`, `spec/`, prompts, the gateway, the orchestrator, replay and the manifest were not changed; the two renames in `llm/runtime.py` and `phases/research.py` are the attribute rename the brief asked for, nothing else.
+
+## Edits
+
+| # | File | What changed | Why |
+|---|---|---|---|
+| 1 | `agent/sit_review_agent/config.py` | `AssessShard`, `AssessSettings` (`shards`, `shards_for`, `grouped_criteria`), `AgentConfig.assess` (required); `StageLimits` and `StopRulesConfig.stage_limits_s` (required), `stage_limits_problem()`; `refine_reserve_seconds` replaces `assess_reserve_seconds`; `RENAMED_STOP_RULE_KEYS` and `_refuse_renamed_keys` (a before-validator on `StopRulesConfig` plus a per-file check in `load_config`); unknown shard criteria checked in `EffectiveConfig._cross_file`; the deadline fit checked in `load_config` before overrides. | Design section 5, first row; brief items 1 to 3. |
+| 2 | `config/agent.yaml` | `claude_code.extra_args: ["--setting-sources", ""]` with its comment (unverified in a cloud session); new `assess.shards` block with the four groups. Lines 1-12 unchanged. | Brief items 1 and 4. |
+| 3 | `config/stop_rules.yaml` | `assess_reserve_seconds` line becomes `refine_reserve_seconds: 600`; new `stage_limits_s: 2820 / 3420 / 3540` with the comment on why absolute seconds. Lines 1-8 unchanged. | Brief items 2 and 3. |
+| 4 | `config/profiles/demo.yaml` | `refine_reserve_seconds: 200` (value as before); `stage_limits_s: 265 / 465 / 530`; note that the design's 75 s report reserve lands with W1. Lines 19-24 and 27 unchanged. | Brief items 2 and 3. |
+| 5 | `agent/sit_review_agent/llm/runtime.py`, `phases/research.py` | Attribute rename only (`sr.refine_reserve_seconds`), docstrings and comments with it. | Brief item 2: every file that used the old key. |
+| 6 | `tests/test_config.py` | 20 tests in the "latency redesign W0" block (shards, own shard, five shard errors, zero groups, rename, old key in base and profile, limits per profile, four limit errors and one range error, inheritance, CLI deadline below limits, hermetic argv). | Failing first (19 failures, one trivially green case sharpened to `greater than or equal to 1`), then green. |
+| 7 | `tests/test_runtime_policies.py`, `test_research_phase.py`, `test_cli_kruns.py`, `test_config_layout.py` | Key rename; the 321 s test profiles get their own `stage_limits_s` (150 / 270 / 310), because inherited base limits above a lowered deadline are now refused. | Brief item 2; the new validation. |
+| 8 | `tests/test_config_profiles.py` | Same 321 s profiles. | Same. |
+| 9 | `tests/test_cli_replay.py` | The committed-run test passes `--pdf` as an absolute path (the cwd fix of brief item 6) and is re-targeted: the record is refused by name with exit 2 (see "Finding" below). | Brief item 6 and the consequence of item 2. |
+| 10 | `agent/README.md`, `tests/robustness/README.md`, `config/profiles/README.md` | Interface-change note with every key and its readers; the key rename where the runtime policy is described; profile rules. | Freeze rule. |
+
+## Finding: the committed measurement record no longer validates
+
+`replay.recorded_config` validates `docs/live_runs/demo_profile_measure_1/effective_config.json` through `EffectiveConfig.model_validate`.
+That record carries `assess_reserve_seconds` and lacks `assess.shards` and `stage_limits_s`, so under this commit it is refused ("not a valid effective config", the renamed key named, exit 2, no traceback), as replay already refuses a run whose prompts changed.
+The three ways to keep it replaying were all outside this brief: a legacy translation in `replay.py` (item 7 forbids replay changes), editing the record (a measurement artefact), or a silent default or mapping in the model (item 2 forbids it).
+The record replays at its own commit `2d84f59`; the design (section 6) already lists its replay as stale once W2 changes the prompts, and the demo backup is recorded with the final code (section 8).
+The crash that test guarded is pinned by `test_a_recorded_usage_dict_never_reaches_the_error_constructor`.
+
+## Design choices
+
+- The deadline fit of the stage limits is a file-level rule in `load_config`, not a model invariant: pydantic 2.13 re-validates a `model_copy(update=...)` instance when it is passed to `EffectiveConfig`, so a model invariant would also refuse a legitimate `--deadline 300` override and any recorded dump of such a run. `--deadline` keeps today's contract (applied after validation, announced by the runtime).
+- `stage_limits_s` lives in `stop_rules.yaml` beside the reserves it is derived from (base: 3600 - 180 - 600, 3600 - 180, 3600 - 60), so one file holds the whole clock.
+- The old key is checked twice on purpose: the per-file check names the profile that holds it; the model check covers any other route (a recorded dump).
+- The reserve values of the demo profile (120 s and 200 s) are unchanged: the design's 200 s and 75 s pair belongs with W1, which makes the limits the reader; changing it now would change the live demo behaviour of the current runtime.
+
+## Gates
+
+See the report section "Gates at the config commit" in `docs/transcripts/session4/latency_w0.md`.
+
+## Mutations (`cp` backup, restore checked by md5 before and after)
+
+| # | Guard removed | Result |
+|---|---|---|
+| M1 | empty group | caught |
+| M2 | criterion twice in one group | caught |
+| M3 | zero groups | caught |
+| M4 | group name twice | caught |
+| M5 | criterion in two groups | caught |
+| M6 | unknown criterion | caught |
+| M7 | ungrouped criterion forms its own shard | caught |
+| M8 | group restricted to the run's criteria | caught |
+| M9 | limits increasing | caught |
+| M10 | limits below the deadline | caught |
+| M11 | old key refused (model) | caught |
+| M12 | old key refused (profile names its file) | caught |
+| M13 | deadline fit checked at load | caught |
+| M14 | hermetic `extra_args` in `agent.yaml` | caught |
+
+`config.py` and `agent.yaml` had the same md5 before and after the run.
