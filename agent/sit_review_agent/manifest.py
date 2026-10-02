@@ -76,7 +76,9 @@ UNKNOWN_COMMIT = "0000000"
 
 def git_state(root: Path | None = None, *, check_dirty: bool = False) -> dict[str, Any]:
     """``{commit, branch, dirty}`` from the ``.git`` directory (no subprocess unless
-    ``check_dirty``). ``dirty`` is ``None`` when not checked."""
+    ``check_dirty``). ``branch`` is the full branch name (``s4/demo``), ``None`` on a detached
+    HEAD; ``commit`` is ``None`` without a readable ``.git``. ``dirty`` is ``None`` when not
+    checked or when ``git`` cannot be run (missing binary, not a repository)."""
     root = root or repo_root()
     gitdir = root / ".git"
     out: dict[str, Any] = {"commit": None, "branch": None, "dirty": None}
@@ -86,7 +88,7 @@ def git_state(root: Path | None = None, *, check_dirty: bool = False) -> dict[st
         head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
         if head.startswith("ref:"):
             ref = head.split(":", 1)[1].strip()
-            out["branch"] = ref.rsplit("/", 1)[-1]
+            out["branch"] = ref.removeprefix("refs/heads/")      # full name: "s4/demo", not "demo"
             common = gitdir
             cd = gitdir / "commondir"
             if cd.is_file():
