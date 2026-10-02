@@ -10,10 +10,13 @@ reject_added_query_strings: true  # block query strings that were not in the sou
 # Source authority (tools.sources.classify_authority; spec/taxonomy.yaml source_authority).
 # Moved here from agent/sit_review_agent/tools/sources.py (robustness OVF-07). Entries are a domain
 # (subdomains match) or domain/path-prefix. Keep them domain-general: no host taken from an evaluated
-# document's own technology stack (three such hosts from the SIT sample's stack were removed on
-# 2026-10-02: research/audit/runtime_policies_editlog.md; scripts/leakage_grep.py checks). Order of
-# checks: informal, secondary (and any /blog path or blog. host), standards and government hosts,
-# preprint, peer_reviewed, vendor_docs and docs_prefixes; anything else is informal.
+# document's own technology stack. Removed for that reason: three hosts from the SIT sample's stack
+# (2026-10-02, research/audit/runtime_policies_editlog.md) and two vendor hosts, with one vendor blog
+# path, that came from a synthetic eval item (2026-10-03, research/audit/verify_runtime_cli_editlog.md).
+# They are not named here: scripts/leakage_grep.py lists them (KNOWN_SAMPLE_STRINGS) and fails if one
+# comes back. Such a vendor's pages are still classed by the general rules (a docs. host, a /blog path).
+# Order of checks: informal, secondary (and any /blog path or blog. host), standards and government
+# hosts, preprint, peer_reviewed, vendor_docs and docs_prefixes; anything else is informal.
 authority:
   standards:  # standards bodies, regulators, intergovernmental organisations -> primary_official
     ["iso.org", "iec.ch", "ietf.org", "rfc-editor.org", "w3.org", "nist.gov", "etsi.org", "itu.int",
@@ -29,9 +32,9 @@ authority:
      "postgresql.org", "python.org", "docs.python.org", "apache.org", "redis.io", "nginx.org", "mongodb.com",
      "elastic.co", "docker.com", "hashicorp.com", "terraform.io", "openai.com", "anthropic.com",
      "docs.anthropic.com", "platform.claude.com", "code.claude.com", "azure.microsoft.com", "aws.amazon.com",
-     "cloudflare.com", "stripe.com", "twilio.com", "mysql.com", "sqlite.org", "nodejs.org", "rust-lang.org",
+     "cloudflare.com", "twilio.com", "mysql.com", "sqlite.org", "nodejs.org", "rust-lang.org",
      "go.dev", "golang.org", "java.com", "openjdk.org", "spring.io", "djangoproject.com",
-     "fastapi.tiangolo.com", "pydantic.dev", "snowflake.com", "databricks.com", "confluent.io", "grafana.com",
+     "fastapi.tiangolo.com", "pydantic.dev", "snowflake.com", "databricks.com", "grafana.com",
      "prometheus.io"]
   peer_reviewed:  # publishers, indexes of peer-reviewed work, proceedings -> peer_reviewed
     ["doi.org", "dl.acm.org", "acm.org", "ieeexplore.ieee.org", "ieee.org", "springer.com",
@@ -51,7 +54,7 @@ authority:
      "lwn.net", "oreilly.com", "highscalability.com", "brendangregg.com", "netflixtechblog.com",
      "engineering.fb.com", "engineering.atspotify.com", "blog.cloudflare.com", "aws.amazon.com/blogs",
      "cloud.google.com/blog", "techcommunity.microsoft.com", "devblogs.microsoft.com", "github.blog",
-     "uber.com/blog", "dropbox.tech", "slack.engineering", "stripe.com/blog", "gartner.com", "forrester.com",
+     "uber.com/blog", "dropbox.tech", "slack.engineering", "gartner.com", "forrester.com",
      "mckinsey.com", "iapp.org", "lexology.com", "jdsupra.com"]
   informal:  # forums, Q&A, self-publishing and content platforms -> informal (checked first)
     ["medium.com", "dev.to", "stackoverflow.com", "stackexchange.com", "serverfault.com", "superuser.com",

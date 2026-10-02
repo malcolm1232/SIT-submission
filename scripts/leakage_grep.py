@@ -24,7 +24,8 @@ What counts as a term (prereg LC10, MR §3.2 steps 1-3), from each source docume
 * numbers with units (``2,000 messages``, ``250 ms``); reported, but only gating with ``--strict``
   (generic timeouts in code look the same);
 * the known sample-stack strings :data:`KNOWN_SAMPLE_STRINGS` (hosts that came from the SIT
-  sample's stack and were removed from the agent's authority list, 2026-10-02);
+  sample's stack or from a synthetic eval item and were removed from the agent's authority list,
+  2026-10-02 and 2026-10-03);
 * 13-word overlaps between a source document and a scanned file (any overlap is a hit); the longest
   overlap of 8 or more words is reported per file.
 
@@ -55,15 +56,16 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 BLIND = "eval/blind"
 
-#: Strings from the SIT sample's own stack that once sat in agent code (robustness OVF-07 finding).
-KNOWN_SAMPLE_STRINGS = ("github.com/pgvector", "pgvector.dev", "kafka.apache.org")
+#: Strings from an evaluated document's own stack that once sat in agent code or config (robustness
+#: OVF-07 finding): three hosts from the SIT sample, then two from the payments synthetic eval item
+#: (removed from config/url_policy.yaml on 2026-10-03). A hit on any of them fails the gate.
+KNOWN_SAMPLE_STRINGS = ("github.com/pgvector", "pgvector.dev", "kafka.apache.org", "stripe.com", "confluent.io")
 
 #: Hits reviewed and resolved as generic (term -> reason); ``--allow FILE`` adds more. Reviewed
 #: 2026-10-02 against the three eval/synthetic items; each is a general word or name, not item content.
+#: ("stripe" was resolved here until 2026-10-03; the host is now removed instead, so a hit fails.)
 DEFAULT_RESOLVED = {
     "apache": "apache.org, the Apache Software Foundation's documentation host (authority list)",
-    "stripe": "stripe.com, a general payments vendor's documentation host (authority list); the payments item "
-              "also names the vendor, which the list does not help review",
     "scholar": "Google Scholar, a scholarly index (authority list)",
     "government": "generic word (government hosts in the authority rules)",
     "platforms": "generic word (content platforms)",

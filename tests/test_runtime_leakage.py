@@ -79,7 +79,8 @@ def test_thirteen_word_overlap_is_a_hit(lg: ModuleType, tmp_path: Path) -> None:
 
 def test_known_sample_hosts_and_blind_refusal(lg: ModuleType, tmp_path: Path) -> None:
     terms = lg.extract_terms([])
-    assert {"github.com/pgvector", "pgvector.dev", "kafka.apache.org"} <= set(terms)
+    assert {"github.com/pgvector", "pgvector.dev", "kafka.apache.org", "stripe.com", "confluent.io"} <= set(terms)
+    assert "stripe" not in lg.DEFAULT_RESOLVED                    # removed from the list, not excused
     with pytest.raises(lg.UsageError, match="eval/blind"):
         lg.load_sources(["eval/blind/item/answer_key.json"], [], [])   # refused before any read
     assert lg.main(["--keys", "eval/blind/x.json", "--docs", ""]) == 2

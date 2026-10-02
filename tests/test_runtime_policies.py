@@ -70,6 +70,8 @@ from sit_review_agent.tools.faults import FaultSchedule, load_fault_schedule
 A = PhaseName.ASSESS
 REQ = httpx2.Request("POST", "https://api.anthropic.invalid/v1/messages")
 SAMPLE_HOSTS = ("github.com/pgvector", "pgvector.dev", "kafka.apache.org")
+#: Hosts that came from the payments synthetic eval item (removed 2026-10-03: fitting the tool to the test set).
+EVAL_ITEM_HOSTS = ("stripe.com", "stripe.com/blog", "confluent.io")
 
 
 # ============================================================================= helpers
@@ -615,6 +617,13 @@ def test_authority_hosts_come_from_config_without_the_sample_stack() -> None:
     hosts = default_authority_hosts()
     listed = {h for name in AuthorityHosts.model_fields for h in getattr(hosts, name)}
     assert hosts.vendor_docs and hosts.standards and not set(SAMPLE_HOSTS) & listed
+    assert not [h for h in listed if "stripe" in h or "confluent" in h], "eval-item hosts are back in the list"
+    assert not set(EVAL_ITEM_HOSTS) & listed
+    # no vendor-specific entry: only the general rules class these hosts (a docs. host, a /blog path)
+    assert classify_authority("https://stripe.com/payments") is SourceAuthority.INFORMAL
+    assert classify_authority("https://www.confluent.io/product") is SourceAuthority.INFORMAL
+    assert classify_authority("https://docs.stripe.com/api") is SourceAuthority.PRIMARY_OFFICIAL
+    assert classify_authority("https://stripe.com/blog/a-post") is SourceAuthority.SECONDARY
     assert classify_authority("https://www.iso.org/standard/1") is SourceAuthority.PRIMARY_OFFICIAL
     assert classify_authority("https://pgvector.dev/docs") is SourceAuthority.INFORMAL
     custom = AuthorityHosts(vendor_docs=["vendor.example"])
