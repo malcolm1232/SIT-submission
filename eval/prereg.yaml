@@ -607,7 +607,10 @@ stop_rule:
     lower-bound median over all FULL runs exceeds the threshold (a median can only rise as unknown
     costs are filled in); pass only if every FULL run is fully accounted (costs.usage_completeness)
     and the median is at or below the threshold; otherwise not_evaluable. A lower bound can fail
-    the check but never pass it.
+    the check but never pass it. A dropped run is a run of unknown cost: when any FULL scores file
+    (or one whose condition cannot be read) is left out of the aggregate (judge budget stop,
+    unreadable, schema-invalid, incomplete), the check is not_evaluable and the dropped files are
+    listed with their reasons.
   time_stop: >-
     If two days before submission Tier A is incomplete, stop, analyse what exists, and
     report the missing cells; never substitute other runs for missing ones.

@@ -120,6 +120,9 @@ Any other run has `cost_usd`, `input_tokens`, `output_tokens` and `cached_tokens
 `runs_with_unrecorded_usage` is the intention-to-treat share of runs with any cut call; `runs_with_unknown_usage_completeness` stands beside it.
 A `scores.json` written before the ruling (cost present, no completeness) aggregates as unknown.
 The top-level `pilot_checkpoint` is the prereg `stop_rule.pilot_checkpoint` on the FULL runs against `costs.per_run_usd.heavy_case_FULL`: `fail` if the lower-bound median over all FULL runs exceeds the threshold, `pass` only if every FULL run is fully accounted and the median is at or below it, else `not_evaluable`; a lower bound can fail the check but never pass it.
+`sit-eval aggregate` drops a scores file whose scoring the judge budget stopped before any statistic (`judge_budget_stop`), one it cannot read as JSON (`unreadable`), one that is not a scores object with a schema status, the `inputs` identity fields and a `metrics` object (`schema_invalid`), and one with no statistic (`incomplete`); the check is structural rather than the full schema, so a scores file written before a later schema field still aggregates.
+Every dropped file is listed in the top-level `dropped_inputs` with its reason, detail and condition (`null` when it cannot be read), in the warnings, and on stderr.
+A dropped run is a run of unknown cost (SIT FABLE ruling #29): when any dropped file is a FULL run, or of unknown condition, `pilot_checkpoint` is `not_evaluable` and its own `dropped_inputs` names those files; a dropped file of another condition is listed but does not affect the checkpoint.
 The first live run's manifest predates the field and its `llm.jsonl` is not in the repository, so its $3.68 is reported as a lower bound of unknown completeness.
 
 ## Cost of scoring one review (first live run: 20 findings, 14 v1 flaws, 80 location-overlap pairs)

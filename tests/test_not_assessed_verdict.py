@@ -230,7 +230,8 @@ def test_harness_loads_flags_and_does_not_credit_a_not_assessed_review(tmp_path:
     placeholder["verdict"]["label"] = "not_fit"
     assert verdict_present(placeholder) is True
     assert "intention-to-treat" in NOT_ASSESSED_NOTE
-    scores = {"kind": "sit_eval.scores", "status": "pilot_unfrozen", "inputs": {"verdict_label": NOT_ASSESSED}}
+    scores = {"kind": "sit_eval.scores", "status": "pilot_unfrozen", "metrics": {"recall": {"value": None}},
+              "inputs": {"verdict_label": NOT_ASSESSED, "item_id": "doc", "doc_version": "v1", "run_id": "r1"}}
     p = tmp_path / "scores.json"
     p.write_text(json.dumps(scores), encoding="utf-8")
     rows, warnings = load_scores([p])

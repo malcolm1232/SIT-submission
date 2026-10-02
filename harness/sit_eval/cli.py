@@ -245,6 +245,13 @@ def aggregate_cmd(
         _fail(f"refusing to aggregate: {exc}")
     for line in lc12.notes(exploratory, prereg_frozen=frozen):
         typer.echo(line, err=True)
+    dropped = res["dropped_inputs"]
+    if dropped:   # ruling #29: each dropped file is a run of unknown cost, listed with its reason
+        typer.echo(f"{len(dropped)} scores file{'s' if len(dropped) != 1 else ''} dropped from the aggregate "
+                   "(counted as missing, each a run of unknown cost):", err=True)
+        for d in dropped:
+            typer.echo(f"  {d['path']} ({d['reason']}, condition {d['condition'] or 'unknown'}): {d['detail']}",
+                       err=True)
     cp = res["pilot_checkpoint"]
     limit = f"${cp['threshold_usd']:g}" if cp["threshold_usd"] is not None else "no threshold"
     typer.echo(f"pilot checkpoint ({cp['condition']} cost median vs {limit}): {cp['verdict']} - {cp['reason']}",

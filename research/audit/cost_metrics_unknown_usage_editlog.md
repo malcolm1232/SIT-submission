@@ -105,3 +105,46 @@ Two both-sides-added conflicts: `docs/USER_DECISIONS.md` (section #27 from main,
 
 M1 (legacy rule ignores `status_code`) killed, 1 test; M3 (manifest field ignored) killed, 10; M5 (metric keeps the cost on an incomplete run) killed, 7; M7 (checkpoint passes on a lower bound) killed, 3; M9 (schema allows a cost figure) killed, 1.
 Each by `cp` backup, one substitution, the builder's test file, restore, `cmp` equal.
+
+## Session 4 dropped-run guard
+
+Date: 2026-10-03 (local, UTC+8); clock read 2026-10-02 21:52 UTC.
+Worker: a fresh Opus session on branch `s4/aggdrop` (base 0abe223); report `docs/transcripts/session4/aggregate_dropped_runs.md`.
+Ruling: SIT FABLE for the owner, 2026-10-03, `docs/USER_DECISIONS.md` #29 (the point the session 4 verifier left open).
+Offline only: no model call, fake judge only, nothing under `eval/blind/` opened, no `llm.jsonl` printed.
+
+### Reproduction (before the fix, at 0abe223)
+
+Three FULL scores files from the fake-judge pipeline: two fully accounted runs at $2.00 and $3.00, and a third whose scoring the judge budget stopped before any statistic (`reserve_usd=1.0`, `max_cost_usd=0.5`, status `stopped_budget`, run cost $9.00).
+`sit-eval aggregate` exit 0; console `pilot checkpoint (FULL cost median vs $3.24): pass - every FULL run is fully accounted and the median, $2.50, is at or below $3.24`; `runs: 2`; the stopped file appeared only as a warning.
+An unreadable input stopped the command with a `JSONDecodeError` traceback, and a JSON array input with an `AttributeError`.
+After the fix the same three files give `not_evaluable - 1 scores file dropped from the aggregate, each a run of unknown cost: .../r3/scores.json (judge_budget_stop)`, with the file listed in `dropped_inputs` and on stderr.
+
+### Edits
+
+| # | File | Change | Regression test |
+|---|---|---|---|
+| D1 | `harness/sit_eval/aggregate.py` `load_scores_with_drops` | Every input is read; a file is dropped with reason `judge_budget_stop` (status `stopped_budget`), `unreadable` (I/O, decoding or JSON error), `schema_invalid` (not a `sit_eval.scores` object, status outside the schema enum, `inputs` lacking `item_id`, `doc_version` or `run_id`, no `metrics` object) or `incomplete` (empty `metrics` on a status that is not a stop). Each record carries path, reason, detail and condition; the condition is read only from a scores object's `inputs` (`unlabelled` when absent) and is `null` otherwise. `load_scores` keeps its two-value return. The check is structural, not the full schema, so ruling #28's pre-ruling scores files still aggregate as unknown. | `test_each_drop_reason_is_listed_and_blocks_the_checkpoint` (9 cases), `test_a_missing_file_is_dropped_as_unreadable`, `test_load_scores_keeps_its_two_value_return` |
+| D2 | `harness/sit_eval/aggregate.py` `pilot_checkpoint`, `aggregate` | Top-level `dropped_inputs`; the checkpoint takes the dropped files of FULL or unknown condition and is `not_evaluable` when there is any, naming each in its reason and in its own `dropped_inputs`; the `rule` text names #29. A dropped file of another condition is listed and does not affect the checkpoint. A threshold that is missing still reports "no threshold" first. | `test_a_budget_stopped_FULL_run_makes_the_checkpoint_not_evaluable`, `test_a_dropped_FULL_run_also_blocks_a_fail`, `test_a_dropped_non_FULL_file_is_listed_but_does_not_block_the_FULL_checkpoint` |
+| D3 | `harness/sit_eval/cli.py` `aggregate` | stderr lists "N scores files dropped from the aggregate" and one line per file with reason, condition (`unknown` for `null`) and detail; nothing is printed when none was dropped. | `test_the_cli_lists_the_dropped_files_in_the_json_and_on_the_console`, `test_the_console_says_nothing_of_drops_when_none` |
+| D4 | `tests/test_not_assessed_verdict.py` | Its minimal scores fixture had no `item_id`, `doc_version`, `run_id` or `metrics` (it would have raised a `KeyError` in `aggregate`); it now carries them, so it is not dropped as schema-invalid. The assertion is unchanged. | itself |
+| D5 | `eval/prereg.yaml` `stop_rule.pilot_checkpoint`, `eval/prereg_deviations.md` entry 10, `docs/USER_DECISIONS.md` #29, `harness/README.md` | The dropped-run rule in each; entry 10 extended, no new entry; `frozen: false`, no fill value changed. | the prereg parse in `test_the_threshold_is_read_from_the_prereg` |
+
+LC12 is unchanged: refusal reads the kept inputs only, so a stopped exploratory file is dropped and not refused, and a kept exploratory input is still refused beside a dropped file (`test_exploratory_interplay_is_unchanged`).
+
+### Mutations
+
+- G1, the guard `if dropped:` in `pilot_checkpoint` replaced by `if False:`: killed, 14 of 18 tests in `test_eval_aggregate_dropped.py` fail.
+- G2, a dropped file of unknown condition no longer counted against the FULL checkpoint (`in (CHECKPOINT_CONDITION, None)` to `in (CHECKPOINT_CONDITION,)`): killed, 6 fail.
+- Each by `cp` backup, one substitution, the test file, restore from the backup, `cmp` equal.
+
+### Gates (exit codes read)
+
+`ruff check agent harness tests` 0; `make test` 0 (lint, then `pytest -q` from the repo root: 1158 passed, 0 skipped; 1140 at 0abe223 plus 18 new); `sit-review selftest` 0; `make smoke` 0 (198 passed).
+A `pytest -q` started from the home folder instead of the repo root fails `test_the_committed_demo_measurement_run_replays_offline` on a repo-relative PDF path; that is the test's working-directory assumption, unrelated to this change, and it passes from the root.
+
+### Not verified
+
+- `sit-eval aggregate` has no Markdown output, so the listing is in the JSON (stdout and `--out`), the warnings and stderr only; no Markdown writer was added.
+- A file whose condition cannot be read counts as possibly FULL; this reading of "a FULL-condition scores file" is mine, the conservative one.
+- No real budget-stopped scores file from a live judge exists; the stop is the fake-judge pipeline's real `BudgetStop` path.

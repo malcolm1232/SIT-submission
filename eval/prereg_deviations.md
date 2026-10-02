@@ -269,6 +269,11 @@ already happened (none had for entries made before the freeze).
   is not fully accounted; the budget stop's spend is a lower bound when any run is not fully accounted, and a
   lower-bound sum at or above the Tier A figure triggers the stop while one below it is reported as "at least".
   A lower bound can fail a check or trigger a stop but never satisfy a match or a pass.
+  Added under ruling #29 (`docs/USER_DECISIONS.md`): `stop_rule.pilot_checkpoint` now also says that a dropped run
+  is a run of unknown cost; when any FULL scores file, or one whose condition cannot be read, is left out of the
+  aggregate (judge budget stop, unreadable, schema-invalid, incomplete), the check is `not_evaluable` and the
+  dropped files are listed with their reasons. Before it, a FULL run whose scoring the judge budget stopped was
+  missing from the run count and the check could `pass` on the runs that remained.
 - **Reason:** the agent runtime (commit `8ef32d4`) records a model attempt that was killed or cut (run deadline,
   timeout, crashed `claude -p`, dropped stream, interrupt) with `usage: null` instead of zeros, lists it in the
   manifest and marks `usage.cost_usd` a lower bound. The harness read `usage.cost_usd` as a complete figure (the
@@ -277,7 +282,7 @@ already happened (none had for entries made before the freeze).
   `harness/sit_eval/usage.py` (`tests/eval_harness/test_eval_usage_completeness.py`, with the demo run's `llm-0003`
   entry shape as the legacy fixture; `tests/eval_harness/test_eval_usage_verifier.py` checks both copies agree). The first live run's manifest predates the field and its `llm.jsonl` is not
   in the repository, so the harness reports its cost ($3.68) as a lower bound of unknown completeness.
-- **Decided by:** SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #28).
+- **Decided by:** SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #28; the dropped-run rule #29).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The two pilot `scores.json`
   files under `docs/live_runs/live_cc_opus_payments_v1/` are not rewritten; `sit-eval aggregate` treats a scores file
   that carries no completeness as unknown (its cost is a lower bound, never fully accounted).
