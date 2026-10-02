@@ -265,3 +265,51 @@ Also added `test_grader_dry_runs_never_build_a_judge` (already correct). Confirm
 
 ---
 
+## Report: E1 verifier (matcher, metrics, statistics, live judges, `sit-eval score`)
+
+**1. Status.** `ruff check harness tests/eval_harness` is clean. `pytest -q tests/eval_harness tests/eval_grader tests/test_*.py` gives 757 passed, 0 failed (219 of them in eval_harness). I did not run or touch `tests/robustness`.
+
+**2. Defects found and fixed.** Every edit is in `research/audit/verify_eval_harness_editlog.md`. No prompt or judge schema changed, so the `PROMPTS.lock` bundle stays `d9e14df5…`.
+1. **Fake answers reused by live runs.** The result cache key ignored which client had answered, and `--out` defaults to the same folder for every judge kind, so a `--judge fake` run followed by a live run would reuse fake answers as real judgements. Fix: the cache key includes the client. Test: `test_eval_verifier_e1.py::test_cache_never_serves_fake_answers_to_a_live_client`.
+2. **Retries were not costed.** A call that succeeded after retries reported only its last attempt's cost; a failed attempt with a known cost was charged a flat reserve. Fix: `ClaudeCodeJudge` sums every attempt and counts unknown-cost attempts; the runner charges known cost plus one reserve per unknown attempt. Two tests.
+3. **A grader error stopped `sit-eval score` from starting** (seen live: the grader verifier's in-progress edit had a syntax error and `cli.py` imported the grader at startup). Fix: guarded import; `grade` exits 2 with the error, `score` still works. Test: `test_score_cli_survives_a_broken_grader_package`.
+4. **The dry run gave misleading prices** (priced every model at Opus; showed $1-5 for a run that cost $0.32). Fix: names the price model, warns on mismatch, adds caveats (retries not counted, whole-document calls cost more, thinking unmeasured, prices UNVERIFIED). Test: `test_dry_run_flags_a_model_outside_the_price_basis`; also pins 80 overlap pairs and 300-440 calls for the live run.
+5. **Coordinator requests.** Both live clients drop a root `$schema` before sending (the harness's own schemas were already stripped in `prompts._schema`). `build_judge` fills options the caller leaves out from `config/eval.yaml`, so the grader gets the per-call `--max-budget-usd` (1.0), timeout and retries; explicit options win. One test each.
+6. **New option, `--adaptive-samples` (off by default).** Third pairwise sample only when the first two disagree or one fails; the median of three is then the same. Test: identical medians and assignments with fewer calls. Needs owner approval as a reading of prereg's "3 samples, median".
+
+**3. Decisions on the listed deviations.**
+- **Unmatched PARTIAL against an unmatched flaw becomes VALID_UNPLANTED: REVERTED.** It inflated strict P_a; metrics.md defines VALID_UNPLANTED as an issue "missing from the key". These findings now go to the LLM adjudicator, as in the §13 pseudo-code, with the flaw recorded as `partial_key_flaw_id`. A new exploratory metric, `precision_adjudicated_partial_credit`, shows the old reading. Live example: the LLM called one such finding INVALID_OPINION; P_a was 0.33; the old rule would have given 0.67.
+- **G1 character-level ratio: KEEP.** prereg, ADR-006/007 and the superseding note all say "the same function as the agent's verify stage", which is a character-level partial ratio; metrics.md's "token-level" wording is stale.
+- **Short doc-evidence quotes must match exactly: KEEP.** The spec puts the 8-token minimum only on `DocAnchor`.
+- **Exact match first, page-window fallback: KEEP. Lower median: KEEP. 3 with `location_ok: false` capped at 2: KEEP** (§2.2; absorbed one noisy sample live). **Ties to the higher-ranked finding: KEEP** (term at most 0.0014, below the 0.01 severity step). **The rest: KEEP as labelled.**
+
+Also checked with no defect: Hungarian matched brute force on 3000 random matrices up to 6x6, rectangular and with ties. §14 recomputed by hand: R .5, Ps .4, Pa .6, F1 .444 / .545, SWR .8, nDCG .669, MRR 1/3, HFR .2, dup .2, calibration n 4 with labels [1,1,1,0]; the test checks exactly these. Blinding, credit modes, thresholds, still-valid observations. Cluster bootstrap and paired difference match §12.2-12.3; sign-flip, permutation, McNemar, Holm, BH, aggregation order. Null metrics carry reasons. Resume cache key covers prompt, seed, model, effort, schema. Exit codes 0 ok, 1 schema failure, 2 refusal/usage, 3 cost stop. Isolation holds; nothing under `eval/blind/` read. Grader seam: separate `grader_calls.jsonl`; `judge_calls.jsonl` append-only one line per write; system prompts 2 KB (harness) and 11 KB (grader); documents always in `user`.
+
+**4. Cost and the candidate set.** The code is not broader than the text: metrics.md §2.3 and prereg `matcher.candidates` say the candidate set is the union of location overlap and the shortlist, uncapped, with overlap checked against the flaw's `location`. The key's `location.sections` (legacy `section_refs`) lists every place a flaw touches, including requirement tables 2.1/2.2, decision list 24 and acceptance criteria 26.x; `anchor_quote` is still pending. The 80 pairs come from 2.2 (20), FR-5 (16), 26.x (12), 24 (11), 2.1 (8).
+
+| Option | Total calls | Typical cost (UNVERIFIED planning prices) |
+|---|---|---|
+| Prereg pairwise (union) | 300-440 | ~$37 |
+| Same, adaptive | 220-440 | ~$33 |
+| Same, `--no-grounding-judges` | 260-400 | ~$33 |
+| per_flaw_batch | 102-116 | ~$11 |
+| per_flaw_batch, adaptive | 88-116 | ~$10 |
+| per_flaw_batch, no judges | 62-76 | ~$7 |
+
+| Candidate rule (computed, not a CLI option) | Overlap pairs | Total calls |
+|---|---|---|
+| Union, as now | 80 | 300-440 |
+| Drop listing sections 2.1/2.2/24/26.x | 39 | 177-317 |
+| Requirement/decision IDs only | 33 | 159-299 |
+| Shortlist bounds pairwise scoring | 0 | 60-200 |
+
+BUDGET.md §3 assumed 3 candidates x 3 samples per flaw (126 pair calls), 0.3k output tokens, 2k-token G3 inputs and batch pricing: $1.05 per run, $106 for Tier A. That matches "shortlist bounds pairwise", not the text. At the measured counts, Tier A instruments would cost roughly $1k-6k. The live run can only be an exploratory pilot (prereg unfrozen; key `scored_run_ready: false`, LC12). Before freezing Tier A the owner must choose: amend MM §2.3 and prereg so the shortlist bounds pairwise scoring; drop the listing sections from overlap; approve per_flaw_batch; add Message Batches; or raise the instrument budget. H10 matcher validation must use the same rule.
+
+**5. Live check** (claude-haiku-4-5, effort low, made-up 2 flaws / 3 findings / short document) through the real `sit-eval score` CLI: 27 live calls, $0.32. All 7 call types' schemas accepted, including the integer `enum [0,1,2,3]`. Every answer validated; every cost logged. The cost stop fired at $0.60 (`stopped_budget`, exit 3); in-flight calls finished and were cached; the re-run resumed with 0 live calls. per_flaw_batch reused the cache and added 6 batch calls. Samples vary (one pair scored 3, 2, 3). Haiku used 0.6k-4.8k output tokens per call.
+
+**6. Found but not fixed.** The cost stop can overshoot: the in-flight reserve covers one attempt; a retried call can spend up to (1+3) x $1, about $12 worst case at concurrency 4. The grader now inherits a $1 per-call cap that a long Opus Pass B might hit. Judge failures exit 0 with null metrics, so batch scripts must check `failures`. For v2 documents, the flaw-level McNemar and permutation tests also count fixed flaws (exploratory). Identical prompts share one cached answer. LC7 prompt-overlap check not run; the harness imports private agent helpers. Proposed text changes: MM §2.3 (whether the shortlist bounds pairwise scoring; what "flaw anchor" means); MM §2.3 step 4 (PARTIAL against an unmatched flaw); MM §5.1 G1 (character-level); prereg `matcher.pairwise_scoring` (adaptive third sample); prereg LC9 / stop_rule (`sit-eval score`; `matcher.prompt_sha256` = `d9e14df5…`); BUDGET.md §3 matcher cost model.
+
+**7. Still unverified.** Opus cost and thinking per call at high effort; document-prompt caching across fresh `claude -p` sessions; `AnthropicJudge` live and Message Batches; how tightly `--max-budget-usd` caps a call; whether `$schema` really breaks the CLI on the harness path; the robustness suite.
+
+---
+
