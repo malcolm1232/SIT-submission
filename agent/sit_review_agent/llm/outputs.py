@@ -55,8 +55,13 @@ class RefTextDraft(Draft):
     text: str
 
 
+# Docstrings of the draft types are sent to the model as schema descriptions (Pydantic's
+# ``description``): plain prose only, no reStructuredText roles or backticks
+# (tests/test_llm_schema_descriptions.py). Notes for developers go in comments.
+
+
 class EvidenceCitation(Draft):
-    """Evidence cited by ledger ID only (ADR-007). ``quote`` is the passage relied on."""
+    """Evidence cited by ledger ID only (ADR-007). The quote is the passage relied on."""
 
     evidence_id: str
     source_type: SourceType
@@ -136,7 +141,7 @@ class IntentSummaryDraft(Draft):
 
 class RegistryEntryDraft(Draft):
     """An approved decision, pending decision, constraint or key requirement found in the doc.
-    Code assigns ``AD-nnn`` IDs and freezes the registry after ``understand`` (INV-10)."""
+    Code assigns AD-nnn IDs and freezes the registry after the understand step (INV-10)."""
 
     type: RegistryEntryType
     doc_ref: str
@@ -222,23 +227,21 @@ class RevisionAction(StrEnum):
     WITHDRAW = "withdraw"
 
 
+# revision_problems() lists what breaks the rules of FindingRevisionDraft; apply_revisions()
+# applies a set that has none. The refine phase decides what to do with a set that has problems.
 class FindingRevisionDraft(Draft):
     """One revision per draft finding: a patch that code applies, never the finding re-emitted.
 
     Every key is required and every value is final, so code applies it exactly:
 
-    * ``keep``: ``rank`` (1..n over the kept findings), ``severity`` (null is the final value for a
-      finding without a severity, never "unchanged") and ``disposition`` are the finding's values
-      after refine; ``affected_decisions`` replaces the draft's list (registry links, which assess no
-      longer makes); ``added_evidence`` is appended to the draft's evidence (research results);
-      ``merge_into`` is null.
-    * ``merge``: the finding is folded into ``merge_into``, which must be a kept finding; every other
-      field is null or empty. It leaves the review; its criteria count for the kept finding; nothing
-      else moves (evidence the kept finding should gain goes in that finding's ``added_evidence``).
-    * ``withdraw``: the finding is dropped; every other field is null or empty.
-
-    :func:`revision_problems` lists what breaks these rules; :func:`apply_revisions` applies a set
-    that has none. The refine phase decides what to do with a set that has problems.
+    * keep: rank (1..n over the kept findings), severity (null is the final value for a finding
+      without a severity, never "unchanged") and disposition are the finding's values after refine;
+      affected_decisions replaces the draft's list (registry links, which assess no longer makes);
+      added_evidence is appended to the draft's evidence (research results); merge_into is null.
+    * merge: the finding is folded into merge_into, which must be a kept finding; every other field
+      is null or empty. It leaves the review; its criteria count for the kept finding; nothing else
+      moves (evidence the kept finding should gain goes in that finding's added_evidence).
+    * withdraw: the finding is dropped; every other field is null or empty.
     """
 
     finding_id: str
@@ -386,10 +389,12 @@ class AnchorRepairOutput(Draft):
 # --------------------------------------------------------------------------- report
 
 
+# VerdictLabel.NOT_ASSESSED is left out of AssessedVerdictLabel on purpose: phases.report sets it in
+# code only, when the run produced no assessment.
 class AssessedVerdictLabel(StrEnum):
-    """The verdict labels the model may choose. ``VerdictLabel.NOT_ASSESSED`` is left out on purpose:
-    it is set by code only, when the run produced no assessment (``phases.report``), so the
-    LLM-facing schema never offers it and a draft that carries it fails validation."""
+    """The verdict labels the model may choose. The label not_assessed is left out on purpose: code
+    sets it only when the run produced no assessment, so this schema never offers it and an answer
+    that carries it fails validation."""
 
     FIT = VerdictLabel.FIT.value
     FIT_WITH_CONDITIONS = VerdictLabel.FIT_WITH_CONDITIONS.value
