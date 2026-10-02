@@ -24,6 +24,10 @@ Decisions taken here:
   per such attempt (``estimated: true``, call ID, stage, purpose, attempt, reason, the four token
   fields) and ``extra.model.estimated_usage_totals`` sums them with a price-table cost. The measured
   totals, ``usage.cost_usd``, the unrecorded list and the lower-bound flag are unchanged by it.
+* Timing: ``extra.timing.wall_clock_s`` is the run clock. ``per_stage_s`` (kept for the harness)
+  maps each phase to its own wall seconds; stage 1 members overlap, so it does not sum to the run.
+  ``extra.timing.stages`` groups them by stage (:func:`stage_timing`): ``members``, ``wall_s``
+  (the stage's span, never the members' sum when they overlapped) and ``sum_of_member_s``.
 * ``git_dirty`` is ``const false`` in the spec. Outside eval mode the tree is not inspected (no
   ``git`` subprocess): the commit is read from ``.git`` files and ``extra.code.git_dirty`` is
   ``null`` ("not checked"). Eval mode runs ``git status --porcelain`` and refuses a dirty tree.
@@ -69,7 +73,7 @@ from sit_review_agent.models import (
 )
 from sit_review_agent.paths import repo_root, taxonomy_path
 from sit_review_agent.rundir import JsonlWriter, RunDir, write_json_atomic
-from sit_review_agent.states import EFFORT_KEY, PHASE_ORDER
+from sit_review_agent.states import EFFORT_KEY, PHASE_ORDER, STAGE_MEMBERS, STAGE_ORDER
 
 SAMPLING = "provider-default (not settable)"
 #: Opus 5.5 list prices per million tokens (docs/BUDGET.md, claude-api skill cached 2026-09-25).
@@ -261,6 +265,72 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
             "assess_shards": len(assess_conversations),
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
+
+
+def _offset(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) and value >= 0 else None
+
+
+def call_spans(run_dir: RunDir) -> dict[str, tuple[float, float]]:
+    """Per phase, the run-clock span of its model attempts: from the earliest ``start_offset_s`` to
+    the latest ``start_offset_s + elapsed_s``. Attempts without a start offset (a log written before
+    the latency redesign) are left out, so a sequential run's log gives no spans."""
+    spans: dict[str, tuple[float, float]] = {}
+    for e in JsonlWriter(run_dir.llm_log).read():
+        start = _offset(e.get("start_offset_s"))
+        if start is None or not e.get("phase"):
+            continue
+        end = start + (_offset(e.get("elapsed_s")) or 0.0)
+        phase = str(e["phase"])
+        lo, hi = spans.get(phase, (start, end))
+        spans[phase] = (min(lo, start), max(hi, end))
+    return spans
+
+
+def stage_timing(phase_seconds: dict[str, float], spans: dict[str, tuple[float, float]]) -> dict[str, Any]:
+    """``extra.timing.stages``: per stage that ran, its members' own wall seconds (``members``), their
+    plain sum (``sum_of_member_s``) and the stage's wall time (``wall_s``), which is never the sum
+    when members overlapped. ``wall_basis`` says how ``wall_s`` was reached:
+
+    * ``single_member``: the one member's seconds;
+    * ``member_spans``: the span from the earliest member start to the latest member end on the run
+      clock, read from the members' model attempts (``call_spans``), and at least the longest member;
+      a lower bound of the stage's wall time (code work before a member's first call is not seen);
+    * ``sequential_sum``: the log has no start offsets (a run before the latency redesign, whose
+      members ran one after another), so the sum is the wall time.
+
+    A member's row carries ``start_offset_s`` and ``end_offset_s`` of its model attempts, or ``null``."""
+    out: dict[str, Any] = {}
+    for stage in STAGE_ORDER:
+        ran = [p.value for p in STAGE_MEMBERS[stage] if p.value in phase_seconds]
+        if not ran:
+            continue
+        members = {}
+        for p in ran:
+            span = spans.get(p)
+            members[p] = {"seconds": round(float(phase_seconds[p]), 3),
+                          "start_offset_s": round(span[0], 3) if span else None,
+                          "end_offset_s": round(span[1], 3) if span else None}
+        total = round(sum(m["seconds"] for m in members.values()), 3)
+        seen = [spans[p] for p in ran if p in spans]
+        if len(ran) == 1:
+            wall, basis = members[ran[0]]["seconds"], "single_member"
+        elif seen:
+            span_s = max(hi for _, hi in seen) - min(lo for lo, _ in seen)
+            wall, basis = round(max(span_s, *(m["seconds"] for m in members.values())), 3), "member_spans"
+        else:
+            wall, basis = total, "sequential_sum"
+        out[stage.value] = {"members": members, "wall_s": wall, "sum_of_member_s": total, "wall_basis": basis}
+    return out
+
+
+def run_clock_s(ctx: RunContext) -> float:
+    """The run's wall total: the live run clock, else the clock recorded at the last checkpoint
+    (``budget.elapsed_s``), else 0.0."""
+    b = ctx.state.budget
+    if b.started_monotonic:
+        return round(max(0.0, ctx.elapsed_s()), 3)
+    return round(b.elapsed_s, 3)
 
 
 def merged_refusals(ctx: RunContext) -> list[dict[str, Any]]:
@@ -462,8 +532,9 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
         stop={"active_rules": list(cfg.stop_rules.active), "params": cfg.stop_rules.model_dump(mode="json"),
               "stop_reason": st.stop_reason.model_dump(mode="json") if st.stop_reason else None},
         fault_injection={"profile": sched_id or "none", "schedule_sha256": sched_sha},
-        timing={"wall_clock_s": round(max(0.0, ctx.elapsed_s()), 3) if st.budget.started_monotonic else 0.0,
-                "per_stage_s": dict(st.budget.phase_seconds)},
+        timing={"wall_clock_s": run_clock_s(ctx),
+                "per_stage_s": dict(st.budget.phase_seconds),
+                "stages": stage_timing(st.budget.phase_seconds, call_spans(rd))},
         outputs=dict(outputs) if outputs else {},
         deviations=devs,
     )

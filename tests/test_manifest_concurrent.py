@@ -68,6 +68,7 @@ def make_ctx(tmp_path: Path, entries: list[dict[str, Any]], *, phase_seconds: di
     state.budget.phase_seconds = dict(phase_seconds or {})
     state.budget.elapsed_s = elapsed_s
     if run_clock_s:
+        clock.advance(1000.0)                       # started_monotonic 0.0 means "not started"
         state.budget.started_monotonic = clock.monotonic()
         clock.advance(run_clock_s)
     return RunContext(config=load_config(), run_dir=rd, state=state, llm=FakeGateway({}), tools=None,
@@ -128,3 +129,79 @@ def test_a_sequential_run_without_estimates_keeps_the_old_model_keys(tmp_path: P
     assert model["calls_with_unrecorded_usage"] == [] and model["cost_usd_lower_bound"] is False
     assert model["estimated_usage_of_unrecorded_calls"] == []
     assert model["estimated_usage_totals"]["calls"] == 0 and model["estimated_usage_totals"]["cost_usd"] == 0.0
+
+
+# ------------------------------------------------------------------------- 2. per-stage and wall seconds
+
+CONCURRENT_SECONDS = {"ingest": 2.0, "understand": 40.0, "plan": 60.0, "research": 90.0, "assess": 300.0,
+                      "refine": 50.0, "verify": 1.5, "report": 20.0}
+
+
+def concurrent_entries() -> list[dict[str, Any]]:
+    """Stage 1 starts at 2.0 s: understand, plan and two assess shards together; research after plan."""
+    return [ok("llm-0001", "understand", f"{RUN}-understand", start=2.0, wall=38.0, u=usage(100, 10)),
+            ok("llm-0002", "plan", f"{RUN}-plan", start=2.0, wall=58.0, u=usage(100, 10)),
+            ok("llm-0003", "assess", f"{RUN}-assess-a", start=2.1, wall=250.0, u=usage(100, 10)),
+            ok("llm-0004", "research", f"{RUN}-research-0", start=61.0, wall=40.0, u=usage(100, 10)),
+            ok("llm-0005", "research", f"{RUN}-research-1", start=102.0, wall=45.0, u=usage(100, 10)),
+            ok("llm-0006", "assess", f"{RUN}-assess-b", start=2.1, wall=299.9, u=usage(100, 10)),
+            ok("llm-0007", "refine", f"{RUN}-refine", start=303.0, wall=48.0, u=usage(100, 10)),
+            ok("llm-0008", "report", f"{RUN}-report", start=354.0, wall=18.0, u=usage(100, 10))]
+
+
+def test_overlapping_stage_1_members_give_the_span_not_the_sum(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path, concurrent_entries(), phase_seconds=CONCURRENT_SECONDS, run_clock_s=374.0)
+    timing = build_manifest(ctx, Outcome.COMPLETED_NOMINAL).extra["timing"]
+    assert timing["wall_clock_s"] == 374.0                     # the run clock
+    assert timing["per_stage_s"] == CONCURRENT_SECONDS         # unchanged shape for the harness
+    s1 = timing["stages"]["stage_1"]
+    assert list(s1["members"]) == ["understand", "plan", "research", "assess"]
+    assert {p: m["seconds"] for p, m in s1["members"].items()} == {
+        "understand": 40.0, "plan": 60.0, "research": 90.0, "assess": 300.0}
+    assert s1["members"]["research"]["start_offset_s"] == 61.0 and s1["members"]["research"]["end_offset_s"] == 147.0
+    assert s1["sum_of_member_s"] == 490.0
+    assert s1["wall_s"] == 300.0 and s1["wall_basis"] == "member_spans"   # 2.0 .. 302.0
+    assert s1["wall_s"] < s1["sum_of_member_s"]
+    assert list(timing["stages"]) == ["ingest", "stage_1", "refine", "verify", "report"]
+    assert timing["stages"]["refine"] == {"members": {"refine": {"seconds": 50.0, "start_offset_s": 303.0,
+                                                                 "end_offset_s": 351.0}},
+                                          "wall_s": 50.0, "sum_of_member_s": 50.0, "wall_basis": "single_member"}
+    assert timing["stages"]["verify"]["members"]["verify"]["start_offset_s"] is None   # code-only
+
+
+def test_a_stage_span_is_at_least_its_longest_member(tmp_path: Path) -> None:
+    entries = [ok("llm-0001", "understand", f"{RUN}-understand", start=5.0, wall=10.0, u=usage(1, 1)),
+               ok("llm-0002", "assess", f"{RUN}-assess-a", start=5.0, wall=20.0, u=usage(1, 1))]
+    ctx = make_ctx(tmp_path, entries, phase_seconds={"understand": 12.0, "assess": 26.0})
+    s1 = build_manifest(ctx, Outcome.COMPLETED_NOMINAL).extra["timing"]["stages"]["stage_1"]
+    assert s1["wall_s"] == 26.0 and s1["sum_of_member_s"] == 38.0
+
+
+def test_a_sequential_run_reads_its_stage_wall_as_the_sum(tmp_path: Path) -> None:
+    seconds = {"ingest": 1.0, "understand": 10.0, "plan": 20.0, "research": 30.0, "assess": 40.0, "report": 5.0}
+    entries = [ok(f"llm-000{i}", p, f"{RUN}-{p}", start=None, wall=s - 1.0, u=usage(1, 1))
+               for i, (p, s) in enumerate(seconds.items()) if p != "ingest"]
+    ctx = make_ctx(tmp_path, entries, phase_seconds=seconds, run_clock_s=106.0)
+    timing = build_manifest(ctx, Outcome.COMPLETED_NOMINAL).extra["timing"]
+    s1 = timing["stages"]["stage_1"]
+    assert s1["wall_s"] == s1["sum_of_member_s"] == 100.0 and s1["wall_basis"] == "sequential_sum"
+    assert all(m["start_offset_s"] is None for m in s1["members"].values())
+    assert "refine" not in timing["stages"]                    # a phase that did not run has no stage row
+    assert timing["wall_clock_s"] == 106.0 and timing["per_stage_s"] == seconds
+
+
+def test_the_wall_total_falls_back_to_the_checkpointed_run_clock(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path, [], phase_seconds={"ingest": 1.0}, elapsed_s=321.5)
+    assert build_manifest(ctx, Outcome.CRASHED).extra["timing"]["wall_clock_s"] == 321.5
+    ctx = make_ctx(tmp_path / "b", [], phase_seconds={})
+    timing = build_manifest(ctx, Outcome.CRASHED).extra["timing"]
+    assert timing["wall_clock_s"] == 0.0 and timing["stages"] == {}
+
+
+def test_a_bad_start_offset_is_ignored(tmp_path: Path) -> None:
+    entries = [ok("llm-0001", "understand", f"{RUN}-u", start=None, wall=5.0, u=usage(1, 1)),
+               {**ok("llm-0002", "plan", f"{RUN}-p", start=None, wall=5.0, u=usage(1, 1)), "start_offset_s": True},
+               {**ok("llm-0003", "assess", f"{RUN}-a", start=None, wall=5.0, u=usage(1, 1)), "start_offset_s": -3.0}]
+    ctx = make_ctx(tmp_path, entries, phase_seconds={"understand": 6.0, "plan": 6.0, "assess": 6.0})
+    s1 = build_manifest(ctx, Outcome.COMPLETED_NOMINAL).extra["timing"]["stages"]["stage_1"]
+    assert s1["wall_basis"] == "sequential_sum" and s1["wall_s"] == 18.0
