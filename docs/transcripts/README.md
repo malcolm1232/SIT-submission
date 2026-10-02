@@ -1,5 +1,9 @@
 # Session transcripts
 
+- Session 3 (evaluation harness, robustness suite): `session3_coordinator.md`, with every subagent report verbatim.
+- Session 2 (the agent build): `session2_coordinator.md`.
+- Session 1 (research, eval data, spec, docs, skeleton): below.
+
 Record of the coordinating session (claude.ai/code session `session_01Y3B8MjA3gLDc2s475jzs5m`, 2026-10-02, account mex3woofz) that produced the research, eval data, spec, docs and agent skeleton on branch `claude/eloquent-sagan-ah5ttk`.
 
 - `conversation.md`: the coordinator conversation written out verbatim from the coordinator's context (user messages, coordinator replies, and every subagent hand-back report). The raw main-session JSONL is stored server-side by claude.ai and was not available inside the container; the session link above remains the authoritative copy.

@@ -15,6 +15,15 @@ taken as: continue `docs/HANDOVER_FULL.md` §6 with the delegation pattern of se
 3. Spawned three implementers in parallel with disjoint ownership: E1 matcher + metrics + live
    judges + `sit-eval score`; E2 lecturer grader; R robustness P0 suite (`tests/robustness/`).
    All offline; the coordinator runs live scoring after verification.
+4. Committed each workstream as it landed (WIP snapshots in between, because the stop hook demands a
+   clean tree) and spawned one verifier per workstream, each with write access and a mandatory edit
+   log; the two harness verifiers got a small live Haiku budget. Relayed the grader verifier's `$schema`
+   finding to the matcher verifier mid-run.
+5. Ran the first live pilot scoring of `docs/live_runs/live_cc_opus_payments_v1` (57 Opus calls,
+   $6.89; artefacts in that folder's `eval_pilot/`).
+6. Ran the live grader on the same review: the first Pass A call stopped at the $1 per-call cap the
+   verifier had warned about. Added `grader.max_budget_usd_per_call` (4.0) with tests and re-ran.
+7. Updated README, HANDOFF, HANDOVER_FULL (§5 lessons 17-20, §6 rewritten, new §9) and this record.
 
 ---
 

@@ -90,20 +90,48 @@ See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom lo
 15. **Every implementer's report ends with "writes beyond my list" and "for the other workstream"; feed those verbatim into the integration verifier's brief.** All seven seams it was given needed a fix or a test, and it found five more defects nobody had flagged.
 16. **Timeouts and deadlines sized for the API do not transfer to the CLI backend.** `assess` at high effort emitted 63k output tokens and took about 520 s; a 600 s per-attempt timeout killed it four times and the retries re-sent the whole document each time (49 minutes, unrecorded spend). Measure one live run before trusting any budget number.
 
-## 6. What is next, in order
+17. **Freeze the shared interface yourself before fanning out.** Writing `sit_eval/judge.py`, the package skeleton and the CLI mount point (twenty minutes) let the matcher and grader workstreams run in parallel against one contract; the only seam defect was a lint autofix one of them ran over the other's folder.
+18. **Give verifiers a small live budget on the cheapest model.** Both harness verifiers found defects only a real `claude -p` call shows (a root `$schema` key rejected outright; thinking tokens three times the estimate) for $0.24 and $0.32 on Haiku. Offline tests could not have caught either.
+19. **A cost estimate is a hypothesis; a capped pilot is the measurement.** The dry run priced matcher calls at $0.05-0.15 and 20-60 s; the live pilot measured $0.06-0.11 and 6-17 s for pair and shortlist calls but $0.33 for whole-document adjudication calls. Run the cheapest faithful configuration once, with a hard cap, before any budget decision.
+20. **Ask verifiers to mutation-test, not just re-run.** The robustness verifier found a scenario test that still passed with its main claim removed.
 
-1. Owner: read §8 and decide the demo shape. At `high` effort the five model calls alone take about 16 minutes without research, so the 10-minute demo budget needs one of: `medium` effort for the demo (USER_DECISIONS #1 allows `high` but asks spend to be justified), a trimmed assess prompt, or a pre-recorded run replayed with `--replay`. Also decide `deadline_seconds` (540 is unreachable with this backend at `high`).
-2. Owner tasks unchanged: run the MCP probe on the Mac; write the SIT answer key before any run on that PDF; approve the Tier A budget once redone from the measured cost; fund OpenAI or Google if the second-provider judge is wanted.
-3. Eval harness (next implementer): matcher + metrics from `research/methodology/metrics.md`, grader from `research/grading/grader_prompt.md`, driven by `spec/` and `eval/prereg.yaml`. First job: score `docs/live_runs/live_cc_opus_payments_v1/report.json` against `eval/synthetic/payments_orchestration/answer_key.canonical.json` (eyeball in §8: 13 of 14 planted v1 flaws found plus one partial, six unplanted findings to classify, severities under-rated on three criticals).
-4. Robustness P0 suite as runnable scenarios (the fault machinery, 26 fault tests and the runbook drills exist; the 81 scenario files under `tests/robustness/faults/` do not).
-5. A live run WITH tools from the laptop (MCP hosts are unreachable from the sandbox): this exercises the envelope tool loop on Opus, which has only been verified on Haiku, and the real MCP transport.
-6. Freeze prompts and `prereg.yaml`, run Tier A; documentation per `docs/DOCUMENTATION_MAP.md`; demo rehearsal per `docs/DEMO_DAY_RUNBOOK.md`; collaborator access for the two SIT GitHub IDs.
+## 6. What is next, in order (updated at the end of the third session)
+
+Owner decisions first; each is written up with options in §9 and in the reports in
+`docs/transcripts/session3_coordinator.md`.
+
+1. **Matcher candidate rule (blocks the Tier A budget).** As written, metrics.md §2.3 and prereg score
+   every finding that shares any listed section with a flaw. On the payments key that is 80 pairs and
+   about $25-37 per scored run, i.e. thousands for Tier A. Choose: the shortlist bounds pairwise scoring
+   (matches the arithmetic in `docs/BUDGET.md` §3; one-line text change), drop listing sections from
+   overlap, approve `per_flaw_batch` (measured $6.89 per run without grounding judges), add Message
+   Batches, or raise the budget. Then redo `docs/BUDGET.md` from the measured costs in §9.
+2. **Demo shape and deadline** (unchanged from §8) together with robustness LLM-05: bound each model
+   attempt by the remaining deadline, or keep the 1800 s timeout and set the deadline to match.
+3. **Four more robustness policy calls:** NET-02 (fast exit when offline), INF-08 (fail fast when the MCP
+   key is missing), LLM-10 (token estimate before large calls), OVF-07 (sample-derived hosts in
+   `tools/sources.py`). Options and recommendations in the R verifier report.
+4. **Owner tasks unchanged:** MCP probe on the Mac; SIT answer key before any run on that PDF; author
+   `core_insight`, `anchor_quote`, `expected_disposition` and `approved_decisions` for the synthetic keys
+   (every payments flaw has `scored_run_ready: false`, so no scored run is allowed yet, prereg LC12);
+   fund OpenAI or Google if the second-provider judge is wanted.
+5. **Text fixes before freeze** (no decision needed, collected from the verifiers): MM §2.3 step 4
+   (PARTIAL against an unmatched flaw), MM §5.1 G1 "token-level" -> character-level, prereg LC9 / stop
+   rule `eval/score.py` -> `sit-eval score`, prereg `matcher.prompt_sha256` and `grader.prompt_sha256`
+   from the two lock files, GR §4.2 cumulative G3 rows, GR §5.3 counts instead of shares, spec/README
+   grader projection drops `review_id`, `run_id` and `stop_reason.detail`.
+6. **Build next:** the `--k`, `dra replay` and `dra coverage` commands; reject or implement `process:`
+   entries in `--faults` (now silently ignored); a live run WITH tools from the laptop (envelope tool loop
+   on Opus, real MCP transport) and the 28 laptop-only robustness rows.
+7. Freeze prompts and `prereg.yaml`, run Tier A; documentation per `docs/DOCUMENTATION_MAP.md`; demo
+   rehearsal per `docs/DEMO_DAY_RUNBOOK.md`; collaborator access for the two SIT GitHub IDs. One Fable
+   fresh-eyes audit of the whole submission before Tier A is worth paying for.
 
 ## 7. How to resume in a new session
 
 ```
 Read docs/HANDOFF.md and docs/HANDOVER_FULL.md, then docs/transcripts/README.md.
-Continue from HANDOVER_FULL.md section 6 (read section 8 first). Spawn all subagents on Opus with the brief pattern in docs/transcripts/session2_coordinator.md. Verify every deliverable with a separate subagent. Commit and push after each one lands.
+Continue from HANDOVER_FULL.md section 6 (read sections 8 and 9 first). Spawn all subagents on Opus with the brief pattern in docs/transcripts/session2_coordinator.md. Verify every deliverable with a separate subagent. Commit and push after each one lands.
 ```
 
 ## 8. First live run through the Claude Code backend (2026-10-02)
@@ -134,3 +162,47 @@ Quality, by eye against `answer_key.canonical.json` (not the matcher; the harnes
 
 What this run changed: `config/agent.yaml llm.timeout_s` 600 → 1800. What it leaves open: the deadline and effort for the demo (§6 item 1), refine never ran, the envelope tool loop on Opus is still unexercised, and the money meter should be checked against the $3.68 figure to settle whether nested `claude -p` bills to cloud credits.
 
+
+## 9. Third session: evaluation harness and robustness suite (2026-10-02)
+
+Branch `claude/happy-darwin-d0bl94`. Coordinator started on Fable 5.1 and was switched by the owner to
+Opus 5.5 before any build work; all six subagents ran on Opus 5.5. Every report is verbatim in
+`docs/transcripts/session3_coordinator.md`; edit logs are under `research/audit/`
+(`verify_grader_editlog.md`, `verify_eval_harness_editlog.md`, `robustness_suite_editlog.md`).
+
+**Built and verified.**
+- `harness/sit_eval` with the `sit-eval` command: loaders, matcher (shortlist plus location candidates,
+  pairwise 0-3 with 3 samples and median, blinding, Hungarian assignment, strict and lenient, credit
+  modes, adjudication), grounding G1-G3, every metric in metrics.md §3-§10 as value-or-null-with-reason,
+  cluster bootstrap and paired tests (the §14 worked example reproduces exactly), live judges over
+  `claude -p` and the API, a hard cost stop, resume from a result cache, dry run with call counts.
+- The lecturer grader (`sit-eval grade`): grader-facing projection with identity scrubbing and a leak
+  guard, Pass A and Pass B verbatim from `research/grading/grader_prompt.md`, sampling and third-sample
+  rule per prereg, gates and caps in code, key-aware diagnostic that never emits recall, meta-validation
+  V1-V13 builders.
+- `tests/robustness/`: 81-row P0 coverage table, 29 fault schedules, oracles calling `invariants.py`,
+  results CSV. 46 scenarios run offline (44 pass; LLM-05 and NET-02 await decisions), 28 are
+  laptop-only with exact commands, 7 are not schedules (3 await decisions).
+- Agent fixes exposed by the suite, each with a regression test: deadline skips always disclosed (this
+  hid the skipped refine in the first live run); LLM fault `nth`; configured timeout in the fault
+  wrapper; doc-only disclosure when all tools fail; placeholder findings dropped; doc citations holding
+  external text fall back to the anchor quote; partial report on a stage crash; refine rejects an
+  unexplained severity, disposition or kind change; approved-decision reversal flagged; research stop
+  reason no longer claims sufficient evidence with none.
+- State: `ruff check agent harness tests` clean, `pytest -q` 865 passed 0 skipped, selftest passes.
+
+**Measured live** (Claude Code backend, `ANTHROPIC_API_KEY` stripped):
+
+| What | Calls | Cost | Notes |
+|---|---|---|---|
+| Grader verifier, Haiku schema check | 2 | $0.24 | found the `$schema` rejection |
+| Matcher verifier, Haiku end to end | 27 | $0.32 | cost stop and resume confirmed |
+| Pilot scoring of the first live run, Opus high, `per_flaw_batch`, adaptive samples, grounding judges off | 57 | $6.89 | shortlist $0.11 / 6 s, pair batch $0.06 / 11 s, adjudication $0.33 / 14 s per call; about 1k output tokens each |
+| Live grader, first attempt | 1 | about $1 | Pass A stopped at the $1 per-call cap; grader cap raised to $4 |
+
+Pilot scores (exploratory only: prereg unfrozen, key not `scored_run_ready`; artefacts in
+`docs/live_runs/live_cc_opus_payments_v1/eval_pilot/`): strict recall 10/14, lenient 14/14, adjudicated
+precision 0.95, severity-weighted recall 0.72, critical recall 0.75, severity agreement QWK 0.38. The
+four partial matches are F04, F06, F07 and F12; the matcher agrees with the by-eye reading in §8. Open
+question for the owner: findings that partially match a planted flaw are adjudicated VALID_UNPLANTED,
+which keeps adjudicated precision high; decide whether that is the intended reading of metrics.md.

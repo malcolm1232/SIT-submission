@@ -5,7 +5,7 @@ malcolm1232/SIT) can continue without the original conversation.
 
 ## Where everything is
 
-Branch: `claude/great-hopper-hbx7h0` (continues `claude/eloquent-sagan-ah5ttk`). All work is committed and pushed; nothing
+Branch: `claude/happy-darwin-d0bl94` (continues `claude/great-hopper-hbx7h0`, which continues `claude/eloquent-sagan-ah5ttk`). All work is committed and pushed; nothing
 lives only in the original cloud session.
 
 Read in this order (about 30 minutes):
@@ -13,7 +13,8 @@ Read in this order (about 30 minutes):
 2. `docs/DECISIONS.md` and `docs/USER_DECISIONS.md` (what has been decided and why)
 3. `research/audit/fresh_eyes.md` (prioritised build plan; the "minimum viable agent" section)
 4. `eval/EVAL_PLAN.md` (Tier A: 132 runs, about $565-640 all-in, about 18 owner hours)
-5. `agent/README.md` (module map and the interface freeze rule) once the skeleton lands
+5. `agent/README.md` (module map and the interface freeze rule) and `harness/README.md` (the `sit-eval` harness)
+6. `docs/HANDOVER_FULL.md` §6 (what is next) and §9 (third session)
 
 ## Operating rules that were in force
 
@@ -39,9 +40,12 @@ Read in this order (about 30 minutes):
   been run against the real API yet.
 - Verification trail: `research/audit/verify_agent_integration_editlog.md` and the subagent
   reports in `docs/transcripts/` (second session).
-- Not yet built: the eval harness (matcher, metrics, grader), the robustness P0 suite as
-  runnable scenarios (the fault-injection machinery and 26 fault tests exist), the `--k`,
-  `dra replay` and `dra coverage` commands from the runbook.
+- Third session (branch `claude/happy-darwin-d0bl94`): the evaluation harness (`harness/sit_eval`,
+  `sit-eval score` and `sit-eval grade`) and the robustness P0 suite (`tests/robustness/`) are built
+  and verified; ten agent defects found by the suite are fixed. `pytest -q` = 865 passed, 0 skipped.
+  First live pilot scoring and grading of the first live run: `docs/HANDOVER_FULL.md` §9.
+- Not yet built: the `--k`, `dra replay` and `dra coverage` commands from the runbook; `process:`
+  entries in `--faults` are silently ignored.
 - First live run through the Claude Code backend: see `docs/HANDOVER_FULL.md` §8.
 
 ## Owner tasks on the critical path (cannot be delegated)
