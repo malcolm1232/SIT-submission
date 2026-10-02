@@ -6,7 +6,7 @@ The session has four parts (lab §5.4): (a) explain the design; (b) run on a lap
 
 Unknowns to settle with SIT beforehand: slot length (assumed: 10-minute live run inside a longer interview; audit U4), how the PDF is handed over (USB, email, shared drive), and whether venue Wi-Fi allows outbound HTTPS to `*.azurecontainerapps.io` and `api.anthropic.com`.
 
-CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`): `dra preflight`, `dra review` (`--k N` runs N independent runs plus a group manifest; `--profile NAME` overlays `config/profiles/NAME.yaml`), `dra explain`, `dra coverage`, `dra resume`, `dra replay`; `make smoke` runs the offline L0 subset (**not built yet**: no `Makefile`).
+CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`): `dra preflight`, `dra review` (`--k N` runs N independent runs plus a group manifest; `--profile NAME` overlays `config/profiles/NAME.yaml`), `dra explain`, `dra coverage`, `dra resume`, `dra replay`; `make smoke` runs the offline check in about 10 s (the selftest plus the config, prompt-lock, CLI and leakage tests) and `make test` runs ruff and the whole suite (`Makefile`, built 2026-10-03).
 
 ---
 
@@ -47,7 +47,7 @@ CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`)
 
 ## 4. On-the-spot modifications (part d)
 
-The four most likely requests, with the exact file and lines each one touches. Every change is followed by `make smoke` (≤ 60 s, offline) and then a demonstration: `dra review <pdf> --plan-only` (prints the plan, zero tool calls) when the change shows in the plan, or a short live rerun (`--deadline 300`) when it shows in behaviour. The new value appears in the run manifest.
+The four most likely requests, with the exact file and lines each one touches. Every change is followed by `make smoke` (≤ 60 s, offline) and then a demonstration: `dra review <pdf> --plan-only` (prints the plan, zero tool calls) when the change shows in the plan, or a short live rerun (`--profile demo --deadline 300`) when it shows in behaviour. The new value appears in the run manifest. A deadline that does not fit the reserves it runs with is announced on the first progress lines (`WARN deadline 300 s leaves research no time ...`): at 300 s the demo profile's reserves (120 s + 200 s) leave research nothing and give understand, plan and assess 180 s together, so the rerun is document-only; without the profile the default reserves (180 s + 600 s, sized for `high`) leave 120 s, which a high-effort run cannot use, and the report then says "not assessed".
 
 ### 4.1 Planned config files (line numbers are part of the contract)
 
@@ -57,12 +57,12 @@ The four most likely requests, with the exact file and lines each one touches. E
  2  model: claude-opus-5-5
  3  effort:
  4    plan: high
- 5    research: medium
+ 5    research: high
  6    assess: high
  7    refine: high
  8    verify: high
  9    report: high
-10  max_tokens: 64000
+10  max_tokens: 128000
 11  allow_fallback: false
 12  persona: generalist_architect
 ```
@@ -79,7 +79,7 @@ The four most likely requests, with the exact file and lines each one touches. E
  8  min_independent_sources: 2
 ```
 
-Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2026-10-02, sized for a high-effort run). The demo runs at 540 s through `config/profiles/demo.yaml` (`--profile demo`), which also sets per-stage effort and the verify + report reserve below the pinned lines; the pinned lines are unchanged by it.
+Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2026-10-02, sized for a high-effort run). The demo runs at 540 s through `config/profiles/demo.yaml` (`--profile demo`), which also sets per-stage effort (`medium`, research `low`) and the two reserves (verify + report 120 s, assess 200 s); the pinned lines are unchanged by it. The three listings in this section are checked against the config files by `tests/test_config_layout.py`. The profile's values win over `config/agent.yaml` lines 4-9 and `config/stop_rules.yaml` line 6: in a run with `--profile demo`, an effort or deadline change goes in `config/profiles/demo.yaml` (effort lines 19-24, deadline line 27) or on the command line (`--deadline`), not in the pinned lines.
 
 `config/tools.yaml` (server URLs live in `config/endpoints.yaml` so these line numbers stay fixed)
 ```yaml
@@ -94,12 +94,12 @@ Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2
  9      enabled: true
 10      allow_tools: ["*"]
 11    - name: mcp-browser-automation-pw
-12      enabled: true
+12      enabled: false
 13      allow_tools: ["*"]
 14    - name: mcp-document-intelligence
 15      enabled: false
 16      allow_tools: []
-17  url_policy: config/url_policy.yaml
+17  url_policy: url_policy.yaml
 ```
 
 `config/criteria.yaml`: a list under `criteria:`; new criteria are always **appended at the end of the file** (each entry is 4 lines: `id`, `description`, `applies_to`, `research_hints`).
@@ -114,7 +114,7 @@ Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2
 | 2a | "Stop after at most 5 searches" (DEMO-02) | `config/stop_rules.yaml` line 3 | `max_tool_calls: 5` (or CLI `--max-tool-calls 5`, no edit) | Live rerun: ledger has ≤ 5 tool calls; `stop_reason: budget_tool_calls` in the manifest | ≤ 3 min |
 | 2b | "Stop when two independent sources agree" (a new rule) | `agent/stop_rules.py`, append about 8 lines at end of file; `config/stop_rules.yaml` line 2 | New `@register("two_sources_agree")` function: stop when every high or critical finding that needs external evidence has ≥ `min_independent_sources` distinct-domain ledger entries supporting it. Add `two_sources_agree` to the `active:` list on line 2. The stop-reason code is a **closed enum** (`spec/finding.schema.json` `StopReasonCode`, `spec/taxonomy.yaml` `stop_reasons`), so the rule reports `code: sufficient_evidence`, `group: decision`, `detail: "two_sources_agree"`; adding a new code live would also mean editing the schema and taxonomy and would fail `spec/validate_examples.py` | `make smoke` (the L0 stop-rule test runs the new rule against the fake transcript); live rerun shows `stop_reason.detail: two_sources_agree` | ≤ 5 min |
 | 3 | "Disable a tool / run without web search" (DEMO-03) | `config/tools.yaml` line 6 (internet search), 9 (research), 12 (browser) | `enabled: false`; or narrow line 7, 10 or 13 to a list of tool names (`allow_tools: ["search"]`). No edit: `--disable-tool mcp-internet-search` or `--no-tools` | `--plan-only`: the plan no longer uses the tool; report header lists disabled tools; zero calls to it in `tools.jsonl` | ≤ 3 min |
-| 4 | "Change the model / make it think harder or faster" (DEMO-04) | `config/agent.yaml` line 2 (model), lines 4-9 (effort per stage) | Within ADR-002: change effort, e.g. line 5 `research: low` for speed, or line 6 `assess: max` for depth. If the evaluator asks for another model: change line 2 (e.g. `claude-opus-5` or `claude-sonnet-5-5`); preflight validates it (LLM-12) and accepts only models that take adaptive thinking plus `output_config.effort` (Opus 5.5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5.5, Sonnet 5); Haiku 4.5 is refused (no `effort`, `budget_tokens` only, 200K context and a 100-page PDF limit). The manifest records it; say clearly that this deviates from the all-Opus decision. Another *provider* is not a live change (ADR-001; audit C24). Note that a model or top-level effort change starts a new prompt cache, so the first rerun call is slower and dearer | Rerun; manifest `effort_by_stage` / `requested_model` and `served_models` show the change | ≤ 3 min |
+| 4 | "Change the model / make it think harder or faster" (DEMO-04) | `config/agent.yaml` line 2 (model), lines 4-9 (effort per stage) | Within ADR-002: change effort, e.g. line 5 `research: low` for speed, or line 6 `assess: max` for depth (for a run with `--profile demo`, edit the same key in `config/profiles/demo.yaml` lines 19-24 instead: the profile overrides lines 4-9). If the evaluator asks for another model: change line 2 (e.g. `claude-opus-5` or `claude-sonnet-5-5`); preflight validates it (LLM-12) and accepts only models that take adaptive thinking plus `output_config.effort` (Opus 5.5, Opus 5, Opus 4.8, Opus 4.7, Sonnet 5.5, Sonnet 5); Haiku 4.5 is refused (no `effort`, `budget_tokens` only, 200K context and a 100-page PDF limit). The manifest records it; say clearly that this deviates from the all-Opus decision. Another *provider* is not a live change (ADR-001; audit C24). Note that a model or top-level effort change starts a new prompt cache, so the first rerun call is slower and dearer | Rerun; manifest `effort_by_stage` / `requested_model` and `served_models` show the change | ≤ 3 min |
 
 Less likely, prepared: change the persona (`config/agent.yaml` line 12 → `security_architect`, defined in `config/persona.yaml`; DEMO-09); add an executive summary of ≤ 150 words (`agent/templates/report.md.j2`, uncomment the `executive_summary` block; DEMO-08). **The `Review` schema in `spec/finding.schema.json` v1.0 has no `executive_summary` field**: either add it (optional, `maxLength`-checked in code) to the schema before `demo-freeze`, or render the summary from existing fields (`verdict`, top-ranked `findings`) in the template only; show the plan before execution (`--plan-only`; DEMO-12).
 
@@ -125,27 +125,60 @@ Less likely, prepared: change the persona (`config/agent.yaml` line 12 → `secu
 | Clock | Step | What to say and show |
 |---|---|---|
 | 0:00 | Receive the PDF. Save it to `inbox/`. Look at its title page and revision history: is it a new design or an updated version of the SIT sample? | "The agent never saw this file; it only knows its hash once ingested." |
-| 0:30 | Start the run. New design: `dra review inbox/<file>.pdf --deadline 540`. Updated SIT design: add `--previous runs/sit_v1_frozen` | The deadline of 540 s leaves a minute of margin; the planner sizes research to the remaining time and guarantees a report by T−60 s |
+| 0:30 | Start the run. New design: `dra review inbox/<file>.pdf --profile demo`. Updated SIT design: add `--previous runs/sit_v1_frozen` | The demo profile sets a 540 s deadline (a minute of margin in the slot), `medium` effort (research `low`) and two reserves on the run's own clock. Research stops by 220 s at the latest, so that assess keeps 200 s. Every model call before verify is cut at 420 s, so that verify and report keep 120 s. The run therefore ends by 540 s whatever happens, with a report. These numbers are UNMEASURED estimates until the stopwatch rehearsal (§1) |
 | 0:30-1:30 | **ingest / understand**: page count, sections found, image-only pages flagged, approved decisions and constraints pinned in the registry | "Design content and external research are kept apart: the document is in the cached prefix; research enters only as ledger entries with IDs." |
-| 1:30-6:30 | **plan / research**: the plan prints (questions, chosen tools, budget). Ledger IDs appear as evidence is gathered. A progress line appears at least every 10 s (DEMO-15) | Point at why a tool was chosen and when the stop rule fires; name the stop reason |
-| 6:30-8:00 | **assess / refine / verify**: findings, triage (refinement vs investigation / prototyping / testing / governance), anchor verification counts (resolved / repaired / unresolved) | "Every quote is checked in code against the canonical page text; unresolved anchors are reported, not hidden." |
-| ≤ 8:30 | **report**: `report.md` opens | Verdict and confidence on the first page; for updated designs, the delta section (resolved / open / regressed / new) |
-| 8:30-10:00 | Walk one finding: issue, rationale, evidence, expected benefit, link to the design objective. Then `dra explain <finding-id>` (§5.1) and `dra coverage` (criteria × sections, including "checked, no issue") | Close on the limitations section (degraded tools, unresolved items) |
+| 1:30-4:10 | **plan / research**: the plan prints (questions, chosen tools, budget). Ledger IDs appear as evidence is gathered. A progress line appears at least every 10 s (DEMO-15). Research ends by 4:10 at the latest (run time 220 s) | Point at why a tool was chosen and when the stop rule fires; name the stop reason |
+| 4:10-7:30 | **assess / refine**: findings, triage (refinement vs investigation / prototyping / testing / governance). A model call still running at 7:30 (run time 420 s) is cut: a cut refine keeps the assess findings, a cut assess gives a report that says the design was not assessed | "The deadline is enforced inside the model calls, so one slow call cannot take the report with it." |
+| 7:30-9:30 | **verify / report**: anchor verification counts (resolved / repaired / unresolved), then `report.md` opens, by 9:30 at the latest (run time 540 s) and earlier when the stages finish early | "Every quote is checked in code against the canonical page text; unresolved anchors are reported, not hidden." Verdict and confidence on the first page; for updated designs, the delta section (resolved / open / regressed / new) |
+| Report to 10:00 | Walk one finding: issue, rationale, evidence, expected benefit, link to the design objective. Then `dra explain <finding-id>` (§5.1) and `dra coverage` (criteria × sections, including "checked, no issue") | Close on the limitations section (degraded tools, unresolved items) |
 
-If the deadline is reached, the run stops itself (`stop_reason: deadline`) and still produces a report with a partial-evidence caveat (robustness BEH-24).
+If research reaches its time limit, the run stops researching (`stop_reason: deadline`) and still produces a report with a partial-evidence caveat (robustness BEH-24). If the deadline skips or cuts assess, the report has no findings, its verdict is `not_assessed` and it is headed "Not assessed (out of time before assessment)": it is not a judgement of the design (robustness LLM-05). Rerun with a longer `--deadline`.
 
 ### 5.1 `dra explain <finding-id>` (provenance)
 
 Reads only the run directory (works offline and in replay). Returns in under 5 s (robustness DEMO-06). Default run: the latest; `--run runs/<id>` to pick one. Prints:
 
-1. The finding as reported: ID, kind, severity, disposition (schema enum: `refinement_now`, `needs_investigation`, `needs_prototyping`, `needs_testing`, `governance_decision`, `no_change`), verdict impact.
-2. **Document anchors:** for each `doc_anchors[]` entry, page, `section_ref` and heading, the verbatim quote, the match method (exact or fuzzy and score), and the character span in `doc.pages.txt` (read from the run's anchor table `anchors.json`, ADR-007).
-3. **External evidence:** for each ledger ID, the tool and server, the query or arguments, the URL, the retrieval time, the snippet as the agent saw it, and the snapshot path.
-4. **Source tag:** `doc`, `external` or `inference`, and for inference, which anchors and ledger entries it rests on.
-5. **History:** the stage that created the finding, every stage that changed it (with a before/after diff of the fields that changed), and the `llm.jsonl` call IDs involved.
-6. **Checks:** anchor status, `read_before_cite`, any conflict with the approved-decision registry and whether it is labelled `challenges_decision`.
+- **Header:** the finding as reported: ID (`FND-nnn`), kind, severity, disposition (schema enum: `refinement_now`, `needs_investigation`, `needs_prototyping`, `needs_testing`, `governance_decision`, `no_change`), rank, confidence, title, statement and verdict impact (the verdict conditions and per-objective labels that cite it).
+- **1. Document anchors:** for each `doc_anchors[]` entry, document, page and `section_ref`, the verbatim quote, the anchor status and match method (exact or fuzzy, with the score), and the character span in `text/<doc_id>.pages.txt` (read from the run's anchor table `anchors.json`, ADR-007).
+- **2-3. Evidence and the tool calls behind it:** for each ledger ID (`EV-nnn`), the source tag (`doc`, `external` with its authority class, or `inference` with the entries it is derived from), whether it supports the claim, the URL or citation, the quote, the title, the retrieval time, the snippet as the agent saw it, and the tool call (`call-nnnn`: server/tool, arguments, status, time, and whether it was replayed).
+- **4. Criteria that produced it:** the configured criterion IDs and their questions.
+- **5. History:** the stage that created the finding, every stage that changed it (with a before/after diff of the fields that changed), the provenance, and the `llm.jsonl` call IDs involved (`llm-nnnn`).
+- **6. Checks:** how many anchors verified, `read_before_cite` for each external entry, and any challenge to the approved-decision registry (`AD-nnn`).
 
-Illustrative output (made-up content): `dra explain F-07` → "F-07 (risk, high, disposition: needs_prototyping) | p.12 §4.3 'All embeddings are re-generated nightly…' (exact) | E-004 mcp-research-information search_works 'hnsw index rebuild cost' → doi.org/…, retrieved 14:02:11 | created: assess (call 14) | revised: refine (call 17): severity medium→high after E-009 | anchors 1/1 resolved; no registry conflict".
+Real output, abridged (2026-10-03, the built-in selftest fixture: an invented room-booking design, served offline with `--transport fake`). The explain help uses `FND-007` as its example ID; this run has `FND-001` to `FND-003`:
+
+```
+$ dra explain FND-001
+FND-001 (risk, severity high, disposition: refinement_now, rank 1, confidence 0.92)  run demo-k1
+  E-mail plan cannot send peak-day reminders
+  Section 6.2 assumes the e-mail service has no daily sending limit, but the published plan allows 2,000 messages a day, ...
+  Verdict impact: condition: Move to an e-mail plan whose daily quota covers peak-day reminders.; objective Reminder before each slot: fit_with_conditions
+
+1. Document anchors
+  [1] DOC-design p.11 §6.2
+      "The selected e-mail service has no daily sending limit, so reminders are sent individually as each slot approaches."
+      resolved: exact match, score 1.0, matched page 11, chars 276-391 in text/DOC-design.pages.txt
+
+2-3. Evidence (ledger) and the tool calls behind it
+  EV-002 external (primary_official), supports: https://docs.example-mail.invalid/plans
+      quote: "The Starter plan allows up to 2,000 messages per day."
+      tool call call-0002: mcp-internet-search/fetch args {"url": "https://docs.example-mail.invalid/plans"} status ok at 2026-10-02T19:17:01Z (replayed)
+
+4. Criteria that produced it
+  claims_and_external_constraints: Are factual and quantitative claims about products, standards, regulations and platform limits correct and current? (lab §1.2, §3.2)
+
+5. History
+  assess (llm-0006): created
+  refine (llm-0007): revised: Confidence raised: the quota is stated by the provider itself. [confidence: 0.85 -> 0.92]
+  verify (llm-0008): verify: anchors checked, evidence hydrated from the ledger [repaired_anchors: [] -> [1]]
+
+6. Checks
+  anchors 2/2 in the report verified
+  EV-002: read_before_cite ok
+  registry: no challenge to an approved decision
+```
+
+An ID that is not in the report exits 2 with `error: FND-099 not in <run_dir>/report.json`.
 
 ## 6. Offline and degraded fallbacks
 
@@ -191,7 +224,7 @@ Verified on 2026-10-02 by walking the runbook as the participant (`research/audi
 | `config/agent.yaml`, `stop_rules.yaml`, `tools.yaml` with the exact line layout of §4.1; `criteria.yaml`, `endpoints.yaml`, `url_policy.yaml`, `persona.yaml` (with `generalist_architect` and `security_architect`) | §2, §4 | §4.1; ADR-001; `docs/SEALING.md` §5 |
 | `tests/test_config_layout.py` pinning §4.1 line numbers | Header contract | this runbook |
 | `agent/stop_rules.py` registry with `@register`; `agent/states.py`; `agent/templates/report.md.j2` with a commented `executive_summary` block | §4.2, §8 | ADR-001; §4.1 |
-| `Makefile` targets `smoke` (offline L0 subset ≤ 60 s) and `hooks` | §1, §4 | robustness DEMO-13; `docs/SEALING.md` §3 |
+| `Makefile` targets `smoke` (offline, about 10 s) and `test` (ruff plus the whole suite): **built** (2026-10-03). `hooks` (the pre-commit hook of `docs/SEALING.md` §3) is not built | §1, §4 | robustness DEMO-13; `docs/SEALING.md` §3 |
 | Fault injection (`--faults <SCENARIO-ID>`) for INF-01, INF-07, INF-24, LLM-01/02/03, LLM-06, NET-01 | §7 | `research/robustness/` §5 |
 | Checkpoints, journal and `resume` | §6, §7 | ADR-009 |
 | Run artefacts: `runs/sit_v1_frozen/`, `runs/demo_backup_sit_v1/`, `runs/demo_backup_delta/`, fresh cassettes | §1, §2, §6 | ADR-008 (recorded on the laptop) |
