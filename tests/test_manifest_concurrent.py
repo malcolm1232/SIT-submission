@@ -15,17 +15,19 @@ and ``budget.elapsed_s`` (the run clock).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from sit_eval import usage as harness_usage
 from sit_review_agent.clock import FakeClock, isoformat_z
 from sit_review_agent.config import load_config
 from sit_review_agent.context import RunContext
 from sit_review_agent.llm.gateway import FakeGateway
 from sit_review_agent.manifest import build_manifest, journal_usage
-from sit_review_agent.models import Outcome
+from sit_review_agent.models import ManifestExtra, Outcome
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.prompts import PromptBundle
 from sit_review_agent.rundir import JsonlWriter, RunDir
@@ -242,3 +244,38 @@ def test_a_shard_marker_counts_only_on_an_assess_attempt(tmp_path: Path) -> None
                {**ok("llm-0004", "assess", f"{RUN}-assess-c", start=1.0, wall=5.0, u=usage(1, 1)), "shard": 0},
                {**ok("llm-0005", "assess", f"{RUN}-assess-c", start=1.0, wall=5.0, u=usage(1, 1)), "shard": "0"}]
     assert model_extra(make_ctx(tmp_path, entries))["assess_shards"] == 1
+
+
+# ------------------------------------------------------------------------- 4. the harness reads both manifests
+
+
+def test_the_harness_reads_a_sequential_and_a_concurrent_manifest_the_same_way(tmp_path: Path) -> None:
+    sequential = [ok("llm-0001", "understand", f"{RUN}-understand", start=None, wall=10.0, u=usage(100, 10)),
+                  ok("llm-0002", "assess", f"{RUN}-assess", start=None, wall=20.0, u=usage(200, 20))]
+    concurrent = concurrent_entries() + [
+        {**cut("llm-0009", "assess", f"{RUN}-assess-c", start=2.1, wall=299.9, estimated_usage=usage(5000, 3000),
+               partial={"findings": [{}]}), "shard": "c"}]
+    old = build_manifest(make_ctx(tmp_path / "s", sequential, phase_seconds={"understand": 10.0, "assess": 20.0},
+                                  run_clock_s=31.0), Outcome.COMPLETED_NOMINAL)
+    new = build_manifest(make_ctx(tmp_path / "c", concurrent, phase_seconds=CONCURRENT_SECONDS, run_clock_s=374.0),
+                         Outcome.COMPLETED_DEGRADED)
+    for m in (old, new):
+        dumped = json.loads(json.dumps(m.model_dump(mode="json")))     # as manifest.json is written and read
+        assert ManifestExtra.model_validate(dumped["extra"])          # INV-09 still accepts the extra block
+        assert set(dumped["extra"]["timing"]) == {"wall_clock_s", "per_stage_s", "stages"}
+        for key in ("assess_shards", "salvaged_calls", "salvaged_items", "calls_with_unrecorded_usage",
+                    "cost_usd_lower_bound", "estimated_usage_of_unrecorded_calls", "estimated_usage_totals"):
+            assert key in dumped["extra"]["model"]
+    # the sequential run: complete usage, no shards, no estimates, the stage wall is the sum
+    seq = harness_usage.from_manifest(json.loads(json.dumps(old.model_dump(mode="json"))))
+    assert seq is not None and seq.status == harness_usage.COMPLETE and seq.lower_bound is False and seq.calls == ()
+    assert old.extra["model"]["cost_usd_lower_bound"] is False
+    assert old.extra["timing"]["stages"]["stage_1"]["wall_basis"] == "sequential_sum"
+    # the concurrent run: one cut call makes the recorded figures a lower bound, whatever was estimated or salvaged
+    con = harness_usage.from_manifest(json.loads(json.dumps(new.model_dump(mode="json"))))
+    assert con is not None and con.status == harness_usage.UNRECORDED and con.lower_bound is True
+    assert [c["call_id"] for c in con.calls] == ["llm-0009"] and con.calls[0]["reason"] == "deadline_cut"
+    assert new.extra["model"]["cost_usd_lower_bound"] is True
+    assert new.extra["model"]["estimated_usage_totals"]["calls"] == 1
+    assert new.extra["model"]["salvaged_items"] == 1 and new.extra["model"]["assess_shards"] == 3
+    assert new.usage.input_tokens == 800                                 # 8 recorded calls, never the estimate
