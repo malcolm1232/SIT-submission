@@ -100,7 +100,7 @@ Requirements are grouped into Functional Requirements (what the platform must do
 |---|---|
 | NFR-1 | The platform shall support 3,000 researchers, at least 600 concurrent interactive sessions at peak, and approximately 2 PB / 1.1 billion objects at launch, growing about 35% per year, without re-architecture for three years. |
 | NFR-2 | Interactive SQL, the notebook environment and Scholar Assist shall each be available 99.9% per calendar month, excluding announced maintenance windows of no more than 4 hours per month. |
-| NFR-3 | Scholar Assist p95 time-to-first-token shall be ≤ 2.5 s, and the p95 retrieval stage (entitlement resolution, search and rerank) ≤ 400 ms, at a sustained 50 queries per second. |
+| NFR-3 | Scholar Assist p95 time-to-first-token shall be ≤ 2.5 s, and the p95 retrieval stage (entitlement resolution, search and rerank) ≤ 400 ms, at a sustained 20 queries per second. |
 | NFR-4 | Batch ingestion shall be published within 24 h of landing; instrument streams within 60 min; new or changed text sources shall be searchable in Scholar Assist within 6 h of publication. |
 | NFR-5 | Content classified Restricted or Controlled shall not be transmitted to, or processed by, any service outside Westmoor-controlled AWS accounts. |
 | NFR-6 | Datasets tagged CUI shall be encrypted at rest with customer-managed AWS KMS keys rotated every 90 days, as required by NIST SP 800-171 Rev. 2 requirement 3.1.1. |
@@ -359,7 +359,7 @@ Access control has two levels. **Coarse** access (can this principal read this n
 |---|---|---|
 | Trino | Polaris grants on table load; vended credentials | Trino OPA access-control plugin: row filters and column masks from the RDLR Rego bundle |
 | Spark (EMR on EKS) | Polaris grants on table load; table-scoped vended credentials | RDLR Spark extension evaluates the same OPA bundle and injects row filters and column masks during query planning |
-| Scholar Assist | Entitlement Resolver pre-filter on `project_id` (Section 14.3) | Not applicable — tabular rows are never embedded |
+| Scholar Assist | Entitlement Resolver pre-filter on `project_id` / `dataset_id` (Section 14.3) | Not applicable — tabular rows are never embedded |
 | Direct S3 | Denied by bucket policy except vended credentials | Not applicable |
 
 ### 10.3 Policy bundle
@@ -460,13 +460,15 @@ chunk_id         stable hash of (source_id, source_version, offsets)
 source_id        publication, ELN entry, dataset or document identifier
 source_version   Iceberg snapshot id (for manifest-backed sources) or S3 object version id
 project_id       owning project ("public" pseudo-project for Public-tier sources)
+dataset_id       dataset the source documents, if any (null for ELN entries and publications)
+source_type      PUBLICATION | ELN | DATASET_DOC | PROTOCOL | CODE_DOC
 section_path     heading path within the source
 char_start/end   offsets into the source text
 text_sha256      hash of chunk text
 vector           1,024-dim dense embedding
 ```
 
-No classification or embargo label is copied onto the chunk; entitlement is resolved at query time from `project_id` (Section 14.3), so changes to roles or embargoes take effect without re-indexing.
+No classification or embargo label is copied onto the chunk; entitlement is resolved at query time from `project_id` and `dataset_id` (Section 14.3), so changes to roles or embargoes take effect without re-indexing.
 
 ### 14.2 Embedding
 
@@ -477,16 +479,16 @@ Embeddings are produced by BAAI bge-m3 (1,024-dimensional dense vectors), self-h
 The index is an Amazon OpenSearch Service domain with a k-NN field (faiss HNSW, M = 16, ef_construction = 128) and a BM25 text field over the same chunks. Retrieval for a query:
 
 ```
-1. Entitlement   Resolver computes the user's entitled project set:
-                   projects where the user holds a role
-                 + projects with datasets granted via an active DSA
-                 + "public"
-                 - nothing else
+1. Entitlement   Resolver computes the user's entitled set:
+                   P = projects where the user is PI or Member (all source types)
+                       + "public"
+                   D = datasets granted to the user as Analyst or Viewer, or via an
+                       active DSA, excluding embargoed datasets (DATASET_DOC only)
                  Cached per user for 60 s.
 
-2. Search        Filtered k-NN (k = 100, ef_search = 256) and BM25 (k = 100), both with a
-                 terms filter on project_id in the entitled set, executed as efficient
-                 (pre-)filtering. Results fused by reciprocal rank fusion.
+2. Search        Filtered k-NN (k = 100, ef_search = 256) and BM25 (k = 100), both with the
+                 filter  project_id IN P  OR  (dataset_id IN D AND source_type = DATASET_DOC),
+                 executed as efficient (pre-)filtering. Results fused by reciprocal rank fusion.
 
 3. Rerank        Top 50 by RRF reranked by a cross-encoder (bge-reranker-v2-m3).
 
@@ -553,7 +555,7 @@ Embedding model upgrades (for example, a new bge-m3 release) and changes to chun
 | Headroom | ≈ 2×, covering three years of growth at 35% per year |
 | Shards | 12 primaries, 1 replica each |
 
-Queries are always filtered by the entitled project set; for a typical researcher this is 3–6 projects plus the public pseudo-project, so the effective candidate set is a small fraction of the index.
+Queries are always filtered by the entitled project set; for a typical researcher this is 3–6 projects plus the public pseudo-project and a handful of granted datasets, so the effective candidate set is a small fraction of the index.
 
 ---
 
@@ -598,10 +600,10 @@ Audit records contain identifiers, never result rows or file contents. Human-sub
 | JupyterHub | Node groups incl. GPU profiles at observed pilot usage | 4,300 |
 | OpenSearch | Domain in Section 15 | 7,600 |
 | GPU inference | 8 × g5.2xlarge indexing (scaled to 50% duty) + 2 × g5.2xlarge online | 5,800 |
-| LLM API | ≈ 1.1M answers/month at pilot token profile, after cache savings | 6,500 |
+| LLM API | ≈ 180,000 answers/month at pilot token profile (≈ 5.5k input, 0.7k output tokens), 31% served from cache | 3,700 |
 | Catalog, Registry, EKS control plane, networking | | 3,100 |
 | Audit plane | Firehose, S3 Object Lock, Athena | 1,200 |
-| **Total** | | **63,550** |
+| **Total** | | **60,750** |
 
 **Primary storage.** S3 Intelligent-Tiering moves objects between access tiers automatically based on access patterns: Frequent Access (USD 0.023/GB-month), Archive Instant Access after 90 days without access (USD 0.004/GB-month), and Deep Archive Access after 180 days without access (USD 0.00099/GB-month), with no retrieval charges and no change in access latency for the query engines. Access telemetry from the faculty file shares shows 12% of bytes accessed within any 90-day window, 28% last accessed between 90 and 180 days ago, and 60% not accessed for more than 180 days. The blended cost is therefore 0.12 × 2,000,000 GB × 0.023 + 0.28 × 2,000,000 GB × 0.004 + 0.60 × 2,000,000 GB × 0.00099 ≈ USD 5,520 + 2,240 + 1,190 ≈ USD 8,950 per month, within NFR-9.
 
@@ -746,7 +748,7 @@ Each requirement from Section 2 is validated by a specific method with a concret
 |---|---|---|
 | NFR-1 | Scale test | Synthetic catalog of 2 PB metadata equivalent and 1.1B objects; 600 concurrent sessions sustain the interactive SLO for 2 h without errors. |
 | NFR-2 | Availability measurement | Monthly availability from synthetic probes (SQL, notebook spawn, Scholar Assist query) every minute; ≥ 99.9% over three consecutive months in pilot. |
-| NFR-3 | Latency benchmark | At 50 QPS on the full production index, p95 TTFT ≤ 2.5 s and p95 retrieval ≤ 400 ms on cache misses. |
+| NFR-3 | Latency benchmark | At 20 QPS on the full production index, p95 TTFT ≤ 2.5 s and p95 retrieval ≤ 400 ms on cache misses. |
 | NFR-4 | Freshness test | Instrument micro-batch published ≤ 60 min after landing; a new ELN entry retrievable ≤ 6 h after publication. |
 | NFR-5 | Egress inspection | VPC flow logs and egress proxy logs over a two-week pilot show no Restricted or Controlled payloads to non-Westmoor endpoints. |
 | NFR-6 | Key configuration check | AWS Config rule confirms every CUI-tagged bucket uses a CMK with a 90-day rotation period. |

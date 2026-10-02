@@ -593,4 +593,4 @@ no_change_areas:      # areas where a justified 'no change' should be credited
     locations: ["p.4 NFR-5", "p.11 §11", "p.27 NFR-5 test"]
 ```
 
-A worked, illustrative key for the Memory Platform document is in `worked_examples.md` §5.
+A worked, illustrative key for the Memory Platform document is in `worked_examples.md` §6.

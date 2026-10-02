@@ -368,7 +368,7 @@ disagreement table, and (in key-aware mode) key recall, trap hits and valid extr
 
 The grader is a measuring instrument. We test its known failure modes with controlled variants of one base
 review. **R_base** is a competent review of the Memory Platform doc covering key items K1–K6 (see
-`worked_examples.md` §5) and no-change areas N1–N2, scoring about 3 on every dimension (S ≈ 75).
+`worked_examples.md` §6) and no-change areas N1–N2, scoring about 3 on every dimension (S ≈ 75).
 
 | ID | Test | Construction | Expected grader behaviour | Pass criterion (over 5 runs × 2 samples) |
 |---|---|---|---|---|
