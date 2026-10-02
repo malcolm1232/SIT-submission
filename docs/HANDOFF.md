@@ -49,6 +49,12 @@ Read in this order (about 30 minutes):
   entries in `--faults` are silently ignored.
 - First live run through the Claude Code backend: see `docs/HANDOVER_FULL.md` §8.
 
+**State on 2026-10-03 (latency redesign).**
+The agent's phase structure is being redesigned for latency (`docs/DECISIONS.md` ADR-011 and ADR-012, both Proposed; `docs/USER_DECISIONS.md` #31): a concurrent first stage of understand, plan and four assess shards, a revision-only refine, a verdict-only model call and a code-rendered report, with stage limits at 265 / 465 / 530 s on the 540 s demo profile.
+The build is on branches `s4/w1-latency` (streamed CLI output, salvage, stage limits), `s4/w2-latency` (stage orchestration and the new refine and verdict calls) and `s4/w3*-latency` (replay, manifest and these documents), none of them integrated yet.
+Next: the integration pass, then the first timed rehearsal on payments v1, which confirms or replaces the predicted 443 s document-only and about $5.4 per FULL run; `docs/BUDGET.md` and the Tier A plan are redone after it.
+What stays the owner's: the scored pilot and the with-tools rehearsal (which waits for the MCP key), the Tier A budget approval, Opus fast mode, the signature on the S-dev keys, and any reversal of ruling #31 (the evaluated agent at `medium`).
+
 ## Owner tasks on the critical path (cannot be delegated)
 
 1. Run `scripts/probe_mcp_servers.py` on a laptop (see `scripts/README.md`) and
