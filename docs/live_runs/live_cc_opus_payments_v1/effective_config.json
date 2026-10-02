@@ -1,0 +1,322 @@
+{
+ "agent": {
+  "allow_fallback": false,
+  "claude_code": {
+   "executable": "claude",
+   "extra_args": [],
+   "inherit_api_key": false,
+   "max_budget_usd_per_call": null
+  },
+  "effort": {
+   "assess": "high",
+   "plan": "high",
+   "refine": "high",
+   "report": "high",
+   "research": "high",
+   "verify": "high"
+  },
+  "fault_schedule": null,
+  "files": {
+   "criteria": "criteria.yaml",
+   "endpoints": "endpoints.yaml",
+   "persona": "persona.yaml",
+   "stop_rules": "stop_rules.yaml",
+   "tools": "tools.yaml",
+   "url_policy": "url_policy.yaml"
+  },
+  "llm": {
+   "backend": "claude_code",
+   "backoff_base_s": 2.0,
+   "backoff_max_s": 60.0,
+   "max_retries": 4,
+   "refusal_retries": 1,
+   "timeout_s": 600.0
+  },
+  "max_tokens": 64000,
+  "model": "claude-opus-5-5",
+  "persona": "generalist_architect",
+  "phases": {
+   "assess": true,
+   "ingest": true,
+   "plan": true,
+   "refine": true,
+   "report": true,
+   "research": true,
+   "understand": true,
+   "verify": true
+  },
+  "plan_approval": false,
+  "record": {
+   "cassette_dir": "tests/fixtures/cassettes"
+  },
+  "replay": {
+   "fixtures": null,
+   "strict": true
+  },
+  "report": {
+   "min_severity": "low",
+   "template": "standard"
+  },
+  "run_root": "runs",
+  "thinking_display": "omitted",
+  "transport": "live"
+ },
+ "cli_args": {
+  "deadline_seconds": 2400,
+  "no_tools": true
+ },
+ "config_root": "/home/user/SIT/config",
+ "criteria": {
+  "criteria": [
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "design_intent",
+    "kinds": [
+     "strength",
+     "gap",
+     "ambiguity"
+    ],
+    "lab_ref": "§1.2, §2.1, §2.3",
+    "question": "What are the design's objectives, principles, constraints, requirements and approved decisions, and are they stated clearly enough to review against?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "fitness_for_objectives",
+    "kinds": [
+     "strength",
+     "risk",
+     "gap",
+     "validation_need"
+    ],
+    "lab_ref": "§1.4, §2.3, §3.2",
+    "question": "Does each major design element plausibly achieve the objective or requirement it is meant to serve?",
+    "research_hints": [
+     "capabilities and documented limits of the named products and services"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "requirement_completeness",
+    "kinds": [
+     "gap"
+    ],
+    "lab_ref": "§1.4, §2.3",
+    "question": "Are any requirements, controls, error paths, rollback paths or owners missing that the objectives need?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "internal_consistency",
+    "kinds": [
+     "risk",
+     "ambiguity"
+    ],
+    "lab_ref": "§2.4",
+    "question": "Do requirements, decisions, numbers, flows and acceptance criteria agree with each other across sections?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "claims_and_external_constraints",
+    "kinds": [
+     "risk",
+     "validation_need"
+    ],
+    "lab_ref": "§1.2, §3.2",
+    "question": "Are factual and quantitative claims about products, standards, regulations and platform limits correct and current?",
+    "research_hints": [
+     "official product documentation and published quotas",
+     "the text of the cited standard or regulation"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "security_and_privacy",
+    "kinds": [
+     "risk",
+     "gap"
+    ],
+    "lab_ref": "§1.4, §3.2",
+    "question": "Are data protection, access control, secrets handling, auditability and regulatory obligations covered for the data the design handles?",
+    "research_hints": [
+     "applicable data-protection regulation and official security guidance for the named services"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "scalability_and_failure_modes",
+    "kinds": [
+     "risk",
+     "validation_need"
+    ],
+    "lab_ref": "§1.4, §3.2",
+    "question": "Does the design hold at the stated load and under partial failure, retry, concurrency and recovery?",
+    "research_hints": [
+     "published performance characteristics and failure behaviour of the named components"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "assumptions_and_dependencies",
+    "kinds": [
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§1.2, §2.3",
+    "question": "Which premises, pending items, vendor capabilities or approvals does the design rely on without verifying or tracking them to closure?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "verifiability",
+    "kinds": [
+     "validation_need"
+    ],
+    "lab_ref": "§2.3, §3.2",
+    "question": "Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?",
+    "research_hints": [
+     "recognised test or benchmark methods for the claim"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "decision_preservation",
+    "kinds": [
+     "strength",
+     "risk",
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§1.3",
+    "question": "Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "operability_and_governance",
+    "kinds": [
+     "gap",
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§3.2",
+    "question": "Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?",
+    "research_hints": []
+   }
+  ]
+ },
+ "endpoints": {
+  "servers": {
+   "mcp-browser-automation-pw": "https://mcp-browser-automation-pw.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-document-intelligence": "https://mcp-document-intelligence.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-internet-search": "https://mcp-internet-search.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-research-information": "https://mcp-research-information.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp"
+  }
+ },
+ "personas": {
+  "personas": {
+   "generalist_architect": {
+    "emphasis": "Balanced review across objectives, requirements, decisions, risks and verifiability.\n",
+    "title": "Principal solution architect"
+   },
+   "security_architect": {
+    "emphasis": "Same review scope, with extra scrutiny of threats, data protection, access control, auditability and regulatory obligations.\n",
+    "title": "Security and privacy architect"
+   }
+  }
+ },
+ "source_files": {
+  "config/agent.yaml": "4a187d6198b4e7ac532c556d8c96e1ef117166e2086cab8735300fa8d9564342",
+  "config/criteria.yaml": "4f16aba8d0f0df9c7cce8ca828ebadf79e91a498736ac9224838bdc28b2c0bad",
+  "config/endpoints.yaml": "99cd4094eef39e2a526030bb9c99cfa73d9fe6cb1765c3ffb31a8e236cf252f7",
+  "config/persona.yaml": "f49708c3dd6c571bd7dfdb7d6c939a303a146bb13f4cb65fee03f2dee9880ce8",
+  "config/stop_rules.yaml": "bf6aa3867d0034a156ddd01f7fe2b32be415cbcd3655876be4ed1d8cc8efae39",
+  "config/tools.yaml": "6bca28bdc9cef179bcc8f3b382e02f6dcc33727fd63f8aac57776a1de3dd9577",
+  "config/url_policy.yaml": "f44f783f8bad1d110ff05519f5b5575159ecc8c1f1686f3d0fc7379d95c040e4"
+ },
+ "stop_rules": {
+  "active": [
+   "sufficient_evidence",
+   "no_marginal_gain",
+   "budget_tool_calls",
+   "budget_tokens",
+   "deadline"
+  ],
+  "deadline_seconds": 2400,
+  "max_input_tokens": 4000000,
+  "max_output_tokens": null,
+  "max_research_iterations": 4,
+  "max_tool_calls": 30,
+  "min_independent_sources": 2,
+  "no_marginal_gain_window": 2,
+  "report_reserve_seconds": 60
+ },
+ "tools": {
+  "auth_env": "SIT_MCP_API_KEY",
+  "auth_header": "X-API-Key",
+  "call_timeout_s": 60.0,
+  "capabilities": {
+   "browse": "mcp-browser-automation-pw",
+   "scholarly": "mcp-research-information",
+   "search": "mcp-internet-search"
+  },
+  "cold_start_retries": 1,
+  "connect_timeout_s": 150.0,
+  "servers": [
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": false,
+    "name": "mcp-internet-search"
+   },
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": false,
+    "name": "mcp-research-information"
+   },
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": false,
+    "name": "mcp-browser-automation-pw"
+   },
+   {
+    "allow_tools": [],
+    "enabled": false,
+    "name": "mcp-document-intelligence"
+   }
+  ],
+  "url_policy": "url_policy.yaml"
+ },
+ "url_policy": {
+  "allow_domains": [],
+  "deny_domains": [],
+  "fetch_only_from_results": true,
+  "mode": "deny",
+  "reject_added_query_strings": true
+ }
+}

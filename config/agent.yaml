@@ -16,7 +16,7 @@ persona: generalist_architect
 thinking_display: omitted          # omitted | summarized (thinking is always adaptive on Opus 5.5)
 
 llm:
-  timeout_s: 600                   # per attempt; streaming is used for every call
+  timeout_s: 1800                  # per attempt. Measured 2026-10-02: assess on Opus high via claude_code took ~520 s and 63k output tokens; 600 s timed out 4 times (docs/HANDOVER_FULL.md §8)
   max_retries: 4                   # owned by LLMGateway; the SDK client always runs with max_retries=0
   backoff_base_s: 2.0
   backoff_max_s: 60.0

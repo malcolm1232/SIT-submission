@@ -52,6 +52,11 @@ Written by the coordinator (Claude Fable 5.1 acting as delegator) on 2026-10-02 
 
 `verify_spec.md`, `verify_eval.md`, `verify_docs.md`, `reconciliation_log.md`, `fresh_eyes.md`. Key outcomes: 12 schema holes closed; taxonomy YAML bug (`yes`/`no` keys parsed as booleans) fixed; eval-doc IDs leaking into schema examples removed; budget arithmetic corrected (442 runs full / 132 Tier A); ADR-009 checkpointing added; fresh-eyes found the MCP key prefix in `scenarios.md` (redacted; remains in git history of this private branch) and no `.gitignore` (added).
 
+### Phase 6 (second session, 2026-10-02): the agent is built
+
+Branch `claude/great-hopper-hbx7h0`. Six Opus subagents, reports verbatim in `docs/transcripts/session2_coordinator.md`:
+ClaudeCodeGateway implementer; backend verifier (7 defects, live-checked on Haiku); workstreams A (AnthropicGateway, llm_facing_schema, understand/plan/assess/refine, prompts), B (MCP/policy/fault tool gateways, research loop, sources, preflight) and C (ingest/verify/report, renderer, explain, manifest, run/resume, selftest, CLI) in parallel with disjoint file ownership; integration verifier (seams, e2e on a synthetic PDF, 37 adversarial invariant tests, ~12 defects). Result: `ruff` clean, `pytest` 444 passed 0 skipped, `sit-review selftest` passes offline in under 1 s. Then one live end-to-end run through the Claude Code backend (§8).
+
 ## 3. Decisions in force
 
 See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom loop on Anthropic SDK; direct MCP client; Opus 5.5 for every agent call, high effort allowed, one effort level per conversation (switching invalidates cache, ~$1.20/run); native PDF document block + pdfplumber text; anchor rule 8 tokens / fuzzy 0.90 / 3 locations / page ±1; on-disk checkpoints; no silent fallbacks; grader Opus 5.5 high + different-provider judge if a key exists; A4 = Sonnet-as-agent ablation (Tier B), A4b = effort sweep; repo private; keys to be sealed with `age`.
@@ -62,7 +67,8 @@ See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom lo
 
 - Tier A core: 132 runs, ~$240 agent API spend, ~$565 all-in Anthropic-only or ~$640 with a second-provider grader (30% margin included). The ~$75 difference is the only money that would go to OpenAI or Google.
 - Full programme (reference only): 442 runs, $1,150-1,800.
-- Per-run ~$2.18 is UNVERIFIED until `count_tokens` is run on the real document on the laptop.
+- Per-run ~$2.18 was the estimate. MEASURED on 2026-10-02 (§8): one doc-only run on a 21-page synthetic PDF, Opus 5.5 at `high` through the Claude Code backend, cost $3.68 by the CLI's own estimate for the five calls that completed, but four `assess` attempts were killed by the 600 s timeout after generating output and are not in that figure; the true spend is likely $8-10. With the timeout fixed, expect about $3.5-4 per doc-only run and more with research. Tier A arithmetic in `docs/BUDGET.md` should be redone from this number.
+- ADR-010 (accepted): agent model calls bill to the Claude Code login, so in a cloud session they draw on cloud credits and on a laptop on the subscription's usage limits, not on Console API credit. Whether a nested `claude -p` inside a cloud session really bills to cloud credits is still UNVERIFIED by the meter.
 - API spend bills to the API key the agent uses, not to the Claude Code account. Claude Code subscription credit does not pay for API calls.
 
 ## 5. Lessons learned as delegator
@@ -79,20 +85,52 @@ See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom lo
 10. **The research-grade bar is expensive.** The honest full programme is ~$1,800; the user's reaction ("1.2k dollars? for real?") shows the scoped Tier A should have been produced alongside the full figure from the start.
 11. **The sandbox cannot reach kaggle.com, arXiv, OpenAI/Google docs, legislation sites, or the SIT MCP hosts.** Agents coped via GitHub mirrors and search snippets, and marked sources; the probe and all live runs must happen on the laptop.
 12. **Human work is on the critical path and no agent can do it:** the SIT document answer key, the core_insight sign-offs, and grading calibration.
+13. **Probe the real tool contract yourself before writing the brief.** Thirty cents of Haiku calls established the `claude -p` flags, the JSON result shape and the argv limit; the implementer then built against facts, and the verifier found the remaining seven defects by running the CLI live, not by reading. `--bare` broke auth, `--resume` duplicated turns on retry, and costs were cumulative: none of that was in any doc.
+14. **Parallel implementers on one frozen skeleton work if file ownership is disjoint and shared files are Edit-only.** Three workstreams plus a verifier ran concurrently with no clobbering. The costs were a shared `tests/test_pending.py` and `PROMPTS.lock` that nobody could own (left to the integration verifier) and a stop hook that forces WIP commits of half-finished trees.
+15. **Every implementer's report ends with "writes beyond my list" and "for the other workstream"; feed those verbatim into the integration verifier's brief.** All seven seams it was given needed a fix or a test, and it found five more defects nobody had flagged.
+16. **Timeouts and deadlines sized for the API do not transfer to the CLI backend.** `assess` at high effort emitted 63k output tokens and took about 520 s; a 600 s per-attempt timeout killed it four times and the retries re-sent the whole document each time (49 minutes, unrecorded spend). Measure one live run before trusting any budget number.
 
 ## 6. What is next, in order
 
-1. Commit the agent skeleton when it lands (if this session ended before that, re-run the skeleton brief; it is in `docs/transcripts/conversation.md`).
-2. Owner: run the MCP probe on the Mac; report API keys held; approve Tier A budget; write the SIT answer key before any agent run on that document.
-3. Three parallel implementers on Opus with disjoint module ownership per `agent/README.md`: (a) LLM gateway + PDF ingest, (b) tool gateway with MCP/fault-injection/record-replay, (c) phases + orchestrator + report + CLI. Then a verifier pass.
-4. Eval harness: matcher + metrics + grader, driven by `spec/` and `eval/prereg.yaml`.
-5. Thin-slice run on one synthetic item with recorded fixtures in the cloud, then a live run on the laptop to measure latency against the 10-minute demo budget (fresh-eyes estimate: 380-870 s at high effort; likely needs trimming).
-6. Robustness P0 suite (81 scenarios), then freeze prompts, freeze `prereg.yaml`, run Tier A.
-7. Documentation per `docs/DOCUMENTATION_MAP.md`; demo rehearsal per `docs/DEMO_DAY_RUNBOOK.md`; grant the two SIT GitHub IDs collaborator access before the deadline.
+1. Owner: read §8 and decide the demo shape. At `high` effort the five model calls alone take about 16 minutes without research, so the 10-minute demo budget needs one of: `medium` effort for the demo (USER_DECISIONS #1 allows `high` but asks spend to be justified), a trimmed assess prompt, or a pre-recorded run replayed with `--replay`. Also decide `deadline_seconds` (540 is unreachable with this backend at `high`).
+2. Owner tasks unchanged: run the MCP probe on the Mac; write the SIT answer key before any run on that PDF; approve the Tier A budget once redone from the measured cost; fund OpenAI or Google if the second-provider judge is wanted.
+3. Eval harness (next implementer): matcher + metrics from `research/methodology/metrics.md`, grader from `research/grading/grader_prompt.md`, driven by `spec/` and `eval/prereg.yaml`. First job: score `docs/live_runs/live_cc_opus_payments_v1/report.json` against `eval/synthetic/payments_orchestration/answer_key.canonical.json` (eyeball in §8: 13 of 14 planted v1 flaws found plus one partial, six unplanted findings to classify, severities under-rated on three criticals).
+4. Robustness P0 suite as runnable scenarios (the fault machinery, 26 fault tests and the runbook drills exist; the 81 scenario files under `tests/robustness/faults/` do not).
+5. A live run WITH tools from the laptop (MCP hosts are unreachable from the sandbox): this exercises the envelope tool loop on Opus, which has only been verified on Haiku, and the real MCP transport.
+6. Freeze prompts and `prereg.yaml`, run Tier A; documentation per `docs/DOCUMENTATION_MAP.md`; demo rehearsal per `docs/DEMO_DAY_RUNBOOK.md`; collaborator access for the two SIT GitHub IDs.
 
 ## 7. How to resume in a new session
 
 ```
 Read docs/HANDOFF.md and docs/HANDOVER_FULL.md, then docs/transcripts/README.md.
-Continue from HANDOVER_FULL.md section 6. Spawn all subagents on Opus. Commit and push after each one lands.
+Continue from HANDOVER_FULL.md section 6 (read section 8 first). Spawn all subagents on Opus with the brief pattern in docs/transcripts/session2_coordinator.md. Verify every deliverable with a separate subagent. Commit and push after each one lands.
 ```
+
+## 8. First live run through the Claude Code backend (2026-10-02)
+
+Command, from this sandbox, Opus 5.5, every phase at `high`, no tools (SIT MCP hosts unreachable here):
+
+```
+sit-review run eval/synthetic/payments_orchestration/design_v1.pdf --no-tools --deadline 2400 --run-id live_cc_opus_payments_v1
+```
+
+Artefacts: `docs/live_runs/live_cc_opus_payments_v1/` (report.md, report.json, manifest.json, progress.log, effective_config.json). Exit 0, outcome `completed_degraded` (text-only input, no research), verdict `fit_with_conditions` at confidence 0.68, 21 findings (1 critical, 11 high, 8 medium, 1 low) plus 5 sound areas, 12 unresolved items, every finding anchored (one anchor-repair call, 33 s).
+
+| Phase | Wall | Output tokens | Cost (CLI estimate) |
+|---|---|---|---|
+| ingest | 2 s | n/a | 0 |
+| understand | 158 s | 22,227 | $0.68 |
+| plan | 158 s | 17,003 (29 questions, 6 external) | $0.63 |
+| research | 0 s (doc-only, disclosed) | 0 | 0 |
+| assess | 2,933 s: four attempts killed at the 600 s timeout, fifth succeeded in ~520 s | 63,392 | $1.58 recorded; the four killed attempts are unrecorded |
+| refine | skipped: the 2,400 s deadline had fired | 0 | 0 |
+| verify | 33 s | 3,724 | $0.30 |
+| report | 88 s | 9,918 | $0.49 |
+| total | 3,372 s (56 min) | 116,264 | $3.68 recorded, likely $8-10 true |
+
+Cache: the shared prefix was written on every phase (28-39k cache-creation tokens per call) and read only once (6k on the final assess attempt): forked CLI sessions per call plus a different first user turn per phase defeat the 5-minute cache. Worth a look before Tier A; a 1-hour TTL is not selectable through the CLI.
+
+Quality, by eye against `answer_key.canonical.json` (not the matcher; the harness is not built): planted v1 flaws F01-F06, F08-F14 each map to one finding; F07 (Indonesia data residency) is covered only partially by FND-016. Six findings are not planted flaws (FND-007, 010, 013, 015, 019, 020) and need a human call on true positive versus over-reach. Severity: the agent rated three planted criticals (F06, F08, F10) as high. The `assess` output used 63k of the 64k `max_tokens`: one more finding and it would have truncated.
+
+What this run changed: `config/agent.yaml llm.timeout_s` 600 → 1800. What it leaves open: the deadline and effort for the demo (§6 item 1), refine never ran, the envelope tool loop on Opus is still unexercised, and the money meter should be checked against the $3.68 figure to settle whether nested `claude -p` bills to cloud credits.
+
