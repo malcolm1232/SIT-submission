@@ -423,9 +423,11 @@ def _run_attach_runtime(ctx: RunContext, retrieved: Mapping[str, object] | None)
     """One set of run limits for every layer of the LLM stack (``llm.runtime``): the deadline read
     from this run's clock (resume-adjusted ``budget.started_monotonic``), the pre-send size check
     against the model's context window (``models.retrieve`` when the backend gave one)."""
-    from sit_review_agent.llm.runtime import attach_runtime, build_runtime
+    from sit_review_agent.llm.runtime import attach_runtime, build_runtime, deadline_warnings
 
     state, clk = ctx.state, ctx.clock
+    for warning in deadline_warnings(ctx.config.stop_rules):
+        ctx.emit(warning, "warn")
 
     def elapsed() -> float:
         return clk.monotonic() - state.budget.started_monotonic

@@ -86,6 +86,49 @@ def test_coverage_marks_not_applicable_criteria(run: Path) -> None:
     assert "C1 design_intent: not applicable" in format_coverage(cm)
 
 
+def test_criterion_whose_findings_were_not_verified_is_not_shown_as_clear(run: Path) -> None:
+    """The fixture run raises one finding under requirement_completeness whose anchor verify cannot
+    confirm, so it is not in the report. The map used to show that criterion as "findings" with no
+    ID and "ok" (checked, no issue) in every section."""
+    report = json.loads((run / "report.json").read_text(encoding="utf-8"))
+    assert any(u["text"].startswith("Unverified") for u in report["unresolved"])
+    cm = build_coverage(run)
+    assert cm.outcomes["requirement_completeness"] == "findings"
+    assert not cm.criterion_findings["requirement_completeness"]
+    assert {r.cells["requirement_completeness"] for r in cm.rows} == {"?"}
+    assert {r.cells["design_intent"] for r in cm.rows} == {"ok"}                 # a clear criterion is unchanged
+    out = format_coverage(cm)
+    assert "C3 requirement_completeness: findings (none in the report: raised but not verified" in out
+    assert "? = the criterion raised" in " ".join(out.split())
+    row = next(ln for ln in (run / "report.md").read_text(encoding="utf-8").splitlines()
+               if ln.startswith("| requirement_completeness |"))
+    assert "1 finding(s) raised here could not be verified" in row              # verify says so in the note
+    state = json.loads((run / "state.json").read_text(encoding="utf-8"))
+    kept = next(c for c in state["coverage"] if c["criterion_id"] == "verifiability")
+    assert kept["finding_ids"] == ["FND-003"] and "could not be verified" not in kept["note"]
+
+
+def test_coverage_of_a_run_with_no_assessment_says_not_assessed(run: Path) -> None:
+    """``assess`` marks every row ``not_applicable`` with a "not assessed: ..." note when the run
+    produced no assessment; the map must not call those criteria "not applicable"."""
+    state = json.loads((run / "state.json").read_text(encoding="utf-8"))
+    for c in state["coverage"]:
+        c.update(outcome="not_applicable", finding_ids=[], note="not assessed: out of time before assessment "
+                                                                 "(run deadline)")
+    state["finding_meta"] = {}
+    (run / "state.json").write_text(json.dumps(state), encoding="utf-8")
+    report = json.loads((run / "report.json").read_text(encoding="utf-8"))
+    report["findings"], report["sound_areas"] = [], []
+    report["verdict"]["label"] = "not_assessed"
+    (run / "report.json").write_text(json.dumps(report), encoding="utf-8")
+    cm = build_coverage(run)
+    out = format_coverage(cm)
+    assert "verdict not_assessed | 0 finding(s)" in out
+    assert "C1 design_intent: not assessed: out of time before assessment (run deadline)" in out
+    assert "not applicable" not in out.split("Legend:")[0]
+    assert {cell for r in cm.rows for cell in r.cells.values()} == {"-"}
+
+
 def test_coverage_of_a_report_only_run_directory() -> None:
     """``docs/live_runs/`` keeps only report.json, report.md and the manifest: the coverage rows
     come from the report's coverage table and the rows from the cited sections."""

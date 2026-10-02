@@ -8,7 +8,10 @@ are the configured review criteria, in config order. A cell is:
   severity (C critical, H high, M medium, L low; S when they are all strengths, which have none);
 * ``ok``: "checked, no issue" here: the criterion was reported as checked for the whole document
   (coverage outcome ``findings`` or ``no_issue``) and no finding for it is anchored in this section;
-* ``-``: the criterion was reported not applicable, or not reported as checked at all.
+* ``?``: the criterion raised findings but none of them is in the report (verify could not confirm
+  their anchors, or a code check dropped them), so no section can be called clear for it;
+* ``-``: the criterion was reported not applicable, was not assessed (a run with no assessment), or
+  was not reported as checked at all.
 
 The ``SA`` column lists the sound areas (sections checked and found sound) in each row.
 
@@ -32,8 +35,12 @@ SEVERITY_LETTER = {"critical": "C", "high": "H", "medium": "M", "low": "L"}
 CHECKED = ("findings", "no_issue")
 LEGEND = ("nX = n findings for this criterion anchored in this section, worst severity X (C critical, "
           "H high, M medium, L low; S strength, no severity); ok = checked, no issue in this section "
-          "(criterion checked for the whole document, no finding anchored here); - = not applicable or not "
-          "reported as checked; SA = sound areas")
+          "(criterion checked for the whole document, no finding anchored here); ? = the criterion raised "
+          "findings that could not be verified and are not in the report, so no section is cleared (see the "
+          "report's unresolved items); - = not applicable, not assessed or not reported as checked; "
+          "SA = sound areas")
+#: How ``assess`` starts the note of every coverage row when the run produced no assessment.
+NOT_ASSESSED_NOTE = "not assessed"
 
 
 @dataclass
@@ -199,6 +206,8 @@ def build_coverage(run_dir: str | Path, *, depth: int = 1) -> CoverageMap:
             row.findings[cid] = here
             if here:
                 row.cells[cid] = f"{len(here)}{_worst(findings[f] for f in here)}"
+            elif outcomes.get(cid) == "findings" and not by_criterion[cid]:
+                row.cells[cid] = "?"            # raised, but nothing verified: not "checked, no issue"
             elif outcomes.get(cid) in CHECKED:
                 row.cells[cid] = "ok"
             else:
@@ -245,7 +254,16 @@ def format_coverage(cm: CoverageMap, *, label_width: int = 30) -> str:
     for col, cid in zip(cols, cm.criteria, strict=True):
         ids = cm.criterion_findings.get(cid) or []
         outcome = cm.outcomes.get(cid, "not reported").replace("_", " ")
-        lines.append(f"  {col:>3} {cid}: {outcome}" + (f" ({len(ids)}: {_clip(', '.join(ids), 60)})" if ids else ""))
+        note = " ".join((cm.notes.get(cid) or "").split())
+        if ids:
+            detail = f" ({len(ids)}: {_clip(', '.join(ids), 60)})"
+        elif cm.outcomes.get(cid) == "findings":
+            detail = " (none in the report: raised but not verified; see the report's unresolved items)"
+        elif cm.outcomes.get(cid) == "not_applicable" and note.lower().startswith(NOT_ASSESSED_NOTE):
+            outcome, detail = _clip(note, 80), ""        # a run with no assessment: not "not applicable"
+        else:
+            detail = ""
+        lines.append(f"  {col:>3} {cid}: {outcome}{detail}")
     if cm.unanchored:
         lines.append(f"Findings with no section anchor: {', '.join(cm.unanchored)}")
     lines += ["", _wrap("Legend: " + LEGEND, 100), f"Sources: {', '.join(cm.sources)}"]

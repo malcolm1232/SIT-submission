@@ -101,6 +101,10 @@ INTENT_OWNER = "intent"
 _FINDING_ID_RE = re.compile(r"^FND-[0-9]{3,}$")
 _NORM_WS = re.compile(r"\s+")
 #: Placeholder text a hollow answer carries instead of content (robustness LLM-09).
+#: Coverage-row note for findings a criterion raised that verify did not keep (unverified anchors or
+#: a failed code check); ``report.coverage`` reads the same situation from the row itself.
+NOT_REPORTED_NOTE = "finding(s) raised here could not be verified or failed a code check and are not reported"
+
 _PLACEHOLDER = re.compile(r"^\W*(tbd|tba|tbc|todo|to do|n/?a|none|null|placeholder|lorem ipsum\b.*|x{3,})?\W*$",
                           re.IGNORECASE)
 
@@ -521,9 +525,17 @@ class VerifyPhase:
             state.intent_summary = self._settle_intent(ctx, state.intent_summary, by_owner[INTENT_OWNER])
 
         # ---- 8. coverage IDs follow renumbering; unverified items; disclosures; anchors.json
-        state.coverage = [c.model_copy(update={"finding_ids": [id_map.get(x, x) for x in c.finding_ids
-                                                               if id_map.get(x, x) in kept_ids]})
-                          for c in state.coverage]
+        # A row that loses findings here says so: its outcome stays `findings` (the criterion did
+        # raise something), and without the note the coverage table would show "findings: -".
+        coverage = []
+        for c in state.coverage:
+            ids = [id_map.get(x, x) for x in dict.fromkeys(c.finding_ids)]
+            kept = [x for x in ids if x in kept_ids]
+            note = c.note
+            if len(kept) < len(ids) and NOT_REPORTED_NOTE not in note:
+                note = f"{note} ({len(ids) - len(kept)} {NOT_REPORTED_NOTE})".strip()
+            coverage.append(c.model_copy(update={"finding_ids": kept, "note": note}))
+        state.coverage = coverage
         state.unresolved = unverified
         if unverified:
             _degrade(ctx, f"{len(unverified)} finding(s) had no anchor that could be verified in the document "

@@ -356,6 +356,29 @@ async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path
     assert any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events)
 
 
+def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveConfig) -> None:
+    """`--deadline 300` against the default reserves (180 s + 600 s) used to run silently into a
+    report with no assessment; the run now says so at the start. The shipped default and the demo
+    profile fit their reserves and stay quiet."""
+    from sit_review_agent.config import ConfigOverrides
+    from sit_review_agent.llm.runtime import deadline_warnings
+
+    def rules(**kw: Any) -> Any:
+        return base.stop_rules.model_copy(update=kw)
+
+    assert deadline_warnings(base.stop_rules) == []
+    demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.assess_reserve_seconds) == (540, 120, 200)
+    assert deadline_warnings(demo) == []
+    short = deadline_warnings(rules(deadline_seconds=300))
+    assert len(short) == 1 and "leaves research no time" in short[0] and "share 120 s" in short[0]
+    none = deadline_warnings(rules(deadline_seconds=185))
+    assert len(none) == 1 and "no model call can run before verify" in none[0] and "not assessed" in none[0]
+    demo_short = deadline_warnings(demo.model_copy(update={"deadline_seconds": 300}))
+    assert len(demo_short) == 1 and "share 180 s" in demo_short[0]
+    assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
+
+
 def test_not_assessed_verdict_is_never_a_certification() -> None:
     from sit_review_agent.phases.report import assessment_cut, not_assessed_verdict
 

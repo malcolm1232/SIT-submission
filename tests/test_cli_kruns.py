@@ -149,6 +149,30 @@ def test_profile_is_recorded_and_reused_by_resume(cfgdir: Path, monkeypatch: pyt
     assert not any(d.startswith("--accept-drift") for d in man["extra"]["deviations"])
 
 
+def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path) -> None:
+    """`--profile demo` (the real config/profiles/demo.yaml) with `--k`, and the warning a run prints
+    when `--deadline` is shorter than the reserves it runs with (W1 deadline policy x W2 flags)."""
+    res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "demo", "--k", "2", "--run-id", "demo"])
+    assert res.exit_code == 0, res.output
+    assert "leaves research no time" not in res.output and "no model call can run" not in res.output
+    runs = cfgdir.parent / "runs"
+    for i in (1, 2):
+        eff = json.loads((runs / f"demo-k{i}" / "effective_config.json").read_text(encoding="utf-8"))
+        sr = eff["stop_rules"]
+        assert (sr["deadline_seconds"], sr["report_reserve_seconds"], sr["assess_reserve_seconds"]) == (540, 120, 200)
+        assert eff["agent"]["effort"]["assess"] == "medium" and eff["agent"]["effort"]["research"] == "low"
+        man = json.loads((runs / f"demo-k{i}" / "manifest.json").read_text(encoding="utf-8"))
+        assert man["budgets"]["deadline_s"] == 540 and man["extra"]["config"]["cli_args"]["profile"] == "demo"
+        assert man["extra"]["k_index"] == i
+    # the runbook's "short rerun" against the default reserves (180 s + 600 s): announced, not silent
+    res = invoke(["review", str(PDF), *base(cfgdir), "--deadline", "300", "--run-id", "short"])
+    assert res.exit_code == 0, res.output
+    assert "WARN deadline 300 s leaves research no time" in res.output and "share 120 s" in res.output
+    res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "demo", "--deadline", "300", "--run-id", "short2"])
+    assert res.exit_code == 0, res.output
+    assert "WARN deadline 300 s leaves research no time" in res.output and "share 180 s" in res.output
+
+
 def test_profile_errors_exit_2(cfgdir: Path) -> None:
     res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "nope"])
     assert res.exit_code == 2 and "nope" in res.output

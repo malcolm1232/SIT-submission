@@ -291,6 +291,26 @@ def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window
     return RuntimeLimits(deadline=deadline, context=ContextGuard(window_tokens=window, pages=pages))
 
 
+def deadline_warnings(stop_rules: Any, *, min_attempt_s: float = MIN_ATTEMPT_S) -> list[str]:
+    """What a deadline that does not fit its own reserves will do, said before the run starts
+    (``stop_rules``: the run's ``StopRules``). ``--deadline`` and a profile each set one side of the
+    sum, so the pair can be inconsistent (``--deadline 300`` against the default 180 s + 600 s
+    reserves): the run would then end "not assessed" or document-only with no hint why."""
+    if "deadline" not in stop_rules.active:
+        return []
+    d, r, a = stop_rules.deadline_seconds, stop_rules.report_reserve_seconds, stop_rules.assess_reserve_seconds
+    fix = "raise --deadline, or use a profile with smaller reserves (--profile demo: 120 s and 200 s)"
+    before_verify = d - r
+    if before_verify < min_attempt_s:
+        return [f"deadline {d} s does not exceed the verify + report reserve ({r} s) by one model attempt: no "
+                f"model call can run before verify, so the report will say the design was not assessed; {fix}"]
+    if before_verify - a < min_attempt_s:
+        return [f"deadline {d} s leaves research no time: {r} s is kept for verify + report and {a} s for assess, "
+                f"so understand, plan and assess share {before_verify} s and the review will be document-only "
+                f"(not assessed if those calls need longer); {fix}"]
+    return []
+
+
 def attempt_timeout(runtime: RuntimeLimits | None, phase: PhaseName | str, configured_s: float) -> tuple[float, bool]:
     if runtime is None or runtime.deadline is None:
         return configured_s, False

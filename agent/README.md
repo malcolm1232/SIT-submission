@@ -74,7 +74,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `rundir.py`, `progress.py`, `clock.py`, `hashing.py`, `errors.py`, `paths.py` | Run-directory layout and JSONL journal; progress lines and heartbeat; `FakeClock`; hashes; typed errors and exit codes | done |
 | `cli.py` | `sit-review` / `dra`: `run` (`review`, with `--k` and `--profile`), `resume`, `explain`, `coverage`, `replay`, `selftest`, `preflight` (`--profile`), `states`; typed errors to exit codes, never a traceback (INV-11) | done (C, W2) |
 | `kruns.py` | `--k N`: N independent sequential runs `<group>-k1..kN`, intention-to-treat (failures counted, never rerun; Ctrl-C or a setup error stops the group), `extra.k_index` and `k_group.json` per run, group manifest `<run_root>/<group>.kgroup.json` with per-run outcome, verdict, findings, cost and wall time | done (W2) |
-| `report/coverage.py` | `dra coverage`: criteria x sections map from the run directory (`nX` findings with worst severity, `ok` = checked, no issue, `-` = not applicable or not reported, sound areas); falls back to the `report.md` coverage table for report-only run directories | done (W2) |
+| `report/coverage.py` | `dra coverage`: criteria x sections map from the run directory (`nX` findings with worst severity, `ok` = checked, no issue, `?` = the criterion raised findings that verify did not keep, `-` = not applicable, not assessed or not reported, sound areas); falls back to the `report.md` coverage table for report-only run directories | done (W2) |
 | `replay.py` | `dra replay`: re-runs a recorded run through the real phases with `ReplayLLMGateway` (recorded `llm.jsonl` outputs, request hash checked per backend) and `JournalReplayToolGateway` (recorded `tools.jsonl` results, strict), on a `ReplayClock` that follows the recorded timeline; compares the new `report.json` with the recorded one and stamps the output "replayed evidence" | done (W2); replay of a live `claude_code` run with live tools needs the logging below |
 
 ## The phase contract
@@ -203,6 +203,10 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   verdict is reported when the model declines the assess call twice (LLM-06). `not_assessed` is set by
   code only: the model's output schema offers `fit`, `fit_with_conditions` and `not_fit`
   (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
+- **A deadline that does not fit its reserves is announced.** `--deadline` and a profile each set one
+  side of the sum, so the pair can be inconsistent (`--deadline 300` against the default 180 s + 600 s).
+  The run then prints `WARN deadline 300 s leaves research no time ...` (or `... no model call can run
+  before verify ...`) on its first progress lines (`llm.runtime.deadline_warnings`); it still runs.
 - **No network at start.** Connection-type errors on the first model call of a run get a 10 s window,
   then exit 3 "no network"; `anthropic_api` runs its no-retry preflight before `models.retrieve`.
 - **Missing MCP key.** Live tool transport, servers enabled, key unset: exit 2 before any model call.
