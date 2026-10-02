@@ -1,0 +1,1 @@
+This grader pilot (2026-10-02) predates the LC12 guard (SIT FABLE ruling #26, 2026-10-03): it was key-blind and read no answer key, so LC12 did not apply, but as a pre-freeze pilot it is exploratory and may not be reported as confirmatory.
