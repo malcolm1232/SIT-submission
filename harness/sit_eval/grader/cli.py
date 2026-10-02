@@ -24,11 +24,15 @@ def _judge(kind: str, out_dir: Path) -> Any:
 
         typer.echo("judge: fake (deterministic heuristic; PLUMBING ONLY, scores carry no meaning)")
         return heuristic_fake_judge()
+    from sit_eval.config import load_eval_config
     from sit_eval.judge import build_judge
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    options: dict[str, Any] = {}
+    if kind == "claude_code":   # only this client takes a per-call --max-budget-usd
+        options["max_budget_usd_per_call"] = load_eval_config().grader.max_budget_usd_per_call
     try:
-        return build_judge(kind, out_dir=out_dir)
+        return build_judge(kind, out_dir=out_dir, **options)
     except NotImplementedError as exc:
         typer.echo(f"judge {kind!r} is not available yet: {exc}", err=True)
         raise typer.Exit(2) from exc

@@ -62,8 +62,16 @@ class StatisticsCfg(_M):
     paired_seed: int = 1
 
 
+class GraderCfg(_M):
+    # A grader call carries the whole review and design (about 64k-89k input tokens and up to ~22k output
+    # tokens on Opus at high effort), so it needs a larger per-call cap than a matcher call. The first live
+    # Pass A on the 21-finding payments review stopped at the $1.0 judge default (2026-10-02).
+    max_budget_usd_per_call: float = Field(default=4.0, gt=0)
+
+
 class EvalConfig(_M):
     judge: JudgeCfg = Field(default_factory=JudgeCfg)
+    grader: GraderCfg = Field(default_factory=GraderCfg)
     matcher: MatcherCfg = Field(default_factory=MatcherCfg)
     grounding: GroundingCfg = Field(default_factory=GroundingCfg)
     run: RunCfg = Field(default_factory=RunCfg)

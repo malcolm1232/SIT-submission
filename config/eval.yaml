@@ -15,6 +15,10 @@ judge:
   inherit_api_key: false         # claude_code: strip ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from the child env
   executable: claude
 
+grader:
+  max_budget_usd_per_call: 4.0   # claude_code: a grader call carries the whole review and design; Pass A on a
+                                 # 21-finding review hit the $1.0 judge default live (2026-10-02)
+
 matcher:
   # pairwise       = prereg-faithful: one call per (finding, flaw) candidate pair per sample.
   # per_flaw_batch = DEVIATION: one call per flaw per sample scoring all of that flaw's candidates.
