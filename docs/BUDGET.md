@@ -56,7 +56,7 @@ So **142 of the 442 planned runs ($214 of agent spend) depend on docs that have 
 
 ## 3. Grading, matching and judging
 
-Recomputed per audit C25: the grader is the full pipeline in `research/grading/README.md` §6.1 (segment, 2 × Pass A, 2 × Pass B, a third sample 30 % of the time; key-aware mode excluded); the matcher and judges follow `research/methodology/metrics.md` §2.3 and §5 (listwise shortlist, 3 candidates × 3 pairwise samples per flaw, adjudication, G3 and citation judge).
+Recomputed per audit C25: the grader is the full pipeline in `research/grading/README.md` §6.1 (segment, 2 × Pass A, 2 × Pass B, a third sample 30 % of the time; key-aware mode excluded); the matcher and judges follow `research/methodology/metrics.md` §2.3 and §5 (listwise shortlist, 3 candidates × 3 pairwise samples per flaw, adjudication, G3 and citation judge). The owner made this candidate rule binding on 2026-10-02 (the shortlist bounds pairwise scoring; `docs/USER_DECISIONS.md` #10); the figures below are to be redone from measured costs after a pilot under that rule.
 
 - **Graded reviews: 291** (lines 3-6 and 10, plus about 30 grader meta-validation grades for V1-V13). Current items: 149.
 - **Matched runs: 414** (lines **1-8**; the matcher is on the critical path for the robustness thresholds, audit C31). Current items: 272. (The previous text said "lines 2-8"; the script has always included line 1.)

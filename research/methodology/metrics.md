@@ -80,11 +80,12 @@ Strengths (`kind = strength`) are excluded from defect matching. They are scored
 - **Lenient matching:** pairs with score ≥ 2 are eligible. Report it as secondary (loophole L33).
 
 ### 2.3 Procedure
-1. **Candidate generation** (recall-oriented; keeps cost bounded):
-   a. Location overlap: every finding whose section or req ids intersect the flaw anchor.
-   b. Embedding similarity between `claim` and `description + core_insight`: top-3 findings per flaw, plus every pair with cosine ≥ τ_pre. Calibrate τ_pre on S-dev so that **≥ 0.98 of human-confirmed matches survive the prefilter** (PROPOSED DEFAULT; any embedding model, recorded in the manifest).
-   c. Listwise LLM shortlist: one call per flaw that sees all findings and returns up to 3 candidate ids or "none".
-   The candidate set is the union of a, b and c. Pairs outside it score 0.
+1. **Candidate generation** (the shortlist bounds pairwise scoring; keeps cost bounded):
+   a. Location overlap: every finding whose section or req ids intersect the flaw's `location` (sections, ancestor or descendant sections, requirement and decision ids). Overlap is a **hint to the shortlist, not a candidate source**: the shortlist call names these findings as sharing a location with the flaw, so they are looked at first. Overlap adds no pair by itself.
+   b. Embedding similarity between `claim` and `description + core_insight` (optional; only if an embedding model is recorded at freeze): top-3 findings per flaw, plus every pair with cosine ≥ τ_pre, given to the shortlist call as a further hint, like a. Calibrate τ_pre on S-dev so that **≥ 0.98 of human-confirmed matches survive the prefilter** (PROPOSED DEFAULT; any embedding model, recorded in the manifest).
+   c. Listwise LLM shortlist: one call per flaw that sees all findings (shuffled) and the hints from a and b, and returns up to 3 candidate ids or "none".
+   The candidate set of a flaw is the shortlist c, at most 3 findings. Only these pairs are scored in step 2; every other pair scores 0, whether or not its locations overlap. Location compatibility still governs the score itself (§2.1 rule 3: a 3 with an incompatible location is at most PARTIAL). If the shortlist call fails after retries, the flaw has no candidates, counts as unmatched, and the failure is reported with the run's scores (recall is then a lower bound); it does not fall back to the overlap set. The scores record, per flaw, which shortlisted findings also overlap and which overlapping findings were not shortlisted.
+   *(Amended 2026-10-02 by owner decision, docs/USER_DECISIONS.md #10: the candidate set was the union of a, b and c. That rule is kept in the harness as `--candidate-rule union`, a comparison mode and a deviation.)*
 2. **Pairwise scoring.** An LLM matcher (from a model family **different** from the agent's) scores each candidate pair on the 0–3 scale. *(Superseded, reconciliation 2026-10-02: the matcher's model is set by `docs/DECISIONS.md` ADR-003, Pending; branch B uses a local open-weight model validated against the user's 150 labelled S-dev pairs, else Claude in batch disclosed as same-family. The same applies to the adjudicator, G3 judge and citation judge. Audit C3.)* It returns JSON `{score, core_insight_present, location_ok, rationale}`. Use 3 samples, or a deterministic call plus a re-ask with the two texts in swapped order, and take the **median** score.
 3. **Assignment.** Solve a maximum-weight bipartite assignment (Hungarian algorithm, e.g. `scipy.optimize.linear_sum_assignment`) on weight = score + ε·w(s(g)), with ε = 0.01 to break ties toward more severe flaws. Ineligible pairs get weight 0. Drop assigned pairs below the eligibility threshold.
 4. **Adjudication of unmatched findings.** Each unmatched finding gets exactly one class:
@@ -100,7 +101,7 @@ Strengths (`kind = strength`) are excluded from defect matching. They are scored
 
    An LLM adjudicator (different family) makes the first pass. A human then reviews **100% of VALID_UNPLANTED and HALLUCINATED** labels (they move precision and HFR the most) and a random 20% of the rest. Disagreements go to a second human, and the majority decides.
 5. **Key maintenance.** A VALID_UNPLANTED finding that the humans confirm is a key defect. Add it to a **pooled supplementary key** G⁺_d, the union over **all** conditions in the same evaluation round (TREC-style pooling, standard IR practice; citation not verified this session). The sealed key G_d is never edited after a held-out or blind run. Recall is reported against G_d (primary) and G_d ∪ G⁺_d (secondary).
-6. **Matcher validation** (gate before use): at least 150 candidate pairs from S-dev, each labelled by 2 humans. Report human–human κ and matcher-vs-consensus κ on the binary decision MATCH vs not (strict). The gate is κ ≥ 0.80 (PROPOSED DEFAULT, following Krippendorff's reliability threshold [30]). The B-gen generic-checklist baseline must also score strict recall ≤ 0.05.
+6. **Matcher validation** (gate before use): at least 150 candidate pairs from S-dev (drawn from the candidate set of step 1, i.e. shortlisted pairs, so the validated matcher is the one used), each labelled by 2 humans. Report human–human κ and matcher-vs-consensus κ on the binary decision MATCH vs not (strict). The gate is κ ≥ 0.80 (PROPOSED DEFAULT, following Krippendorff's reliability threshold [30]). The B-gen generic-checklist baseline must also score strict recall ≤ 0.05.
 
 ---
 
@@ -372,12 +373,13 @@ W = {"critical": 8, "high": 4, "medium": 2, "low": 1}          # = spec/taxonomy
 def score_run(doc, key, out, matcher, adjudicator, judge, strict=True):
     F = [f for f in out.findings if f.kind != "strength"]
     G = key.flaws
-    # --- 2.3.1 candidates
+    # --- 2.3.1 candidates: the shortlist bounds pairwise scoring (amended 2026-10-02, UD #10;
+    #     the earlier rule was overlap | embedding | shortlist)
     cand = set()
     for g in G:
-        cand |= {(f.id, g.id) for f in F if overlaps(f.location, g.location)}
-        cand |= {(f.id, g.id) for f in top_k_by_embedding(F, g, k=3, min_cos=TAU_PRE)}
-        cand |= {(f.id, g.id) for f in matcher.shortlist(g, shuffled(F), k=3)}
+        hint = {f.id for f in F if overlaps(f.location, g.location)}             # a hint, not candidates
+        hint |= {f.id for f in top_k_by_embedding(F, g, k=3, min_cos=TAU_PRE)}  # optional prefilter, also a hint
+        cand |= {(f.id, g.id) for f in matcher.shortlist(g, shuffled(F), k=3, hint=hint)}  # failure -> none
     # --- 2.3.2 pairwise scores (median of 3; matcher blind to condition)
     S = {(fi, gi): median(matcher.score(F[fi], G[gi]) for _ in range(3)) for (fi, gi) in cand}
     # --- 2.3.3 Hungarian assignment

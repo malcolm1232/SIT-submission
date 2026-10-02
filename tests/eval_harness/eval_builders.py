@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -142,16 +143,33 @@ def responder_from(table: dict[str, Callable[[JudgeRequest], dict[str, Any]]]
     return respond
 
 
+_HINT = re.compile(r"overlapping the flaw's location: (.*)")
+_K = re.compile(r"Return up to (\d+) finding ids")
+
+
+def overlap_hint(user: str) -> list[str]:
+    """The finding ids the shortlist prompt names as sharing a location with the flaw."""
+    m = _HINT.search(user)
+    text = m.group(1).strip() if m else "none"
+    return [] if text == "none" else [x.strip() for x in text.split(",")]
+
+
+def hint_shortlist(r: JudgeRequest) -> dict[str, Any]:
+    """Fake shortlist that returns the location-hinted findings (up to K, in prompt order). With at most
+    K overlapping findings per flaw, shortlist_bounded then scores the same pairs as overlap alone did."""
+    k = int(_K.search(r.user).group(1))  # type: ignore[union-attr]
+    return {"candidate_ids": overlap_hint(r.user)[:k], "rationale": "x"}
+
+
 def default_table() -> dict[str, Callable[[JudgeRequest], dict[str, Any]]]:
     return {
-        "match.shortlist": lambda r: {"candidate_ids": [], "rationale": "x"},
+        "match.shortlist": hint_shortlist,
         "match.pair": lambda r: pair(0),
         "adjudicate": lambda r: adj("VALID_UNPLANTED"),
         "ground.premise": lambda r: {"is_absence_claim": False, "premise": "p", "label": "SUPPORTED",
                                      "doc_passage": None, "rationale": "x"},
         "ground.cite": lambda r: {"items": [{"evidence_id": e, "support": "FULL", "rationale": "x"}
-                                            for e in sorted(set(__import__("re").findall(r'"evidence_id": "([^"]+)"',
-                                                                                         r.user)))]},
+                                            for e in sorted(set(re.findall(r'"evidence_id": "([^"]+)"', r.user)))]},
         "rec": lambda r: {"benefit_follows": True, "rationale_explains": True, "rationale": "x"},
     }
 

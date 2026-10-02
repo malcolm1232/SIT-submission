@@ -40,7 +40,18 @@ def test_plumbing_scores_json_is_valid(plumbing_run: Path):
     # the canonical text came from the agent's own ingest of the PDF and equals what the agent verified
     assert inp["doc_sha256_text_matches_review"] is True and "sit_review_agent.ingest.ingest" in inp["doc_source"]
     assert len(s["findings"]) == 20 and len(s["flaws"]) == 14          # FND-021 is a strength; F15 is v2-only
-    assert s["matching"]["candidates"]["F01"]["FND-002"] == ["overlap"]
+    # shortlist_bounded (default): every candidate pair was shortlisted; overlap is provenance only
+    m = s["matching"]
+    assert m["candidate_rule"] == "shortlist_bounded"
+    for g, cands in m["candidates"].items():
+        sl = m["shortlist"][g]
+        assert set(cands) == set(sl["ids"]) and len(cands) <= 3
+        assert all(src[-1] == "shortlist" for src in cands.values())
+        assert {f for f, src in cands.items() if "overlap" in src} == set(sl["shortlisted_with_overlap"])
+        assert set(sl["overlap_hint_ids"]) == set(sl["shortlisted_with_overlap"]) | set(sl["overlap_not_shortlisted"])
+    assert "FND-002" in m["shortlist"]["F01"]["overlap_hint_ids"]
+    assert {(p["flaw_id"], p["finding_id"]) for p in m["pair_scores"]} == {
+        (g, f) for g, c in m["candidates"].items() for f in c}
     assert s["calls"]["calls_failed"] == 0 and s["calls"]["calls_total"] > 0
     assert s["metrics"]["quote_fabrication_rate"]["value"] == 0.0      # every quote resolves in the canonical text
     md = (plumbing_run / "scores.md").read_text()
@@ -57,17 +68,20 @@ def test_rerun_into_same_out_dir_uses_the_cache(plumbing_run: Path):
 
 
 def test_dry_run_reports_call_count(tmp_path: Path):
+    # candidate_rule union (comparison mode); the shortlist_bounded default is pinned in
+    # test_eval_candidate_rule.py::test_dry_run_on_the_live_run_plans_far_fewer_calls
     res = runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--dry-run",
-                              "--out", str(tmp_path / "never")])
+                              "--candidate-rule", "union", "--out", str(tmp_path / "never")])
     assert res.exit_code == 0, res.output
     plan = json.loads(res.output)
-    assert plan["judge"] == "claude_code" and plan["granularity"] == "pairwise"
+    assert plan["judge"] == "claude_code" and plan["granularity"] == "pairwise" and plan["candidate_rule"] == "union"
     assert plan["calls"]["shortlist"] == 14 and plan["location_overlap_pairs"] == 80
     assert plan["calls"]["pair_scoring"]["min"] == 240 and plan["calls"]["total"]["min"] > 240
     assert plan["cost_usd_estimate"]["high"] > plan["cost_usd_estimate"]["low"] > 0
     assert not (tmp_path / "never").exists()
     batch = json.loads(runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(PAYMENTS_KEY), "--dry-run",
-                                           "--granularity", "per_flaw_batch", "--no-grounding-judges"]).output)
+                                           "--candidate-rule", "union", "--granularity", "per_flaw_batch",
+                                           "--no-grounding-judges"]).output)
     assert batch["calls"]["pair_scoring"] == {"min": 42, "max": 42} and batch["calls"]["premise_judge"] == 0
 
 

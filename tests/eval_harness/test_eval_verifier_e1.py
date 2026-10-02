@@ -156,13 +156,16 @@ def test_dry_run_flags_a_model_outside_the_price_basis():
 
     rin, key = load_review(LIVE_RUN), load_key(PAYMENTS_KEY)
     usd, secs = {"low": 0.05, "typical": 0.1, "high": 0.15}, {"low": 20.0, "high": 60.0}
-    opus = plan_calls(rin, key, "v1", options(), usd, secs)
+    opus = plan_calls(rin, key, "v1", options(candidate_rule="union"), usd, secs)
     haiku = plan_calls(rin, key, "v1", options(model="claude-haiku-4-5"), usd, secs)
     assert not any("do not apply" in c for c in opus["caveats"])
     assert any("do not apply" in c for c in haiku["caveats"])
-    # measured on the live run: 80 overlap pairs, 300-440 calls prereg-faithful; adaptive lowers the floor only
+    # measured on the live run under candidate_rule union (the pre-2026-10-02 rule, now a comparison mode):
+    # 80 overlap pairs, 300-440 calls pairwise; adaptive lowers the floor only. The shortlist_bounded default
+    # is pinned in test_eval_candidate_rule.py.
+    assert opus["candidate_rule"] == "union"
     assert opus["location_overlap_pairs"] == 80 and opus["calls"]["total"] == {"min": 300, "max": 440}
-    adaptive = plan_calls(rin, key, "v1", options(adaptive_samples=True), usd, secs)
+    adaptive = plan_calls(rin, key, "v1", options(adaptive_samples=True, candidate_rule="union"), usd, secs)
     assert adaptive["calls"]["pair_scoring"] == {"min": 160, "max": 366}
 
 

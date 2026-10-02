@@ -21,3 +21,8 @@ Decisions given by the project owner in conversation. These override research re
 | 8 | Cloud credits | This account: $36 of $250 left after this session (~$214 used). Two other accounts with $250 each, expiring 5 Nov. | Continue build in another account per docs/HANDOFF.md. |
 | 9 | ADR-010 (Claude Code backend) | Owner replied "CAN U CONTINUE on it please?" to the request for confirmation. Taken as confirmation. | ADR-010 accepted. `llm.backend: claude_code` is the default in `config/agent.yaml`; `anthropic_api` stays available for evaluators with an API key. |
 
+## 2026-10-02 (third session)
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 10 | Matcher candidate rule | Shortlist bounds pairwise scoring (coordinator recommendation, approved by owner) | Pairwise 0-3 scoring runs only on the up-to-3 findings the listwise shortlist returns per flaw; location overlap is a hint in the shortlist prompt and adds no pair by itself; location compatibility still caps a 3 at 2. prereg `matcher.candidates`, metrics.md §2.3 and §13, and the labelling protocol T4 amended (first entry in `eval/prereg_deviations.md`). The old union rule is kept as a comparison mode (`sit-eval score --candidate-rule union`, a deviation). Shortlist prompt changed, so the prompt bundle hash changed. Tier A budget (`docs/BUDGET.md`) to be redone from measured costs after a pilot under the new rule. |

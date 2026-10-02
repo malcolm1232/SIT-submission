@@ -37,10 +37,14 @@ def _two_flaw_key():
 
 
 def test_candidates_blinding_and_seeds(tmp_path):
+    # candidate_rule union (the pre-2026-10-02 rule, kept as a comparison mode): overlap adds pairs by itself.
+    # The shortlist_bounded default is tested in test_eval_candidate_rule.py.
     findings = [make_finding(1, "1"), make_finding(2, "2"), make_finding(3, "9"), make_finding(4, "8")]
     table = default_table()
     table["match.shortlist"] = lambda r: {"candidate_ids": ["FND-003", "FND-999"], "rationale": "x"}
-    scores, fake, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table))
+    scores, fake, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table),
+                                   candidate_rule="union")
+    assert scores["matching"]["candidate_rule"] == "union"
     cands = scores["matching"]["candidates"]
     assert cands["F01"] == {"FND-001": ["overlap"], "FND-003": ["shortlist"]}
     assert cands["F02"] == {"FND-002": ["overlap"], "FND-003": ["shortlist"]}
@@ -54,10 +58,12 @@ def test_candidates_blinding_and_seeds(tmp_path):
     # shuffles are seeded, recorded and reproducible
     seeds = {g: v["seed"] for g, v in scores["matching"]["shortlist"].items()}
     assert all(isinstance(s, int) for s in seeds.values()) and seeds["F01"] != seeds["F02"]
-    again, fake2, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table))
+    again, fake2, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table),
+                                   candidate_rule="union")
     assert [c.user for c in fake.calls if c.purpose.startswith("match.shortlist")] == \
         [c.user for c in fake2.calls if c.purpose.startswith("match.shortlist")]
-    other, fake3, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table), seed=99)
+    other, fake3, _ = run_pipeline(tmp_path, make_review(findings), _two_flaw_key(), responder_from(table), seed=99,
+                                   candidate_rule="union")
     orders = [re.findall(r'"finding_id": "([^"]+)"', c.user) for c in fake.calls + fake3.calls
               if c.purpose == "match.shortlist:F01"]
     assert sorted(orders[0]) == sorted(orders[1])

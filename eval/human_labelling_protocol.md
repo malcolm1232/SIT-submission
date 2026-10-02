@@ -75,7 +75,7 @@ Record `accept / edit / reject` and, for an edit, the new text. Signing sets `sc
 
 ### T4 Matcher validation pairs (100 pairs)
 
-**Source.** Candidate pairs from the pilot runs (line A-2: FULL and B0 on the 3 S-dev v1 documents), drawn from the matcher's candidate set (location overlap ∪ listwise shortlist ∪ embedding top-3). Sampling is stratified by the matcher's hidden score so that at least 35 pairs are likely matches (score 2-3) and at least 30 are likely non-matches, across all 3 documents and both conditions. Five pairs are repeated at random positions to measure within-session consistency (not counted in the 100).
+**Source.** Candidate pairs from the pilot runs (line A-2: FULL and B0 on the 3 S-dev v1 documents), drawn from the matcher's candidate set under the same rule the scored runs use (metrics.md §2.3 step 1, prereg `matcher.candidates`): the pairs the listwise shortlist returned, up to 3 per flaw. Location overlap (and the embedding top-3, if used) is only the hint shown to the shortlist; an overlapping pair the shortlist did not return is not a candidate pair here either, so the validated matcher is the one used. *(Amended 2026-10-02, docs/USER_DECISIONS.md #10; it read "location overlap ∪ listwise shortlist ∪ embedding top-3".)* Sampling is stratified by the matcher's hidden score so that at least 35 pairs are likely matches (score 2-3) and at least 30 are likely non-matches, across all 3 documents and both conditions. Five pairs are repeated at random positions to measure within-session consistency (not counted in the 100).
 
 **Each row shows.** The flaw: description, `core_insight`, credit items with roles, location. The finding: statement, `doc_anchors` with quotes and pages. The document text of the cited sections.
 

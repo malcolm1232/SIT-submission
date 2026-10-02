@@ -3,6 +3,11 @@
 Key: F01 critical (8), F02 high (4), F03 medium (2), F04 low (1). Findings in rank order:
 f1 MATCH F02; f2 unmatched -> VALID_UNPLANTED; f3 MATCH F01; f4 scores 3 with F02 but F02 is taken ->
 DUPLICATE; f5 unmatched -> HALLUCINATED (false-absence claim).
+
+metrics.md §14 does not depend on how candidates are generated; it needs the three MATCH pairs scored.
+The fixture's shortlist returns exactly those pairs (F02: f1, f4; F01: f3), so the example runs under the
+default ``shortlist_bounded`` rule; under ``union`` it runs with an empty shortlist (overlap supplies the
+same pairs). The expected numbers are the same for both.
 """
 
 from __future__ import annotations
@@ -25,9 +30,10 @@ from eval_builders import (
 from sit_eval.metrics import dcg, f1, ndcg
 
 MATCHES = {("F02", "FND-001"), ("F01", "FND-003"), ("F02", "FND-004")}
+SHORTLIST = {"F01": ["FND-003"], "F02": ["FND-001", "FND-004"]}
 
 
-def _scenario():
+def _scenario(rule: str = "shortlist_bounded"):
     key = make_key([make_flaw("F01", "critical", "1"), make_flaw("F02", "high", "2"),
                     make_flaw("F03", "medium", "3"), make_flaw("F04", "low", "4")])
     findings = [make_finding(1, "2", confidence=0.9), make_finding(2, "9", confidence=0.8),
@@ -40,6 +46,8 @@ def _scenario():
         return pair(3 if (g, f) in MATCHES else 0)
 
     table["match.pair"] = pair_score
+    table["match.shortlist"] = lambda r: {"candidate_ids": SHORTLIST.get(r.purpose.split(":")[1], [])
+                                          if rule == "shortlist_bounded" else [], "rationale": "x"}
     table["adjudicate"] = lambda r: adj({"adjudicate:FND-002": "VALID_UNPLANTED",
                                          "adjudicate:FND-005": "HALLUCINATED"}[r.purpose])
 
@@ -52,9 +60,12 @@ def _scenario():
     return make_review(findings), key, responder_from(table)
 
 
-def test_section_14_numbers(tmp_path):
-    review, key, responder = _scenario()
-    scores, fake, _ = run_pipeline(tmp_path, review, key, responder)
+@pytest.mark.parametrize("rule", ["shortlist_bounded", "union"])
+def test_section_14_numbers(tmp_path, rule):
+    review, key, responder = _scenario(rule)
+    scores, fake, _ = run_pipeline(tmp_path, review, key, responder, candidate_rule=rule)
+    assert scores["matching"]["candidate_rule"] == rule
+    assert {(p["flaw_id"], p["finding_id"]) for p in scores["matching"]["pair_scores"]} == MATCHES
     m = {k: v["value"] for k, v in scores["metrics"].items()}
     assert scores["metrics"]["recall"]["tp"] == 2 and scores["metrics"]["precision_adjudicated"]["v"] == 1
     assert m["recall"] == pytest.approx(0.50)

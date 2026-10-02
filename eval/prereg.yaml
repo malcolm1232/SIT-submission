@@ -23,7 +23,7 @@ project: SIT design-review agent
 document: eval/prereg.yaml
 companion_plan: eval/EVAL_PLAN.md
 companion_labelling_protocol: eval/human_labelling_protocol.md
-deviations_log: eval/prereg_deviations.md   # created at freeze; append-only
+deviations_log: eval/prereg_deviations.md   # append-only; created 2026-10-02 for the first draft amendment
 drafted: "2026-10-02"
 scope: tier_A   # Tier A is confirmatory. Tier B items are pre-registered as exploratory. Tier C is not run.
 
@@ -487,10 +487,15 @@ matcher:   # MM §2; spec C4, C5
   effort: high
   rule: core_insight_plus_location_v1 - one-to-one, core insight stated, location compatible, category labels ignored
   credit_mode: per flaw from the key (substance | all_of | any_of); it operationalises the core insight and is not a second rule
-  candidates:
-    - location overlap (finding doc_anchors vs flaw location)
-    - listwise LLM shortlist, up to 3 per flaw
-    - embedding top-3 per flaw (optional; used only if an embedding model is recorded at freeze)
+  candidates:   # amended 2026-10-02 by owner decision (UD #10; eval/prereg_deviations.md entry 1)
+    rule: the listwise LLM shortlist bounds pairwise scoring - one shortlist call per flaw sees all findings (shuffled) and returns up to 3 ids; only those pairs are scored, every other pair scores 0
+    shortlist: listwise LLM shortlist, up to 3 per flaw
+    hints: location overlap (finding doc_anchors vs flaw location) and, if used, embedding top-3 per flaw are shown to the shortlist call as hints (which findings share a section or requirement id with the flaw); they add no pair by themselves
+    embedding_prefilter: optional; used only if an embedding model is recorded at freeze, and then only as a hint
+    location_compatibility: unchanged - still governs the score (a 3 with location_ok false is capped at 2, MM §2.1 rule 3)
+    shortlist_failure: the flaw gets no candidates and counts as unmatched; the failure is reported with the scores and recall is labelled a lower bound; no fallback to the overlap set
+    provenance: per flaw, scores.json records the overlap hint, which shortlisted findings also overlap and which overlapping findings were not shortlisted
+    comparison_mode: "union (overlap union shortlist, the draft rule) is kept in the harness as --candidate-rule union; any run under it is a deviation"
   prefilter:
     tau_pre: null   # if the embedding prefilter is used - calibrated on S-dev so >= 0.98 of owner-confirmed matches survive
   pairwise_scoring: 0-3 scale (MATCH 3, PARTIAL 2, RELATED 1, UNRELATED 0); 3 samples, median

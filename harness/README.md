@@ -18,7 +18,8 @@ sit-eval score docs/live_runs/live_cc_opus_payments_v1 \
   --key eval/synthetic/payments_orchestration/answer_key.canonical.json \
   --out runs/eval/live_cc_opus_payments_v1 --max-cost-usd 60
 
-# cheaper variants
+# variants
+#   --candidate-rule union         overlap union shortlist, the pre-2026-10-02 rule (DEVIATION; comparison only)
 #   --no-grounding-judges          skip the G3 premise and citation-support judges (those metrics become null)
 #   --granularity per_flaw_batch   one call per flaw and sample (DEVIATION from prereg; owner approval needed)
 #   --judge fake                   deterministic offline plumbing (numbers are hashes, never a score)
@@ -40,9 +41,23 @@ Defaults live in `config/eval.yaml`; flags override them for one run.
 1. **Load.** Review validated by `sit_review_agent.models.Review` and `spec/finding.schema.json`; key by
    `spec/answer_key.schema.json`. Document text: the agent's own `sit_review_agent.ingest.ingest` on the PDF
    (or the run's `text/*.pages.txt`); its SHA-256 is compared with the Review's `sha256_text`.
-2. **Match** (MM §2, `sit_eval/matcher.py`). Candidates = location overlap (sections, ancestor sections and
-   requirement/decision IDs) plus a listwise LLM shortlist of up to 3 per flaw. Pairwise 0-3 scores,
-   3 samples, median. Hungarian assignment (`hungarian.py`, pure Python) on score + 0.01 x primary weight.
+2. **Match** (MM §2, `sit_eval/matcher.py`). Candidates: **the shortlist bounds pairwise scoring**
+   (`matcher.candidate_rule: shortlist_bounded`, the default; owner decision 2026-10-02,
+   `docs/USER_DECISIONS.md` #10). One listwise shortlist call per flaw sees every finding (shuffled with a
+   recorded seed) and returns up to `shortlist_k` (3) ids; only those pairs are scored. Location overlap
+   (sections, ancestor or descendant sections, requirement/decision IDs) is a hint: the shortlist prompt
+   names the overlapping findings in a `<location_hint>` block and asks the model to look at them first,
+   but overlap adds no pair by itself. Location compatibility still governs the score (a 3 with
+   `location_ok: false` is capped at 2). If a shortlist call still fails after retries, that flaw has no
+   candidates and counts as unmatched; the failure is listed in `failures`, the flaw row has
+   `shortlist_ok: false`, the recall metrics carry `shortlist_failed_flaws` and a lower-bound note, and a
+   warning says so. It never falls back to the overlap set; re-running into the same `--out` retries only
+   the failed calls. `matching.shortlist.<flaw>` records the hint (`overlap_hint_ids`) and the provenance
+   (`shortlisted_with_overlap`, `shortlisted_without_overlap`, `overlap_not_shortlisted`); a candidate's
+   `sources` is `["overlap", "shortlist"]` or `["shortlist"]`. `--candidate-rule union` restores the
+   earlier rule (overlap union shortlist, sources may be `["overlap"]` alone) for comparison; it uses the
+   same shortlist prompt, so a union run into the same `--out` reuses the shortlist and pair answers and
+   pays only for the overlap-only pairs. Pairwise 0-3 scores, 3 samples, median. Hungarian assignment (`hungarian.py`, pure Python) on score + 0.01 x primary weight.
    Strict (3) and lenient (>= 2) results. Credit rule per flaw (`substance | all_of | any_of`).
 3. **Adjudicate** unmatched findings into the six classes (deterministic DUPLICATE when a finding scores
    >= 2 against a flaw matched to another finding; LLM otherwise; still-valid observations pre-adjudicate
@@ -65,22 +80,28 @@ are shuffled per listwise call with a seed derived from `--seed` and recorded in
 - `sit_eval/prompts/PROMPTS.lock`: SHA-256 of every judge prompt and judge output schema plus a bundle hash;
   the bundle hash is the value for prereg `matcher.prompt_sha256`.
 
-## Cost of scoring one review (first live run: 20 findings, 14 v1 flaws, 80 overlap pairs)
+## Cost of scoring one review (first live run: 20 findings, 14 v1 flaws, 80 location-overlap pairs)
 
-| Mode | Judge calls | Cost at $0.05-0.15 per call | Wall time at concurrency 4 |
+| Mode | Judge calls | Cost (per-kind prices below) | Wall time at concurrency 4 |
 |---|---|---|---|
-| pairwise (prereg), grounding judges on | 300-440 | $15-66 (about $37 typical) | 25-110 min |
-| pairwise, `--no-grounding-judges` | 260-400 | $13-60 | 22-100 min |
-| per_flaw_batch (deviation), judges on | 102-116 | $5-17 | 9-29 min |
-| per_flaw_batch, `--no-grounding-judges` | 62-76 | $3-11 | 5-19 min |
-| pairwise, `--adaptive-samples` (same medians; needs owner approval) | 220-440 | $11-66 | |
-| per_flaw_batch, `--adaptive-samples` | 88-116 | $4-17 | |
+| pairwise, shortlist_bounded (prereg), grounding judges on | 60-200 | $10.72-19.12 | 5-50 min |
+| pairwise, shortlist_bounded, `--no-grounding-judges` | 20-160 | $3.52-11.92 | 2-40 min |
+| per_flaw_batch (deviation), shortlist_bounded, judges on | 60-116 | $10.72-17.86 | 5-29 min |
+| per_flaw_batch, shortlist_bounded, `--no-grounding-judges` | 20-76 | $3.52-10.66 | 2-19 min |
+| pairwise, `--candidate-rule union` (deviation), judges on | 300-440 | $17.92-26.32 | 25-110 min |
+| pairwise, `--candidate-rule union`, `--no-grounding-judges` | 260-400 | $10.72-19.12 | 22-100 min |
 
-Ranges come from `--dry-run`; the shortlist decides where in the range a run lands. The per-call prices
-are unverified planning figures for Opus at effort high (see the `caveats` in the dry-run output): retries
-are not counted, document-carrying calls cost more than pair calls, and thinking tokens dominate cost.
-`--adaptive-samples` asks the third pairwise sample only when the first two disagree or one failed; the
-median of three is then unchanged, so results are identical (verifier E1, 2026-10-02).
+Ranges come from `--dry-run`. Under shortlist_bounded the shortlist decides how many findings per flaw
+are scored (0 to 3; the 2026-10-02 pilot shortlist returned 2.0 per flaw), so pair scoring lands between
+0 and 126 calls; adjudication lands between N - G and N calls. The dry run prices each call kind
+separately (`config/eval.yaml` `cost_estimate.per_kind_usd`, Opus 5.5 at effort high through `claude -p`):
+shortlist $0.11, per-flaw batch $0.06 and adjudication $0.33 (whole document) are means measured on the
+pilot (`docs/live_runs/live_cc_opus_payments_v1/eval_pilot/judge_calls.jsonl`, 57 calls); a single pair
+call ($0.03, from batch cost against candidate count), the premise judge ($0.33, whole document) and the
+citation judge ($0.03) were not in the pilot and are estimates. Whole-document calls (adjudication,
+premise) now dominate the cost of a run. Retries are not counted. `--adaptive-samples` asks the third
+pairwise sample only when the first two disagree or one failed; the median of three is then unchanged, so
+results are identical (verifier E1, 2026-10-02); it lowers the floor of pair scoring only.
 
 Live clients built by `build_judge` without options (the grader) take their timeout, retries and per-call
 `--max-budget-usd` from `config/eval.yaml` `judge`. `ClaudeCodeJudge` and `AnthropicJudge` drop a root
@@ -89,6 +110,12 @@ unknown cost (timeouts) are charged one reserve each by the cost stop. `sit-eval
 grader package fails to import (`grade` then reports the import error).
 
 ## Known gaps and choices (also in the workstream report)
+
+- Under shortlist_bounded the shortlist is the only way into scoring: a true match it leaves out scores 0
+  and lowers recall. `matching.shortlist.<flaw>.overlap_not_shortlisted` lists the overlapping findings
+  that were not scored, which is where to look for such misses; a match at a non-overlapping location
+  that the shortlist misses leaves no trace. The deterministic DUPLICATE rule also needs the duplicate to
+  be shortlisted; otherwise the duplicate goes to the LLM adjudicator, which can still call it DUPLICATE.
 
 - No embedding prefilter (prereg: optional, only if an embedding model is recorded at freeze).
 - Message Batches is not used: `AnthropicJudge` makes synchronous streamed calls.
