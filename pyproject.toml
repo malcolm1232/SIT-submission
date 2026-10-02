@@ -34,10 +34,11 @@ dev = [
 [project.scripts]
 sit-review = "sit_review_agent.cli:main"
 dra = "sit_review_agent.cli:main"   # alias used by docs/DEMO_DAY_RUNBOOK.md
+sit-eval = "sit_eval.cli:main"      # evaluation harness (harness/sit_eval)
 
 [tool.setuptools.packages.find]
-where = ["agent"]
-include = ["sit_review_agent*"]
+where = ["agent", "harness"]
+include = ["sit_review_agent*", "sit_eval*"]
 
 [tool.setuptools.package-data]
 sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/selftest/**/*"]
@@ -45,7 +46,7 @@ sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/se
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-src = ["agent", "tests"]
+src = ["agent", "harness", "tests"]
 extend-exclude = ["spec", "eval", "scripts", "research"]
 
 [tool.ruff.lint]

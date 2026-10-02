@@ -9,3 +9,4 @@ mcp_probe_selftest_results.json
 runs/
 *.log
 .DS_Store
+*.egg-info/
