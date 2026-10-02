@@ -5,9 +5,9 @@ and the same manifest for a sequential run.
 Fixtures are small run states and ``llm.jsonl`` entries written here (no recorded model text). The
 entry fields assumed (writers: W1 gateway, W2 orchestrator): ``call_id``, ``phase``, ``purpose``,
 ``attempt``, ``conversation_id``, ``elapsed_s``, ``start_offset_s`` (run clock seconds when the
-attempt started), ``usage`` (``null`` with ``usage_unrecorded`` for a cut), ``estimated_usage`` or
-``usage_estimate`` (the four ``Usage`` fields as non-negative integers), ``partial`` or
-``salvaged_partial`` (list fields hold the finished items) or ``salvaged_items`` (a count), ``shard``
+attempt started), ``usage`` (``null`` with ``usage_unrecorded`` for a cut), ``estimated_usage``
+(the four ``Usage`` fields as non-negative integers), ``partial`` (list fields hold the finished items)
+and ``salvaged_items`` (a count), the names of ``LLMDeadlineError`` (planner ruling), ``shard``
 (the assess shard's name or index, on every attempt of that shard; absent in a sequential run). The run
 state fields read: ``budget.phase_seconds`` (wall seconds per member), ``budget.started_monotonic``
 and ``budget.elapsed_s`` (the run clock).
@@ -91,7 +91,7 @@ def test_a_cut_calls_estimate_sits_beside_its_measured_null_record(tmp_path: Pat
                cut("llm-0002", "assess", f"{RUN}-assess-a", start=0.5, wall=170.0,
                    estimated_usage=usage(5000, 3000, 100, 50)),
                cut("llm-0003", "assess", f"{RUN}-assess-b", start=0.5, wall=170.0,
-                   usage_estimate={**usage(4000, 1000), "estimated": True, "basis": {"chars_per_token": 4}})]
+                   estimated_usage={**usage(4000, 1000), "estimated": True, "basis": {"chars_per_token": 4}})]
     ctx = make_ctx(tmp_path, entries)
     m = build_manifest(ctx, Outcome.COMPLETED_DEGRADED)
     model = m.extra["model"]
@@ -222,9 +222,9 @@ def test_shards_and_salvage_are_counted_from_the_log(tmp_path: Path) -> None:
         # a shard cut with two finished findings salvaged
         {**cut("llm-0010", "assess", f"{RUN}-assess-c", start=2.1, wall=299.9, partial={"findings": [{}, {}]}),
          "shard": 2},
-        # research cut, three items under the other spellings; a non-list field is not an item
+        # research cut, three items in two calls; a non-list field is not an item
         cut("llm-0011", "research", f"{RUN}-research-2", start=150.0, wall=152.0,
-            salvaged_partial={"answers": [{}], "note": "x"}),
+            partial={"answers": [{}], "note": "x"}),
         cut("llm-0012", "research", f"{RUN}-research-3", start=150.0, wall=152.0, salvaged_items=2),
         # a cut that salvaged nothing, and malformed counts, add nothing
         cut("llm-0013", "research", f"{RUN}-research-4", start=150.0, wall=152.0, partial=None),

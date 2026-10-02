@@ -15,7 +15,7 @@ On a cut (run deadline or stage limit) the gateway raises
 :class:`~sit_review_agent.errors.LLMDeadlineError` with :meth:`StreamParser.partial` and
 :meth:`StreamParser.estimated_usage`. The estimate is never measured usage: the call's logged
 ``usage`` stays ``null`` with ``usage_unrecorded: deadline_cut`` (``docs/transcripts/session4/
-accounting_fixes.md``) and the estimate is logged apart as ``usage_estimate`` with ``estimated: true``.
+accounting_fixes.md``) and the estimate is logged apart as ``estimated_usage`` with ``estimated: true``.
 """
 
 from __future__ import annotations

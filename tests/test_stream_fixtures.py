@@ -197,7 +197,7 @@ def test_recorded_cut_salvages_its_finished_findings(tmp_path: Path, cfg: Effect
     assert gw.usage_total() == Usage() and gw.cost_total_usd == 0.0
     entry = JsonlWriter(rd.llm_log).read()[-1]
     assert entry["usage"] is None and entry["usage_unrecorded"] == "deadline_cut"
-    assert entry["usage_estimate"]["estimated"] is True and entry["salvaged_items"] == 5
+    assert entry["estimated_usage"]["estimated"] is True and entry["salvaged_items"] == 5
 
 
 def test_recorded_cut_mid_finding_never_yields_half_a_finding() -> None:

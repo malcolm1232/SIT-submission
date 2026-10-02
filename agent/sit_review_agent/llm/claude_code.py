@@ -36,8 +36,8 @@ shows its thinking-token estimate or its finished items, and each finished item 
 shown as a draft. An attempt cut by the run deadline or a stage limit raises
 :class:`~sit_review_agent.errors.LLMDeadlineError` with the finished items (``partial``) and an
 estimated usage; its ``llm.jsonl`` entry keeps ``usage: null`` with ``usage_unrecorded`` and logs the
-estimate apart as ``usage_estimate`` (``estimated: true``) with ``salvaged_items`` and
-``salvaged_partial``. The JSON output mode is not used by the gateway any more; a single JSON object
+estimate apart as ``estimated_usage`` (``estimated: true``) with ``salvaged_items`` and
+``partial``. The JSON output mode is not used by the gateway any more; a single JSON object
 on stdout (``--output-format json``, as the harness judges still run it) is still read.
 """
 
@@ -1026,17 +1026,17 @@ class ClaudeCodeGateway:
 
 def _estimate_fields(stream: StreamParser | None) -> dict[str, Any]:
     """``llm.jsonl`` fields of an attempt that streamed but reported no usage: the estimate, kept
-    apart from ``usage`` and marked estimated, and what was salvaged. Key names avoid ``partial`` and
-    ``estimated_usage``: ``replay.recorded_error`` passes keys named like ``LLMDeadlineError``
-    keywords straight to the rebuilt error (W0 hand-off)."""
+    apart from ``usage`` and marked estimated, and what was salvaged. The keys are the names of the
+    error type (``LLMDeadlineError.estimated_usage`` and ``.partial``), which ``replay.recorded_error``
+    maps back to the rebuilt error; ``salvaged_items`` is the count."""
     if stream is None:
         return {}
     fields: dict[str, Any] = {}
     est = stream.estimated_usage()
     if est is not None:
-        fields["usage_estimate"] = {**est.__dict__, "estimated": True, "basis": stream.estimate_basis()}
+        fields["estimated_usage"] = {**est.__dict__, "estimated": True, "basis": stream.estimate_basis()}
     partial = stream.partial()
     fields["salvaged_items"] = stream.item_count()
     if partial is not None:
-        fields["salvaged_partial"] = partial
+        fields["partial"] = partial
     return fields

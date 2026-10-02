@@ -179,8 +179,8 @@ def _count(value: Any) -> int | None:
 
 def logged_estimate(entry: dict[str, Any]) -> dict[str, int] | None:
     """The estimated usage logged for a cut attempt, or ``None``. Read under ``estimated_usage`` (the
-    key ``replay.recorded_error`` maps, commit 87a0634) or ``usage_estimate`` (the key the streaming
-    gateway logs, latency W1); every ``Usage`` field present must be a non-negative integer."""
+    key the streaming gateway logs and ``replay.recorded_error`` maps) or ``usage_estimate`` (an earlier
+    spelling, still read); every ``Usage`` field present must be a non-negative integer."""
     for key in ("estimated_usage", "usage_estimate"):
         raw = entry.get(key)
         if isinstance(raw, dict):
@@ -191,8 +191,8 @@ def logged_estimate(entry: dict[str, Any]) -> dict[str, int] | None:
 
 
 def logged_salvage(entry: dict[str, Any]) -> int:
-    """Finished items an attempt salvaged before its cut: the list fields of ``partial`` (or
-    ``salvaged_partial``), as ``LLMDeadlineError.salvaged_items`` counts them, else a logged
+    """Finished items an attempt salvaged before its cut: the list fields of ``partial`` (or the earlier
+    spelling ``salvaged_partial``), as ``LLMDeadlineError.salvaged_items`` counts them, else a logged
     ``salvaged_items`` count; 0 when nothing was salvaged."""
     for key in ("partial", "salvaged_partial"):
         raw = entry.get(key)

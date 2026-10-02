@@ -35,6 +35,7 @@ from sit_review_agent.llm.gateway import LLMRequest, Usage
 from sit_review_agent.llm.partial import JSON_CHARS_PER_TOKEN
 from sit_review_agent.llm.runtime import RunDeadline, RuntimeLimits, attach_runtime
 from sit_review_agent.progress import NullProgress
+from sit_review_agent.replay import recorded_error
 from sit_review_agent.rundir import JsonlWriter, RunDir
 from sit_review_agent.states import PhaseName
 
@@ -208,7 +209,7 @@ async def test_a_stream_without_a_result_event_is_a_process_fault(tmp_path: Path
                                  messages=[{"role": "user", "content": "x"}], effort="high", max_tokens=100))
     entry = log(rd)[-1]
     assert entry["usage"] is None and entry["usage_unrecorded"] == "process_fault"
-    assert entry["usage_estimate"]["estimated"] is True and entry["usage_estimate"]["input_tokens"] == 1137
+    assert entry["estimated_usage"]["estimated"] is True and entry["estimated_usage"]["input_tokens"] == 1137
 
 
 # ------------------------------------------------------------------------------ the cut
@@ -232,13 +233,17 @@ async def test_a_stage_limit_cut_after_3_of_6_findings_salvages_3(tmp_path: Path
     entry = log(rd)[-1]
     assert entry["outcome"] == "LLMDeadlineError" and entry["usage"] is None
     assert entry["usage_unrecorded"] == "deadline_cut" and entry["call_cost_usd"] is None
-    est = entry["usage_estimate"]
+    est = entry["estimated_usage"]
     assert est["estimated"] is True and est["input_tokens"] == 1137
     assert est["output_tokens"] == err.estimated_usage.output_tokens
     assert est["basis"] == {"thinking_tokens": 800, "streamed_chars": cut_at, "chars_per_token": JSON_CHARS_PER_TOKEN}
-    assert entry["salvaged_items"] == 3 and entry["salvaged_partial"] == err.partial
-    # replay.recorded_error passes keys named like constructor keywords straight to the error (W0 hand-off)
-    assert "partial" not in entry and "estimated_usage" not in entry
+    assert entry["salvaged_items"] == 3 and entry["partial"] == err.partial
+    # the error type's names (planner ruling), never the earlier usage_estimate / salvaged_partial
+    assert "usage_estimate" not in entry and "salvaged_partial" not in entry
+    # and replay rebuilds the same cut from the entry
+    rebuilt = recorded_error(entry, assess_req(), entry["call_id"])
+    assert isinstance(rebuilt, LLMDeadlineError) and rebuilt.partial == err.partial
+    assert rebuilt.estimated_usage == err.estimated_usage and rebuilt.salvaged_items == 3
 
 
 async def test_a_cut_before_any_item_salvages_nothing(tmp_path: Path, cfg: EffectiveConfig) -> None:
@@ -257,7 +262,7 @@ async def test_a_cut_before_the_api_message_has_no_estimate(tmp_path: Path, cfg:
         await gw.call(assess_req())
     assert ei.value.estimated_usage is None
     entry = log(rd)[-1]
-    assert entry["usage"] is None and entry["usage_unrecorded"] == "deadline_cut" and "usage_estimate" not in entry
+    assert entry["usage"] is None and entry["usage_unrecorded"] == "deadline_cut" and "estimated_usage" not in entry
 
 
 async def test_the_envelope_salvages_its_final_answer(tmp_path: Path, cfg: EffectiveConfig) -> None:
@@ -279,7 +284,7 @@ async def test_a_plain_timeout_is_retried_and_logs_its_estimate(tmp_path: Path, 
     assert res.text == "ok" and [a.outcome for a in res.attempts] == ["LLMTimeoutError", "ok"]
     first = log(rd)[0]
     assert first["usage"] is None and first["usage_unrecorded"] == "timeout_kill"
-    assert first["usage_estimate"]["estimated"] is True
+    assert first["estimated_usage"]["estimated"] is True
     assert gw.usage_total() == Usage(1137, 400, 0, 0)                 # the retry's measured usage only
 
 
