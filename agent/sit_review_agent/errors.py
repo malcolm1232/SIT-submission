@@ -99,6 +99,13 @@ class LLMTimeoutError(LLMError):
     """Client timeout or stalled stream after the gateway's retry budget (robustness LLM-05)."""
 
 
+class LLMDeadlineError(LLMTimeoutError):
+    """A model attempt was cut by the run deadline, or no time was left to start (or retry) one
+    (robustness LLM-05). Never retried past the deadline. Phases catch it and degrade: research
+    ends, assess reports "out of time before assessment", refine keeps the assess findings, and
+    report falls back to a verdict by rule. Uncaught it ends the run like a timeout (exit 3)."""
+
+
 class LLMOverloadedError(LLMError):
     """529 / 503 after the gateway's retry budget (robustness LLM-03)."""
 
@@ -121,6 +128,25 @@ class LLMSchemaError(LLMError):
 
 class LLMUnavailableError(LLMError):
     """Generic "the model cannot be reached" after all retries; the run checkpoints and exits 3."""
+
+
+class LLMConnectionError(LLMUnavailableError):
+    """A connection-type failure (DNS, refused or reset connection, no route), as opposed to an
+    overload (429/529/5xx). On the first model call of a run it gets a short retry window and then
+    ends the run with a "no network" message (robustness NET-02); later calls keep the full policy."""
+
+
+class LLMContextTooLongError(LLMError):
+    """The request would exceed the model's context window (estimated before sending, robustness
+    LLM-10). Never sent. A usage-class error: the document is too large for one request."""
+
+    exit_code = ExitCode.USAGE
+
+    def __init__(self, message: str, *, estimated_tokens: int, limit_tokens: int, call_id: str | None = None,
+                 phase: str | None = None) -> None:
+        super().__init__(message, call_id=call_id, phase=phase)
+        self.estimated_tokens = estimated_tokens
+        self.limit_tokens = limit_tokens
 
 
 class EffortChangedError(LLMError):

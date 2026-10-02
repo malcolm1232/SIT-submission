@@ -68,6 +68,12 @@ class LLMSettings(_Cfg):
     backoff_base_s: float = 2.0
     backoff_max_s: float = 60.0
     refusal_retries: int = Field(1, ge=0, le=1)
+    first_call_network_window_s: float = Field(
+        10.0, ge=0, description="connection errors on the first model call of a run are retried only this long "
+                                "(robustness NET-02); later calls keep max_retries")
+    context_window_tokens: int | None = Field(
+        None, ge=1, description="model context window for the pre-send size check (robustness LLM-10); "
+                                "null = the known window of the configured model")
     backend: Literal["anthropic_api", "claude_code"] = Field(
         "anthropic_api", description="claude_code: headless Claude Code (ADR-010); anthropic_api: ANTHROPIC_API_KEY")
 
@@ -171,6 +177,8 @@ class StopRulesConfig(_Cfg):
     no_marginal_gain_window: int = Field(ge=1)
     min_independent_sources: int = Field(ge=1)
     report_reserve_seconds: int = Field(60, ge=0)
+    assess_reserve_seconds: int = Field(0, ge=0, description="research ends this long before the report reserve "
+                                                             "so assess keeps its time (robustness LLM-05)")
     max_output_tokens: int | None = None
 
 
@@ -256,12 +264,28 @@ class EndpointsConfig(_Cfg):
     servers: dict[str, str]
 
 
+class AuthorityHosts(_Cfg):
+    """``url_policy.yaml`` ``authority:``: host lists behind ``tools.sources.classify_authority``
+    (``spec/taxonomy.yaml`` ``source_authority``). An entry is a domain (subdomains match) or
+    ``domain/path-prefix``. Domain-general only: no host taken from an evaluated document's own
+    stack (robustness OVF-07)."""
+
+    standards: list[str] = Field(default_factory=list)       # primary_official
+    vendor_docs: list[str] = Field(default_factory=list)     # primary_official
+    peer_reviewed: list[str] = Field(default_factory=list)
+    preprint: list[str] = Field(default_factory=list)        # secondary
+    secondary: list[str] = Field(default_factory=list)
+    informal: list[str] = Field(default_factory=list)        # checked first
+    docs_prefixes: list[str] = Field(default_factory=list)   # host prefixes that mean official docs
+
+
 class UrlPolicy(_Cfg):
     mode: Literal["deny", "allow"] = "deny"
     allow_domains: list[str] = Field(default_factory=list)
     deny_domains: list[str] = Field(default_factory=list)
     fetch_only_from_results: bool = True
     reject_added_query_strings: bool = True
+    authority: AuthorityHosts = AuthorityHosts()
 
 
 class Persona(_Cfg):
