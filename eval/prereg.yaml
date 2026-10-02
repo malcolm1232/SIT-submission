@@ -201,10 +201,10 @@ tier_B_hypotheses:   # pre-registered now; exploratory; run only if Tier A is co
   - id: HB1
     name: A4b effort sweep (UD #1, #5)
     metric: Recall
-    comparison: FULL at effort medium, high (the FULL reference), xhigh on the 3 S-dev v1 documents
+    comparison: FULL (the reference, effort medium with research low) against A4b-high and A4b-xhigh on the 3 S-dev v1 documents (deviations entry 11)
     predicted_direction: >-
-      Recall non-decreasing with effort; high - medium >= 0.05; xhigh - high < 0.05 at
-      about +50 % cost and longer wall time. Per UD #1, xhigh is adopted for a stage only
+      Recall non-decreasing with effort; A4b-high - FULL >= 0.05; A4b-xhigh - A4b-high < 0.05
+      at about +50 % cost and longer wall time. Per UD #1, xhigh is adopted for a stage only
       if its gain is >= 0.05 and its CI excludes 0.
     minimum_effect_of_interest: 0.05
   - id: HB2
@@ -432,8 +432,8 @@ conditions:
       documents: dev_only
       predicted_outcome: Fabricated-citation rate = 0 and disclosure in every run (H6); Recall lower than FULL mainly on needs_external_research flaws (exploratory, BH)
   tier_B:
-    - id: A4b-medium
-      description: FULL with every stage at effort medium (UD #5)
+    - id: A4b-high
+      description: FULL with every stage at effort high (UD #5; FULL itself runs at medium, deviations entry 11)
       documents: dev_only
       predicted_outcome: HB1
     - id: A4b-xhigh

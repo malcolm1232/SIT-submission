@@ -321,9 +321,16 @@ already happened (none had for entries made before the freeze).
   finished; `high` cannot fit the slot at all, so the evaluated agent is the demo profile. Predicted, to be confirmed
   by the first timed rehearsal: 443 s document-only, 450 to 499 s with research, about $5.0 to $5.4 per FULL run.
   Every number scored on `live_cc_opus_payments_v1` describes the old single-call agent at `high` and is stale.
-- **Open for the planner, not changed here:** `conditions.tier_B` `A4b-medium` ("FULL with every stage at effort
-  medium") now differs from FULL only in research (`medium` against `low`); ruling #31 keeps `high` as the A4b
-  comparison, and the A4b arms are not renamed in this entry.
+- **A4b arms (planner ruling, latency integration pass, 2026-10-03):** with FULL at `medium`, the former arm
+  `A4b-medium` ("FULL with every stage at effort medium") was FULL itself but for research (`medium` against `low`),
+  so A4b now compares `high` and `xhigh` against FULL. Old text: `conditions.tier_B` `- id: A4b-medium` /
+  `description: FULL with every stage at effort medium (UD #5)`; HB1 `comparison: FULL at effort medium, high (the
+  FULL reference), xhigh on the 3 S-dev v1 documents` and `high - medium >= 0.05; xhigh - high < 0.05`. New text:
+  `- id: A4b-high` / `description: FULL with every stage at effort high (UD #5; FULL itself runs at medium,
+  deviations entry 11)`; HB1 compares FULL (the reference) against A4b-high and A4b-xhigh, with `A4b-high - FULL >=
+  0.05; A4b-xhigh - A4b-high < 0.05`, the same effect sizes. `A4b-xhigh` is unchanged; `EVAL_PLAN.md` line B-1
+  follows, its USD figure marked as predating the redesign. `frozen` stays false and no `fill_before_freeze` value
+  changed.
 - **Decided by:** SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #31; ruling 2 overrides the `high`
   default of #1, and the owner may reverse it).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The pilot scores under

@@ -183,7 +183,7 @@ Pre-registered as exploratory in `prereg.yaml` (`tier_B_hypotheses`). In priorit
 
 | Line | What | Runs | Agent USD | Human hours | Supports |
 |---|---|---:|---:|---:|---|
-| B-1 | A4b effort sweep: FULL at `medium` and `xhigh` on 3 S-dev v1 × 3 (`high` is the A-3 FULL reference). `medium` budgeted at $2.18, `xhigh` at $3.24 | 18 | 48.78 | 0 | HB1: whether `high` is justified and whether any stage merits `xhigh` (UD #1, #5) |
+| B-1 | A4b effort sweep: FULL with every stage at `high` (A4b-high) and at `xhigh` (A4b-xhigh) on 3 S-dev v1 × 3; the A-3 FULL run (the demo profile, `medium`) is the reference (prereg deviation 11). The USD figure predates the latency redesign (`medium` at $2.18, `xhigh` at $3.24 per run) and is re-based with `docs/BUDGET.md` after the first timed rehearsal | 18 | 48.78 | 0 | HB1: whether `high` is justified and whether any stage merits `xhigh` (UD #1, #5) |
 | B-2 | Intra-rater re-label of 40 matcher pairs, ≥ 7 days after T4; 50 more pairs to reach RA's 150 | 0 | 0 | 0.75 + 0.9 | Matcher reliability ceiling |
 | B-3 | Grader sample extended to 20 reviews (the tentative tier) | 0 | 0 | 3.7 | Grader validity tier "tentative" |
 | B-4 | A4: Sonnet 5.5 as the agent model, FULL and B0 on the 5 keyed documents × 3 (S-heldout access 2). Per-run cost derived from `cost_model.py` (Sonnet $1.30 central, scaled to hybrid ingestion: about $1.37; B0 about $0.40), UNVERIFIED | 30 | 26.55 | 0 | HB2 (within one family) |
