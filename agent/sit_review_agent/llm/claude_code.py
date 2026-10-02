@@ -70,6 +70,7 @@ from sit_review_agent.llm.gateway import (
     LLMResult,
     ToolUse,
     Usage,
+    billed,
     log_unsent,
     request_sha256,
 )
@@ -387,6 +388,7 @@ class ClaudeCodeGateway:
         self._seq = 0
         self._net = FirstCallNetwork(config.agent.llm.first_call_network_window_s)
         self._rng = random.Random()
+        self._spent: dict[str, Usage] = {}            # call ID -> usage reported by its failed attempts
 
     # ---------------------------------------------------------------- protocol accessors
 
@@ -577,11 +579,17 @@ class ClaudeCodeGateway:
         self._guard.check(request)
         call_id = self.next_call_id()
         try:
-            return await self._call(request, call_id)
-        except _Unsent as u:
-            u.error.call_id = u.error.call_id or call_id
-            log_unsent(self.log, request, call_id, u.error, attempt=u.attempt, backend=BACKEND)
-            raise u.error from None
+            try:
+                return await self._call(request, call_id)
+            except _Unsent as u:
+                u.error.call_id = u.error.call_id or call_id
+                log_unsent(self.log, request, call_id, u.error, attempt=u.attempt, backend=BACKEND)
+                raise u.error from None
+        except LLMError as exc:
+            billed(exc, self._spent.get(call_id))     # what the failed attempts of this call were billed for
+            raise
+        finally:
+            self._spent.pop(call_id, None)
 
     async def _call(self, request: LLMRequest, call_id: str) -> LLMResult[Any]:
         try:
@@ -684,6 +692,9 @@ class ClaudeCodeGateway:
     def _log_failure(self, base: dict[str, Any], fail: _AttemptFailed, elapsed: float, conv: _Conversation) -> None:
         out = fail.out or {}
         u = _usage_of(out) if out else Usage()
+        if out:                                       # a JSON result: the CLI reported what the attempt cost
+            cid = str(base["call_id"])
+            self._spent[cid] = self._spent[cid] + u if cid in self._spent else u
         self.log.log({**base, "model": self._served_model(self._call_model_usage(out, conv)) if out else self.model,
                       "stop_reason": out.get("stop_reason"), "outcome": type(fail.error).__name__,
                       "error": str(fail.error)[:500], "usage": u.__dict__, "content": [],

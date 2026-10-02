@@ -56,6 +56,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
 | `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done; envelope tool loop UNVERIFIED live on Opus |
 | `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
+| `llm/usage_budget.py` | `add_usage`: the one way phases add a call's usage to `state.budget` (read by the `budget_tokens` stop rule), for a result (`LLMResult.usage`) and for a failed call (`LLMError.usage`, 2026-10-03) | done |
 | `llm/runtime.py` | Run limits every gateway honours (2026-10-02): `RunDeadline` (attempt timeout = min(`llm.timeout_s`, time left - reserve), LLM-05), `ContextGuard` (pre-send size estimate, LLM-10), `FirstCallNetwork` (NET-02); `attach_runtime`, `build_runtime` | done; live behaviour UNVERIFIED |
 | `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, `CallIds`, the layer stack and `build_tool_gateway`: `MCPToolGateway`, `ReplayGateway`, `RecordingGateway`, `FakeToolGateway`, `FaultInjectingGateway`, `SelfReplayGateway`, `PolicyToolGateway`, `LoggingToolGateway` | done (B, C); live MCP behaviour UNVERIFIED (auth header, cold starts) |
 | `tools/mcp_client.py` | Live MCP plumbing for `MCPToolGateway`: httpx2 + streamable-HTTP session factory with an error-status hook, failure classification, one owner task per server session, `find_layer` / `start_warm_up` | done (B) |
@@ -139,6 +140,12 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
 - A frozen interface that has to change needs an "interface change" note in the PR description
   that names every caller. That change is made **alone**, in its own PR, before any work that
   depends on it, and all three workstreams rebase onto it.
+- Interface changes made under this rule (the commit message is the "interface change" note):
+  2026-10-03, `errors.LLMError` gained the keyword `usage` (default `None`), the usage a failed call
+  was billed for. Writers: `AnthropicGateway`, `ClaudeCodeGateway`, `FakeGateway`,
+  `FaultInjectingLLMGateway` (`schema_violation`), `ReplayLLMGateway` (via `llm.gateway.billed`).
+  Readers: `phases/_model_calls.call_model`, `phases/research.py`, `phases/verify.py`,
+  `phases/report.py` (via `llm.usage_budget.add_usage`). Additive: no existing constructor call changes.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

@@ -65,6 +65,7 @@ from sit_review_agent.llm.outputs import (
     ReassessmentDraft,
 )
 from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.llm.usage_budget import add_usage
 from sit_review_agent.models import (
     DecisionRelation,
     DegradationType,
@@ -604,6 +605,7 @@ class VerifyPhase:
         try:
             res = await ctx.llm.call(req)
         except (LLMRefusalError, LLMSchemaError, LLMTruncatedError, LLMDeadlineError) as exc:
+            add_usage(ctx.state.budget, exc.usage)
             if exc.call_id:
                 ctx.state.llm_calls.setdefault(PhaseName.VERIFY.value, []).append(exc.call_id)
             if isinstance(exc, LLMRefusalError):
@@ -613,11 +615,7 @@ class VerifyPhase:
                      "unresolved anchors were not re-quoted; affected findings may be listed as unverified")
             return exc.call_id
         ctx.state.llm_calls.setdefault(PhaseName.VERIFY.value, []).append(res.call_id)
-        b = ctx.state.budget
-        b.input_tokens += res.usage.total_input_tokens
-        b.output_tokens += res.usage.output_tokens
-        b.cache_read_input_tokens += res.usage.cache_read_input_tokens
-        b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+        add_usage(ctx.state.budget, res.usage)
         if res.fallback is not None:
             ctx.state.fallback_events.append(res.fallback)
             ctx.state.add_degradation(DegradationType.MODEL_FALLBACK,

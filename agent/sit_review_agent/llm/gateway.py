@@ -290,6 +290,14 @@ def log_unsent(log: LLMCallLog | None, request: LLMRequest, call_id: str | None,
     log.log(entry)
 
 
+def billed(err: LLMError, usage: Usage | None) -> LLMError:
+    """``err`` with ``usage`` added to what it already carries (``LLMError.usage``): the tokens
+    the failed call was billed for. ``None`` adds nothing (no attempt reported usage)."""
+    if usage is not None:
+        err.usage = usage if err.usage is None else err.usage + usage
+    return err
+
+
 class EffortGuard:
     """Enforces one effort level per conversation (ADR-002 option a)."""
 
@@ -729,7 +737,7 @@ class AnthropicGateway:
         def fail(err: LLMError, *, keep_content: bool = False) -> LLMError:
             self.log.log({**entry, "outcome": type(err).__name__, "error": str(err)[:500],
                           "content": content if keep_content else []})
-            return err
+            return billed(err, usage)                 # the response arrived, so it was billed
 
         if stop == "refusal":           # partial output discarded, never parsed (REPRODUCIBILITY §3)
             category = _anthropic_get(details, "category")
@@ -929,12 +937,12 @@ class FakeGateway:
         if stop == "refusal":
             self._refusals.append({"call_id": call_id, "stage": request.phase.value, "category": resp.refusal_category})
             _log("LLMRefusalError", [])
-            raise LLMRefusalError("model declined", category=resp.refusal_category, call_id=call_id,
-                                  phase=request.phase.value)
+            raise billed(LLMRefusalError("model declined", category=resp.refusal_category, call_id=call_id,
+                                         phase=request.phase.value), resp.usage)
         if stop == "max_tokens":
             _log("LLMTruncatedError", [])
-            raise LLMTruncatedError("output truncated at max_tokens", max_tokens=request.max_tokens,
-                                    call_id=call_id, phase=request.phase.value)
+            raise billed(LLMTruncatedError("output truncated at max_tokens", max_tokens=request.max_tokens,
+                                           call_id=call_id, phase=request.phase.value), resp.usage)
 
         parsed: BaseModel | None = None
         if request.output_schema is not None and resp.parsed is not None:
@@ -945,8 +953,9 @@ class FakeGateway:
                               else resp.parsed))
             except ValidationError as exc:
                 _log("LLMSchemaError", [])
-                raise LLMSchemaError(f"scripted output does not match {request.output_schema.__name__}: {exc}",
-                                     call_id=call_id, phase=request.phase.value) from exc
+                raise billed(LLMSchemaError(f"scripted output does not match {request.output_schema.__name__}: "
+                                            f"{exc}", call_id=call_id, phase=request.phase.value),
+                             resp.usage) from exc
         text = resp.text or (parsed.model_dump_json() if parsed is not None else "")
         content: list[dict[str, Any]] = [{"type": "thinking", "thinking": "", "signature": "fake"}]
         if text:
@@ -1181,7 +1190,7 @@ class FaultInjectingLLMGateway:
                         problem = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or '(root)'}: {e['msg']}"
                                             for e in exc.errors()[:5])
                 err, retry = LLMSchemaError(f"structured output did not validate: {problem} [injected fault]",
-                                            call_id=res.call_id, phase=phase), False
+                                            call_id=res.call_id, phase=phase, usage=res.usage), False
             else:                                   # MCP- or process-level fault types: not for this layer
                 return self._with_injected(await self.inner.call(request), injected)
             final = not retry or attempt >= max_retries

@@ -43,6 +43,7 @@ from sit_review_agent.llm.gateway import (
     AnthropicGateway,
     CacheBreakpoint,
     LLMRequest,
+    Usage,
     request_sha256,
 )
 from sit_review_agent.llm.outputs import PHASE_OUTPUT_TYPES, PlanOutput, llm_facing_schema
@@ -321,6 +322,7 @@ async def test_max_tokens_is_truncation_not_retried(tmp_path: Path, base_cfg: Ef
         await gw.call(plan_request())
     assert info.value.max_tokens == 4000 and len(client.messages.calls) == 1
     assert log_entries(rd)[0]["outcome"] == "LLMTruncatedError"
+    assert info.value.usage == Usage(100, 20, 1000, 50)            # billed: the phase counts it in the budget
 
 
 async def test_tool_use_and_pause_turn(tmp_path: Path, base_cfg: EffectiveConfig) -> None:

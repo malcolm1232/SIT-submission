@@ -45,6 +45,7 @@ from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest
 from sit_review_agent.llm.outputs import ReportOutput
 from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.llm.usage_budget import add_usage
 from sit_review_agent.manifest import build_manifest, outcome_for, report_json_sha256, write_manifest
 from sit_review_agent.models import (
     NON_REFINEMENT_DISPOSITIONS,
@@ -122,6 +123,7 @@ async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | Non
         try:
             res = await ctx.llm.call(req)
         except LLMError as exc:
+            add_usage(ctx.state.budget, exc.usage)
             if not isinstance(exc, _FALLBACK) and exc.exit_code is not ExitCode.LLM_UNAVAILABLE:
                 raise                       # bugs (bad request, effort change, exhausted fake script)
             if exc.call_id:
@@ -135,11 +137,7 @@ async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | Non
                 continue
             return None, f"{type(exc).__name__}: {str(exc)[:160]}"
         ctx.state.llm_calls.setdefault(PhaseName.REPORT.value, []).append(res.call_id)
-        b = ctx.state.budget
-        b.input_tokens += res.usage.total_input_tokens
-        b.output_tokens += res.usage.output_tokens
-        b.cache_read_input_tokens += res.usage.cache_read_input_tokens
-        b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+        add_usage(ctx.state.budget, res.usage)
         if res.fallback is not None:
             ctx.state.fallback_events.append(res.fallback)
         if res.parsed is None:

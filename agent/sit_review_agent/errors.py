@@ -11,6 +11,10 @@ code" ADR-009 item 4 asks for without naming a number.
 from __future__ import annotations
 
 from enum import IntEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sit_review_agent.llm.gateway import Usage
 
 
 class ExitCode(IntEnum):
@@ -53,14 +57,23 @@ class PromptError(AgentError):
 
 
 class LLMError(AgentError):
-    """Base for every failure surfaced by :class:`~sit_review_agent.llm.gateway.LLMGateway`."""
+    """Base for every failure surfaced by :class:`~sit_review_agent.llm.gateway.LLMGateway`.
+
+    ``usage`` is what the failed call was billed for, summed over its attempts that reported usage
+    (a truncated, declined or schema-invalid answer is billed like any other). ``None`` means no
+    attempt reported usage: nothing was sent, the fault was injected, or the attempt was killed
+    before it reported (that last case is logged in ``llm.jsonl`` as ``usage_unrecorded``). The
+    gateway that raises the error sets it; phases add it to ``state.budget`` (the ``budget_tokens``
+    stop rule). Interface change of 2026-10-03 (Session 4: failed calls count toward the budget)."""
 
     exit_code = ExitCode.LLM_UNAVAILABLE
 
-    def __init__(self, message: str, *, call_id: str | None = None, phase: str | None = None) -> None:
+    def __init__(self, message: str, *, call_id: str | None = None, phase: str | None = None,
+                 usage: Usage | None = None) -> None:
         super().__init__(message)
         self.call_id = call_id
         self.phase = phase
+        self.usage = usage
 
 
 class LLMRefusalError(LLMError):

@@ -36,8 +36,9 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   does). The phase adds none of its own: a second heartbeat would advance a ``FakeClock`` in tests.
 * **Bookkeeping per call:** call IDs in ``state.llm_calls[phase]`` (including refused and failed
   calls that have an ID), token counters in ``state.budget`` (read by the ``budget_tokens`` stop
-  rule), refusals in ``state.refusals``, fallbacks in ``state.fallback_events`` plus a
-  ``model_fallback`` degradation (INV-07).
+  rule; a failed call counts with the usage it was billed for, ``LLMError.usage``), refusals in
+  ``state.refusals``, fallbacks in ``state.fallback_events`` plus a ``model_fallback`` degradation
+  (INV-07).
 """
 
 from __future__ import annotations
@@ -66,6 +67,7 @@ from sit_review_agent.llm.outputs import (
     SoundAreaDraft,
 )
 from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.llm.usage_budget import add_usage
 from sit_review_agent.models import (
     DegradationType,
     DocAnchor,
@@ -207,11 +209,7 @@ def _note_call(ctx: RunContext, phase: PhaseName, call_id: str | None) -> None:
 def record_result(ctx: RunContext, phase: PhaseName, result: LLMResult[Any]) -> None:
     """Call ID, token counters, fallback event (with its ``model_fallback`` degradation)."""
     _note_call(ctx, phase, result.call_id)
-    b = ctx.state.budget
-    b.input_tokens += result.usage.total_input_tokens
-    b.output_tokens += result.usage.output_tokens
-    b.cache_read_input_tokens += result.usage.cache_read_input_tokens
-    b.cache_creation_input_tokens += result.usage.cache_creation_input_tokens
+    add_usage(ctx.state.budget, result.usage)
     if result.fallback is not None:
         ctx.state.fallback_events.append(result.fallback)
         ctx.state.add_degradation(DegradationType.MODEL_FALLBACK,
@@ -292,6 +290,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                                      call_id=result.call_id, phase=phase.value)
         except LLMRefusalError as exc:
             _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             ctx.state.refusals.append({"call_id": exc.call_id, "stage": phase.value, "category": exc.category})
             if refusals_left > 0:
                 refusals_left -= 1
@@ -311,6 +310,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
         except LLMSchemaError as exc:
             if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
                 _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             if repaired:
                 raise
             repaired, schema_error, k, reason = True, _short_error(exc), k + 1, "schema_repair"
@@ -318,10 +318,12 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             continue
         except LLMDeadlineError as exc:
             _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             deadline_cut(ctx, phase, exc)
             return PhaseCall(result=None, brief=brief, cut=True)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             truncated_ids.append(exc.call_id)
             if widened:                     # second truncation: degrade like a deadline cut, no third call
                 truncated_twice(ctx, phase, max_tokens, truncated_ids)

@@ -561,6 +561,14 @@ class ReplayLLMGateway:
         if not rec.ok:
             err = recorded_error(entry, request, rec.call_id)
             from sit_review_agent.errors import LLMRefusalError
+            from sit_review_agent.llm.gateway import billed
+
+            for e in rec.entries:                     # the recorded failure's billed usage, as the live
+                ru = e.get("usage")                   # gateway reported it (LLMError.usage); none if unknown
+                if isinstance(err, LLMError) and isinstance(ru, Mapping):
+                    billed(err, Usage(int(ru.get("input_tokens") or 0), int(ru.get("output_tokens") or 0),
+                                      int(ru.get("cache_creation_input_tokens") or 0),
+                                      int(ru.get("cache_read_input_tokens") or 0)))
 
             if isinstance(err, LLMRefusalError):
                 self._refusals.append({"call_id": rec.call_id, "stage": rec.phase, "category": err.category})
