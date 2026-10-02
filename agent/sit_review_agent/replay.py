@@ -36,12 +36,13 @@ are refused up front with :class:`ReplayDataError` (exit 2), naming the missing 
 
 from __future__ import annotations
 
+import contextvars
 import inspect
 import json
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -150,10 +151,15 @@ def _read_json(path: Path, what: str) -> Any:
 
 
 def _final_state(rd: RunDir) -> dict[str, Any]:
-    """``state.json``, else the latest checkpoint's state."""
+    """``state.json``, else the latest checkpoint's state: the highest ordinal
+    (:func:`~sit_review_agent.state.checkpoint.checkpoint_file_order`), never the last file name,
+    because overlapping stage 1 members write their checkpoints in the order they end."""
+    from sit_review_agent.state.checkpoint import checkpoint_file_order
+
     if rd.state.is_file():
         return dict(_read_json(rd.state, "final run state"))
     files = sorted(rd.checkpoints.glob("[0-9][0-9]-*.json")) if rd.checkpoints.is_dir() else []
+    files.sort(key=checkpoint_file_order)                    # stable: equal ordinals keep file-name order
     if files:
         return dict(_read_json(files[-1], "checkpoint").get("state") or {})
     raise ReplayDataError(f"{rd.root}: neither state.json nor a checkpoint; replay needs the final run state "
@@ -391,45 +397,113 @@ def parse_utc(value: str) -> datetime:
     return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
 
+@dataclass
+class _Member:
+    """A phase being replayed: where its own clock stands (latency redesign: stage 1 members
+    overlap, so each sees the run clock its recorded calls saw, whatever order the replay serves
+    them in)."""
+
+    phase: str
+    start: float                                     # run clock when the member began
+    elapsed: float                                   # the member's own position, never backwards
+    wall_anchor: datetime | None = None              # first recorded call, for records without offsets
+
+
+#: The member whose task is asking the clock (``None`` between phases and in the orchestrator).
+_MEMBER: contextvars.ContextVar[_Member | None] = contextvars.ContextVar("replay_member", default=None)
+
+
 class ReplayClock(FakeClock):
-    """Virtual time following the recorded timeline. Elapsed time inside a phase is the phase's
-    start (the sum of the recorded durations of the phases before it) plus the recorded offset of
-    the call being served from the phase's first recorded call; at the end of a phase it is the
-    phase's recorded end. Time never goes backwards; ``sleep`` advances instantly."""
+    """Virtual time following the recorded timeline.
+
+    Inside a phase, the clock stands at the end of the last recorded call served to that phase:
+    the call's recorded start offset on the run clock (``start_offset_s`` when the log has it, else
+    ``started_at`` against the run's start, else its offset from the phase's first recorded call)
+    plus its recorded ``elapsed_s``. Stage 1 members overlap (design section 5, "Replay"): each
+    member is a task, and the clock answers each task with that member's own position, so a shard
+    served after a later-ending member is not pushed past its recorded end, and a member's time
+    never goes backwards. A member begins at the settled run clock (where the members that have
+    ended left it, so members launched together begin together, whichever is served first); with no
+    member asking, the clock is the latest position any member reached, so a stage ends with its
+    latest member. ``sleep`` advances instantly."""
 
     def __init__(self, start: datetime, phase_seconds: Mapping[str, float]) -> None:
         super().__init__(start)
         self.phase_seconds = {str(k): float(v) for k, v in phase_seconds.items()}
-        self.phase: str | None = None
-        self.phase_start = 0.0
-        self.wall_anchor: datetime | None = None
+        self._frontier = 0.0                              # latest position any member reached
+
+    # -- the member asking
+    @property
+    def phase(self) -> str | None:
+        m = _MEMBER.get()
+        return m.phase if m is not None else None
+
+    def monotonic(self) -> float:
+        m = _MEMBER.get()
+        return m.elapsed if m is not None else max(self._elapsed, self._frontier)
+
+    def now_utc(self) -> datetime:
+        return self._start + timedelta(seconds=self.monotonic())
+
+    def advance(self, seconds: float) -> None:
+        if seconds < 0:
+            raise ValueError("cannot move a FakeClock backwards")
+        m = _MEMBER.get()
+        if m is not None:
+            m.elapsed += seconds
+            self._frontier = max(self._frontier, m.elapsed)
+        else:
+            self._elapsed = max(self._elapsed, self._frontier) + seconds
+            self._frontier = self._elapsed
 
     def catch_up(self, elapsed: float) -> None:
-        if elapsed > self._elapsed:
-            self.advance(elapsed - self._elapsed)
+        """Move the asking member (else the run clock) forward to ``elapsed``, never backwards."""
+        if elapsed > self.monotonic():
+            self.advance(elapsed - self.monotonic())
 
+    # -- phases
     def begin_phase(self, phase: str) -> None:
-        self.phase, self.phase_start, self.wall_anchor = phase, self._elapsed, None
+        _MEMBER.set(_Member(phase=phase, start=self._elapsed, elapsed=self._elapsed))
 
     def end_phase(self, phase: str) -> None:
-        self.catch_up(self.phase_start + self.phase_seconds.get(phase, 0.0))
-        self.phase = None
+        m = _MEMBER.get()
+        if m is not None:
+            self.catch_up(m.start + self.phase_seconds.get(phase, 0.0))
+            self._elapsed = max(self._elapsed, m.elapsed)   # settle: later members begin here
+        _MEMBER.set(None)
 
-    def at_recorded(self, started_at: str | None, elapsed_s: float | None = None) -> None:
-        """Move to the end of a recorded call that started at ``started_at``."""
-        if not started_at or self.phase is None:
+    def at_recorded(self, started_at: str | None, elapsed_s: float | None = None,
+                    start_offset_s: float | None = None) -> None:
+        """Move the asking member to the end of a recorded call: its start on the run clock plus its
+        recorded duration. ``start_offset_s`` (the run clock's elapsed seconds when the attempt
+        started, logged by the streaming gateway) is exact; without it ``started_at`` against the run's
+        start is used when it falls inside the member, else the offset from the member's first
+        recorded call (a stage re-run by ``resume`` started on another wall clock)."""
+        m = _MEMBER.get()
+        if m is None:
+            return
+        duration = float(elapsed_s or 0.0)
+        if isinstance(start_offset_s, int | float) and not isinstance(start_offset_s, bool) and start_offset_s >= 0:
+            self.catch_up(float(start_offset_s) + duration)
+            return
+        if not started_at:
             return
         try:
             t = parse_utc(started_at)
         except ValueError:
             return
-        if self.wall_anchor is None:
-            self.wall_anchor = t
-        offset = (t - self.wall_anchor).total_seconds() + float(elapsed_s or 0.0)
-        cap = self.phase_seconds.get(self.phase)
+        absolute = (t - self._start).total_seconds()
+        cap = self.phase_seconds.get(m.phase)
+        # 1 s of slack: started_at has second precision (isoformat_z), the run clock has not
+        if absolute >= m.start - 1.0 and (cap is None or absolute <= m.start + cap + 1.0):
+            self.catch_up(absolute + duration)
+            return
+        if m.wall_anchor is None:
+            m.wall_anchor = t
+        offset = (t - m.wall_anchor).total_seconds() + duration
         if cap is not None:
             offset = min(offset, cap)
-        self.catch_up(self.phase_start + max(0.0, offset))
+        self.catch_up(m.start + max(0.0, offset))
 
 
 class _TimedPhase:
@@ -477,6 +551,28 @@ def request_hash(backend: str, request: Any, config: EffectiveConfig, run_dir: R
     raise ReplayDivergence(f"no request-hash recipe for backend {backend!r}")
 
 
+def _logged_partial(value: Any) -> dict[str, Any] | None:
+    """A logged ``partial`` (the finished items of a cut stream) as the dict ``LLMDeadlineError``
+    takes: an object whose list fields hold the finished items; ``None`` when it is not one or holds
+    no list (nothing was salvaged)."""
+    if not isinstance(value, Mapping):
+        return None
+    out = {str(k): v for k, v in value.items() if isinstance(v, list)}
+    return out or None
+
+
+def _logged_usage(value: Any) -> Any:
+    """A logged usage dict as a :class:`~sit_review_agent.llm.gateway.Usage`, or ``None``."""
+    from sit_review_agent.llm.gateway import Usage
+
+    if not isinstance(value, Mapping):
+        return None
+    counts = [value.get(k, 0) for k in Usage.__dataclass_fields__]
+    if not all(isinstance(n, int) and not isinstance(n, bool) and n >= 0 for n in counts):
+        return None
+    return Usage(*counts)
+
+
 def recorded_error(entry: Mapping[str, Any], request: Any, call_id: str) -> AgentError:
     """The typed error a failed recorded call raised, rebuilt from its ``llm.jsonl`` entry."""
     name = str(entry.get("outcome") or "")
@@ -492,7 +588,11 @@ def recorded_error(entry: Mapping[str, Any], request: Any, call_id: str) -> Agen
              "retry_after_s": entry.get("retry_after_s"),
              # LLMError.usage is a Usage, set by ReplayLLMGateway from the recorded attempts (llm.gateway.billed);
              # the entry's own "usage" is a dict and must never reach the constructor (hub verification, session 4)
-             "usage": None}
+             "usage": None,
+             # a cut call (latency redesign): the salvaged answer, and the estimate logged under the literal key
+             # "estimated_usage" as a dict; each mapped to the constructor's type, or None when malformed
+             "partial": _logged_partial(entry.get("partial")),
+             "estimated_usage": _logged_usage(entry.get("estimated_usage"))}
     kwargs: dict[str, Any] = {}
     for arg, p in list(params.items())[2:]:                 # after self and the message
         if p.kind not in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD):
@@ -510,10 +610,16 @@ def recorded_error(entry: Mapping[str, Any], request: Any, call_id: str) -> Agen
 
 
 class ReplayLLMGateway:
-    """Serves the recorded model calls in order (see the module docstring). Logs each served call
-    to the new run's ``llm.jsonl`` with ``replayed: true``, the source call, zero usage (nothing
-    was spent) and the recorded usage under ``recorded_usage``; the :class:`LLMResult` carries the
-    recorded usage so token budgets behave as they did."""
+    """Serves the recorded model calls (see the module docstring). A request is matched to the
+    first unserved recorded call of the same conversation whose request hash it reproduces, never
+    by position: a concurrent stage 1 (latency redesign) logs its calls in completion order and
+    the replay asks for them in whatever order its tasks reach the gateway. Identical requests of
+    one conversation (a repair turn asked twice) are served in log order. A request no recorded
+    call matches raises :class:`ReplayDivergence` and consumes nothing.
+
+    Logs each served call to the new run's ``llm.jsonl`` with ``replayed: true``, the source call,
+    zero usage (nothing was spent) and the recorded usage under ``recorded_usage``; the
+    :class:`LLMResult` carries the recorded usage so token budgets behave as they did."""
 
     def __init__(self, source: SourceRun, run_dir: RunDir, config: EffectiveConfig, *,
                  clock: ReplayClock | None = None) -> None:
@@ -527,40 +633,77 @@ class ReplayLLMGateway:
         self.log = LLMCallLog(run_dir, secret_env=(config.tools.auth_env,))
         self.native_pdf = source.backend != "claude_code"
         self.served = 0
+        self._pending: list[RecordedCall] = list(self.calls)
         self._usage: Any = None
         self._served: set[str] = set()
         self._fallbacks: list[Any] = []
         self._refusals: list[dict[str, Any]] = []
 
     def remaining(self) -> list[RecordedCall]:
-        return self.calls[self.served:]
+        """The recorded calls not served yet, in log order."""
+        return list(self._pending)
+
+    def recorded_conversation(self, conversation_id: str) -> str:
+        """The conversation ID as the source run logged it: research names its run in the
+        conversation (``<run_id>-research-<n>``), and the replay runs under another run ID."""
+        mine, theirs = self.run_dir.run_id, self.source.run_id
+        if mine and mine != theirs and conversation_id.startswith(f"{mine}-"):
+            return f"{theirs}-{conversation_id[len(mine) + 1:]}"
+        return conversation_id
+
+    @staticmethod
+    def _recorded_hash(rec: RecordedCall) -> str | None:
+        return next((str(e["request_sha256"]) for e in rec.entries if e.get("request_sha256")), None)
+
+    def _match(self, request: Any) -> RecordedCall:
+        """The first unserved recorded call this request reproduces, or a :class:`ReplayDivergence`
+        that says what the recording has instead (nothing is consumed)."""
+        conv = self.recorded_conversation(request.conversation_id)
+        phase, purpose = request.phase.value, (request.purpose or "")
+        n = self.served + 1
+        same_conv = [r for r in self._pending if str(r.final.get("conversation_id") or conv) == conv]
+        if not same_conv:
+            raise ReplayDivergence(f"model call #{n} ({phase}/{purpose or '-'}, conversation {conv}) has no "
+                                   f"recorded response: the recorded run made {len(self.calls)} call(s), "
+                                   f"{len(self._pending)} unserved, none in that conversation")
+        hashes: dict[str, str] = {}
+        for rec in same_conv:
+            recorded_hash = self._recorded_hash(rec)
+            if recorded_hash is None:                        # a record without hashes: phase and purpose
+                if rec.phase == phase and rec.purpose == purpose:
+                    return rec
+                continue
+            backend = rec.backend if rec.backend != "unknown" else self.source.backend
+            got = hashes.get(backend)
+            if got is None:
+                got = hashes[backend] = request_hash(backend, request, self.config, self.run_dir)
+            if got == recorded_hash:
+                if rec.phase != phase or rec.purpose != purpose:
+                    raise ReplayDivergence(f"model call #{n} (recorded {rec.call_id}): the replay asked for "
+                                           f"{phase}/{purpose or '-'}, the recording has {rec.phase}/"
+                                           f"{rec.purpose or '-'}")
+                return rec
+        first = same_conv[0]
+        got = next(iter(hashes.values()), "")
+        raise ReplayDivergence(f"model call #{n} (recorded {first.call_id}) ({first.phase}/{first.purpose or '-'}): "
+                               f"request body hash {got[:12]} differs from the recorded "
+                               f"{str(self._recorded_hash(first))[:12]} of conversation {conv}; the replayed run is "
+                               "no longer the recorded one (changed code, config, input or an earlier divergence)")
 
     async def call(self, request: Any) -> Any:
         from sit_review_agent.llm.gateway import LLMAttempt, LLMResult, ToolUse, Usage
         from sit_review_agent.models import FallbackEvent
 
-        n = self.served + 1
-        if self.served >= len(self.calls):
-            raise ReplayDivergence(f"model call #{n} ({request.phase.value}, {request.purpose or 'no purpose'}) has "
-                                   f"no recorded response: the recorded run made {len(self.calls)} call(s)")
-        rec = self.calls[self.served]
+        rec = self._match(request)
         entry = rec.final
+        n = self.served + 1
         where = f"model call #{n} (recorded {rec.call_id})"
-        if rec.phase != request.phase.value or rec.purpose != (request.purpose or ""):
-            raise ReplayDivergence(f"{where}: the replay asked for {request.phase.value}/{request.purpose or '-'}, "
-                                   f"the recording has {rec.phase}/{rec.purpose or '-'}")
-        recorded_hash = next((e.get("request_sha256") for e in rec.entries if e.get("request_sha256")), None)
+        recorded_hash = self._recorded_hash(rec)
         backend = rec.backend if rec.backend != "unknown" else self.source.backend
-        if recorded_hash:
-            got = request_hash(backend, request, self.config, self.run_dir)
-            if got != recorded_hash:
-                raise ReplayDivergence(f"{where} ({rec.phase}/{rec.purpose or '-'}): request body hash "
-                                       f"{got[:12]} differs from the recorded {str(recorded_hash)[:12]}; the "
-                                       "replayed run is no longer the recorded one (changed code, config, input "
-                                       "or an earlier divergence)")
+        self._pending.remove(rec)
         self.served += 1
         if self.clock is not None:
-            self.clock.at_recorded(entry.get("started_at"), entry.get("elapsed_s"))
+            self.clock.at_recorded(entry.get("started_at"), entry.get("elapsed_s"), entry.get("start_offset_s"))
         started = isoformat_z(self.clock.now_utc()) if self.clock is not None else str(entry.get("started_at") or "")
         u = entry.get("usage") or {}
         usage = Usage(int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0),
