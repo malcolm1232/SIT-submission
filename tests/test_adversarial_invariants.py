@@ -44,7 +44,15 @@ from sit_review_agent.orchestrator import RunRequest, run_review
 from sit_review_agent.phases import default_phases
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.rundir import JsonlWriter, RunDir
-from sit_review_agent.selftest import FIXTURE_DIR, fixture_script, selftest_config
+from sit_review_agent.selftest import (
+    FIXTURE_DIR,
+    assess_answer,
+    fixture_script,
+    request_shard,
+    selftest_config,
+    shard_answer,
+    verdict_answer,
+)
 from sit_review_agent.states import PhaseName
 
 PDF = FIXTURE_DIR / "design.pages.txt"
@@ -52,25 +60,27 @@ Mutation = Callable[[dict[str, Any]], None]
 
 
 class _Gateway(FakeGateway):
-    """The selftest fixture script, with ``mutate`` applied to the assess answer (the model's
-    adversarial output) and ``report`` replacing the verdict answer when given."""
+    """The selftest fixture script, with ``mutate`` applied to the whole assessment (the model's
+    adversarial output; each shard then answers its own part of it, IDs as the merge gives them) and
+    ``report`` replacing the verdict answer when given."""
 
     def __init__(self, rd: RunDir, clock: Any, criteria: list[str], mutate: Mutation | None,
-                 report: dict[str, Any] | None) -> None:
-        script = fixture_script(criteria)
+                 report: dict[str, Any] | None, shards: list[list[str]]) -> None:
+        script = fixture_script(criteria, shards)
         if report is not None:
             script["report"] = [FakeResponse(parsed=report)] * 2
         super().__init__(script, run_dir=rd, clock=clock)
-        self.rd, self.mutate = rd, mutate
+        self.rd, self.mutate, self.criteria, self.shards = rd, mutate, criteria, shards
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         q = self.script.get(str(request.phase))
         if q and callable(q[0]):
             resp = q[0](JsonlWriter(self.rd.ledger_journal).read(), request)
             if request.phase is PhaseName.ASSESS and self.mutate is not None:
-                parsed = copy.deepcopy(resp.parsed)
-                self.mutate(parsed)                                     # type: ignore[arg-type]
-                resp = FakeResponse(parsed=parsed)
+                whole = assess_answer(self.criteria)
+                self.mutate(whole)
+                group = request_shard(request, self.shards)
+                resp = FakeResponse(parsed=whole if group is None else shard_answer(whole, group))
             q[0] = resp
         return await super().call(request)
 
@@ -91,7 +101,9 @@ async def run(tmp_path: Path, mutate: Mutation | None = None, *, report: dict[st
     cfg = config(tmp_path, tools=tools)
     out = await run_review(
         RunRequest(pdf=PDF, config=cfg, run_id=run_id), phases=phases,
-        llm_factory=lambda rd, clock, progress: _Gateway(rd, clock, cfg.criteria.ids(), mutate, report),
+        llm_factory=lambda rd, clock, progress: _Gateway(
+            rd, clock, cfg.criteria.ids(), mutate, report,
+            [list(g.criteria) for g in cfg.agent.assess.shards_for(cfg.criteria.ids())]),
         clock=FakeClock(), progress=NullProgress())
     return out, RunDir(out.run_dir)
 
@@ -115,15 +127,15 @@ def degradation_events(report: dict[str, Any]) -> str:
 
 
 async def test_inv03_non_refinement_finding_left_out_of_unresolved_is_added(tmp_path: Path) -> None:
-    """The model's report answer lists no unresolved item for the needs_testing finding FND-003;
-    the assembly adds it (lab §2.4), and the checker rejects a Review without it."""
-    verdict = fixture_script(["x"])["report"][0].parsed
-    out, rd = await run(tmp_path, report={**verdict, "unresolved": []})               # type: ignore[dict-item]
+    """The report answer is the verdict only, so it lists no unresolved item for the needs_testing
+    finding FND-002; the assembly adds it in code (lab §2.4), and the checker rejects a Review
+    without it."""
+    out, rd = await run(tmp_path, report=verdict_answer(None))
     report = load(rd)
-    assert "FND-003" in {x for u in report["unresolved"] for x in u["finding_ids"]}
+    assert "FND-002" in {x for u in report["unresolved"] for x in u["finding_ids"]}
     broken = copy.deepcopy(report)
-    broken["unresolved"] = [u for u in broken["unresolved"] if "FND-003" not in u["finding_ids"]]
-    assert any("FND-003" in p and "unresolved" in p for p in check_INV_03(broken, rd.root).problems)
+    broken["unresolved"] = [u for u in broken["unresolved"] if "FND-002" not in u["finding_ids"]]
+    assert any("FND-002" in p and "unresolved" in p for p in check_INV_03(broken, rd.root).problems)
 
 
 # ============================================================================== INV-04
@@ -131,14 +143,14 @@ async def test_inv03_non_refinement_finding_left_out_of_unresolved_is_added(tmp_
 
 async def test_inv04_quote_under_eight_words_is_not_reported_as_a_finding(tmp_path: Path) -> None:
     def short(p: dict[str, Any]) -> None:
-        finding(p, "FND-002")["doc_anchors"][0]["quote"] = "Accessibility is mostly fine here"     # 5 words, invented
+        finding(p, "FND-001")["doc_anchors"][0]["quote"] = "Accessibility is mostly fine here"     # 5 words, invented
 
     out, rd = await run(tmp_path, short)
     report = load(rd)
     assert "Accessibility is verified, not just promised" not in [f["title"] for f in report["findings"]]
     assert any(u["text"].startswith("Unverified (strength)") for u in report["unresolved"])
     rows = json.loads(rd.anchors.read_text(encoding="utf-8"))["rows"]
-    assert any(r["owner_id"] == "FND-002" and "quote_too_short" in r["reasons"] for r in rows)
+    assert any(r["owner_id"] == "FND-001" and "quote_too_short" in r["reasons"] for r in rows)
     assert "no anchor that could be verified" in degradation_events(report)
     broken = copy.deepcopy(report)
     broken["findings"][0]["doc_anchors"][0]["quote"] = "Section 6.2 assumes no limit"
@@ -152,7 +164,7 @@ async def test_inv04_quote_under_eight_words_is_not_reported_as_a_finding(tmp_pa
 async def test_inv05_model_written_url_and_unknown_evidence_id(tmp_path: Path) -> None:
     """BEH-04: a URL the model wrote and an EV- ID that is not in the ledger."""
     def fabricate(p: dict[str, Any]) -> None:
-        f = finding(p, "FND-001")
+        f = finding(p, "FND-004")
         f["statement"] += " See https://made-up.example/paper for the provider's real quota."
         f["evidence"].append({"evidence_id": "EV-999", "source_type": "external", "quote": "made up",
                               "supports_claim": True, "derived_from": []})
@@ -171,11 +183,11 @@ async def test_inv05_model_written_url_and_unknown_evidence_id(tmp_path: Path) -
 
 
 async def test_inv05_doc_only_run_cannot_claim_external_evidence(tmp_path: Path) -> None:
-    """--no-tools: the fixture's assess answer still cites ``EV-001`` as external evidence (there
-    is no such entry: no tool ran). The citation must be dropped, never re-pointed at a doc entry
-    that the evidence resolver creates under the same ID in the same pass (defect fixed here)."""
+    """--no-tools: a shard's answer cites a new item as external evidence (there is no such entry: no
+    tool ran, and a shard is shown no register). The citation must be dropped, never re-pointed at a
+    doc entry that the evidence resolver creates under the same ID in the same pass (defect fixed here)."""
     def external_claims(p: dict[str, Any]) -> None:
-        f = finding(p, "FND-003")
+        f = finding(p, "FND-002")
         f["evidence"].append({"evidence_id": "NEW-9", "source_type": "external", "quote": "A vendor page says so.",
                               "supports_claim": True, "derived_from": []})
 
@@ -188,8 +200,8 @@ async def test_inv05_doc_only_run_cannot_claim_external_evidence(tmp_path: Path)
             entry = next(x for x in report["evidence_ledger"] if x["evidence_id"] == e["evidence_id"])
             assert e["quote"] is None or e["quote"] in (entry["excerpt"] or "")
     assert "No external research was possible" in degradation_events(report)
-    assert "Higher plans allow 10,000" not in json.dumps(report["findings"])   # the fabricated external quote
-    # The invented EV-001 was not attached to the doc entry created for FND-001's anchor: every doc
+    assert "A vendor page says so." not in json.dumps(report["findings"])   # the fabricated external quote
+    # The invented citation was not attached to a doc entry created for a finding's anchor: every doc
     # citation of a finding is one of that finding's own passages.
     ledger = {e["evidence_id"]: e for e in report["evidence_ledger"]}
     for f in report["findings"]:
@@ -204,7 +216,7 @@ async def test_inv05_doc_only_run_cannot_claim_external_evidence(tmp_path: Path)
 
 async def test_inv06_recommendation_without_a_real_issue_is_dropped_and_disclosed(tmp_path: Path) -> None:
     def thin(p: dict[str, Any]) -> None:
-        finding(p, "FND-003")["recommendation"]["issue"] = "untested"
+        finding(p, "FND-002")["recommendation"]["issue"] = "untested"
 
     out, rd = await run(tmp_path, thin)
     report = load(rd)
@@ -236,12 +248,12 @@ async def test_inv09_incomplete_manifest_is_refused_not_written(tmp_path: Path,
 
 
 async def test_inv10_unsupported_challenge_and_unknown_registry_id(tmp_path: Path) -> None:
-    """FND-001 challenges approved decision AD-001 with one evidence item (needs >= 2): not
-    reported, disclosed. FND-003 cites AD-999, which is not in the registry: the reference is removed."""
+    """FND-004 challenges approved decision AD-001 with one evidence item (needs >= 2): not
+    reported, disclosed. FND-002 cites AD-999, which is not in the registry: the reference is removed."""
     def challenge(p: dict[str, Any]) -> None:
-        finding(p, "FND-001")["affected_decisions"] = [{"registry_id": "AD-001", "relation": "challenges",
+        finding(p, "FND-004")["affected_decisions"] = [{"registry_id": "AD-001", "relation": "challenges",
                                                          "justification": "Front end should not use D-3."}]
-        finding(p, "FND-003")["affected_decisions"] = [{"registry_id": "AD-999", "relation": "refines",
+        finding(p, "FND-002")["affected_decisions"] = [{"registry_id": "AD-999", "relation": "refines",
                                                          "justification": "Invented decision."}]
 
     out, rd = await run(tmp_path, challenge)
@@ -278,7 +290,8 @@ async def test_effort_change_mid_conversation_stops_the_run_with_a_record(tmp_pa
     assert out.exit_code == int(ExitCode.STAGE_CRASH)
     rec = json.loads(rd.failure.read_text(encoding="utf-8"))
     assert rec["error"] == "EffortChangedError" and rec["phase"] == "understand"
-    assert len(JsonlWriter(rd.llm_log).read()) == 1                       # the second call never left
+    # the second call never left (plan and the assess shards run beside understand in stage 1)
+    assert [e["conversation_id"] for e in JsonlWriter(rd.llm_log).read()].count("understand-0") == 1
 
 
 # ============================================================================== INV-11

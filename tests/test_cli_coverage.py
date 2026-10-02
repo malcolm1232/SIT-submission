@@ -59,10 +59,10 @@ def test_coverage_map_of_a_run(run: Path, cfgdir: Path) -> None:
     out = res.output
     assert "Coverage map: run cov" in out and "11 criteria x 5 section(s)" in out
     assert "C1 design_intent: no issue" in out
-    assert "C5 claims_and_external_constraints: findings (1: FND-001)" in out
+    assert "C5 claims_and_external_constraints: findings (1: FND-004)" in out
     lines = {ln.split()[0]: ln for ln in out.splitlines() if ln[:1].isdigit()}
     assert set(lines) == {"1", "4", "6", "11", "20"}                    # 4.1 -> 4, 6.2 -> 6, 11.3 -> 11
-    assert "1H" in lines["4"] and "1M" in lines["4"]                   # FND-001 (high) and FND-003 (medium)
+    assert "1H" in lines["4"] and "1M" in lines["4"]                   # FND-004 (high) and FND-002 (medium)
     assert "ok" in lines["1"] and "1" not in lines["1"].split()[2:]    # checked, no issue
     assert lines["11"].rstrip().endswith("SA-001")                     # a sound area
     assert "Legend:" in out and "checked, no issue" in out
@@ -105,7 +105,7 @@ def test_criterion_whose_findings_were_not_verified_is_not_shown_as_clear(run: P
     assert "1 finding(s) raised here could not be verified" in row              # verify says so in the note
     state = json.loads((run / "state.json").read_text(encoding="utf-8"))
     kept = next(c for c in state["coverage"] if c["criterion_id"] == "verifiability")
-    assert kept["finding_ids"] == ["FND-003"] and "could not be verified" not in kept["note"]
+    assert kept["finding_ids"] == ["FND-002"] and "could not be verified" not in kept["note"]
 
 
 def test_coverage_of_a_run_with_no_assessment_says_not_assessed(run: Path) -> None:

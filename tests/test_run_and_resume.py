@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import ConfigDict
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.config import EffectiveConfig
@@ -32,8 +31,6 @@ from sit_review_agent.invariants import check_all
 from sit_review_agent.llm.gateway import FakeResponse, LLMRequest
 from sit_review_agent.llm.outputs import (
     AssessOutput,
-    Draft,
-    FindingDraft,
     PlanOutput,
     RefineRevisionsOutput,
     ResearchOutput,
@@ -42,8 +39,10 @@ from sit_review_agent.llm.outputs import (
 )
 from sit_review_agent.models import DegradationType, IntentSummary, SourceAuthority, StopReason, StopReasonCode
 from sit_review_agent.orchestrator import RunRequest, resume_run, run_review
+from sit_review_agent.phases._model_calls import resolve_evidence
 from sit_review_agent.phases.assess import AssessPhase
 from sit_review_agent.phases.ingest import IngestPhase
+from sit_review_agent.phases.refine import findings_json
 from sit_review_agent.phases.report import ReportPhase
 from sit_review_agent.phases.verify import VerifyPhase
 from sit_review_agent.progress import NullProgress
@@ -172,27 +171,20 @@ class StubAssess:
         return ctx
 
 
-class _AnyRefineAnswer(Draft):
-    """What the stand-in refine accepts from the fixture script: revisions (the latency redesign's
-    answer) or, until the selftest fixture is regenerated (W3), the full revised set it scripts."""
-
-    model_config = ConfigDict(extra="allow")
-
-    revisions: list[Any] = []
-    findings: list[FindingDraft] | None = None
-
-
 class StubRefine:
+    """The merge's ledger step and the refine call without the phase's checks. The stand-in assess
+    runs beside research, so the new doc items its answer cites go to the ledger here, after stage 1,
+    as ``AssessPhase.merge`` writes them (a shard is shown no register). The brief lists the merged
+    findings as ``prompts/refine.md`` does, and the revisions are applied as given."""
+
     name = PhaseName.REFINE
 
     async def run(self, ctx: RunContext) -> RunContext:
-        res = await _call(ctx, self.name, _AnyRefineAnswer)
-        out: _AnyRefineAnswer = res.parsed
-        if out.findings is not None:
-            drafts = list(out.findings)
-        else:
-            drafts = apply_revisions(ctx.state.finding_drafts, RefineRevisionsOutput.model_validate(
-                {"revisions": out.revisions}))
+        ctx.state.finding_drafts, ctx.state.sound_area_drafts, _ = resolve_evidence(
+            ctx, list(ctx.state.finding_drafts), list(ctx.state.sound_area_drafts), shown=())
+        brief = f"refine brief\n\n## Merged findings\n\n{findings_json(list(ctx.state.finding_drafts))}"
+        res = await _call(ctx, self.name, RefineRevisionsOutput, messages=[{"role": "user", "content": brief}])
+        drafts = apply_revisions(ctx.state.finding_drafts, res.parsed)
         ctx.state.finding_drafts = drafts
         _metas(ctx, drafts, self.name, res)
         return ctx
@@ -271,12 +263,12 @@ async def test_run_review_end_to_end_fake_transport(tmp_path: Path) -> None:
     report = json.loads(rd.report_json.read_text(encoding="utf-8"))
     assert [r.inv_id for r in check_all(report, rd.root) if not r.passed] == []
     assert json.loads(rd.manifest.read_text(encoding="utf-8")) == report["run_manifest"]       # INV-09
-    assert report["run_manifest"]["outcome"] == "completed_degraded"     # the unverified FND-004 is disclosed
+    assert report["run_manifest"]["outcome"] == "completed_degraded"     # the unverified FND-003 is disclosed
     ids = [f["id"] for f in report["findings"]]
-    assert ids == ["FND-001", "FND-002", "FND-003"]                       # FND-004 moved to unresolved
+    assert ids == ["FND-004", "FND-002", "FND-001"]                       # rank order; FND-003 moved to unresolved
     assert any(u["text"].startswith("Unverified") for u in report["unresolved"])
-    assert {"FND-003"} <= {x for u in report["unresolved"] for x in u["finding_ids"]}
-    ext = report["findings"][0]["evidence"][0]
+    assert {"FND-002"} <= {x for u in report["unresolved"] for x in u["finding_ids"]}
+    ext = report["findings"][0]["evidence"][-1]                            # added by refine after the doc item
     assert ext["evidence_id"] == "EV-002"                                  # the fetched page, not the snippet
     assert ext["source_type"] == "external" and ext["url_or_citation"].startswith("https://docs.example-mail.invalid")
     assert ext["retrieved_at"] == "2026-10-02T09:00:00Z"
@@ -334,7 +326,8 @@ async def test_resume_mid_research_replays_tool_calls_from_the_run(tmp_path: Pat
     assert [(e["tool"], e["call_id"]) for e in logged] == [("search", "call-0001"), ("search", "call-0001"),
                                                             ("fetch", "call-0002")]
     ids = [e["evidence_id"] for e in JsonlWriter(rd.ledger_journal).read()]
-    assert ids == ["EV-001", "EV-002"]                                    # no duplicate after truncation
+    assert ids[:2] == ["EV-001", "EV-002"] and len(ids) == len(set(ids))  # no duplicate after truncation
+    assert {e["source_type"] for e in JsonlWriter(rd.ledger_journal).read()[2:]} <= {"doc"}   # the merge's doc items
     llm_after = [e["call_id"] for e in JsonlWriter(rd.llm_log).read()][len(llm_before):]
     assert not set(llm_after) & set(llm_before)                           # numbering continues
     report = json.loads(rd.report_json.read_text(encoding="utf-8"))
@@ -451,10 +444,11 @@ async def test_no_tools_is_a_doc_only_run(tmp_path: Path) -> None:
     assert out.exit_code == 0
     report = json.loads((out.run_dir / "report.json").read_text())
     assert report["stop_reason"]["code"] == "tool_failure"
-    assert report["evidence_ledger"] == [] and report["research_log"]["tool_calls"] == []
+    assert [e for e in report["evidence_ledger"] if e["source_type"] != "doc"] == []   # doc items only
+    assert report["research_log"]["tool_calls"] == []
     assert "No external research was possible" in (out.run_dir / "report.md").read_text()
-    # findings citing evidence that does not exist were dropped, never invented
-    assert all(f["evidence"] == [] for f in report["findings"])
+    # external evidence that does not exist (refine adds the fixture's EV-001) was dropped, never invented
+    assert report["findings"] and all(e["source_type"] == "doc" for f in report["findings"] for e in f["evidence"])
     assert [r.inv_id for r in check_all(report, out.run_dir) if not r.passed] == []
 
 

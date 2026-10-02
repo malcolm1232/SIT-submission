@@ -199,8 +199,7 @@ REPORT_OK = FakeResponse(parsed={
     "verdict": {"label": "fit_with_conditions", "rationale": "Reminders fail on peak days.", "confidence": 0.7,
                 "conditions": [{"text": "Fix the quota.", "finding_ids": ["FND-001", "FND-404"]},
                                {"text": "Cites nothing known.", "finding_ids": ["FND-999"]}],
-                "per_objective": [], "what_would_change_it": None},
-    "unresolved": [], "limitations": [{"text": "Unknown degradation.", "degradation_ids": ["DEG-999"]}]})
+                "per_objective": [], "what_would_change_it": None}})
 REPAIR = FakeResponse(parsed={"repairs": [{"owner_id": "FND-001", "anchor_index": 1,
                                            "doc_anchor": anchor("4.1", 6, Q_LOAD)}]})
 
@@ -421,7 +420,7 @@ async def test_report_writes_valid_review_and_passes_invariants(tmp_path: Path) 
     assert "made-up.invalid" not in rd.report_json.read_text() and "[link removed" in review.findings[2].statement
     cited = {x for lim in review.limitations for x in lim.degradation_ids}
     assert cited == {d.id for d in review.research_log.degradations} and cited
-    assert all("DEG-999" not in lim.degradation_ids for lim in review.limitations)
+    assert all("DEG-999" not in lim.degradation_ids for lim in review.limitations)   # code writes limitations
     outs = review.run_manifest.extra["outputs"]
     assert outs["report_json_sha256"] == report_json_sha256(data)
     assert outs["report_md_sha256"] == sha256_file(rd.report_md) and outs["ledger_sha256"] == sha256_file(rd.ledger)
@@ -537,8 +536,7 @@ async def test_explain_reads_only_the_run_directory(tmp_path: Path) -> None:
 
 async def test_verdict_inconsistent_with_severities_is_disclosed(tmp_path: Path) -> None:
     fit = FakeResponse(parsed={"verdict": {"label": "fit", "rationale": "Looks fine.", "confidence": 1.4,
-                                           "conditions": [], "per_objective": [], "what_would_change_it": None},
-                               "unresolved": [], "limitations": []})
+                                           "conditions": [], "per_objective": [], "what_would_change_it": None}})
     ctx = await verified(tmp_path, {"report": [fit]})
     ctx = await ReportPhase().run(ctx)
     data = json.loads(ctx.run_dir.report_json.read_text(encoding="utf-8"))

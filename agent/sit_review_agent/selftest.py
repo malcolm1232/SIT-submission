@@ -55,95 +55,251 @@ def _external_ids(ledger: list[dict[str, object]]) -> list[str]:
                                                if e.get("source_type") == "external"] or ["EV-001"]
 
 
-def _findings(ev: str, *, refined: bool) -> list[dict[str, object]]:
-    """FND-001 (refinement with external evidence; its second anchor cites the wrong page so the
-    verify repair turn is exercised), FND-002 (strength, no change, preserves AD-001), FND-003
-    (needs_testing: next step + unresolved), FND-004 (an invented quote: stays unresolved, so the
-    finding is reported as unverified)."""
+#: The fixture's findings by the ID the merge gives them (shard order, then each shard's rank order:
+#: intent_and_fitness, requirements_and_consistency, claims_and_assumptions; the fourth shard has none).
+FND_STRENGTH = "FND-001"     # accessibility is verified (fitness_for_objectives; preserves AD-001 after refine)
+FND_TESTING = "FND-002"      # peak-day reminders untested (verifiability; needs_testing: next step + unresolved)
+FND_INVENTED = "FND-003"     # an invented quote (requirement_completeness): stays unresolved, reported unverified
+FND_MAIL = "FND-004"         # the e-mail plan's quota (claims_and_external_constraints; external evidence after refine)
+
+#: Research evidence refine adds to a kept finding (``added_evidence``): the passages of the fetched page.
+_EXT_QUOTES = {FND_MAIL: "The Starter plan allows up to 2,000 messages per day.",
+               FND_TESTING: "Higher plans allow 10,000 or more messages per day."}
+
+
+def _findings() -> list[dict[str, object]]:
+    """The four draft findings as the shards write them, in rank order (the order of an unsharded
+    answer). A shard sees no evidence register, so a draft cites only new ``doc`` items (``NEW-n``);
+    the research evidence is added by refine. FND-004's second anchor cites the wrong page, so the
+    verify repair turn is exercised."""
     return [
-        {"id": "FND-001", "rank": 1, "kind": "risk", "category": "unsupported_or_incorrect_claim", "severity": "high",
-         "confidence": 0.92 if refined else 0.85, "disposition": "refinement_now",
+        {"id": FND_MAIL, "rank": 1, "kind": "risk", "category": "unsupported_or_incorrect_claim",
+         "severity": "high", "confidence": 0.85, "disposition": "refinement_now",
          "secondary_dispositions": ["needs_testing"], "title": "E-mail plan cannot send peak-day reminders",
          "statement": "Section 6.2 assumes the e-mail service has no daily sending limit, but the published plan "
                       "allows 2,000 messages a day, below the 5,000 reminders sent on peak exam-week days, so "
                       "most peak-day reminders would be rejected.",
          "doc_anchors": [_anchor("6.2", 11, _Q_MAIL), _anchor("4.1", 2, _Q_LOAD)],
-         "evidence": [{"evidence_id": ev, "source_type": "external",
-                       "quote": "The Starter plan allows up to 2,000 messages per day.", "supports_claim": True,
-                       "derived_from": []}],
+         "evidence": [],
          "recommendation": {"issue": "The reminder design relies on a sending limit the chosen plan does not have.",
                             "rationale": "Reminders over the daily quota are rejected, so the plan rather than the "
                                          "design decides which students are reminded.",
                             "expected_benefit": "Every booking receives its reminder on peak days as well.",
                             "change_summary": "In 6.2, state the plan's daily quota and move to a plan that allows "
                                               "at least 10,000 messages a day.",
-                            "objective_refs": ["Reminder before each slot"], "supporting_evidence_ids": [ev],
+                            "objective_refs": ["Reminder before each slot"], "supporting_evidence_ids": [],
                             "verification": "Peak-day load test with 5,000 reminders in one day."},
          "no_change_rationale": None,
          "next_step": {"owner": "Notification service owner", "action": "Confirm the contracted daily quota."},
          "affected_decisions": [], "acknowledged_in_doc": False, "tags": ["notifications"], "reassessment": None,
          "criterion_ids": ["claims_and_external_constraints"]},
-        {"id": "FND-002", "rank": 2, "kind": "strength", "category": None, "severity": None, "confidence": 0.85,
-         "disposition": "no_change", "secondary_dispositions": [],
-         "title": "Accessibility is verified, not just promised",
-         "statement": "Section 11.3 backs the accessibility objective with automated checks and a manual "
-                      "screen-reader pass on every booking screen, so it is verifiable as written.",
-         "doc_anchors": [_anchor("11.3", 18, _Q_A11Y)], "evidence": [], "recommendation": None,
-         "no_change_rationale": "Automated checks alone miss screen-reader problems; the manual pass covers them.",
-         "next_step": None,
-         "affected_decisions": [{"registry_id": "AD-001", "relation": "preserves",
-                                 "justification": "The screens come from the campus design system (D-3)."}],
-         "acknowledged_in_doc": False, "tags": ["accessibility"], "reassessment": None,
-         "criterion_ids": ["fitness_for_objectives"]},
-        {"id": "FND-003", "rank": 3, "kind": "validation_need", "category": "acceptance_criterion_cannot_validate",
-         "severity": "medium", "confidence": 0.7, "disposition": "needs_testing", "secondary_dispositions": [],
+        {"id": FND_TESTING, "rank": 2, "kind": "validation_need",
+         "category": "acceptance_criterion_cannot_validate", "severity": "medium", "confidence": 0.7,
+         "disposition": "needs_testing", "secondary_dispositions": [],
          "title": "Peak-day reminder volume is not tested",
          "statement": "Section 4.1 sizes peak days at about 5,000 bookings with one reminder each, but no test "
                       "shows that the reminder path delivers that volume within one day.",
          "doc_anchors": [_anchor("4.1", 6, _Q_LOAD)],
-         "evidence": [{"evidence_id": ev, "source_type": "external",
-                       "quote": "Higher plans allow 10,000 or more messages per day.", "supports_claim": True,
+         "evidence": [{"evidence_id": "NEW-1", "source_type": "doc", "quote": _Q_LOAD, "supports_claim": True,
                        "derived_from": []}],
          "recommendation": {"issue": "Peak-day reminder delivery is asserted but never demonstrated.",
                             "rationale": "Only a load test at peak volume shows the quota and the worker hold.",
                             "expected_benefit": "Evidence that every peak-day booking is reminded on time.",
                             "change_summary": "Add a peak-day load test of 5,000 reminders to the acceptance "
                                               "criteria for section 4.1.",
-                            "objective_refs": ["Reminder before each slot"], "supporting_evidence_ids": [ev],
+                            "objective_refs": ["Reminder before each slot"], "supporting_evidence_ids": ["NEW-1"],
                             "verification": None},
          "no_change_rationale": None,
          "next_step": {"owner": "Test lead", "action": "Design and run the peak-day reminder load test."},
          "affected_decisions": [], "acknowledged_in_doc": False, "tags": ["testing"], "reassessment": None,
          "criterion_ids": ["verifiability"]},
-        {"id": "FND-004", "rank": 4, "kind": "gap", "category": "missing_or_unverifiable_requirement",
+        {"id": FND_INVENTED, "rank": 3, "kind": "gap", "category": "missing_or_unverifiable_requirement",
          "severity": "low", "confidence": 0.4, "disposition": "refinement_now", "secondary_dispositions": [],
          "title": "Room cancellation window is unspecified",
          "statement": "The design does not say how late a student may cancel a booking.",
          "doc_anchors": [_anchor("1", 2, "Students may cancel a booking at any time before the slot begins "
                                          "without any penalty.")],
-         "evidence": [{"evidence_id": ev, "source_type": "external", "quote": None, "supports_claim": True,
-                       "derived_from": []}],
+         "evidence": [],
          "recommendation": {"issue": "Late cancellations leave rooms empty during peak days.",
                             "rationale": "A stated cancellation window lets others rebook the room in time.",
                             "expected_benefit": "Fewer empty rooms on peak days for students who need them.",
                             "change_summary": "State a cancellation window in the booking rules of section 1.",
-                            "objective_refs": ["Reserve study rooms"], "supporting_evidence_ids": [ev],
+                            "objective_refs": ["Reserve study rooms"], "supporting_evidence_ids": [],
                             "verification": None},
          "no_change_rationale": None, "next_step": None, "affected_decisions": [], "acknowledged_in_doc": False,
          "tags": [], "reassessment": None, "criterion_ids": ["requirement_completeness"]},
+        {"id": FND_STRENGTH, "rank": 4, "kind": "strength", "category": None, "severity": None, "confidence": 0.85,
+         "disposition": "no_change", "secondary_dispositions": [],
+         "title": "Accessibility is verified, not just promised",
+         "statement": "Section 11.3 backs the accessibility objective with automated checks and a manual "
+                      "screen-reader pass on every booking screen, so it is verifiable as written.",
+         "doc_anchors": [_anchor("11.3", 18, _Q_A11Y)], "evidence": [], "recommendation": None,
+         "no_change_rationale": "Automated checks alone miss screen-reader problems; the manual pass covers them.",
+         "next_step": None, "affected_decisions": [], "acknowledged_in_doc": False, "tags": ["accessibility"],
+         "reassessment": None, "criterion_ids": ["fitness_for_objectives"]},
     ]
 
 
-def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
+def _sound_areas() -> list[dict[str, object]]:
+    return [{"section_refs": ["11.3"], "why_sound": "Accessibility is verified by automated and manual testing.",
+             "doc_anchors": [_anchor("11.3", 18, _Q_A11Y)], "evidence_ids": [],
+             "related_finding_ids": [FND_STRENGTH]}]
+
+
+def assess_answer(criteria_ids: list[str]) -> dict[str, object]:
+    """The fixture's whole assessment as one unsharded answer: the four findings in rank order, the
+    sound area and a coverage row per criterion of ``criteria_ids``."""
+    findings = _findings()
+    return {"findings": findings, "sound_areas": _sound_areas(), "coverage": _coverage(findings, criteria_ids)}
+
+
+def _coverage(findings: list[dict[str, object]], criteria: list[str]) -> list[dict[str, object]]:
+    used: dict[str, list[str]] = {}
+    for f in findings:
+        for c in f["criterion_ids"]:                                       # type: ignore[attr-defined]
+            used.setdefault(str(c), []).append(str(f["id"]))
+    return [{"criterion_id": c, "outcome": "findings" if c in used else "no_issue", "finding_ids": used.get(c, []),
+             "note": "selftest"} for c in criteria]
+
+
+def shard_answer(answer: dict[str, object], criteria: list[str]) -> dict[str, object]:
+    """``answer`` (an unsharded assessment) as the shard of the criterion group ``criteria`` writes
+    it: only the findings of its own criteria (ranked 1.. in the answer's order), the sound areas
+    about them, and a coverage row per criterion of the group."""
+    group = set(criteria)
+    findings = [dict(f, rank=i) for i, f in enumerate(
+        (f for f in answer["findings"] if set(f["criterion_ids"]) & group), start=1)]   # type: ignore[union-attr, attr-defined, index]
+    ids = {str(f["id"]) for f in findings}
+    areas = [a for a in answer["sound_areas"] if set(a["related_finding_ids"]) & ids]   # type: ignore[union-attr, index]
+    return {"findings": findings, "sound_areas": areas, "coverage": _coverage(findings, criteria)}
+
+
+def request_shard(request: object, shards: list[list[str]]) -> list[str] | None:
+    """The criterion group of the assess shard ``request`` belongs to (its conversation is
+    ``assess-<i>-s<k>``, retries ``...-r<j>``; ``phases.assess.shard_conversation``), or ``None`` for
+    a request of no shard."""
+    import re
+
+    found = re.match(r"assess-\d+-s(\d+)(?:-|$)", str(getattr(request, "conversation_id", "")))
+    if found is None or not 1 <= int(found.group(1)) <= len(shards):
+        return None
+    return shards[int(found.group(1)) - 1]
+
+
+def _brief_text(request: object) -> str:
+    """Every text of ``request``'s messages, joined (the brief the fixture answers from)."""
+    parts: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            parts.append(node)
+        elif isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(getattr(request, "messages", []))
+    return "\n".join(parts)
+
+
+def _merged_findings(request: object) -> list[dict[str, object]]:
+    """The merged draft findings the refine brief lists (``prompts/refine.md`` "Merged findings"),
+    or the fixture's own four when the brief has none (a stand-in phase in a test)."""
+    import json
+
+    text = _brief_text(request)
+    marker = "## Merged findings"
+    if marker in text:
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(text[text.index(marker) + len(marker):].lstrip())
+            if isinstance(parsed, list):
+                return [f for f in parsed if isinstance(f, dict)]
+        except ValueError:
+            pass
+    return _findings()
+
+
+def refine_answer(ledger: list[dict[str, object]], request: object) -> dict[str, object]:
+    """One revision per merged finding (``RefineRevisionsOutput``): every finding kept, ranked as the
+    fixture ranks them, the research evidence added to FND-004 and FND-002, and FND-001's link to the
+    approved decision AD-001 (assess makes no registry links). A finding the fixture does not know is
+    kept as drafted, ranked after the known ones."""
+    ev = _external_ids(ledger)[0]
+    by_title = {str(f["title"]): str(f["id"]) for f in _findings()}
+    order = [FND_MAIL, FND_TESTING, FND_INVENTED, FND_STRENGTH]
+    merged = _merged_findings(request)
+    known = sorted((f for f in merged if str(f.get("title")) in by_title),
+                   key=lambda f: order.index(by_title[str(f["title"])]))
+    unknown = [f for f in merged if str(f.get("title")) not in by_title]
+    revisions = []
+    for rank, f in enumerate([*known, *unknown], start=1):
+        role = by_title.get(str(f.get("title")))
+        cited = {e.get("evidence_id") for e in f.get("evidence") or [] if isinstance(e, dict)}   # type: ignore[attr-defined]
+        added = ([{"evidence_id": ev, "source_type": "external", "quote": _EXT_QUOTES[role], "supports_claim": True,
+                   "derived_from": []}] if role in _EXT_QUOTES and ev not in cited else [])
+        links = ([{"registry_id": "AD-001", "relation": "preserves",
+                   "justification": "The screens come from the campus design system (D-3)."}]
+                 if role == FND_STRENGTH else [])
+        reason = {FND_MAIL: "Confirmed by the provider's published plan, now cited.",
+                  FND_TESTING: "The higher plans' quota shows what the load test must cover.",
+                  FND_STRENGTH: "Preserves the approved design-system decision D-3."}.get(role or "", "Still accurate.")
+        revisions.append({"finding_id": f["id"], "action": "keep", "merge_into": None, "rank": rank,
+                          "severity": f.get("severity"), "disposition": f.get("disposition"),
+                          "affected_decisions": links, "added_evidence": added, "reason": reason})
+    return {"revisions": revisions}
+
+
+def verdict_answer(request: object) -> dict[str, object]:
+    """The verdict-only report answer (``VerdictOutput``). Finding IDs are read from the brief's
+    finding list by title, so the verdict cites the findings the run has; the fixture's IDs when the
+    brief lists none."""
+    import re
+
+    titles = {str(f["title"]): str(f["id"]) for f in _findings()}
+    listed = {m.group(2): m.group(1) for m in re.finditer(r"^- (FND-\d{3,}) \(rank [^)]*\): (.+?)\. ",
+                                                         _brief_text(request), flags=re.M)}
+    ids = {fid: listed.get(t, fid) if listed else fid for t, fid in titles.items()}
+    present = set(listed.values()) if listed else set(ids.values())
+
+    def cite(*roles: str) -> list[str]:
+        return [ids[r] for r in roles if ids[r] in present]
+
+    return {"verdict": {
+        "label": "fit_with_conditions",
+        "rationale": "Booking and accessibility are sound; peak-day reminders fail until the e-mail quota is "
+                     "addressed.",
+        "confidence": 0.75,
+        "conditions": [{"text": "Move to an e-mail plan whose daily quota covers peak-day reminders.",
+                        "finding_ids": cite(FND_MAIL)}],
+        "per_objective": [{"objective_ref": "Reminder before each slot", "label": "fit_with_conditions",
+                           "finding_ids": cite(FND_MAIL, FND_TESTING)},
+                          {"objective_ref": "Reserve study rooms for one-hour slots", "label": "fit",
+                           "finding_ids": cite(FND_STRENGTH)}],
+        "what_would_change_it": "A contract showing a daily quota above peak volume."}}
+
+
+def fixture_script(criteria_ids: list[str], shards: list[list[str]] | None = None) -> dict[str, list[object]]:
     """The scripted model responses for every phase of the selftest run (the "fixture script").
 
     Research searches once, fetches the hit (only a page read in full may be cited, ADR-007
-    ``read_before_cite``) and answers; assess and refine cite the fetched page's ledger entry.
+    ``read_before_cite``) and answers. Assess answers once per shard (``shards``: the criterion
+    groups in launch order, default ``config/agent.yaml`` ``assess.shards`` for ``criteria_ids``),
+    each with the findings, sound areas and coverage rows of its own group; a request of no shard
+    gets the whole assessment. Refine answers with revisions that add the fetched page's ledger
+    entry to two findings; the report answer is the verdict only.
 
     Entries are ``FakeResponse`` objects, or callables ``(ledger_entries, request) -> FakeResponse``
-    resolved at call time so findings cite the ``EV-`` IDs research actually created (the model
-    may only cite what is in the ledger)."""
+    resolved at call time so answers cite the ``EV-`` IDs research actually created (the model
+    may only cite what is in the ledger) and the IDs of the findings the run has."""
     from sit_review_agent.llm.gateway import FakeResponse, ToolUse
+
+    if shards is None:
+        from sit_review_agent.config import load_config
+
+        shards = [list(s.criteria) for s in load_config().agent.assess.shards_for(criteria_ids)]
+    groups = [list(s) for s in shards]
 
     def final_research(ledger: list[dict[str, object]], req: object) -> FakeResponse:
         import json
@@ -157,30 +313,16 @@ def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
                                                  "evidence_ids": ids[:1]}],
                                     "stop_requested": True, "stop_rationale": "The one external premise is resolved."})
 
-    def assess(ledger: list[dict[str, object]], _req: object) -> FakeResponse:
-        ev = _external_ids(ledger)[0]
-        used = {"claims_and_external_constraints": ["FND-001"], "fitness_for_objectives": ["FND-002"],
-                "verifiability": ["FND-003"], "requirement_completeness": ["FND-004"]}
-        coverage = [{"criterion_id": c, "outcome": "findings" if c in used else "no_issue",
-                     "finding_ids": used.get(c, []), "note": "selftest"} for c in criteria_ids]
-        return FakeResponse(parsed={
-            "findings": _findings(ev, refined=False),
-            "sound_areas": [{"section_refs": ["11.3"], "why_sound": "Accessibility is verified by automated and "
-                             "manual testing.", "doc_anchors": [_anchor("11.3", 18, _Q_A11Y)], "evidence_ids": [],
-                             "related_finding_ids": ["FND-002"]}],
-            "coverage": coverage})
+    def assess(_ledger: list[dict[str, object]], req: object) -> FakeResponse:
+        whole = assess_answer(criteria_ids)
+        group = request_shard(req, groups)
+        return FakeResponse(parsed=whole if group is None else shard_answer(whole, group))
 
-    def refine(ledger: list[dict[str, object]], _req: object) -> FakeResponse:
-        ev = _external_ids(ledger)[0]
-        return FakeResponse(parsed={
-            "findings": _findings(ev, refined=True),
-            "revisions": [{"finding_id": "FND-001", "change": "revised", "reason": "Confidence raised: the quota "
-                           "is stated by the provider itself.", "evidence_ids": [ev]},
-                          *[{"finding_id": f"FND-00{i}", "change": "unchanged", "reason": "Still accurate.",
-                             "evidence_ids": []} for i in (2, 3, 4)]]})
+    def refine(ledger: list[dict[str, object]], req: object) -> FakeResponse:
+        return FakeResponse(parsed=refine_answer(ledger, req))
 
-    def research_final(n: int) -> list[object]:
-        return [final_research for _ in range(n)]
+    def report(_ledger: list[dict[str, object]], req: object) -> FakeResponse:
+        return FakeResponse(parsed=verdict_answer(req))
 
     understand = FakeResponse(parsed={
         "intent_summary": {
@@ -207,45 +349,39 @@ def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
                                                       input={"query": FIXTURE_QUERY})])
     research_fetch = FakeResponse(tool_uses=[ToolUse(id="toolu_selftest_2", name=FIXTURE_FETCH_TOOL,
                                                      input={"url": FIXTURE_URL})])
-    verify = FakeResponse(parsed={"repairs": [{"owner_id": "FND-001", "anchor_index": 1,
+    verify = FakeResponse(parsed={"repairs": [{"owner_id": FND_MAIL, "anchor_index": 1,
                                                "doc_anchor": _anchor("4.1", 6, _Q_LOAD)}]})
-    report = FakeResponse(parsed={
-        "verdict": {"label": "fit_with_conditions",
-                    "rationale": "Booking and accessibility are sound; peak-day reminders fail until the e-mail "
-                                 "quota is addressed.",
-                    "confidence": 0.75,
-                    "conditions": [{"text": "Move to an e-mail plan whose daily quota covers peak-day reminders.",
-                                    "finding_ids": ["FND-001"]}],
-                    "per_objective": [{"objective_ref": "Reminder before each slot", "label": "fit_with_conditions",
-                                       "finding_ids": ["FND-001", "FND-003"]},
-                                      {"objective_ref": "Reserve study rooms for one-hour slots", "label": "fit",
-                                       "finding_ids": ["FND-002"]}],
-                    "what_would_change_it": "A contract showing a daily quota above peak volume."},
-        "unresolved": [{"text": "Peak-day reminder delivery has not been demonstrated.", "finding_ids": ["FND-003"],
-                        "next_step": {"owner": "Test lead", "action": "Run the peak-day reminder load test."}}],
-        "limitations": []})
+    # Two answers per shard (a retry, a resumed shard) and two per later phase.
     return {"understand": [understand], "plan": [plan],
-            "research": [research_search, research_fetch, *research_final(6)],
-            "assess": [assess, assess], "refine": [refine, refine], "verify": [verify], "report": [report, report]}
+            "research": [research_search, research_fetch, *[final_research for _ in range(6)]],
+            "assess": [assess for _ in range(2 * max(1, len(groups)))], "refine": [refine, refine],
+            "verify": [verify], "report": [report, report]}
 
 
 def fixture_gateway(run_dir: object, *, clock: object = None, model: str = "claude-opus-5-5",
                     criteria_ids: list[str] | None = None) -> object:
     """``FakeGateway`` loaded with :func:`fixture_script` (``transport: fake``). Script entries that
-    are callables are resolved against the run's ledger journal when their turn comes."""
+    are callables are resolved against the run's ledger journal when their turn comes. The criteria
+    and the shard groups are the run's (``effective_config.json``) when it has them."""
     from sit_review_agent.config import load_config
     from sit_review_agent.llm.gateway import FakeGateway, LLMRequest, LLMResult
     from sit_review_agent.rundir import JsonlWriter
 
-    if criteria_ids is None:
-        eff = Path(run_dir.effective_config) if hasattr(run_dir, "effective_config") else None  # type: ignore[union-attr]
-        if eff is not None and eff.is_file():
-            import json
+    shards: list[list[str]] | None = None
+    eff = Path(run_dir.effective_config) if hasattr(run_dir, "effective_config") else None  # type: ignore[union-attr]
+    if eff is not None and eff.is_file():
+        import json
 
-            data = json.loads(eff.read_text(encoding="utf-8"))
+        data = json.loads(eff.read_text(encoding="utf-8"))
+        if criteria_ids is None:
             criteria_ids = [c["id"] for c in data["criteria"]["criteria"]]
-        else:
-            criteria_ids = load_config().criteria.ids()
+        if data.get("agent", {}).get("assess", {}).get("shards") is not None:
+            from sit_review_agent.config import AssessSettings
+
+            settings = AssessSettings.model_validate(data["agent"]["assess"])
+            shards = [list(s.criteria) for s in settings.shards_for(criteria_ids)]
+    if criteria_ids is None:
+        criteria_ids = load_config().criteria.ids()
 
     class _FixtureGateway(FakeGateway):
         async def call(self, request: LLMRequest) -> LLMResult:  # type: ignore[type-arg]
@@ -255,7 +391,7 @@ def fixture_gateway(run_dir: object, *, clock: object = None, model: str = "clau
                 q[0] = q[0](entries, request)
             return await super().call(request)
 
-    return _FixtureGateway(fixture_script(criteria_ids), run_dir=run_dir, model=model, clock=clock)  # type: ignore[arg-type]
+    return _FixtureGateway(fixture_script(criteria_ids, shards), run_dir=run_dir, model=model, clock=clock)  # type: ignore[arg-type]
 
 
 def selftest_config(workdir: Path) -> EffectiveConfig:
