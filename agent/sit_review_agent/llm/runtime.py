@@ -339,13 +339,17 @@ class RuntimeLimits:
 
 
 def attach_runtime(gw: Any, limits: RuntimeLimits) -> None:
-    """Give ``limits`` to ``gw`` and every ``.inner`` layer that has a ``runtime`` attribute."""
+    """Give ``limits`` to ``gw`` and every ``.inner`` layer that has a ``runtime`` attribute, and the
+    run clock to each layer's call log (``llm.gateway.LLMCallLog.run_elapsed``, for ``start_offset_s``)."""
     seen: set[int] = set()
     layer = gw
     while layer is not None and id(layer) not in seen:
         seen.add(id(layer))
         if hasattr(layer, "runtime"):
             layer.runtime = limits
+        log = getattr(layer, "log", None)
+        if limits.deadline is not None and hasattr(log, "run_elapsed"):
+            log.run_elapsed = limits.deadline.elapsed  # type: ignore[union-attr]
         layer = getattr(layer, "inner", None)
 
 

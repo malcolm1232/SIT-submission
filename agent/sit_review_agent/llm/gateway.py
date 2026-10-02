@@ -35,8 +35,9 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import re
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, Protocol, TypeVar, runtime_checkable
 
@@ -252,13 +253,29 @@ def redact_log_entry(entry: dict[str, Any], redactor: Any) -> dict[str, Any]:
 REDACTED_CANARY = "***REDACTED-CANARY***"
 
 
+_SHARD_CONVERSATION = re.compile(r"assess-\d+-s(\d+)(?:-r\d+)*")
+
+
+def assess_shard_index(conversation_id: str | None) -> int | None:
+    """The launch index (1-based) of the assess shard a conversation belongs to: ``assess-<i>-s<k>``
+    (``phases.assess.shard_conversation``) and its retries ``...-r<j>``; ``None`` for any other."""
+    found = _SHARD_CONVERSATION.fullmatch(conversation_id or "")
+    return int(found.group(1)) if found else None
+
+
 class LLMCallLog:
     """Appends one JSON object per call (and per failed attempt) to ``runs/<id>/llm.jsonl``.
 
     Every entry goes through :func:`redact_log_entry` (``redactor`` defaults to the values of
     :data:`LOG_SECRET_ENV`). ``resumed_phases`` is set by the resume path
     (:func:`prepare_resume`): entries of those phases are logged with ``resumed: true`` (ADR-009
-    item 2: model calls of the stage that is re-run after a resume)."""
+    item 2: model calls of the stage that is re-run after a resume).
+
+    Two fields are added here for every writer (latency integration; read by ``manifest.py`` and
+    ``replay.ReplayClock``): ``shard``, the assess shard's launch index on every attempt of a shard
+    (:func:`assess_shard_index`), and ``start_offset_s``, the run clock when the attempt started (the
+    run clock at logging time less the entry's ``elapsed_s``), once ``run_elapsed`` is set
+    (``llm.runtime.attach_runtime``). A writer's own ``start_offset_s`` is kept."""
 
     def __init__(self, run_dir: RunDir, *, redactor: Any = None, secret_env: Sequence[str] = ()) -> None:
         from sit_review_agent.tools.cassette import Redactor
@@ -267,6 +284,8 @@ class LLMCallLog:
         self.redactor = redactor if redactor is not None else Redactor.from_env(
             tuple(dict.fromkeys([*LOG_SECRET_ENV, *secret_env])))
         self.resumed_phases: set[str] = set()
+        #: The run clock (seconds since the run started, resume-adjusted); ``None`` outside a run.
+        self.run_elapsed: Callable[[], float] | None = None
 
     def is_resumed(self, phase: PhaseName | str) -> bool:
         return str(phase.value if isinstance(phase, PhaseName) else phase) in self.resumed_phases
@@ -274,6 +293,13 @@ class LLMCallLog:
     def log(self, entry: dict[str, Any]) -> int:
         if entry.get("phase") is not None and self.is_resumed(str(entry["phase"])):
             entry = {**entry, "resumed": True}
+        shard = assess_shard_index(entry.get("conversation_id")) if entry.get("phase") == "assess" else None
+        if shard is not None and "shard" not in entry:
+            entry = {**entry, "shard": shard}
+        if self.run_elapsed is not None and "start_offset_s" not in entry:
+            took = entry.get("elapsed_s")
+            took = float(took) if isinstance(took, int | float) and not isinstance(took, bool) else 0.0
+            entry = {**entry, "start_offset_s": round(max(0.0, self.run_elapsed() - took), 3)}
         return self.writer.append(redact_log_entry(entry, self.redactor))
 
 
