@@ -59,3 +59,12 @@ class FakeJudge:
     async def complete(self, request: JudgeRequest) -> JudgeResult:
         self.calls.append(request)
         return JudgeResult(data=self._responder(request), model=self._model, cost_usd=0.0)
+
+
+def build_judge(kind: str, *, out_dir: Any, **options: Any) -> JudgeClient:
+    """The client named by ``kind``: ``"claude_code"`` (headless ``claude -p``, ADR-010 billing)
+    or ``"anthropic_api"`` (``ANTHROPIC_API_KEY``). ``out_dir`` receives the JSONL call log.
+
+    Live kinds are implemented by the matcher workstream; tests build :class:`FakeJudge` directly.
+    """
+    raise NotImplementedError(f"judge kind {kind!r} is not implemented yet")

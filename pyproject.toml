@@ -42,6 +42,7 @@ include = ["sit_review_agent*", "sit_eval*"]
 
 [tool.setuptools.package-data]
 sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/selftest/**/*"]
+sit_eval = ["prompts/*", "schemas/*", "grader/prompts/*", "grader/schemas/*"]
 
 [tool.ruff]
 line-length = 120
