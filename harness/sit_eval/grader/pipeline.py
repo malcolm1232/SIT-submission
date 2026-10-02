@@ -292,10 +292,13 @@ class _Grader:
             t0 = time.monotonic()
             try:
                 res = await self.judge.complete(req)
-            except JudgeError as exc:
+            except Exception as exc:  # noqa: BLE001 - any client failure ends the grade cleanly
+                # A live client should raise JudgeError, but a timeout or client bug must still leave
+                # grade.json, the call log and a clean CLI exit (3) instead of a traceback.
+                err = str(exc) if isinstance(exc, JudgeError) else f"{type(exc).__name__}: {exc}"
                 self._log({"purpose": req.purpose, "sample_index": sample_index, "ok": False,
-                           "error": str(exc)[:500], "user_sha256": _sha(attempt_user)})
-                raise GraderError(f"{tag}: judge failed: {exc}") from exc
+                           "error": err[:500], "user_sha256": _sha(attempt_user)})
+                raise GraderError(f"{tag}: judge failed: {err}") from exc
             cost = res.cost_usd
             if cost is None:
                 cost = (costs.actual_cost(self.model, res.input_tokens, res.output_tokens)
@@ -380,8 +383,10 @@ class _Grader:
 
     async def run_pass_b(self, *, key_aware: bool) -> dict[str, Any]:
         recs = [await self._pass_b_sample(i, key_aware=key_aware) for i in range(self.samples)]
-        dis = scoring.disagreement(recs[:2]) if len(recs) >= 2 else {"max_dim_delta": 0.0, "S_delta": 0.0}
-        third = len(recs) >= 2 and scoring.needs_third_sample(dis)
+        dis = scoring.disagreement(recs) if len(recs) >= 2 else {"max_dim_delta": 0.0, "S_delta": 0.0}
+        # prereg grader.samples: "2 per review ... a third if ...". Only a two-sample grade gets a third;
+        # a grade asked for 3+ samples already has them (it used to get a 4th).
+        third = len(recs) == 2 and scoring.needs_third_sample(dis)
         if third:
             recs.append(await self._pass_b_sample(len(recs), key_aware=key_aware))
         return {"samples": recs, "disagreement": {**dis, "third_sample_run": third}}
@@ -465,12 +470,19 @@ class _Grader:
             })
             if self.blind["disagreement"]["third_sample_run"]:
                 reasons.append("samples disagreed (a dimension by >= 2 or S by >= 8); third sample run")
+            elif scoring.needs_third_sample(self.blind["disagreement"]):   # 3+ samples were requested
+                reasons.append("samples disagreed (a dimension by >= 2 or S by >= 8)")
             if not final["gates"]["G5"]:
                 reasons.append("G5: text addressed to the grader (prompt injection) flagged")
             if any(h["severity"] == "material" and h["status"] == "suspected" for h in halls):
                 reasons.append("suspected material hallucinations need verification (GR §4.3)")
             if any(h.get("harness_downgraded") for h in halls):
                 reasons.append("grader cited design text that is not in the document (flag downgraded)")
+            if len({r["n_material_verified"] for r in recs}) > 1:
+                # e.g. one sample flags a verified-false material hallucination and the other none: the
+                # median count (0.5) triggers no G3 cap, yet the merged list shows the flag as verified_false.
+                reasons.append("samples disagree on the number of material verified-false hallucinations "
+                               "(" + ", ".join(f"{r['n_material_verified']:g}" for r in recs) + "); G3 used the median")
             if any(r["verdict_present_model"] != self.verdict_present for r in recs):
                 reasons.append("grader and harness disagree on whether an explicit verdict is present")
         else:

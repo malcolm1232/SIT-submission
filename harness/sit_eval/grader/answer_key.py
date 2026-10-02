@@ -24,6 +24,8 @@ from typing import Any
 
 import yaml
 
+from sit_eval.grader.projection import GraderInputError
+
 DIAGNOSTIC_LABEL = ("DIAGNOSTIC ONLY - key-aware alignment counts. Not recall: recall comes only from the "
                     "matcher (metrics.md §2; spec C4). Never averaged with the key-blind score.")
 #: legacy_mappings.severity.grading_materiality (primary variant)
@@ -39,15 +41,18 @@ def _pad(key_id: str) -> str:
 def load_answer_key(path: str | Path) -> dict[str, Any]:
     """``{"format": "canonical" | "legacy", "key": <legacy-shaped dict>, "id_map": {...}, "source": ...}``."""
     p = Path(path)
-    text = p.read_text(encoding="utf-8")
-    data = json.loads(text) if p.suffix == ".json" else yaml.safe_load(text)
+    try:
+        text = p.read_text(encoding="utf-8")
+        data = json.loads(text) if p.suffix == ".json" else yaml.safe_load(text)
+    except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
+        raise GraderInputError(f"cannot read answer key {p.name}: {exc}") from exc
     if not isinstance(data, dict):
-        raise ValueError(f"{p.name}: not an answer key")
+        raise GraderInputError(f"{p.name}: not an answer key")
     if "flaws" in data and "sound_sections" in data:
         return {"format": "canonical", "canonical": data, "source": p.name}
     if "key_items" in data:
         return {"format": "legacy", "legacy": data, "source": p.name}
-    raise ValueError(f"{p.name}: neither a canonical key (flaws, sound_sections) nor a legacy key (key_items)")
+    raise GraderInputError(f"{p.name}: neither a canonical key (flaws, sound_sections) nor a legacy key (key_items)")
 
 
 def _locations(loc: dict[str, Any]) -> list[str]:

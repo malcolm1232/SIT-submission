@@ -176,3 +176,62 @@ taken as: continue `docs/HANDOVER_FULL.md` §6 with the delegation pattern of se
 
 ---
 
+## Report: R robustness P0 suite
+
+**1. Result.** Ruff is clean on `agent harness tests`. The full `pytest -q` run passes 829 tests, including the other workstreams' tests. My suite is 96 tests in `tests/robustness` and takes about 15 s. It makes no network, key or `claude` calls.
+
+**2. Coverage of the 81 P0 scenarios.**
+- **Offline: 46.** 41 pass end to end. 5 fail because of agent defects and need a decision: LLM-05, NET-02, BEH-10, BEH-12, BEH-25.
+- **Laptop only: 28.** Each has its exact command in the README table.
+- **Not expressible as a schedule: 7.** 4 are covered by named existing tests. 3 need a decision: INF-08, LLM-10, OVF-07.
+
+There are 29 fault YAMLs. A test loads each one through the agent's loader and checks that `--faults <ID>` resolves to it.
+
+**3. Files changed.**
+- **New:** everything under `tests/robustness/`: `README.md` (the 81-row coverage table, how to run, decisions); `faults/*.yaml` (29 files); `fixtures/cassettes/` (the selftest cassettes plus one scholarly record, so both servers are exercised); `fixtures/tools/*.json` (hand-made injected page, irrelevant results, SEO spam, benchmark evidence); `robustness_harness.py`, `oracles.py`, `robustness_coverage.py`, `robustness_results.py`, `robustness_repro.py`, `conftest.py`; test files `test_robustness_scenarios.py`, `test_robustness_schedules.py`, `test_robustness_regressions.py`, `test_robustness_results_csv.py`; `results/robustness_results.csv` and `results/robustness_summary.txt`.
+- **New edit log:** `research/audit/robustness_suite_editlog.md`.
+- **Agent edits:** each is small, has a regression test in `test_robustness_regressions.py`, and is in the edit log.
+  1. `orchestrator.py`: when a deadline skipped a phase after research had already set the stop reason, nothing disclosed it. This hid refine being skipped, in the offline LLM-05 run and in the first live run. Now every skip is disclosed.
+  2. `llm/gateway.py` (`FaultInjectingLLMGateway`): an LLM rule using `nth` never fired. So no schedule could fault only the first call of a stage. `nth` now means the stage's call index.
+  3. Same class, plus `_run_build_llm`: on the fake transport an injected hang cost a hard-coded 600 s, not the configured 1800 s. The wrapper now takes the configured LLM policy.
+  4. `phases/research.py`: "No external research was possible" was missing when every tool call failed but too few calls were made to open the breakers (INF-24).
+  5. `phases/verify.py`: placeholder ("TBD") findings reached the report (LLM-09). They are now dropped and disclosed.
+  6. `phases/_model_calls.py`: a "doc" citation whose quote is not in the document became a doc ledger entry holding that external text (BEH-17). It now falls back to the anchor's own quote.
+
+**4. Defects found.**
+- **Fixed:** the 6 above.
+- **Failing, needs decision.** Reproduce any of the first six with `python tests/robustness/robustness_repro.py <ID>`.
+  - **BEH-25:** a stage crash gives exit 4 and `failure.json`, but no partial report. ADR-009 and the scenario both require one.
+  - **LLM-05:** one hang costs the full 1800 s per-attempt timeout. The run ends at 1802 s against the 540 s deadline, which breaks INV-01. The deadline only applies between phases, not to an in-flight model call.
+  - **NET-02:** fully offline, the run exits with code 3 after 19 s virtual, past the 10 s criterion. It gives up only after the retry budget.
+  - **BEH-10:** refine lowers a finding's severity with no new evidence and no reason, and it is accepted. The logged note is just "revised".
+  - **BEH-12:** a recommendation that reverses an approved decision without the "challenges" label is not caught at L0.
+  - **INF-08:** with the MCP key unset, `run` warns, makes 6 model calls and finishes doc-only. The scenario wants an exit within 5 s before any model call.
+  - **LLM-10:** no reproduction. The agent does not count tokens before sending, and the 150-page fixture does not exist.
+  - **OVF-07:** no reproduction. `tools/sources.py` lists `github.com/pgvector`, `pgvector.dev` and `kafka.apache.org`, which come from the sample's stack. `scripts/leakage_grep.py` does not exist.
+
+**5. Design decisions and deviations.**
+1. Every offline run reviews the selftest fixture with a scripted model. This isolates the fault. Quality metrics stay L1.
+2. The harness applies the schedule's `process:` faults (crash, Ctrl-C) by wrapping phases. It fires them at the end of the stage, so resume must re-serve that stage's tool calls.
+3. LLM `nth` is the stage's call index; `attempt` stays the retry within one call.
+4. Variants (INF-10's four malformed kinds, INF-18's ten seeds, LLM-03 persistent, LLM-06 once) patch a temp copy of the schedule. There is one YAML per ID.
+5. ADV-05 runs the offline half of ADV-04: a scripted model obeys the injected page. BEH-03 and BEH-20 run their L0 halves only.
+6. BEH-02 deviates: "exactly 2 refine cycles" assumes a verify-to-refine loop this state machine does not have. I assert one verify pass with one repair turn.
+7. BEH-17 deviates: the agent takes each citation's source type from the ledger rather than rejecting the citation. I assert that outcome, plus fix 6.
+8. NET-01 adds a 200 s plan latency and a 10 s first-call latency, so the network drop lands inside research. Resume is then checked not to repeat the completed call.
+9. CSV status BLOCKED means "not evaluated by this offline suite"; the notes give the command or the covering test.
+10. INV-01 is checked as virtual time ≤ deadline + 30 s, plus a 30 s real-time watchdog.
+
+**6. Unverified (needs the laptop).** All 28 laptop rows, and the L1/L2 halves of the offline rows. The real gateways under faults: the suite drives the fault wrapper's copy of the retry policy, not `ClaudeCodeGateway` itself. Real cassette shapes; the scholarly and adversarial fixtures are invented. `ClaudeCodeGateway` logs no latency on successful calls, which OPS-10 asks for. The offline log check cannot see this.
+
+**7. Writes beyond your list.** The CSV and summary are written under `tests/robustness/results/`, which is in my folder. CLI probes ran under the scratchpad, never the repo's `runs/`. I ran no git.
+
+**8. For the verifier.**
+- The agent ignores `process:` entries. `sit-review run --faults BEH-25` exits 0 with a clean report; I confirmed this.
+- The MCP and LLM fault layers each measure `after_seconds` and offline windows from their own start. The research spec implies one shared run clock.
+- The argument sanitiser lets up to 2,000 characters of verbatim document text into a search query. The whole 657-character fixture document passes. This is a policy decision.
+- When every tool call fails and the model votes to stop, the stop reason stays "sufficient_evidence (model_stop_vote)" with zero evidence. Fix 4 adds the doc-only disclosure but leaves the stop reason.
+- scenarios.md issues: BEH-02 and BEH-17 assume a different architecture. LLM-10 and OVF-07 name a fixture and a script that do not exist. DEMO-04 is tagged L0, but its simulation is L2 only. The 1800 s timeout against the 540 s default deadline also affects INF-17 and DEMO-05.
+
+---
+

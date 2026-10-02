@@ -15,10 +15,20 @@ from pathlib import Path
 
 import typer
 
-from sit_eval.grader.cli import app as grade_app
-
 app = typer.Typer(help="SIT evaluation harness.", no_args_is_help=True)
-app.add_typer(grade_app, name="grade")
+
+try:  # the grader is another workstream's package: an import error there must not disable `score`
+    from sit_eval.grader.cli import app as grade_app
+except Exception as _grader_exc:  # noqa: BLE001 - reported by the stub command below
+    _GRADER_IMPORT_ERROR = f"{type(_grader_exc).__name__}: {_grader_exc}"
+
+    @app.command("grade", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+    def grade_unavailable() -> None:
+        """The lecturer grader (unavailable: its package failed to import)."""
+        typer.echo(f"error: sit_eval.grader failed to import: {_GRADER_IMPORT_ERROR}", err=True)
+        raise typer.Exit(2)
+else:
+    app.add_typer(grade_app, name="grade")
 
 JUDGE_KINDS = ("fake", "claude_code", "anthropic_api")
 

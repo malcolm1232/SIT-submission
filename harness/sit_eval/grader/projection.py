@@ -119,9 +119,10 @@ def identifying_values(review: dict[str, Any]) -> set[str]:
         if isinstance(argv, list):
             vals.update(a.split("=", 1)[0] for a in argv if isinstance(a, str) and a.startswith("--"))
     # The runner's stop detail is dropped from the projection; its value must not come back through
-    # agent-written text (e.g. "no_tools" copied into a limitation).
+    # agent-written text (e.g. "no_tools" copied into a limitation). Only snake_case details: a plain
+    # word such as "deadline" is ordinary prose and is left alone.
     sr = review.get("stop_reason")
-    if isinstance(sr, dict) and isinstance(sr.get("detail"), str):
+    if isinstance(sr, dict) and isinstance(sr.get("detail"), str) and "_" in sr["detail"]:
         vals.add(sr["detail"])
     for prov in _walk_key(review, "provenance"):
         if isinstance(prov, dict):

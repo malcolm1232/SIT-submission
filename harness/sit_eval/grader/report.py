@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sit_eval.grader.scoring import WEIGHTS
+from sit_eval.grader.scoring import weights
 
 NAMES = {"D1": "Design-intent understanding", "D2": "Fitness-for-purpose judgement", "D3": "Coverage",
          "D4": "Evidence quality and traceability", "D5": "Recommendation quality",
@@ -46,8 +46,9 @@ def render_markdown(rep: dict[str, Any]) -> str:
         samples = rep.get("samples") or []
         head = "| Dim | Name | Weight | " + " | ".join(s["seed"] for s in samples) + " | Final |"
         out += [head, "|" + "---|" * (4 + len(samples))]
+        w_mode = weights("delta" in str(rep.get("mode")))   # delta mode: D1-D10 x 0.9, D11 10
         for k, v in (rep.get("dimensions_final") or {}).items():
-            w = WEIGHTS.get(k, 10)
+            w = w_mode.get(k, 0)
             cells = " | ".join(_fmt(s["dimensions_capped"].get(k)) for s in samples)
             out.append(f"| {k} | {NAMES.get(k, k)} | {w:g} | {cells} | {_fmt(v)} |")
         out.append("| S | | | " + " | ".join(_fmt(s["S_raw"]) for s in samples) + f" | {_fmt(rep['S'])} |")

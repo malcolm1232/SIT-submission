@@ -29,6 +29,10 @@ THINKING_ALLOWANCE = 3000
 SECONDS_PER_CALL = (20, 60)
 
 
+#: Float tolerance for the budget comparison (a millionth of a cent).
+BUDGET_EPS_USD = 1e-9
+
+
 class BudgetExceeded(RuntimeError):
     """The next call would take the spend past ``max_cost_usd``; nothing was sent."""
 
@@ -63,7 +67,9 @@ class Budget:
     refused: list[dict[str, Any]] = field(default_factory=list)
 
     def check(self, purpose: str, estimate_usd: float) -> None:
-        if self.max_cost_usd is not None and self.spent_usd + estimate_usd > self.max_cost_usd:
+        # A call that lands exactly on the limit is allowed; the tolerance stops float sums such as
+        # 0.1 + 0.2 (= 0.30000000000000004) from refusing it.
+        if self.max_cost_usd is not None and self.spent_usd + estimate_usd > self.max_cost_usd + BUDGET_EPS_USD:
             self.refused.append({"purpose": purpose, "estimate_usd": round(estimate_usd, 4),
                                  "spent_usd": round(self.spent_usd, 4)})
             raise BudgetExceeded(

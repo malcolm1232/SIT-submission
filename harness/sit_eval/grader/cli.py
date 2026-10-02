@@ -45,8 +45,9 @@ def _print_plan(plan: dict[str, Any]) -> None:
                    f"tokens, ~${r['cost_usd']:.2f} each")
     typer.echo(f"Planned calls: {plan['calls_min']} (up to {plan['calls_max']} with third samples).")
     typer.echo(f"Estimated cost: ${plan['cost_usd_min']:.2f} - ${plan['cost_usd_max']:.2f} ({plan['price_basis']}).")
-    typer.echo("Opus via `claude -p` at effort high reports roughly $0.05-0.15 per call (more for a long Pass B); "
-               "the budget uses the cost each call reports.")
+    typer.echo("`claude -p` reports its own cost per call and the budget uses it. A two-finding smoke call on Haiku "
+               "4.5 cost $0.11-0.13 (about 10k thinking tokens), so expect Opus calls on a real review to cost "
+               "more than this list-price estimate.")
     lo, hi = plan["wall_time_s"]
     typer.echo(f"Wall time: about {lo // 60}-{-(-hi // 60)} min sequential.")
     for w in plan.get("warnings") or []:
@@ -118,6 +119,7 @@ def validate(
 ) -> None:
     """Grader meta-validation (GR §8) with any judge."""
     from sit_eval.grader.pipeline import plan_grade
+    from sit_eval.grader.projection import GraderInputError
     from sit_eval.grader.validation import ALL_CHECKS, plan_meta_validation, run_meta_validation
 
     wanted = [c.strip().upper() for c in checks.split(",") if c.strip()]
@@ -125,17 +127,25 @@ def validate(
     if bad:
         typer.echo(f"unknown checks {bad}", err=True)
         raise typer.Exit(2)
+    bad_variants = [v for v in variant if "=" not in v]
+    if bad_variants:
+        typer.echo(f"--variant must be CHECK=path/review.json, got {bad_variants}", err=True)
+        raise typer.Exit(2)
     variants = dict(v.split("=", 1) for v in variant)
-    if dry_run:
-        plan = plan_grade(review, pdf, samples=samples)
-        mv = plan_meta_validation(plan["findings"], checks=wanted, runs=runs, samples=samples)
-        per_call = (plan["cost_usd_min"] / max(plan["calls_min"], 1))
-        typer.echo(f"DRY RUN: {mv['grades']} grades, {mv['calls_min']}-{mv['calls_max']} calls, "
-                   f"~${mv['calls_min'] * per_call:.2f}-${mv['calls_max'] * per_call:.2f} at list price.")
-        return
-    client = _judge(judge, out)
-    res = run_meta_validation(review, pdf, out, judge=client, checks=wanted, runs=runs, samples=samples, seed=seed,
-                              max_cost_usd=max_cost_usd, variants=variants)
+    try:
+        if dry_run:
+            plan = plan_grade(review, pdf, samples=samples)
+            mv = plan_meta_validation(plan["findings"], checks=wanted, runs=runs, samples=samples)
+            per_call = (plan["cost_usd_min"] / max(plan["calls_min"], 1))
+            typer.echo(f"DRY RUN: {mv['grades']} grades, {mv['calls_min']}-{mv['calls_max']} calls, "
+                       f"~${mv['calls_min'] * per_call:.2f}-${mv['calls_max'] * per_call:.2f} at list price.")
+            return
+        client = _judge(judge, out)
+        res = run_meta_validation(review, pdf, out, judge=client, checks=wanted, runs=runs, samples=samples,
+                                  seed=seed, max_cost_usd=max_cost_usd, variants=variants)
+    except (GraderInputError, ValueError) as exc:   # bad review or key; a check that needs --variant
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
     typer.echo(res["label"])
     for o in res["outcomes"]:
         typer.echo(f"{o['check']}: passed={o['passed']} ({o['criterion']}; n={o['observations']})")
