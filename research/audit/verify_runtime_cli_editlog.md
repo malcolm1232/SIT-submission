@@ -280,3 +280,40 @@ So the date alone does not separate them, and each host was judged by the planne
 - `pdpc.gov.sg`: kept. A national regulator qualifies on its own; it sits in `standards` with other regulators (`ico.org.uk`, `cnil.fr`). The clinical item and its key do mention it, so the leakage reviewer should know it is there.
 - `opentelemetry.io`: kept. A standards project, listed with `cloudevents.io` and `spec.openapis.org`; the payments item names OpenTelemetry once.
 - `apache.org`: kept. A major open-source foundation; the lakehouse item names Apache projects, not the host.
+
+## Session 4 second-truncation fallback
+
+Fresh Opus worker, 2026-10-03.
+Planner ruling (final): a stage whose answer is truncated twice at the output cap degrades like a deadline cut.
+Full report: `docs/transcripts/session4/truncation_fallback.md`.
+Commits: `aab35fa` (behaviour and tests), `f6ec4ef` (docs and a `PhaseCall` test), then the results file and this record.
+
+### Reproduced first
+
+Offline fault schedule truncating every call of one stage (`tests/robustness` harness), before the change: understand, plan, assess and refine each made exactly two calls and ended with exit 3, `failure.json` (`LLMTruncatedError`, resumable) and no report.
+Research, verify and report already degraded after one truncation (they make no truncation retry) and were not changed.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/phases/_model_calls.py` | Second truncation: no third call; `other` degradation "the <stage> answer was truncated twice at the output cap (max_tokens=N; the call and its one retry, <call IDs>)", a progress warning, and `PhaseCall(truncated=True)`; the phase continues with its deadline fallback | `test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report` (understand, plan, assess, refine) |
+| `agent/sit_review_agent/llm/runtime.py` | `TRUNCATED_TWICE` and `truncated_twice_event(phase)`, next to `OUT_OF_TIME_BEFORE_ASSESSMENT` | same |
+| `agent/sit_review_agent/phases/assess.py` | Coverage note "not assessed: the assess answer was truncated twice at the output cap" | same, assess case |
+| `agent/sit_review_agent/phases/plan.py` | `build_plan(..., missing=)`: the code-built questions name why there is no model plan (declined, deadline, truncated); before, a deadline cut was also called "declined" | same, plan case |
+| `agent/sit_review_agent/phases/report.py` | Third not-assessed reason `truncated` (`_NOT_ASSESSED_TEXT`, `NOT_ASSESSED_WHY`, `assessment_missing`) | `tests/test_not_assessed_verdict.py` (truncated cases) |
+| `agent/sit_review_agent/report/render.py` | Verdict label "not assessed (answer truncated twice at the output cap)"; coverage cell of an unassessed criterion reads "not assessed", not "not applicable" (also for the deadline and declined paths, as `dra coverage` already did) | regression test, assess case |
+| `agent/sit_review_agent/manifest.py` | `extra.model.truncations` lists every truncated call (`call_id`, `stage`, `purpose`); usage and cost were already summed from `llm.jsonl` | `tests/test_truncation_fallback.py` (billed usage) |
+| `spec/finding.schema.json`, `spec/taxonomy.yaml` | `not_assessed` description and comment name the new reason; no enum value changed | none (text) |
+| `tests/robustness/test_robustness_scenarios.py`, `robustness_coverage.py`, `README.md` | LLM-07 persistent variant | the scenario itself |
+| `tests/robustness/results/robustness_results.csv` | Regenerated with the documented command at `f6ec4ef`: only LLM-07 changed (k 2, passes 2); 81 rows, 49 PASS, 32 BLOCKED | `test_robustness_results_csv.py` |
+| `agent/README.md`, `docs/REPRODUCIBILITY.md` §5 | Exit codes (a disclosed degraded run exits 0); output-cap paragraph and known limitation rewritten | none (text) |
+
+### Correction to the Session 4 verifier record
+
+The known-limitation line "`sit-review resume` repeats the same call at the same cap" no longer holds: the run now finishes with a report, and `resume` on it serves that report and makes no model call (tested).
+The limitation that remains is that a second truncation is not recovered by splitting the stage.
+
+### Mutations (each restored from a `cp` copy, checked with `filecmp` and `git status`)
+
+All 12 caught: second truncation raising again; a third call at the same cap; event without call IDs; assess truncation not a not-assessed reason; truncation typed `budget_or_deadline_hit`; manifest list emptied; plan rationale "declined"; assess coverage note dropped; label without reason; coverage cell back to "not applicable"; rationale reason "deadline"; `PhaseCall.declined` ignoring `truncated` (survived at first, caught after `test_a_call_truncated_twice_is_neither_declined_nor_cut` was added).
