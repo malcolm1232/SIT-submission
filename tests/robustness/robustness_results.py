@@ -9,7 +9,11 @@ Rows come from two places:
 * every other P0 scenario, from :mod:`robustness_coverage`: ``FAIL`` for a known agent defect that
   needs a decision, otherwise ``BLOCKED`` (not evaluated by this offline suite: it needs the live
   model or MCP, a fixture that is not authored yet, or it is a static check covered elsewhere; the
-  note says which and gives the command).
+  note says which and gives the command);
+* while ``AWAITING_INTEGRATION``: ``BLOCKED`` with a note starting "awaiting integration" for every
+  scenario whose expectation the concurrent redesign changed (the note carries the new expectation
+  and, when its offline case ran, the sequential-design result) and for the concurrent-stage
+  scenarios (``CONCURRENT``), which follow the 81 scenarios.md rows.
 
 The suite writes to a temp directory; ``ROBUSTNESS_RESULTS_CSV=<path>`` writes the real file
 (command in README.md).
@@ -26,7 +30,16 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from robustness_coverage import COVERAGE, offline_command, p0_rows
+from robustness_coverage import (
+    AWAITING_INTEGRATION,
+    AWAITING_NOTE,
+    CONCURRENT,
+    CONCURRENT_META,
+    COVERAGE,
+    Coverage,
+    offline_command,
+    p0_rows,
+)
 
 from sit_review_agent.manifest import git_state
 from sit_review_agent.paths import repo_root
@@ -89,16 +102,38 @@ def _static_row(sid: str) -> ResultRow:
     return ResultRow(sid, status="BLOCKED", notes=note, level="L1/L2" if cov.kind == "laptop" else "-", model="-")
 
 
+def _awaiting_row(sid: str, cov: Coverage, ran: ResultRow | None) -> ResultRow:
+    """A row whose expectation runs only against the concurrent orchestrator: never PASS here, even
+    when the sequential-design case ran (its result is kept in the note)."""
+    note = f"{AWAITING_NOTE}: {cov.awaiting}; expected: {cov.how}"
+    if ran is not None:
+        note += f"; sequential-design case this session: {ran.status}"
+        if ran.key_metric:
+            note += f" ({ran.key_metric} = {ran.value}, threshold {ran.threshold})"
+    return ResultRow(sid, status="BLOCKED", notes=note, key_metric="awaiting integration", model="-")
+
+
+def _row(sid: str, cov: Coverage, ran: dict[str, ResultRow], static: ResultRow) -> tuple[ResultRow, bool]:
+    """(row, evaluated): the awaiting row, else the session's row when it ran, else ``static``."""
+    if cov.awaiting and AWAITING_INTEGRATION:
+        return _awaiting_row(sid, cov, ran.get(sid)), False
+    return (ran[sid], True) if sid in ran else (static, False)
+
+
 def table(session_rows: list[ResultRow]) -> list[dict[str, Any]]:
-    """Every P0 scenario, in scenarios.md order: the session's row when it ran, else the static row."""
-    meta = p0_rows()
+    """Every P0 scenario, in scenarios.md order, then the concurrent-stage scenarios: the session's
+    row when it ran, else the static row (an awaiting row while ``AWAITING_INTEGRATION``)."""
+    meta = {**p0_rows(), **CONCURRENT_META}
     ran = {r.scenario_id: r for r in session_rows}
     commit = git_state(repo_root()).get("commit") or "unknown"
     today = date.today().isoformat()
     out: list[dict[str, Any]] = []
     for sid, m in meta.items():
-        r = ran.get(sid) or _static_row(sid)
-        evaluated = sid in ran
+        if sid in CONCURRENT:
+            r, evaluated = _row(sid, CONCURRENT[sid], ran, ResultRow(sid, status="BLOCKED",
+                                                                     notes="offline scenario not run in this session"))
+        else:
+            r, evaluated = _row(sid, COVERAGE[sid], ran, _static_row(sid))
         out.append({
             "scenario_id": sid, "category": sid.split("-")[0], "severity": m["sev"], "tier": m["tier"],
             "level": r.level, "k": r.k if evaluated else "", "passes": r.passes if evaluated else "",
@@ -111,7 +146,8 @@ def table(session_rows: list[ResultRow]) -> list[dict[str, Any]]:
 
 
 def summary(rows: list[dict[str, Any]]) -> str:
-    """The README §8 summary block (P0 only: this table holds the P0 tier)."""
+    """The README §8 summary block (P0 only: this table holds the P0 tier, the 81 scenarios.md rows
+    plus the concurrent-stage scenarios)."""
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("PASS", "FAIL", "FLAKY", "BLOCKED", "N/A")}
     safety = [r for r in rows if r["scenario_id"] in ("ADV-05", "OPS-03", "BEH-04")]
     safe = "yes" if safety and all(r["status"] == "PASS" for r in safety) else "no"
