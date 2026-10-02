@@ -313,3 +313,35 @@ BUDGET.md §3 assumed 3 candidates x 3 samples per flaw (126 pair calls), 0.3k o
 
 ---
 
+## Report: R verifier
+
+**1. Summary.** Ruff is clean on `agent harness tests`. The full `pytest -q` run passes 865 tests, with no skips or xfails. `tests/robustness` passes 108 tests, three runs in a row with no flakes, about 15-16 s each. No git, no network, no `claude` CLI, nothing opened under `eval/blind/`, no prompt changed.
+
+**2. Defects found and fixed** (logged under "Verifier edits" in `research/audit/robustness_suite_editlog.md`; each regression test fails with its fix reverted in a scratch copy):
+1. **INF-07's test missed its main claim.** Mutation testing showed it still passed when "a confirmed 401 disables every server" was removed. The test now asserts only the first call reaches the transport.
+2. **Fix 5's end-to-end regression test only checked wording.** "TBD" in `recommendation.rationale` was already rejected by the 15-character minimum. The test now also covers `title` on a strength finding, which has no length floor.
+3. **Wrong stop reason with zero evidence.** A model stop vote was reported as `sufficient_evidence (model_stop_vote)` with no external evidence. Fix in `phases/research.py`: `tool_failure` if no call succeeded, `no_marginal_gain` if calls succeeded but found nothing. INF-24 asserts this.
+4. **BEH-25, BEH-10 and BEH-12** fixed (section 3).
+
+The six implementer fixes are correct and minimal, and each test fails when its fix is reverted. The `nth` change: before the fix the LLM layer never passed `nth`, so no existing test relied on it; all 26 tests in `test_fault_injection.py` pass. Thirteen offline scenarios mutation-tested across INF, LLM, NET, OPS, ADV and BEH: 12 failed as they should; INF-07 was the gap. The oracles call `invariants.check_all` and `check_INV_08`. No key or key prefix in any fixture, YAML, cassette or the CSV (compared against the real `SIT_MCP_API_KEY` without printing it).
+
+**3. The four fix items.**
+- **BEH-25: fixed.** On a stage crash (exit 4) the run writes `report.partial.md`, named in `failure.json`: completed stages and the crashed stage, counts of planned questions, evidence entries and unverified drafts, and the resume command. No finding is shown, and it is not `report.json`, so INV-02 holds. The "illegal transition raises" half has no `transition()` function to call; the test checks the transition table only moves forward.
+- **BEH-10: fixed.** In `refine`, a change to severity, disposition or kind with no stated reason and no new evidence is rejected; the earlier version is kept and the rejection is written to the finding's history. A change with a reason still goes through.
+- **BEH-12: fixed.** `verify` flags a recommendation whose change summary uses a reversal verb and shares at least 3 words with an approved decision when the finding has no `challenges` label for it. The flag shows in the report's limitations; it never drops the finding.
+- **NET-02: not fixed.** On the `claude_code` backend preflight only runs `claude --version`, so offline shows up at the first model call and its retries. Making the fault wrapper fail fast would pass the test without changing live behaviour. Options: (a) a connectivity probe in preflight that respects `HTTPS_PROXY`; (b) connection errors on the very first model call of a run get a 10 s retry window; (c) relax the criterion. Recommended (b) in both live gateways, plus running the no-retry preflight before `models.retrieve` for `anthropic_api`.
+
+**4. Owner options.**
+- **LLM-05** (one hung call costs the full 1800 s timeout against a 540 s deadline): (a) bound each attempt by the remaining deadline; (b) keep the timeout and set the demo deadline consistently; (c) idle-stream timeout. Recommended (a) for deadline-limited runs, decided together with the demo effort and deadline.
+- **INF-08** (MCP key unset: warns, makes 6 model calls, finishes doc-only): (a) fail fast unless `--no-tools`; (b) continue doc-only (runbook §6 for a revoked key). Recommended (a) for a missing key, (b) for a key revoked mid-run.
+- **LLM-10** (no token count before sending): (a) the API's count_tokens (not available on `claude_code`); (b) character estimate with a 0.8 margin. Recommended (b) plus building the 150-page fixture.
+- **OVF-07** (`tools/sources.py` lists the sample's own hosts `github.com/pgvector`, `pgvector.dev`, `kafka.apache.org`): (a) remove; (b) move the vendor host list into config. Recommended (b) plus building `scripts/leakage_grep.py`.
+
+**5. Coverage.** BEH-10, BEH-12 and BEH-25 moved into the passing suite. Offline 46 (2 need a decision: LLM-05, NET-02), laptop 28, not a schedule 7 (3 need a decision). Needs decision 8 -> 5. INF-11 now names `test_fault_injection.py::test_inf11_tool_error_not_retried_then_unusable`. CSV: 44 PASS, 5 FAIL, 32 BLOCKED.
+
+**6. Found but not fixed.** `sit-review run --faults` silently ignores `process:` entries (BEH-25 and OPS-04 run clean through the CLI). After a successful resume, `report.partial.md` and `failure.json` remain. Fix 5 drops a whole finding when `next_step.owner` is exactly "TBD" (policy). The MCP and LLM fault layers measure time from their own start. The argument sanitiser lets up to 2,000 characters of document text into a search query (policy).
+
+**7. Still unverified.** The 28 laptop rows and the L1/L2 halves; live gateways under faults; BEH-12 false-alarm rate on real documents; the `no_marginal_gain` branch end to end.
+
+---
+
