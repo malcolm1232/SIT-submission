@@ -101,7 +101,7 @@ def test_the_envelope_salvages_the_final_answer() -> None:
 
 
 def test_unicode_and_escapes_survive_any_split() -> None:
-    item = {"title": "café — 😀 \\u0041 tab\there", "q": "\\\\"}
+    item = {"title": "caf\u00e9 \u2014 \U0001f600 \\u0041 tab\there", "q": "\\\\"}
     text = json.dumps({"findings": [item, item]}, ensure_ascii=True)
     for cut in range(1, len(text)):
         sc = JsonItemScanner()
