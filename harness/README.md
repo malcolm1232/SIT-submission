@@ -73,8 +73,20 @@ are shuffled per listwise call with a seed derived from `--seed` and recorded in
 | pairwise, `--no-grounding-judges` | 260-400 | $13-60 | 22-100 min |
 | per_flaw_batch (deviation), judges on | 102-116 | $5-17 | 9-29 min |
 | per_flaw_batch, `--no-grounding-judges` | 62-76 | $3-11 | 5-19 min |
+| pairwise, `--adaptive-samples` (same medians; needs owner approval) | 220-440 | $11-66 | |
+| per_flaw_batch, `--adaptive-samples` | 88-116 | $4-17 | |
 
-Ranges come from `--dry-run`; the shortlist decides where in the range a run lands.
+Ranges come from `--dry-run`; the shortlist decides where in the range a run lands. The per-call prices
+are unverified planning figures for Opus at effort high (see the `caveats` in the dry-run output): retries
+are not counted, document-carrying calls cost more than pair calls, and thinking tokens dominate cost.
+`--adaptive-samples` asks the third pairwise sample only when the first two disagree or one failed; the
+median of three is then unchanged, so results are identical (verifier E1, 2026-10-02).
+
+Live clients built by `build_judge` without options (the grader) take their timeout, retries and per-call
+`--max-budget-usd` from `config/eval.yaml` `judge`. `ClaudeCodeJudge` and `AnthropicJudge` drop a root
+`$schema` key before sending a schema. A call's reported cost includes its failed attempts; attempts with
+unknown cost (timeouts) are charged one reserve each by the cost stop. `sit-eval score` still works if the
+grader package fails to import (`grade` then reports the import error).
 
 ## Known gaps and choices (also in the workstream report)
 

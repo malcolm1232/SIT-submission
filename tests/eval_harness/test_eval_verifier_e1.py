@@ -164,3 +164,37 @@ def test_dry_run_flags_a_model_outside_the_price_basis():
     assert opus["location_overlap_pairs"] == 80 and opus["calls"]["total"] == {"min": 300, "max": 440}
     adaptive = plan_calls(rin, key, "v1", options(adaptive_samples=True), usd, secs)
     assert adaptive["calls"]["pair_scoring"] == {"min": 160, "max": 366}
+
+
+async def test_claude_code_never_sends_the_meta_schema_keyword(tmp_path):
+    # Coordinator heads-up: `claude -p --json-schema` was seen to reject a root "$schema" key.
+    from sit_eval.prompts import judge_schema
+
+    # sit_eval.prompts already drops it from the harness schemas; the client now drops it for every
+    # caller (the grader builds its own schemas).
+    assert "$schema" not in judge_schema("pair")
+    run = Runner(cli_out(GOOD))
+    j = ClaudeCodeJudge(out_dir=tmp_path, runner=run, sleep=no_sleep)
+    with_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", **judge_schema("pair")}
+    res = await j.complete(req(schema=with_meta))
+    argv = run.calls[0]["argv"]
+    sent = json.loads(argv[argv.index("--json-schema") + 1])
+    assert "$schema" not in sent and sent["properties"]["score"]["enum"] == [0, 1, 2, 3]
+    assert res.data == GOOD
+
+
+def test_build_judge_defaults_live_options_from_eval_config(tmp_path):
+    # The grader calls build_judge(kind, out_dir=...) with no options; it must still get the configured
+    # per-call --max-budget-usd cap, timeout and retries. Explicit options win.
+    from sit_eval.config import load_eval_config
+    from sit_eval.judge import build_judge
+
+    jc = load_eval_config().judge
+    j = build_judge("claude_code", out_dir=tmp_path)
+    assert j.max_budget_usd_per_call == jc.max_budget_usd_per_call is not None
+    assert j.timeout_s == jc.timeout_s and j.max_retries == jc.max_retries
+    assert "--max-budget-usd" in j.build_argv(req(), schema_json="{}", session_id="s")
+    j2 = build_judge("claude_code", out_dir=tmp_path, max_budget_usd_per_call=0.25, max_retries=0)
+    assert j2.max_budget_usd_per_call == 0.25 and j2.max_retries == 0 and j2.timeout_s == jc.timeout_s
+    a = build_judge("anthropic_api", out_dir=tmp_path, client=object())
+    assert a.timeout_s == jc.timeout_s and a.max_retries == jc.max_retries

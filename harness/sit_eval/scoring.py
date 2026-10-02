@@ -96,7 +96,10 @@ def plan_calls(rin: ReviewInput, key: dict[str, Any], version: str, opts: ScoreO
                "times, and a failed attempt can still cost money)",
                "adjudication and premise calls carry the whole document, so they cost several times a pair call; "
                "the flat per-call price averages over call kinds",
-               "the shortlist decides where between min and max pair scoring lands"]
+               "the shortlist decides where between min and max pair scoring lands",
+               "output (thinking) tokens dominate per-call cost and are unmeasured for the judge model at effort "
+               "high: a live claude-haiku-4-5 check at effort low produced 0.6k-4.8k output tokens per harness "
+               "call (2026-10-02); treat the USD range as a floor until a pilot measures it"]
     if opts.model != basis_model:
         caveats.insert(0, f"per-call prices are a planning basis for {basis_model} (effort high); this run uses "
                           f"{opts.model}, so the USD figures do not apply to it (calls do)")

@@ -74,6 +74,12 @@ def build_judge(kind: str, *, out_dir: Any, **options: Any) -> JudgeClient:
     log_name; ``anthropic_api`` - client, timeout_s, max_retries, backoff_base_s, backoff_max_s,
     price_per_mtok, sleep, seed, log_name. The model and effort come from each
     :class:`JudgeRequest`, never from the client.
+
+    Live-client options that the caller does not pass default to the ``judge`` section of
+    ``config/eval.yaml`` (claude_code: executable, timeout_s, max_retries, backoff_base_s,
+    backoff_max_s, max_budget_usd_per_call, inherit_api_key; anthropic_api: timeout_s, max_retries,
+    backoff_base_s, backoff_max_s), so a caller that passes no options (the grader) still gets the
+    configured per-call ``--max-budget-usd`` cap. Explicit options always win.
     """
     import inspect
 
@@ -94,4 +100,11 @@ def build_judge(kind: str, *, out_dir: Any, **options: Any) -> JudgeClient:
     extra = set(options) - allowed
     if extra:
         raise ValueError(f"judge kind {kind!r} does not take {sorted(extra)}; allowed: {sorted(allowed)}")
-    return cls(out_dir=out_dir, **options)
+    from sit_eval.config import load_eval_config
+
+    jc = load_eval_config().judge
+    common = {"timeout_s": jc.timeout_s, "max_retries": jc.max_retries, "backoff_base_s": jc.backoff_base_s,
+              "backoff_max_s": jc.backoff_max_s}
+    defaults = ({**common, "executable": jc.executable, "max_budget_usd_per_call": jc.max_budget_usd_per_call,
+                 "inherit_api_key": jc.inherit_api_key} if kind == "claude_code" else common)
+    return cls(out_dir=out_dir, **{**defaults, **options})

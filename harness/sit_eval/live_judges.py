@@ -64,6 +64,13 @@ def schema_problems(schema: dict[str, Any], data: Any) -> list[str]:
     return [f"{'/'.join(map(str, e.absolute_path)) or '<root>'}: {e.message[:200]}" for e in errs[:5]]
 
 
+def argv_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """The schema as sent to the model: the root-level ``$schema`` meta keyword is dropped, because
+    ``claude -p --json-schema`` has been seen to reject a schema carrying it ("no schema with key or
+    ref", grader verifier, 2026-10-02). Answers are still validated against the full schema."""
+    return {k: v for k, v in schema.items() if k != "$schema"}
+
+
 class CallLog:
     """Append-only JSONL log of judge attempts."""
 
@@ -147,7 +154,8 @@ class ClaudeCodeJudge(_Retrying):
         return argv + self.extra_args
 
     async def complete(self, request: JudgeRequest) -> JudgeResult:
-        schema_json = json.dumps(request.schema, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        schema_json = json.dumps(argv_schema(request.schema), sort_keys=True, separators=(",", ":"),
+                                 ensure_ascii=False)
         for label, value in (("system prompt", request.system), ("JSON schema", schema_json)):
             if len(value) > MAX_ARGV_TEXT_CHARS:
                 raise JudgeError(f"{request.purpose}: {label} has {len(value)} characters; claude -p takes it on "
@@ -320,7 +328,7 @@ class AnthropicJudge(_Retrying):
                 "messages": [{"role": "user", "content": [{"type": "text", "text": request.user}]}],
                 "thinking": {"type": "adaptive", "display": "omitted"},
                 "output_config": {"effort": request.effort,
-                                  "format": {"type": "json_schema", "schema": request.schema}}}
+                                  "format": {"type": "json_schema", "schema": argv_schema(request.schema)}}}
 
     def _price(self, usage: dict[str, int]) -> float | None:
         p = self.price_per_mtok
