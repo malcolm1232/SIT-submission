@@ -7,7 +7,7 @@ This folder resolves two P0 blockers from `research/audit/research_audit.md` §6
 | `spec/taxonomy.yaml` | The only enum registry. Definitions, inclusion/exclusion notes and invented examples for every label. Also holds the converter-only `legacy_mappings`. | Kinds, categories, severities, confidence bands, dispositions, verdicts, provenance, stop reasons, decision relations, phases, credit modes, v2 statuses, splits, matcher labels, anchor rules |
 | `spec/finding.schema.json` | JSON Schema 2020-12. Root = one hydrated **Finding**; `#/$defs/Review` = the **Review** envelope. | What the agent emits, what the matcher reads, what the grader and robustness oracles validate |
 | `spec/answer_key.schema.json` | JSON Schema 2020-12 for one sealed **answer key**. Reuses `Kind`, `Category`, `Severity`, `Disposition` from the finding schema by `$ref`. | What a gold flaw, sound section and still-valid observation look like |
-| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative and adversarial tests, runs the INV-04 anchor oracle, and checks that `legacy_mappings` covers every label in the five existing keys. | — |
+| `spec/validate_examples.py` | Checks enums match `taxonomy.yaml`, validates the examples in this README plus a full Review and a full answer key, runs negative and adversarial tests, runs the INV-04 anchor oracle, and checks that `legacy_mappings` covers every label in the existing legacy keys (the three S-dev keys by default; the two held-out keys only with `--include-blind`, §6). | — |
 | `spec/convert_answer_keys.py` | Converts the five legacy keys to `eval/<tier>/<item>/answer_key.canonical.json`, validates each, and prints counts, notes and any field it could not map (§2.8). | — |
 
 **Handling.** `taxonomy.yaml` outside `legacy_mappings` is prompt-safe: its examples are invented and avoid every mechanism in the eval keys. This README and `legacy_mappings` name eval-key labels and some flaw details, and §2.6-2.7 cover the S-heldout (ex-blind) items. Never place either in an agent, matcher or grader prompt. When the S-heldout keys are sealed (audit P0 action 7), move §2.4 rows for item_a/item_b, §2.6 and §2.7 into the sealed archive.
@@ -224,7 +224,7 @@ The converter writes the reverse links into `flaws[].overlapping_sound_section_i
 
 `python3 spec/convert_answer_keys.py` (add `--check` to validate without writing) reads each legacy key, applies §2.1-2.7, validates the result against `answer_key.schema.json` and `key_semantics`, writes `answer_key.canonical.json` next to the legacy key, and prints per-key counts, notes (count assertions, partial mappings) and every legacy field it could not map. It never edits `answer_key.json`. Every output has `scored_run_ready: false` until the pending fields are authored and second-reviewed.
 
-`--tier synthetic` converts only the S-dev items; the spec self-test the converter runs on import then expands its `eval/*/*/answer_key.json` glob without listing or opening anything under `eval/blind` (SEALING.md §6 rule 1). `--verify-anchors` checks every flaw and approved-decision `anchor_quote` as an exact match, on the stated page, in the PDF text from the agent's own ingest (`sit_review_agent.ingest.pdf.ingest`); a v2-only flaw (`introduced_in: v2`) is checked against `design_v2.pdf`, everything else against `design_v1.pdf`.
+`--tier synthetic` converts only the S-dev items; the spec self-test the converter runs on import is then not asked to include the held-out tier, and the converter also filters its glob, so nothing under `eval/blind` is listed or opened (SEALING.md §6 rule 1). A run that includes the `blind` tier (no `--tier`, or `--tier blind`) reads the held-out keys: the self-test prints a notice on stderr, and the access must be recorded in `eval/blind/ACCESS_LOG.md`. `--verify-anchors` checks every flaw and approved-decision `anchor_quote` as an exact match, on the stated page, in the PDF text from the agent's own ingest (`sit_review_agent.ingest.pdf.ingest`); a v2-only flaw (`introduced_in: v2`) is checked against `design_v2.pdf`, everything else against `design_v1.pdf`.
 
 ### 2.9 Agent drafts and owner sign-off
 
@@ -367,4 +367,8 @@ pip install jsonschema pyyaml   # jsonschema >= 4.18 (uses `referencing`)
 python3 spec/validate_examples.py
 ```
 
-The legacy-coverage check reads `eval/*/*/answer_key.json` read-only and skips if `eval/` is absent.
+The legacy-coverage check reads `eval/<tier>/<item>/answer_key.json` read-only and skips if `eval/` is absent.
+Run with no flags, it leaves the held-out tier out: nothing under `eval/blind` is listed or opened, and the output says so (SEALING.md §6 rule 1; `tests/test_spec_validator_blind.py` pins this).
+`python3 spec/validate_examples.py --include-blind` also reads the two held-out keys and prints a one-line notice on stderr.
+That run is an access to held-out material and must be recorded in `eval/blind/ACCESS_LOG.md`.
+A caller that runs the file with `runpy` (the converter) asks for the held-out tier with `init_globals={"INCLUDE_BLIND": True}`; the caller's own command line is never read.

@@ -7,10 +7,15 @@
 4. Semantic (cross-field) rules the schema cannot express hold for those examples.
 5. Deliberately broken variants are rejected (negative tests), plus the adversarial cases added by
    research/audit/verify_spec.md (some must be accepted; each states its intended outcome).
-6. taxonomy.yaml legacy_mappings cover every category and severity label used in eval/*/*/answer_key.json.
+6. taxonomy.yaml legacy_mappings cover every category and severity label used in eval/<tier>/<item>/answer_key.json.
+   The held-out tier eval/blind is left out by default: it is neither listed nor opened (docs/SEALING.md §6 rule 1).
 7. The INV-04 anchor oracle (anchors_resolve) resolves the example Review's quotes against a page-marked text.
 
-Usage: python3 spec/validate_examples.py     (exit code 0 = all checks pass)
+Usage: python3 spec/validate_examples.py [--include-blind]     (exit code 0 = all checks pass)
+  --include-blind   check 6 also reads the held-out keys under eval/blind. That is an access to held-out material
+                    and must be recorded in eval/blind/ACCESS_LOG.md; a one-line notice says so on stderr.
+  A caller that runs this file with runpy (spec/convert_answer_keys.py) asks for the same thing with
+  init_globals={"INCLUDE_BLIND": True}. The caller's own command line is never read.
 Requires: jsonschema>=4.18, pyyaml.
 """
 from __future__ import annotations
@@ -35,6 +40,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FINDING_ID = "https://sit-design-review.invalid/spec/finding.schema.json"
 KEY_ID = "https://sit-design-review.invalid/spec/answer_key.schema.json"
+HELD_OUT_TIER = "blind"  # eval/blind holds the S-heldout items (docs/SEALING.md §1)
+ACCESS_LOG = "eval/blind/ACCESS_LOG.md"
+
+
+def _include_blind() -> bool:
+    """Whether check 6 may read the held-out keys. It never does unless it is asked to, explicitly."""
+    if __name__ == "__main__":
+        import argparse
+        ap = argparse.ArgumentParser(description="Validate the spec/ artefacts (exit code 0 = all checks pass).",
+                                     allow_abbrev=False)  # "--inc" must not switch the held-out read on
+        ap.add_argument("--include-blind", action="store_true",
+                        help=f"also read the held-out keys under eval/{HELD_OUT_TIER} for the legacy-coverage check; "
+                             f"the access must be recorded in {ACCESS_LOG}")
+        return ap.parse_args().include_blind
+    return globals().get("INCLUDE_BLIND") is True  # set by a runpy caller through init_globals
+
+
+INCLUDE_BLIND = _include_blind()
+if INCLUDE_BLIND:
+    print(f"NOTICE: this run reads the held-out answer keys under eval/{HELD_OUT_TIER}; "
+          f"record the access in {ACCESS_LOG} (docs/SEALING.md §6).", file=sys.stderr)
 
 FAILURES: list[str] = []
 
@@ -731,8 +757,14 @@ N_NEG = len(NEG_FINDING) + len(NEG_REVIEW) + len(NEG_REVIEW_SEMANTIC) + len(NEG_
 N_ADV = len(ADVERSARIAL)
 
 # ---------------------------------------------------------------- 6. legacy coverage (read-only)
+# The tiers are taken by name from eval/ and globbed one by one, so the held-out tier can be left out without
+# listing or opening anything inside it.
 coverage = []
-keys = sorted(glob.glob(os.path.join(ROOT, "eval", "*", "*", "answer_key.json")))
+EVAL_DIR = os.path.join(ROOT, "eval")
+tier_names = sorted(os.listdir(EVAL_DIR)) if os.path.isdir(EVAL_DIR) else []
+held_out_skipped = HELD_OUT_TIER in tier_names and not INCLUDE_BLIND
+keys = sorted(p for t in tier_names if not (t == HELD_OUT_TIER and held_out_skipped)
+              for p in glob.glob(os.path.join(EVAL_DIR, t, "*", "answer_key.json")))
 mech_counts: dict[str, int] = {}
 for path in keys:
     with open(path, encoding="utf-8") as fh:
@@ -762,7 +794,10 @@ if keys:
     print("legacy coverage:\n  " + "\n  ".join(coverage))
     print("canonical categories over existing keys: " + ", ".join(f"{c}={n}" for c, n in sorted(mech_counts.items())))
 else:
-    print("legacy coverage: skipped (eval/ not found)")
+    print("legacy coverage: skipped (no legacy key found under eval/)")
+if held_out_skipped:
+    print(f"legacy coverage: eval/{HELD_OUT_TIER} not read (held-out tier; --include-blind reads it, "
+          f"and that access must be recorded in {ACCESS_LOG})")
 if FAILURES:
     print(f"\nFAILED ({len(FAILURES)}):")
     for f in FAILURES:

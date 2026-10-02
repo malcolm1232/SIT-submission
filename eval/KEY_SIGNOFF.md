@@ -693,9 +693,9 @@ SIT FABLE (#18, for the owner) accepted `research/audit/eval_data_audit.md` as t
 | `eval/synthetic/payments_orchestration/answer_key.canonical.json` | `8eda2e5de12e54e98b2e4e4b242a2f86e8da7b8aa534594b363fa45ac4705011` |
 | `eval/synthetic/clinical_rpm/answer_key.canonical.json` | `44833c1c01d8e89918c67991910ae583d6efc4aa22cdea8d20e4a436e7878735` |
 | `eval/synthetic/research_lakehouse/answer_key.canonical.json` | `7c92bf91252858da076636b9e70bf4623fe049df4ab3a4e894e42c591bcce52a` |
-| `spec/convert_answer_keys.py` (sets the credit-item roles) | `7986801c9b7b0f1476c93a96842287caa261016b04e3819dccfca5e6ad3e26a8` |
+| `spec/convert_answer_keys.py` (sets the credit-item roles) | `ce2eff3382af27950ac05c71d73e74b177160ababf6a6d63ece97c6694cd120e` |
 
-Check with `shasum -a 256 <file>` (or `sha256sum`). Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the message of the last commit that changed this sheet (the verification pass, after it set payments F04 and F11 to the "Keep" texts verbatim) and in `docs/transcripts/session4/keys_verifier.md`.
+Check with `shasum -a 256 <file>` (or `sha256sum`). The converter's hash changed on 2026-10-03 (close-out pass): it now tells the spec self-test whether to include `eval/blind` (only when the blind tier is converted); the credit-item roles and the three canonical keys it produces are unchanged. Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the message of the last commit that changed this sheet (the verification pass, after it set payments F04 and F11 to the "Keep" texts verbatim) and in `docs/transcripts/session4/keys_verifier.md`.
 
 ## 10. Signature
 
