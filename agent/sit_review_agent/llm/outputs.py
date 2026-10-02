@@ -294,5 +294,66 @@ def llm_facing_schema(model: type[BaseModel]) -> dict[str, Any]:
     outputs reject stripped (``minLength``, ``maxLength``, ``minimum``, ``maximum``,
     ``minItems``, ``maxItems``, ``pattern``, ``format``) and ``additionalProperties: false`` on
     every object. Used for ``count_tokens`` and logging; the SDK's ``output_format`` does its own
-    transformation. Which keywords the API accepts is UNVERIFIED (spec/README.md)."""
-    raise NotImplementedError("phase 1: llm_facing_schema (workstream A)")
+    transformation. Which keywords the API accepts is UNVERIFIED (spec/README.md).
+
+    Details (workstream A):
+
+    * keywords are stripped only where they are schema keywords, never where they are property
+      names (a field called ``format`` survives); ``enum``/``const``/``required`` values are copied;
+    * also stripped: ``exclusiveMinimum``/``exclusiveMaximum``/``multipleOf``/``uniqueItems``/
+      ``minProperties``/``maxProperties`` (same family) and the ``if``/``then``/``else`` rules;
+    * ``$defs``/``$ref``, ``anyOf`` (including ``null`` branches), ``enum``, ``title`` and
+      ``description`` are kept;
+    * closing rule (identical to ``llm.claude_code._schema_for``): an object that declares
+      ``properties`` or says nothing about extra keys gets ``additionalProperties: false``; an
+      explicit map (``dict[str, X]`` -> ``additionalProperties: {schema}``) stays open.
+
+    This is what :class:`~sit_review_agent.llm.gateway.AnthropicGateway` sends as
+    ``output_config.format.schema`` and what ``ClaudeCodeGateway`` passes to ``--json-schema``.
+    """
+    return _llm_strip(model.model_json_schema())
+
+
+#: JSON Schema keywords removed from the LLM-facing schema (see :func:`llm_facing_schema`).
+_LLM_STRIPPED_KEYWORDS = frozenset({
+    "minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minItems", "maxItems", "uniqueItems", "minProperties", "maxProperties", "pattern", "format",
+    "if", "then", "else",
+})
+#: Keywords whose value maps names to sub-schemas (the names are not keywords).
+_LLM_SCHEMA_MAPS = frozenset({"properties", "$defs", "definitions", "patternProperties", "dependentSchemas"})
+#: Keywords whose value is data, not a schema.
+_LLM_DATA_KEYWORDS = frozenset({"enum", "const", "required", "examples", "default"})
+
+
+def _llm_strip(node: Any) -> Any:
+    if isinstance(node, list):
+        return [_llm_strip(v) for v in node]
+    if not isinstance(node, dict):
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key in _LLM_STRIPPED_KEYWORDS:
+            continue
+        if key in _LLM_SCHEMA_MAPS and isinstance(value, dict):
+            out[key] = {name: _llm_strip(sub) for name, sub in value.items()}
+        elif key in _LLM_DATA_KEYWORDS:
+            out[key] = value if not isinstance(value, dict | list) else _llm_copy(value)
+        elif key == "allOf" and isinstance(value, list):
+            kept = [_llm_strip(v) for v in value]
+            kept = [v for v in kept if v != {}]
+            if kept:
+                out[key] = kept
+        else:
+            out[key] = _llm_strip(value)
+    if out.get("type") == "object" and ("properties" in out or "additionalProperties" not in out):
+        out["additionalProperties"] = False
+    return out
+
+
+def _llm_copy(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _llm_copy(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_llm_copy(v) for v in value]
+    return value

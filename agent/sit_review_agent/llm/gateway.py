@@ -226,12 +226,187 @@ class EffortGuard:
 # ------------------------------------------------------------------------------ live gateway
 
 
+#: ``backend`` value in ``llm.jsonl`` entries written by :class:`AnthropicGateway`.
+_ANTHROPIC_BACKEND = "anthropic_api"
+#: Stop reasons that mean the output was cut off (never repaired; robustness LLM-07).
+_ANTHROPIC_TRUNCATED = frozenset({"max_tokens", "model_context_window_exceeded"})
+#: Fields the SDK adds to parsed blocks that are not API fields (never sent back).
+_ANTHROPIC_LOCAL_FIELDS = ("parsed_output",)
+
+
+def _anthropic_dump(obj: Any) -> Any:
+    """A response object (SDK Pydantic model, ``SimpleNamespace`` or dict) as plain JSON data,
+    using API field names (``from`` not ``from_``) and only the fields the API returned."""
+    if obj is None or isinstance(obj, str | int | float | bool):
+        return obj
+    if isinstance(obj, dict):
+        return {k: _anthropic_dump(v) for k, v in obj.items()}
+    if isinstance(obj, list | tuple):
+        return [_anthropic_dump(v) for v in obj]
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json", by_alias=True, exclude_unset=True)
+    if hasattr(obj, "__dict__"):
+        return {k: _anthropic_dump(v) for k, v in vars(obj).items() if not k.startswith("_")}
+    return obj
+
+
+def _anthropic_block(block: Any) -> dict[str, Any]:
+    """One response content block as the dict appended to history (thinking blocks and their
+    signatures kept byte for byte; SDK-local fields such as ``parsed_output`` dropped)."""
+    d = _anthropic_dump(block)
+    if not isinstance(d, dict):
+        raise LLMSchemaError(f"unexpected content block {type(block).__name__}")
+    for k in _ANTHROPIC_LOCAL_FIELDS:
+        d.pop(k, None)
+    return d
+
+
+def _anthropic_get(obj: Any, name: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
+
+
+def _anthropic_usage(usage: Any) -> Usage:
+    def n(key: str) -> int:
+        v = _anthropic_get(usage, key)
+        return int(v) if isinstance(v, int | float) else 0
+
+    return Usage(n("input_tokens"), n("output_tokens"), n("cache_creation_input_tokens"),
+                 n("cache_read_input_tokens"))
+
+
+def _anthropic_retry_after(exc: Any) -> float | None:
+    """Seconds from ``retry-after`` (or ``retry-after-ms``) on an SDK status error, else ``None``."""
+    headers = _anthropic_get(_anthropic_get(exc, "response"), "headers")
+    if headers is None:
+        return None
+    try:
+        ms = headers.get("retry-after-ms")
+        if ms is not None:
+            return max(0.0, float(ms) / 1000.0)
+        s = headers.get("retry-after")
+        return max(0.0, float(s)) if s is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _anthropic_classify(exc: BaseException, *, call_id: str | None,
+                        phase: str | None) -> tuple[LLMError, bool, float | None, int | None] | None:
+    """Map an SDK / transport exception onto ``(typed error, retry?, retry_after_s, status)``.
+
+    Follows the typed class chain of the claude-api skill (``shared/error-codes.md``): most specific
+    first, then ``APIStatusError`` by status and by error ``type`` (a mid-stream ``error`` event
+    arrives as a bare ``APIStatusError`` with HTTP 200 and ``type: overloaded_error``), then
+    ``APIConnectionError``. Returns ``None`` for exceptions that are not SDK/transport failures
+    (bugs), which the caller re-raises unchanged.
+    """
+    import anthropic
+
+    from sit_review_agent.errors import (
+        LLMAuthError,
+        LLMBadRequestError,
+        LLMOverloadedError,
+        LLMRateLimitError,
+        LLMTimeoutError,
+        LLMUnavailableError,
+    )
+
+    kw: dict[str, Any] = {"call_id": call_id, "phase": phase}
+    key_hint = ("check ANTHROPIC_API_KEY (the value is never logged) or switch config/agent.yaml llm.backend "
+                "to claude_code")
+    if isinstance(exc, LLMError):
+        return exc, False, None, None
+    if isinstance(exc, anthropic.APITimeoutError | TimeoutError):
+        return LLMTimeoutError("request to the Anthropic API timed out", **kw), True, None, None
+    if isinstance(exc, anthropic.APIConnectionError):
+        return LLMUnavailableError("could not reach the Anthropic API (connection error)", **kw), True, None, None
+    if isinstance(exc, anthropic.APIStatusError):
+        status = int(getattr(exc, "status_code", 0) or 0)
+        etype = getattr(exc, "type", None)
+        if (isinstance(exc, anthropic.AuthenticationError | anthropic.PermissionDeniedError)
+                or status in (401, 403) or etype in ("authentication_error", "permission_error")):
+            return LLMAuthError(f"the Anthropic API rejected the credentials (HTTP {status}, {etype}); {key_hint}",
+                                **kw), False, None, status
+        if isinstance(exc, anthropic.RateLimitError) or status == 429 or etype == "rate_limit_error":
+            ra = _anthropic_retry_after(exc)
+            return (LLMRateLimitError(f"rate limited by the Anthropic API (HTTP 429, retry-after {ra})",
+                                      retry_after_s=ra, **kw), True, ra, status)
+        if (isinstance(exc, anthropic.OverloadedError | anthropic.ServiceUnavailableError)
+                or status in (503, 529) or etype == "overloaded_error"):
+            return (LLMOverloadedError(f"the Anthropic API is overloaded (HTTP {status}, {etype})", **kw),
+                    True, None, status)
+        if isinstance(exc, anthropic.InternalServerError) or status >= 500 or etype == "api_error":
+            return LLMUnavailableError(f"Anthropic API server error (HTTP {status}, {etype})", **kw), True, None, status
+        if status == 402 or etype == "billing_error":
+            return LLMUnavailableError(f"Anthropic API billing error (HTTP {status}); check the account's credit",
+                                       **kw), False, None, status
+        message = str(getattr(exc, "message", "") or "")[:300]
+        if isinstance(exc, anthropic.NotFoundError):
+            return LLMBadRequestError(f"HTTP 404 from the Anthropic API (is the model available to this key?): "
+                                      f"{message}", **kw), False, None, status
+        return (LLMBadRequestError(f"HTTP {status} ({etype}) from the Anthropic API: {message}", **kw),
+                False, None, status)
+    if isinstance(exc, anthropic.CredentialsError):
+        return LLMAuthError(f"no usable Anthropic credentials; {key_hint}", **kw), False, None, None
+    if isinstance(exc, TypeError) and "authentication" in str(exc).lower():
+        return LLMAuthError(f"no usable Anthropic credentials; {key_hint}", **kw), False, None, None
+    if isinstance(exc, anthropic.AnthropicError):
+        return LLMUnavailableError(f"Anthropic SDK error: {type(exc).__name__}", **kw), True, None, None
+    return None
+
+
+def _anthropic_messages(request: LLMRequest) -> list[dict[str, Any]]:
+    """Deep copy of ``request.messages`` with ``cache_control`` on every breakpointed block."""
+    from sit_review_agent.errors import LLMBadRequestError
+
+    msgs = copy.deepcopy(request.messages)
+    phase = request.phase.value
+    if msgs and msgs[-1].get("role") == "assistant":
+        raise LLMBadRequestError("the last message is an assistant turn (prefill is rejected on Opus 5.5)",
+                                 phase=phase)
+    for bp in request.cache_breakpoints:
+        try:
+            msg = msgs[bp.message_index]
+            if isinstance(msg.get("content"), str):
+                msg["content"] = [{"type": "text", "text": msg["content"]}]
+            block = msg["content"][bp.block_index]
+        except (IndexError, KeyError, TypeError):
+            raise LLMBadRequestError(f"cache breakpoint {bp} does not point at a content block",
+                                     phase=phase) from None
+        if not isinstance(block, dict) or block.get("type") in ("thinking", "redacted_thinking"):
+            raise LLMBadRequestError(f"cache breakpoint {bp} points at a block that cannot be cached", phase=phase)
+        block["cache_control"] = {"type": "ephemeral", "ttl": bp.ttl}
+    return msgs
+
+
 class AnthropicGateway:
-    """Live gateway over ``anthropic.AsyncAnthropic`` (stub: :meth:`call` is not implemented yet).
+    """Live gateway over ``anthropic.AsyncAnthropic`` (Claude API with ``ANTHROPIC_API_KEY``).
 
     Construction never touches the network. ``client`` may be injected (tests); otherwise one is
     created on first use with ``max_retries=0`` and ``timeout=config.agent.llm.timeout_s``.
+
+    * **Transport.** Every request is streamed: ``client.messages.stream(**build_body(...))`` (or
+      ``client.beta.messages.stream`` when ``allow_fallback``) and ``get_final_message()``.
+    * **Structured outputs.** ``output_config.format = {"type": "json_schema", "schema":
+      llm_facing_schema(T)}`` on the stream, then ``T.model_validate_json`` on the text block, rather
+      than ``client.messages.parse(output_format=T)``: ``parse`` is not streamed (ADR-002 streams
+      every call), the schema actually sent is then ours (hashed, logged in ``llm.jsonl`` and
+      identical to the one ``ClaudeCodeGateway`` sends), and validation failures surface in one
+      place as :class:`LLMSchemaError` instead of inside the SDK.
+    * **Stop reasons** are classified before any content is read (module docstring, item 1).
+    * **Retries** (gateway-owned, ``llm.max_retries``): 429 sleeps ``retry-after`` (backoff if
+      absent); 529/503/5xx, connection errors and timeouts back off exponentially with jitter
+      through ``clock.sleep``; 401/403 raise :class:`LLMAuthError` naming ``ANTHROPIC_API_KEY``;
+      400/404/413 raise :class:`LLMBadRequestError`; neither is retried.
+    * **Fallback.** ``response.model != requested``, a ``fallback`` content block or a
+      ``fallback_message`` entry in ``usage.iterations`` becomes a :class:`FallbackEvent`.
     """
+
+    #: Native PDF document blocks are accepted (``llm.backend.supports_native_pdf``).
+    native_pdf: bool = True
 
     def __init__(self, config: EffectiveConfig, run_dir: RunDir, *, clock: Clock | None = None,
                  progress: ProgressSink | None = None, client: Any | None = None) -> None:
@@ -243,6 +418,8 @@ class AnthropicGateway:
         self.allow_fallback = config.agent.allow_fallback
         self.max_retries = config.agent.llm.max_retries
         self.timeout_s = config.agent.llm.timeout_s
+        self.backoff_base_s = config.agent.llm.backoff_base_s
+        self.backoff_max_s = config.agent.llm.backoff_max_s
         self.log = LLMCallLog(run_dir)
         self._client = client
         self._guard = EffortGuard()
@@ -251,6 +428,9 @@ class AnthropicGateway:
         self._fallbacks: list[FallbackEvent] = []
         self._refusals: list[dict[str, Any]] = []
         self._seq = 0
+        import random
+
+        self._rng = random.Random()
 
     @property
     def client(self) -> Any:
@@ -268,22 +448,249 @@ class AnthropicGateway:
         """SDK keyword arguments for ``request``: model, max_tokens, system, messages (with
         ``cache_control`` placed per ``cache_breakpoints``), tools, ``thinking: adaptive`` with
         ``display``, ``output_config.effort``, top-level ``cache_control`` when ``auto_cache_tail``,
-        and ``fallbacks``/``betas`` only when ``allow_fallback``."""
-        raise NotImplementedError("phase 1: AnthropicGateway.build_body (workstream A)")
+        and ``fallbacks``/``betas`` only when ``allow_fallback``.
+
+        * ``system`` is a list with one text block (so a ``cache_control`` could sit on it); it is
+          omitted when empty. Render order is tools -> system -> messages, so the explicit
+          breakpoint after the document blocks caches tools, system and documents together.
+        * Explicit breakpoints: ``messages[i].content[j].cache_control = {"type": "ephemeral",
+          "ttl": ttl}`` (``llm.prefix``); a string content is first turned into one text block.
+        * ``output_config = {"effort": ..., "format": {"type": "json_schema", "schema":
+          llm_facing_schema(output_schema)}}``; the format is omitted without ``output_schema``.
+        * With ``allow_fallback`` the body also carries ``fallbacks="default"`` and
+          ``betas=[FALLBACK_BETA]`` and must be sent through ``client.beta.messages``.
+        * Never present: ``temperature``/``top_p``/``top_k``, ``budget_tokens``, ``tool_choice``,
+          and assistant prefill (a trailing assistant turn raises :class:`LLMBadRequestError`).
+        """
+        from sit_review_agent.llm.outputs import llm_facing_schema
+
+        output_config: dict[str, Any] = {"effort": request.effort}
+        if request.output_schema is not None:
+            output_config["format"] = {"type": "json_schema", "schema": llm_facing_schema(request.output_schema)}
+        body: dict[str, Any] = {"model": self.model, "max_tokens": request.max_tokens}
+        if request.system:
+            body["system"] = [{"type": "text", "text": request.system}]
+        body["messages"] = _anthropic_messages(request)
+        if request.tools:
+            body["tools"] = copy.deepcopy(request.tools)
+        body["thinking"] = {"type": "adaptive", "display": request.thinking_display}
+        body["output_config"] = output_config
+        if request.auto_cache_tail:
+            body["cache_control"] = {"type": "ephemeral"}
+        if self.allow_fallback:
+            body["fallbacks"] = "default"
+            body["betas"] = [FALLBACK_BETA]
+        return body
+
+    def _anthropic_backoff(self, attempt: int) -> float:
+        delay = min(self.backoff_max_s, self.backoff_base_s * (2 ** attempt))
+        return delay * (0.5 + 0.5 * self._rng.random())
+
+    def _anthropic_messages_api(self) -> Any:
+        return self.client.beta.messages if self.allow_fallback else self.client.messages
+
+    async def _anthropic_stream(self, body: dict[str, Any], phase: str, call_id: str) -> tuple[Any, str | None]:
+        """One streamed attempt: the final message and the request ID (``request-id`` header)."""
+        from sit_review_agent.progress import heartbeat
+
+        async def consume() -> tuple[Any, str | None]:
+            async with self._anthropic_messages_api().stream(**body) as stream:
+                final = await stream.get_final_message()
+                rid = getattr(final, "_request_id", None)
+                if rid is None:
+                    try:
+                        rid = getattr(stream, "request_id", None)
+                    except Exception:  # noqa: BLE001 - a header lookup must never fail the call
+                        rid = None
+                return final, (str(rid) if rid is not None else None)
+
+        if self.progress is None:
+            return await consume()
+        async with heartbeat(self.progress, phase, lambda: f"waiting on the Anthropic API ({call_id})",
+                             clock=self.clock):
+            return await consume()
+
+    def _anthropic_fallback(self, phase: str, call_id: str, served: str, content: list[dict[str, Any]],
+                            usage: Any) -> FallbackEvent | None:
+        block = next((b for b in content if b.get("type") == "fallback"), None)
+        iterations = _anthropic_get(usage, "iterations") or []
+        hop = any(_anthropic_get(it, "type") == "fallback_message" for it in iterations)
+        if served == self.model and block is None and not hop:
+            return None
+        category = ((block or {}).get("trigger") or {}).get("category")
+        to_model = served if served != self.model else str(((block or {}).get("to") or {}).get("model") or served)
+        how = ("server-side fallback (fallbacks: default)" if self.allow_fallback
+               else "served model differs from requested")
+        event = FallbackEvent(role=phase, from_model=self.model, to_model=to_model,
+                              reason=f"{how}; refusal category {category}; call {call_id}")
+        self._fallbacks.append(event)
+        return event
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
-        """Stream the request (``client.messages.stream`` / ``.parse``), apply the retry policy,
-        check ``stop_reason``, parse ``output_schema``, log to ``llm.jsonl``."""
-        raise NotImplementedError("phase 1: AnthropicGateway.call (workstream A)")
+        """Stream the request (``client.messages.stream`` + ``get_final_message``; see the class
+        docstring for why not ``.parse``), apply the retry policy, check ``stop_reason`` before
+        reading content, parse ``output_schema``, and log every attempt to ``llm.jsonl``."""
+        self._guard.check(request)
+        call_id = self.next_call_id()
+        phase = request.phase.value
+        body = self.build_body(request)
+        logged_body, pdf_hashes = strip_pdf_bytes(body)
+        req_hash = sha256_json(logged_body)
+        attempts: list[LLMAttempt] = []
+        t_call = self.clock.monotonic()
+        attempt = 0
+        while True:
+            started_at = isoformat_z(self.clock.now_utc())
+            t0 = self.clock.monotonic()
+            base: dict[str, Any] = {
+                "call_id": call_id, "phase": phase, "purpose": request.purpose,
+                "conversation_id": request.conversation_id, "request_sha256": req_hash, "started_at": started_at,
+                "backend": _ANTHROPIC_BACKEND, "attempt": attempt, "requested_model": self.model,
+                "effort": request.effort, "max_tokens": request.max_tokens,
+            }
+            if attempt == 0:
+                base["request"] = logged_body           # body minus PDF bytes, once per call (REPRODUCIBILITY §6)
+                base["pdf_sha256"] = pdf_hashes
+            try:
+                message, request_id = await self._anthropic_stream(body, phase, call_id)
+            except Exception as exc:  # noqa: BLE001 - classified below; non-SDK exceptions re-raised
+                mapped = _anthropic_classify(exc, call_id=call_id, phase=phase)
+                if mapped is None:
+                    raise
+                err, retry, retry_after, status = mapped
+                elapsed = self.clock.monotonic() - t0
+                attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
+                                           outcome=type(err).__name__, status_code=status, retry_after_s=retry_after))
+                self.log.log({**base, "model": self.model, "stop_reason": None, "outcome": type(err).__name__,
+                              "error": str(err)[:500], "status_code": status, "retry_after_s": retry_after,
+                              "usage": Usage().__dict__, "content": [], "elapsed_s": elapsed})
+                if retry and attempt < self.max_retries:
+                    delay = retry_after if retry_after is not None else self._anthropic_backoff(attempt)
+                    if self.progress is not None:
+                        self.progress.emit(phase, f"{type(err).__name__} on {call_id}; retry "
+                                                  f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")
+                    await self.clock.sleep(delay)
+                    attempt += 1
+                    continue
+                raise err from None
+            elapsed = self.clock.monotonic() - t0
+            attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
+            return self._anthropic_result(request, message, request_id=request_id, call_id=call_id, base=base,
+                                          req_hash=req_hash, attempts=attempts, elapsed=elapsed,
+                                          latency=self.clock.monotonic() - t_call)
+
+    def _anthropic_result(self, request: LLMRequest, message: Any, *, request_id: str | None, call_id: str,
+                          base: dict[str, Any], req_hash: str, attempts: list[LLMAttempt], elapsed: float,
+                          latency: float) -> LLMResult[Any]:
+        """Account for a response that arrived, classify its stop reason, and build the result."""
+        phase = request.phase.value
+        served = str(_anthropic_get(message, "model") or self.model)
+        raw_usage = _anthropic_get(message, "usage")
+        usage = _anthropic_usage(raw_usage)
+        self._usage = self._usage + usage
+        self._served.add(served)
+        stop = _anthropic_get(message, "stop_reason")
+        stop = str(stop) if stop is not None else None
+        details = _anthropic_get(message, "stop_details")
+        content = [_anthropic_block(b) for b in (_anthropic_get(message, "content") or [])]
+        fallback = self._anthropic_fallback(phase, call_id, served, content, raw_usage)
+        entry: dict[str, Any] = {**base, "model": served, "stop_reason": stop, "stop_details": _anthropic_dump(details),
+                                 "usage": usage.__dict__, "usage_raw": _anthropic_dump(raw_usage),
+                                 "request_id": request_id, "elapsed_s": elapsed,
+                                 "fallback": fallback.model_dump(mode="json") if fallback is not None else None}
+
+        def fail(err: LLMError, *, keep_content: bool = False) -> LLMError:
+            self.log.log({**entry, "outcome": type(err).__name__, "error": str(err)[:500],
+                          "content": content if keep_content else []})
+            return err
+
+        if stop == "refusal":           # partial output discarded, never parsed (REPRODUCIBILITY §3)
+            category = _anthropic_get(details, "category")
+            explanation = _anthropic_get(details, "explanation")
+            self._refusals.append({"call_id": call_id, "stage": phase, "category": category})
+            raise fail(LLMRefusalError("model declined", category=category, explanation=explanation,
+                                       call_id=call_id, phase=phase))
+        if stop in _ANTHROPIC_TRUNCATED:
+            raise fail(LLMTruncatedError(f"output truncated ({stop}) at max_tokens={request.max_tokens}",
+                                         max_tokens=request.max_tokens, call_id=call_id, phase=phase))
+        text = "".join(str(b.get("text", "")) for b in content if b.get("type") == "text")
+        tool_uses = [ToolUse(id=str(b.get("id")), name=str(b.get("name")), input=dict(b.get("input") or {}))
+                     for b in content if b.get("type") == "tool_use"]
+        parsed: BaseModel | None = None
+        if stop == "tool_use":
+            if not tool_uses:
+                raise fail(LLMSchemaError("stop_reason tool_use without a tool_use block", call_id=call_id,
+                                          phase=phase), keep_content=True)
+        elif stop != "pause_turn" and request.output_schema is not None:
+            if not text.strip():
+                raise fail(LLMSchemaError(f"no text block to parse as {request.output_schema.__name__}",
+                                          call_id=call_id, phase=phase), keep_content=True)
+            try:
+                parsed = request.output_schema.model_validate_json(text)
+            except ValidationError as exc:
+                raise fail(LLMSchemaError(f"output does not match {request.output_schema.__name__}: {exc}",
+                                          call_id=call_id, phase=phase), keep_content=True) from exc
+        self.log.log({**entry, "outcome": "ok", "content": content})
+        return LLMResult(call_id=call_id, phase=request.phase, conversation_id=request.conversation_id,
+                         model=served, stop_reason=stop or "end_turn", content=copy.deepcopy(content), parsed=parsed,
+                         text=text, tool_uses=tool_uses, usage=usage, request_id=request_id,
+                         request_sha256=req_hash, latency_s=latency, attempts=attempts, fallback=fallback,
+                         resumed=False)
+
+    async def _anthropic_simple(self, op: Any, *, label: str, retries: int) -> Any:
+        """Run ``await op()`` with the gateway's error mapping and up to ``retries`` retries (no
+        ``llm.jsonl`` entry: used for ``models.retrieve`` and the preflight ping)."""
+        attempt = 0
+        while True:
+            try:
+                return await op()
+            except Exception as exc:  # noqa: BLE001 - classified below; non-SDK exceptions re-raised
+                mapped = _anthropic_classify(exc, call_id=None, phase=None)
+                if mapped is None:
+                    raise
+                err, retry, retry_after, _status = mapped
+                if retry and attempt < retries:
+                    if self.progress is not None:
+                        self.progress.emit("run", f"{label}: {type(err).__name__}; retry {attempt + 1}/{retries}",
+                                           "warn")
+                    await self.clock.sleep(retry_after if retry_after is not None else self._anthropic_backoff(attempt))
+                    attempt += 1
+                    continue
+                raise err from None
 
     async def models_retrieve(self) -> dict[str, Any]:
         """``client.models.retrieve(model)`` -> ``{id, created_at, max_input_tokens, max_tokens}``
-        for the manifest (REPRODUCIBILITY §2)."""
-        raise NotImplementedError("phase 1: AnthropicGateway.models_retrieve (workstream A)")
+        for the manifest (REPRODUCIBILITY §2). Retried like a model call; not logged to ``llm.jsonl``."""
+        info = await self._anthropic_simple(lambda: self.client.models.retrieve(self.model), label="models.retrieve",
+                                            retries=self.max_retries)
+        created = _anthropic_get(info, "created_at")
+        if hasattr(created, "isoformat"):
+            created = isoformat_z(created)
+        return {"id": str(_anthropic_get(info, "id") or self.model),
+                "created_at": str(created) if created is not None else None,
+                "max_input_tokens": _anthropic_get(info, "max_input_tokens"),
+                "max_tokens": _anthropic_get(info, "max_tokens")}
 
     async def preflight(self) -> None:
-        """1-token call; fail fast naming ``ANTHROPIC_API_KEY`` (never its value; LLM-11)."""
-        raise NotImplementedError("phase 1: AnthropicGateway.preflight (workstream A)")
+        """1-token call (``max_tokens=1``, streamed, no retries); fail fast naming
+        ``ANTHROPIC_API_KEY`` (never its value; LLM-11). Its usage and served model are counted;
+        it is not logged to ``llm.jsonl`` (it is not part of the review)."""
+        import os
+
+        from sit_review_agent.errors import LLMAuthError
+
+        if self._client is None and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+            raise LLMAuthError("ANTHROPIC_API_KEY is not set; export it (the value is never logged) or switch "
+                               "config/agent.yaml llm.backend to claude_code")
+
+        async def ping() -> Any:
+            async with self.client.messages.stream(model=self.model, max_tokens=1,
+                                                   messages=[{"role": "user", "content": "ping"}]) as stream:
+                return await stream.get_final_message()
+
+        message = await self._anthropic_simple(ping, label="preflight", retries=0)
+        self._usage = self._usage + _anthropic_usage(_anthropic_get(message, "usage"))
+        self._served.add(str(_anthropic_get(message, "model") or self.model))
 
     def usage_total(self) -> Usage:
         return self._usage
