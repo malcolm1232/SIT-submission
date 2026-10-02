@@ -1,7 +1,7 @@
 {
   "item_id": "synth-research-lakehouse-001",
   "domain": "University research data lakehouse (S3 + Apache Iceberg + Apache Polaris) with entitlement-aware RAG (Scholar Assist), embargo and DSA enforcement, consent withdrawal, project chargeback and a separate audit plane; ~3,000 researchers, ~2 PB, multi-tenant by project.",
-  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01–F14: 3 internal contradictions, 2 unjustified quantitative claims (F04 checkable against AWS S3 Intelligent-Tiering documentation and pricing; F05 against the OpenSearch k-NN memory formula), 2 missing or unverifiable requirements, 2 security/privacy gaps (F08 obvious, F09 subtle), 2 scalability/failure-mode gaps, 1 ambiguous requirement, 1 acceptance criterion that cannot validate its requirement, and 1 confirmed decision that depends on a pending item. Severity: critical F01, F03, F08, F09; major F02, F05, F07, F10, F11, F14; minor F04, F06, F12, F13. design_v2.md (v1.1) fixes 6 flaws (F03, F05, F06, F08, F10, F13: 2 critical, 2 major, 2 minor). The F10 fix introduces regression F15 (critical; cross-region active-active catalog). The other 8 flaws are unchanged. v2 has a neutral 'Changes since version 1.0' list naming the touched sections; it does not describe any change as a fix. Scoring suggestion: a finding matches a flaw if it names the cited sections/requirements and at least the first two 'what_a_correct_finding_must_mention' items. Penalise recommendations made against 'sound_sections'.",
+  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01–F14: 3 internal contradictions, 2 unjustified quantitative claims (F04 checkable against AWS S3 Intelligent-Tiering documentation and pricing; F05 against the OpenSearch k-NN memory formula), 2 missing or unverifiable requirements, 2 security/privacy gaps (F08 obvious, F09 subtle), 2 scalability/failure-mode gaps, 1 ambiguous requirement, 1 acceptance criterion that cannot validate its requirement, and 1 confirmed decision that depends on a pending item. Severity: critical F01, F03, F08, F09; major F02, F05, F07, F10, F11, F14; minor F04, F06, F12, F13. design_v2.md (v1.1) fixes 6 flaws (F03, F05, F06, F08, F10, F13: 2 critical, 2 major, 2 minor). The F10 fix introduces regression F15 (critical; cross-region active-active catalog). The other 8 flaws are unchanged. v2 has a neutral 'Changes since version 1.0' list naming the touched sections; it does not describe any change as a fix. Scoring suggestion: a finding matches a flaw if it names the cited sections/requirements and at least the first two 'what_a_correct_finding_must_mention' items. Penalise recommendations made against 'sound_sections'. v2_changes convention (applied 2026-10-02): a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly six v2_changes entries have status 'fixed'.",
   "flaws": [
     {
       "id": "F01",
@@ -26,7 +26,8 @@
         "zero-data-retention terms do not satisfy the processing-boundary requirement"
       ],
       "acceptable_recommendation": "Either route Restricted-tier answers to a model hosted inside a Westmoor-controlled account (self-hosted or a single-tenant deployment in the Westmoor VPC, e.g. via a private model-hosting service that meets NFR-5), or exclude Restricted chunks from prompts sent to the external API. Alternatively, amend NFR-5 through governance, with documented legal/IRB/sponsor sign-off. Add a tier-aware model router and a test that proves no Restricted chunk reaches the external endpoint.",
-      "distractor_notes": "Not about Controlled data, which is correctly never indexed. Not about the latency budget. A reviewer who only says 'consider data retention terms with the LLM vendor' without naming the NFR-5 contradiction has not found it."
+      "distractor_notes": "Not about Controlled data, which is correctly never indexed. Not about the latency budget. A reviewer who only says 'consider data retention terms with the LLM vendor' without naming the NFR-5 contradiction has not found it.",
+      "disambiguation": "F01 cites Section 4 only because the Section 4 tier table (Restricted row: 'Processing outside Westmoor accounts: Not permitted (NFR-5)'; 'Scholar Assist: Indexed (documentation and notebook text only)') states the rule that Section 14.4 and the Section 20 'Generation model' row violate. A finding that cites the Section 4 table as the requirement being contradicted matches F01 and is not a false positive. Only a finding that says the Section 4 tier design itself is wrong (e.g. Restricted documentation must not be indexed at all) is the Section 4 trap."
     },
     {
       "id": "F02",
@@ -124,7 +125,8 @@
         "cluster undersized; NFR-3 latency and cost line at risk"
       ],
       "acceptable_recommendation": "Recompute with the OpenSearch memory formula, include the replica and the circuit-breaker limit, and either scale the domain (≈ 15+ r7g.8xlarge data nodes at float32) or use quantisation (fp16 / byte / PQ, disk-based vector search) with a recall evaluation. Update the cost model and NFR-9 accordingly.",
-      "distractor_notes": "The corpus chunk estimate (≈ 180M) is internally consistent and not the flaw. The filtered-search remark about a small candidate set does not reduce memory needs: the whole graph must still be resident."
+      "distractor_notes": "The corpus chunk estimate (≈ 180M) is internally consistent and not the flaw. The filtered-search remark about a small candidate set does not reduce memory needs: the whole graph must still be resident.",
+      "disambiguation": "F05's consequence (the NFR-3 retrieval budget collapsing at full scale) touches Section 14.6. A finding that says the 14.6 retrieval budget will not hold at full scale because the vector index does not fit in memory (Section 15) matches F05 and is not a false positive against 14.6. Only a finding that attacks the 14.6 budgeting method or its arithmetic (360 ms retrieval, about 1.98 s TTFT) is the 14.6 trap."
     },
     {
       "id": "F06",
@@ -194,7 +196,8 @@
         "audit attribution lost (actions logged as service principal)"
       ],
       "acceptable_recommendation": "Use per-user identity end-to-end: OIDC token passthrough from JupyterHub auth state with refresh, Trino OAuth2 bearer per user, and per-user Polaris-vended credentials with session tags. No shared secrets in pods.",
-      "distractor_notes": "The identity model in Section 6 is sound. The flaw is in how notebooks obtain credentials, not in roles or group provisioning."
+      "distractor_notes": "The identity model in Section 6 is sound. The flaw is in how notebooks obtain credentials, not in roles or group provisioning.",
+      "disambiguation": "F08 cites Section 16 only for the audit-attribution consequence: because notebook kernels use the faculty service principal (Section 11 'Credentials'), the principal recorded by the Section 16 'Sources' table (CloudTrail session tags with principal `wid`, the Trino event listener principal, OPA decision input) is `svc-<faculty>-analytics`, not the individual researcher, so FR-14 attribution is lost for notebook access. A finding that makes this point, citing the Section 16 'Sources' subsection and/or Section 11, matches F08 and is not a false positive against Section 16. The sound parts of Section 16 are the 'Pipeline and storage' subsection (separate account, Object Lock compliance mode, hash-chained signed manifests, write-only delivery) and the 'Content boundaries' subsection; findings that attack those are judged against the Section 16 trap."
     },
     {
       "id": "F09",
@@ -339,9 +342,7 @@
       ],
       "acceptable_recommendation": "Downgrade the decision to provisional, resolve backlog item 1 before Phase 5, and mark Phase 5 as dependent. In the interim, prohibit Spark access to tables with row or column policies (route those through Trino), or adopt a PEP that Spark cannot bypass.",
       "distractor_notes": "The coarse/fine split in Section 10.1 is sound. The issue is the confirmation status and the dependency, not OPA as a technology."
-    }
-  ],
-  "v2_new_flaws": [
+    },
     {
       "id": "F15",
       "category": "scalability_failure_mode",
@@ -369,29 +370,37 @@
         "(supporting) grant changes can be lost/overwritten"
       ],
       "acceptable_recommendation": "Keep a single writer: a Multi-AZ metastore in the primary region, optionally Aurora Global Database with a read-only secondary and managed failover; west-region engines commit through the primary endpoint; or assign each table a home region. Gate failover on CRR replication status (e.g. S3 RTC metrics), and keep the within-region Multi-AZ part of the fix.",
-      "distractor_notes": "The within-region part of the v2 change (Aurora Multi-AZ, three Polaris replicas across AZs) correctly fixes F10. Only the cross-region active-active design is the regression."
+      "distractor_notes": "The within-region part of the v2 change (Aurora Multi-AZ, three Polaris replicas across AZs) correctly fixes F10. Only the cross-region active-active design is the regression.",
+      "disambiguation": "v2 only: F15 (cross-region active-active catalog with last-writer-wins replication) defeats the atomic compare-and-swap publish described in Section 9 and turns lost commits into deleted data through orphan-file cleanup. Section 9 is sound as written; a v2 finding that cites Section 9 to explain how F15 breaks the WAP publish guarantee or orphan cleanup matches F15 and is not a false positive. Claims that WAP duplicates storage, should validate before writing, or exposes audit-branch data remain the Section 9 trap."
     }
   ],
   "sound_sections": [
     {
       "section_ref": "4 Data Classification Tiers",
       "why_sound": "Each tier maps to an enforceable boundary (bucket, key, account). Controlled sits in a separate enclave account, scoping the 800-171 boundary and keeping RAG out of it. Tabular rows are never embedded because row policies cannot be expressed against a vector index. Automated changes can only raise a tier. Derived data takes the most restrictive tier. Tier moves are copies, not relabels.",
-      "trap": "A reviewer may attribute F01 to this section (it is correct; the violation is in 14.4/20), demand that Restricted documentation not be indexed at all, or call 'Internal processed externally under enterprise terms' a gap. These are policy preferences, not defects."
+      "trap": "A reviewer may attribute F01 to this section (it is correct; the violation is in 14.4/20), demand that Restricted documentation not be indexed at all, or call 'Internal processed externally under enterprise terms' a gap. These are policy preferences, not defects.",
+      "disambiguation": "F01 cites Section 4 only because the Section 4 tier table (Restricted row: 'Processing outside Westmoor accounts: Not permitted (NFR-5)'; 'Scholar Assist: Indexed (documentation and notebook text only)') states the rule that Section 14.4 and the Section 20 'Generation model' row violate. A finding that cites the Section 4 table as the requirement being contradicted matches F01 and is not a false positive. Only a finding that says the Section 4 tier design itself is wrong (e.g. Restricted documentation must not be indexed at all) is the Section 4 trap."
     },
     {
       "section_ref": "9 Ingestion — Write-Audit-Publish",
       "why_sound": "Uses Iceberg branches so validation needs no second copy. Publish is an atomic compare-and-swap with retry on conflict. Runs are idempotent by run_id. Failed branches are isolated and orphan files reclaimed. The stream timing (5-minute micro-batches, 30-minute publish, ≈ 40 min worst case) meets the 60-minute NFR-4 target.",
-      "trap": "A reviewer may claim WAP duplicates storage, that data should be validated before writing, or that audit-branch data is exposed. Branches share data files and are readable only by principals who could already read the table."
+      "trap": "A reviewer may claim WAP duplicates storage, that data should be validated before writing, or that audit-branch data is exposed. Branches share data files and are readable only by principals who could already read the table.",
+      "disambiguation": "v2 only: F15 (cross-region active-active catalog with last-writer-wins replication) defeats the atomic compare-and-swap publish described in Section 9 and turns lost commits into deleted data through orphan-file cleanup. Section 9 is sound as written; a v2 finding that cites Section 9 to explain how F15 breaks the WAP publish guarantee or orphan cleanup matches F15 and is not a false positive. Claims that WAP duplicates storage, should validate before writing, or exposes audit-branch data remain the Section 9 trap."
     },
     {
       "section_ref": "14.6 Latency budget",
       "why_sound": "Per-stage p95 budgets backed by pilot measurements, explicitly for cache misses, conservative because p95s are summed, TTFT rather than full completion, with a planned full-scale re-measurement. The arithmetic (360 ms retrieval, ≈ 1.98 s TTFT) is correct.",
-      "trap": "A reviewer may flag it as an unjustified quantitative claim, or fold F05 into it. The memory under-sizing belongs to Section 15; the budget method itself is sound."
+      "trap": "A reviewer may flag it as an unjustified quantitative claim, or fold F05 into it. The memory under-sizing belongs to Section 15; the budget method itself is sound.",
+      "disambiguation": "F05's consequence (the NFR-3 retrieval budget collapsing at full scale) touches Section 14.6. A finding that says the 14.6 retrieval budget will not hold at full scale because the vector index does not fit in memory (Section 15) matches F05 and is not a false positive against 14.6. Only a finding that attacks the 14.6 budgeting method or its arithmetic (360 ms retrieval, about 1.98 s TTFT) is the 14.6 trap."
     },
     {
       "section_ref": "16 Audit Plane",
-      "why_sound": "Separate account administered by a different team; S3 Object Lock in compliance mode (root cannot shorten retention); hash-chained, KMS-signed daily manifests; write-only cross-account delivery; identifiers rather than contents; IRB-scoped treatment of audit metadata, consistent with NFR-7 and NFR-8.",
-      "trap": "A reviewer may claim Object Lock conflicts with consent-withdrawal erasure (NFR-7 explicitly excludes audit metadata, and audit holds only pseudonyms), or that storing SQL text is a privacy breach."
+      "why_sound": "Separate account administered by a different team; S3 Object Lock in compliance mode (root cannot shorten retention); hash-chained, KMS-signed daily manifests; write-only cross-account delivery; identifiers rather than contents; IRB-scoped treatment of audit metadata, consistent with NFR-7 and NFR-8. Correction (2026-10-02 audit): participant pseudonyms that can appear in audit SQL text remain personal data under GDPR (Recital 26), and NFR-7 cites GDPR Art. 17 for EU-resident participants. Retaining them in an immutable audit store can be lawful under an Art. 17(3) exemption (e.g. (b) legal obligation, (d) scientific research, (e) legal claims), but the design does not state which basis applies. That documentation gap is a valid observation; the audit-plane mechanism itself is sound.",
+      "trap": "False positive only if the reviewer claims that S3 Object Lock must be removed, or that the audit store must be made erasable, to satisfy consent withdrawal (NFR-7 explicitly routes audit metadata to NFR-8, and retention can be lawful under GDPR Art. 17(3)); or that storing SQL text is a privacy breach. Noting that EU participants' pseudonyms in immutable audit records are still personal data and that the design should document its Art. 17(3) basis is NOT a false positive (see still_valid_observations).",
+      "still_valid_observations": [
+        "EU-resident participants' pseudonyms in the immutable audit store are still personal data under GDPR, so the design should document which GDPR Art. 17(3) exemption (b, d or e) justifies retaining them despite consent withdrawal and NFR-7. Score as valid or neutral, never as a false positive, provided the reviewer does not demand removal of Object Lock or an erasable audit store."
+      ],
+      "disambiguation": "F08 cites Section 16 only for the audit-attribution consequence: because notebook kernels use the faculty service principal (Section 11 'Credentials'), the principal recorded by the Section 16 'Sources' table (CloudTrail session tags with principal `wid`, the Trino event listener principal, OPA decision input) is `svc-<faculty>-analytics`, not the individual researcher, so FR-14 attribution is lost for notebook access. A finding that makes this point, citing the Section 16 'Sources' subsection and/or Section 11, matches F08 and is not a false positive against Section 16. The sound parts of Section 16 are the 'Pipeline and storage' subsection (separate account, Object Lock compliance mode, hash-chained signed manifests, write-only delivery) and the 'Content boundaries' subsection; findings that attack those are judged against the Section 16 trap."
     },
     {
       "section_ref": "6 Identity, Projects and Roles",
@@ -443,8 +452,8 @@
     },
     {
       "flaw_id": "F10",
-      "status": "regressed",
-      "new_flaw_id": "F15",
+      "status": "fixed",
+      "introduced_new_flaw_id": "F15",
       "note": "The single-AZ SPOF is resolved (Aurora Multi-AZ, three Polaris replicas across AZs), but the added cross-region active-active catalog with bidirectional LWW replication introduces F15. Credit the fix of F10, and also require detection of F15."
     },
     {

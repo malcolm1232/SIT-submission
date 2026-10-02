@@ -8,7 +8,7 @@
 |---|---|
 | **Version** | 1.1 |
 | **Status** | Design phase — build not started |
-| **Last updated** | 2026-10-12 (review revisions) · previous 1.0 of 2026-09-21 |
+| **Last updated** | 2026-10-01 (review revisions) · previous 1.0 of 2026-09-21 |
 | **Prepared by** | Serindit Pay Platform Engineering — Payments Core Team |
 | **Companion documents** | MPOP Conceptual Design v1.2; PCI DSS Scoping Memo (draft); Acquirer Connectivity Matrix |
 
@@ -17,7 +17,7 @@
 | Version | Date | Changes |
 |---|---|---|
 | 1.0 | 2026-09-21 | First consolidated detailed design. |
-| 1.1 | 2026-10-12 | Post-review revisions: FR-8; NFR-4, NFR-6, NFR-8; idempotency store and cross-region replication (9, 20, 24); CVC handling (11.2, 12.4); reconciliation scheduling (16.2); merchant authentication and payout account changes (18); matching acceptance criteria (26). |
+| 1.1 | 2026-10-01 | Post-review revisions: FR-8; NFR-4, NFR-6, NFR-8; idempotency store and cross-region replication (9, 20, 24); CVC handling (11.2, 12.4); reconciliation scheduling (16.2); merchant authentication and payout account changes (18); matching acceptance criteria (26). |
 
 ---
 

@@ -2,7 +2,7 @@
 
 `design_v1.md` is the detailed design for a merchant payment orchestration platform at a fictional Southeast Asian fintech, "Serindit Pay" (v1.0, about 8,200 words, 28 numbered sections, FR and NFR IDs). Its structure follows the SIT Memory Platform detailed design: requirements, principles, architecture, flows, data model, confirmed decisions, pending backlog, acceptance criteria, readiness assessment and build phases. The platform routes card, e-wallet and bank-transfer payments for about 15,000 merchants at about 2,000 TPS peak, covering retries, idempotency, reconciliation, PCI DSS scoping, a fraud hook and a merchant admin plane.
 
-The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across eight categories, including one quantitative claim you can check against public AWS DynamoDB documentation. It also has five deliberately sound sections that a good reviewer should leave alone. `design_v2.md` (v1.1, about 8,900 words) simulates an updated artefact for re-review: 6 flaws are fixed (F02, F03, F04, F06, F08, F12), the F04 fix introduces one new critical regression (F15, a cross-region idempotency race), and the other 8 flaws are unchanged.
+The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across eight categories, including one quantitative claim you can check against public AWS DynamoDB documentation. It also has five deliberately sound sections that a good reviewer should leave alone. `design_v2.md` (v1.1, about 8,900 words) simulates an updated artefact for re-review: 6 flaws are fixed (F02, F03, F04, F06, F08, F12), the F04 fix introduces one new critical regression (F15, a cross-region idempotency race), and the other 8 flaws are unchanged. In `v2_changes`, the six fixed flaws all have status `fixed`; the one whose fix introduced the regression also carries `introduced_new_flaw_id: "F15"`. F15 is listed in `flaws[]` with `introduced_in: "v2"` and `introduced_by_fix_of`.
 
 **How to use it:** give the agent one design document (Markdown or PDF) with no other context. Grade its findings against `answer_key.json` by substance, using the `what_a_correct_finding_must_mention` field, not exact wording. Count recommendations made against `sound_sections` as false positives (each entry has a `trap` field). For the re-review scenario, run v1 then v2 and score against `v2_changes` and `expected_v2_open_flaws`. The agent should report fixed items as resolved, keep reporting unchanged ones, and catch F15. Keep `answer_key.json` and this README sealed from the agent under test.
 
@@ -12,7 +12,7 @@ The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across eig
 |---|---|
 | `design_v1.md` / `design_v1.pdf` | Artefact under review, v1.0 (14 flaws) |
 | `design_v2.md` / `design_v2.pdf` | Updated artefact, v1.1 (6 fixed, 1 regression, 8 unchanged) |
-| `answer_key.json` | Sealed key: flaws F01–F14, v2 regression F15, sound sections, v2 change map |
+| `answer_key.json` | Sealed key: flaws F01–F14 plus v2 regression F15 (all in `flaws[]`), sound sections, v2 change map |
 
 PDFs were generated with python-markdown → HTML → LibreOffice headless (`HTML (StarWriter)` import, `writer_pdf_Export`). Conversion succeeded for both versions.
 

@@ -1,7 +1,7 @@
 {
   "item_id": "synthetic-clinical-rpm-001",
   "domain": "Hospital Remote Patient Monitoring Platform (Singapore public healthcare cluster; Azure IoT Hub/MQTT ingestion, Stream Analytics rules, ML early warning, FHIR R4 EMR integration, PDPA/MOH governance, device lifecycle)",
-  "version_notes": "design_v1.md contains 14 planted flaws F01–F14 (4 critical: F04, F08, F10, F14; 6 major: F02, F03, F05, F09, F11, F12; 4 minor: F01, F06, F07, F13). design_v2.md is the 'updated artefact' for re-review. It fixes six flaws (F02, F04, F07, F08, F10, F12: three critical, two major, one minor). The F10 fix introduces a new regression flaw F15 (major, Section 10.3 delivery assurance). The remaining eight flaws (F01, F03, F05, F06, F09, F11, F13, F14) are unchanged. Section numbering is identical across versions. v2 adds a neutral revision-history table. v2's FR-7 acceptance criterion (d), which tests a device with a −10 min clock offset, would in practice expose F11, because such a device's events are dropped by ASA; credit a reviewer who notes this. Open flaws in v1: 14 (4 critical / 6 major / 4 minor). Open flaws in v2: F01, F03, F05, F06, F09, F11, F13, F14, F15 = 9 (1 critical: F14; 5 major: F03, F05, F09, F11, F15; 3 minor: F01, F06, F13).",
+  "version_notes": "design_v1.md contains 14 planted flaws F01–F14 (4 critical: F04, F08, F10, F14; 6 major: F02, F03, F05, F09, F11, F12; 4 minor: F01, F06, F07, F13). design_v2.md is the 'updated artefact' for re-review. It fixes six flaws (F02, F04, F07, F08, F10, F12: three critical, two major, one minor). The F10 fix introduces a new regression flaw F15 (major, Section 10.3 delivery assurance). The remaining eight flaws (F01, F03, F05, F06, F09, F11, F13, F14) are unchanged. Section numbering is identical across versions. v2 adds a neutral revision-history table. v2's FR-7 acceptance criterion (d), which tests a device with a −10 min clock offset, would in practice expose F11, because such a device's events are dropped by ASA; credit a reviewer who notes this. Open flaws in v1: 14 (4 critical / 6 major / 4 minor). Open flaws in v2: F01, F03, F05, F06, F09, F11, F13, F14, F15 = 9 (1 critical: F14; 5 major: F03, F05, F09, F11, F15; 3 minor: F01, F06, F13). v2_changes convention (applied 2026-10-02): a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly six v2_changes entries have status 'fixed'.",
   "category_counts_v1": {
     "internal_contradiction": 3,
     "unjustified_quantitative_claim": 2,
@@ -110,8 +110,7 @@
         "S2 is 6 M messages/day per unit (not 60 M)",
         "3 × S2 = 18 M/day versus ~138 M/day required",
         "send throttle 120 msg/s per S2 unit (360 msg/s) versus 1,600–2,000 msg/s",
-        "claim that the throttle is not binding is false",
-        "consequence: messages rejected or throttled, so monitoring and alerting stop"
+        "claim that the throttle is not binding is false, with the consequence: messages rejected or throttled, so monitoring and alerting stop (one point)"
       ],
       "acceptable_recommendation": "Re-size against both the daily quota and the per-second throttle. Use S3 (300 M/day and 6,000 msg/s per unit), so one unit covers steady state and surge with headroom, or about 24+ S2 units, with a second S3 unit planned before ~17,000 devices. Confirm with the NFR-1 load test, and add quota and throttle alerting.",
       "distractor_notes": "A reviewer who only says 'capacity numbers should be load-tested' without identifying the 10× quota error has not found the flaw. The 138 M/day arithmetic in the document is correct; the error is the vendor quota. Recommending batching more samples per message is a valid secondary mitigation but does not replace re-sizing."
@@ -138,7 +137,8 @@
         "push notification (APNs/FCM) is best-effort with no latency SLA"
       ],
       "acceptable_recommendation": "Re-baseline the budget to include batching and window alignment. Define the NFR start point explicitly (sample time versus alert-condition onset, consistent with IEC 60601-1-8 alarm-condition delay concepts). Consider publish-on-threshold-crossing at the device or gateway, sliding or hopping windows evaluated per sample, and paging as the primary channel for High priority. Measure end-to-end in a realistic test.",
-      "distractor_notes": "Arguing that the 10-s persistence window should be removed is clinically wrong; Section 4.3 justifies it as artefact suppression (a sound section). The flaw is that the budget ignores it. Pointing only at the 1.5 s push figure without the batching and window omissions is a partial finding."
+      "distractor_notes": "Arguing that the 10-s persistence window should be removed is clinically wrong; Section 4.3 justifies it as artefact suppression (a sound section). The flaw is that the budget ignores it. Pointing only at the 1.5 s push figure without the batching and window omissions is a partial finding.",
+      "disambiguation": "F05 cites 4.3 only for the 10-s persistence window in Table 4.3b, which the Section 10.4 latency budget omits. A finding that says the 10.4 budget or the NFR-2 headroom claim ignores the 4.3 persistence window (and the 5-s batching) matches F05 and is not a false positive against Section 4. Only a finding that says the persistence window itself is a defect, or should be removed, is the Section 4 trap. Likewise, F06 is the FR-8 mis-citation of IEC 60601-1-8 clause 6.11 for escalation intervals; the 4.3 use of IEC 60601-1-8 for priority semantics is sound."
     },
     {
       "id": "F06",
@@ -156,11 +156,10 @@
       "why_it_is_a_flaw": "The requirement's authority is mis-attributed, so it cannot be verified against its cited source. The real basis (local clinical policy or a CSB decision) is undocumented. Teams may treat the timings as non-negotiable regulatory values rather than clinical content governed under P2 and NFR-11. What clause 6.11 does expect, detection and indication of communication failure in a distributed alarm system, is not captured as a requirement.",
       "what_a_correct_finding_must_mention": [
         "IEC 60601-1-8 does not specify these escalation intervals",
-        "citation to clause 6.11 is incorrect or unverifiable",
-        "the timings must be sourced from clinical governance (CSB/clinical safety case)"
+        "citation to clause 6.11 is incorrect or unverifiable"
       ],
-      "acceptable_recommendation": "Re-source FR-8 to a CSB decision and record the rationale in the clinical safety case. If IEC 60601-1-8 is cited, cite it for what it covers (alarm priorities, distributed-alarm-system delivery and communication-failure indication) and add those as requirements.",
-      "distractor_notes": "Section 4.3's use of IEC 60601-1-8 for High/Medium/Low priority semantics is correct and should not be flagged. Arguing that 60 s is clinically too long or too short is a matter of clinical opinion, not this flaw."
+      "acceptable_recommendation": "Examples of acceptable recommendations (not required for credit; any valid remedy is acceptable): Re-source FR-8 to a CSB decision and record the rationale in the clinical safety case. If IEC 60601-1-8 is cited, cite it for what it covers (alarm priorities, distributed-alarm-system delivery and communication-failure indication) and add those as requirements.",
+      "distractor_notes": "Section 4.3's use of IEC 60601-1-8 for High/Medium/Low priority semantics is correct and should not be flagged. Arguing that 60 s is clinically too long or too short is a matter of clinical opinion, not this flaw. Saying that the timings must be sourced from clinical governance (CSB / clinical safety case) is a remedy, not part of detection: a finding that makes the two detection points with a different valid remedy, or none, earns full credit."
     },
     {
       "id": "F07",
@@ -282,7 +281,7 @@
         "event time = device_ts with 5 s late tolerance and Drop",
         "buffered/replayed readings (30 min / 4 h) are dropped from evaluation",
         "device clock skew causes all events from a device to be treated as late",
-        "silent: data still appears in ADX trends but is never evaluated"
+        "(supporting, not required) silent: data still appears in ADX trends but is never evaluated"
       ],
       "acceptable_recommendation": "Window on arrival or enqueue time (or use Adjust) for alerting. Route late or backfilled data to a backfill evaluation path that raises clearly labelled retrospective alerts. Monitor the device_ts versus hub_enq_ts skew per device and raise a technical alert or quarantine when it exceeds a bound. Test with skewed clocks and replayed buffers.",
       "distractor_notes": "The message envelope (Section 6.2), with three timestamps and seq idempotency, is sound, and flagging it is a false positive. The flaw is the ASA configuration. A finding that says only 'clock skew could be an issue' without linking it to the Drop policy and the silent loss of alert evaluation is partial."
@@ -365,6 +364,7 @@
     {
       "id": "F15",
       "introduced_in": "v2",
+      "introduced_by_fix_of": "F10",
       "category": "scalability_failure_mode",
       "severity": "major",
       "section_refs": [
@@ -391,7 +391,8 @@
     {
       "section_ref": "4 (Clinical Alerting Model, esp. 4.2 pNEWS2 and 4.3 priority mapping)",
       "why_sound": "The section is honest about NEWS2's need for manually observed parameters. It computes an aggregate only when every manual input is within its freshness window, and otherwise shows 'incomplete' with an observations-due task instead of imputing zeros. It excludes skin temperature as a non-validated core-temperature surrogate, applies SpO2 Scale 2 only when prescribed and with an expiry (as NEWS2 requires), maps NEWS2 risk bands to IEC 60601-1-8 priority semantics correctly (aggregate ≥7 High, 5–6 Medium, single red 3 as low-medium mapped to Medium), justifies the persistence windows as artefact suppression, and is CSB-approved.",
-      "trap": "Flagging pNEWS2 as 'not real NEWS2' or 'unvalidated', demanding that missing parameters be imputed, flagging the 10-s persistence window as a latency defect (the defect is the budget's omission of it, F05), or conflating the correct IEC 60601-1-8 priority usage here with the FR-8 mis-citation (F06)."
+      "trap": "Flagging pNEWS2 as 'not real NEWS2' or 'unvalidated', demanding that missing parameters be imputed, flagging the 10-s persistence window as a latency defect (the defect is the budget's omission of it, F05), or conflating the correct IEC 60601-1-8 priority usage here with the FR-8 mis-citation (F06).",
+      "disambiguation": "F05 cites 4.3 only for the 10-s persistence window in Table 4.3b, which the Section 10.4 latency budget omits. A finding that says the 10.4 budget or the NFR-2 headroom claim ignores the 4.3 persistence window (and the 5-s batching) matches F05 and is not a false positive against Section 4. Only a finding that says the persistence window itself is a defect, or should be removed, is the Section 4 trap. Likewise, F06 is the FR-8 mis-citation of IEC 60601-1-8 clause 6.11 for escalation intervals; the 4.3 use of IEC 60601-1-8 for priority semantics is sound."
     },
     {
       "section_ref": "6.2 (Message envelope)",
@@ -457,8 +458,8 @@
     },
     {
       "flaw_id": "F10",
-      "status": "regressed",
-      "new_flaw_id": "F15",
+      "status": "fixed",
+      "introduced_new_flaw_id": "F15",
       "note": "The original SPOF is resolved (active-active, externalised state, durable timers, per-ward heartbeat), but the added 'delivery assurance' introduces F15."
     },
     {

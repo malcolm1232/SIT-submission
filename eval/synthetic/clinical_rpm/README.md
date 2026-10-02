@@ -2,7 +2,7 @@
 
 This is a synthetic design-review evaluation item: a detailed design for a fictional Singapore public healthcare cluster's Remote Patient Monitoring Platform. Wearable and bedside IoT devices stream vitals over MQTT to Azure IoT Hub. The design covers Stream Analytics rules and partial NEWS2, an ML early-warning model, alert routing and escalation, clinician dashboards, HL7 FHIR R4 EMR integration, PDPA/MOH governance, and device lifecycle, for about 8,000 devices running 24/7. It follows the structure and register of the SIT Memory Platform Detailed Design.
 
-`design_v1.md` (and `.pdf`) contains 14 planted flaws (4 critical, 6 major, 4 minor) across eight categories, plus five genuinely sound sections that a good reviewer should leave alone. `design_v2.md` (and `.pdf`) is the "updated artefact" for re-review. It fixes six flaws, one of those fixes introduces a new regression (F15), and the other eight flaws are unchanged.
+`design_v1.md` (and `.pdf`) contains 14 planted flaws (4 critical, 6 major, 4 minor) across eight categories, plus five genuinely sound sections that a good reviewer should leave alone. `design_v2.md` (and `.pdf`) is the "updated artefact" for re-review. It fixes six flaws (F02, F04, F07, F08, F10, F12), the F10 fix introduces a new regression (F15), and the other eight flaws are unchanged. In `v2_changes`, the six fixed flaws all have status `fixed`; the one whose fix introduced the regression also carries `introduced_new_flaw_id: "F15"`. F15 is listed in `flaws[]` with `introduced_in: "v2"` and `introduced_by_fix_of`.
 
 To use the item, give the reviewing agent only `design_v1.md` or `.pdf` (and later `design_v2`), never `answer_key.json` or this README. Then score its findings against `answer_key.json`:
 

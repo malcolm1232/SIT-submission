@@ -1,7 +1,7 @@
 {
   "item_id": "synthetic-payments-orchestration-001",
   "domain": "Merchant Payment Orchestration Platform (Southeast Asian fintech: cards, e-wallets, bank transfers across SG/MY/ID/TH/PH; ~15,000 merchants; ~2,000 TPS peak)",
-  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01-F14 (4 critical, 6 major, 4 minor) and 5 sound sections. design_v2.md (v1.1) fixes 6 of them (F02 minor, F03 major, F04 major, F06 critical, F08 critical, F12 minor). The F04 fix introduces a new critical regression, F15 (cross-region idempotency race on a DynamoDB global table). The other 8 flaws are unchanged. v2 has a neutral revision-history table listing the changed sections, as a real re-review would; it does not name flaws. Severity is the expected impact if built as written. Graders should match findings to flaws by substance (what_a_correct_finding_must_mention), not by wording. A finding that names the right section but the wrong mechanism should get no more than partial credit.",
+  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01-F14 (4 critical, 6 major, 4 minor) and 5 sound sections. design_v2.md (v1.1) fixes 6 of them (F02 minor, F03 major, F04 major, F06 critical, F08 critical, F12 minor). The F04 fix introduces a new critical regression, F15 (cross-region idempotency race on a DynamoDB global table). The other 8 flaws are unchanged. v2 has a neutral revision-history table listing the changed sections, as a real re-review would; it does not name flaws. Severity is the expected impact if built as written. Graders should match findings to flaws by substance (what_a_correct_finding_must_mention), not by wording. A finding that names the right section but the wrong mechanism should get no more than partial credit. v2_changes convention (applied 2026-10-02): a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly six v2_changes entries have status 'fixed'.",
   "flaw_counts": {
     "total_v1": 14,
     "by_severity": {
@@ -350,9 +350,7 @@
       ],
       "acceptable_recommendation": "Move network tokens to a target-state decision that depends on Backlog item 2. Launch card-on-file on vaulted PAN with correct stored-credential (MIT/CIT) indicators, and add a later phase for network-token migration once TRID and certification complete.",
       "distractor_notes": "FR-14's wording ('where the issuer supports them') is fine. The problem is the confirmed and ready status, not the requirement."
-    }
-  ],
-  "v2_new_flaws": [
+    },
     {
       "id": "F15",
       "category": "scalability_failure_mode",
@@ -423,8 +421,8 @@
     },
     {
       "flaw_id": "F04",
-      "status": "regressed",
-      "new_flaw_id": "F15",
+      "status": "fixed",
+      "introduced_new_flaw_id": "F15",
       "note": "Original flaw fixed (composite partition key, correct 1,000 WCU/partition limit, LSI removed, WCU math corrected). The same revision made the table a two-region writable global table with a false cross-region uniqueness claim, which introduces F15."
     },
     {

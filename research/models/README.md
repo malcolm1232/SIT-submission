@@ -27,19 +27,26 @@ network: `https://developers.openai.com/api/docs/pricing`,
 
 ## 1. Recommendation
 
+> **User decision, 2026-10-02 (overrides the earlier research recommendation).** The agent uses **Claude Opus 5.5 (`claude-opus-5-5`) for every call**: orchestration, reading, research digestion, assessment, verification and report assembly. There are **no Sonnet or Haiku sub-tasks**. The earlier "Opus orchestrator plus Sonnet readers" split is kept, unadopted, in [Appendix A](#appendix-a-sonnet-55-sub-task-analysis-not-adopted). The judge/grader provider is **pending** until the user confirms which API keys they hold; both branches are below. The decision record is `docs/DECISIONS.md` (ADR-002, ADR-003).
+
 | Role | Model | Settings | Why |
 |---|---|---|---|
-| **Primary agent (orchestrator and final writer)** | **Claude Opus 5.5** (`claude-opus-5-5`) | `thinking: {type:"adaptive"}`, `output_config.effort: "medium"` for research turns and `"high"` for the final synthesis and self-check. Stream every call. Turn on prompt caching. Turn on server-side `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`). | It has native PDF input with page-level citations, a 1M-token context, structured outputs and strict tools. Anthropic reports it is "much less likely ... to state a figure or cite a source the inputs don't support", which is the main failure mode for an evidence-backed review. It costs 20% less per token than Opus 5, and cache reads cost 0.05x the input price. Its safety classifiers (`cyber`, `bio`, `reasoning_extraction`) are a narrower set than Sonnet 5.5's, which also has `frontier_llm` and `general_harms`. That matters because the demo document is an *AI platform* design. |
-| **Cheaper model for bulk and sub-tasks** | **Claude Sonnet 5.5** (`claude-sonnet-5-5`) | effort `low` for extraction and summarising fetched papers, `medium` for per-section analysis | Half Opus 5.5's price ($2/$10). Same 1M context, same tokenizer, same PDF and structured-output support, so sub-agents can receive the whole document. Swapping models during the live "modify the agent" exercise is a one-string change. |
-| Optional, cheapest tier | Claude Haiku 4.5 (`claude-haiku-4-5`) | `budget_tokens` thinking (it has no `effort`) | $1/$5. Use it only for short triage or classification calls. It has a **200K context** and a **100-page PDF limit**, it cannot hold the document plus the research, and its API surface differs from the 5.x models (different thinking parameter, 4096-token cache minimum). |
-| **Grader ("lecturer")**, if a second provider key is available | **A different family from the agent:** GPT-6.1 Sol (`gpt-6.1-sol`, **UNVERIFIED** specs) or Gemini 3.1 Pro (`gemini-3.1-pro-preview`) | Reasoning or thinking at high. Analytic rubric with anchored levels. 3 samples per item. Evidence quotes before scores. Pairwise comparisons only for A/B ablations, run in both orders. Details in section 4. | This is the setting where self-preference and same-family "preference leakage" are documented. A cross-family judge is the cheapest mitigation with published support. |
-| Grader, if only an Anthropic key is available | Claude Sonnet 5.5 at effort `high`, plus programmatic checks, plus a local open-weight judge as a cross-family check, plus a small human-labelled anchor set | See section 5 | It is a different model and configuration from the agent but the same family, so the bias is reduced, not removed. |
+| **Agent: every call** (plan, research loop, per-section assessment, refine, verify, report) | **Claude Opus 5.5** (`claude-opus-5-5`) | `thinking: {type: "adaptive"}` (it cannot be disabled on this model). Set `output_config.effort` explicitly per stage: `"medium"` for research and reading turns, `"high"` for assessment, synthesis and the verify pass. Stream every call. Cache the stable prefix (tools, system prompt, document). **No server-side `fallbacks` in eval runs** (see the note below). | Native PDF input (600 pages, 32 MB), 1M-token context, structured outputs (`output_config.format`, GA), strict tools. Anthropic reports it is "much less likely ... to state a figure or cite a source the inputs don't support", which is the main failure mode for an evidence-backed review. Its classifier set (`cyber`, `bio`, `reasoning_extraction`) is narrower than Sonnet 5.5's, which adds `frontier_llm` and `general_harms`; that matters because the demo document is an *AI platform* design. One model also means one prompt-cache namespace, one effort scale and one behaviour profile to explain on demo day. |
+| **Grader / matcher / judges, branch A** (a second provider's key exists) | **A different family:** GPT-6.1 Sol (`gpt-6.1-sol`, **UNVERIFIED** specs) or Gemini 3.1 Pro (`gemini-3.1-pro-preview`) | High reasoning. Analytic rubric with anchored levels. Evidence quotes before scores. Section 4. | Self-preference and same-family "preference leakage" are documented. A cross-family judge is the cheapest mitigation with published support. |
+| **Grader / matcher / judges, branch B** (Anthropic key only) | Short-context instruments (finding↔flaw matcher, claim↔passage judge, G3 premise check) on a **local open-weight model**, validated against human labels. Long-context holistic grader on **Claude**, disclosed as same-family: Sonnet 5.5 at effort `high` is the research recommendation (a different model from the agent); Opus 5.5 if the user extends the all-Opus rule to instruments. Headline claims move to code-checked, judge-free metrics. | Section 5 and `research/audit/research_audit.md` §4.4 | The bias is reduced, not removed, and every LLM-judged number is labelled "same-family, tentative". |
+
+**Why no server-side fallback in eval runs.** The `claude-api` skill recommends opting into `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) for Opus 5.5. Its targets are other models (`claude-opus-5`, `claude-opus-4-8`), so a classifier refusal would be answered by a model that is not Opus 5.5. That silently breaks the all-Opus decision and the pinned-model reproducibility claim (audit C16). Eval runs therefore send no `fallbacks` field and handle `stop_reason: "refusal"` in the agent (retry once with professional framing, then mark the section "model declined"; robustness LLM-06). The demo may opt in with `--allow-fallback`; any fallback is detected from `usage.iterations` (`fallback_message` entries) and `response.model`, and is written to the run manifest. `fallbacks` is also rejected on the Batches API. Policy: `docs/REPRODUCIBILITY.md`.
+
+**Model ID semantics (audit U5, resolved from the skill).** `claude-opus-5-5` has no dated snapshot ID; the skill's model table lists the bare ID as the only identifier. It is therefore the most specific pin available. Record `response.model` for every call and the `client.models.retrieve("claude-opus-5-5")` result once per run, and disclose possible silent server-side updates as a limitation.
+
+**Consequence for ablation A4 ("different backbone model").** Under the all-Opus decision, A4 can only vary settings within one model (proposed A4e: every stage at effort `low`). It no longer supports a "not tied to one model" claim (audit C24). That claim is dropped.
 
 **Not recommended for the live agent:**
 
-- **Claude Fable 5.1** (`claude-fable-5-1`). It costs 2.5x Opus 5.5 ($10/$50). Thinking is always on, and Anthropic warns "single requests on hard tasks can run many minutes", which is risky with a lecturer watching. It requires 30-day data retention, so an org on zero data retention gets a 400. It runs refusal classifiers, and forced `tool_choice` returns a 400. Keep it as an offline reference model if budget allows.
-- **GPT-6 Astra** ($10/$50, **UNVERIFIED**). Search snippets describe a staged rollout ("a limited set of organizations"), and long-context pricing roughly doubles above 272K tokens.
-- **Gemini 3.1 Pro Preview** as the *agent*. It is still a Preview model (released 2026-02-19 per snippets). Preview models can have tighter rate limits and can change without notice, which is a poor fit for a live demo. As a *grader* this matters less because grading runs offline.
+- **Claude Fable 5.1** (`claude-fable-5-1`). It costs 2.5x Opus 5.5 ($10/$50). Thinking is always on, and Anthropic warns "single requests on hard tasks can run many minutes", which is risky with a lecturer watching. It requires 30-day data retention, so an org on zero data retention gets a 400. Keep it as an offline reference model if budget allows.
+- **Claude Sonnet 5.5 / Haiku 4.5 sub-tasks.** Not adopted by user decision; analysis retained in Appendix A.
+- **GPT-6 Astra** ($10/$50, **UNVERIFIED**). Staged rollout; long-context pricing roughly doubles above 272K tokens.
+- **Gemini 3.1 Pro Preview** as the *agent*. Preview status (tighter rate limits, can change without notice). As a *grader* this matters less because grading runs offline.
 
 ## 2. Comparison table
 
@@ -64,40 +71,44 @@ Claude feature notes, all from the skill:
 - Assistant-turn prefill is rejected on every 4.6+ model. Use `output_config.format` instead.
 - The SIT MCP servers are remote HTTPS endpoints that scale to zero, with a 1–2 minute cold start. Calling them from your own harness (client-side MCP) with retries and a warm-up ping is more controllable live than Anthropic's server-side MCP connector. That is a harness choice, but it drives tool-use reliability more than model choice does.
 
-## 3. Cost per review run
+## 3. Cost per review run (all Opus 5.5)
 
-**Workload assumption (from the brief):** a 60K-token document, 150K tokens of research material, 15–25 model calls and 20K output tokens. To model the loop, a ~5K system prompt and tool block is added to the document, giving a 65K base. Research and outputs accrue evenly across calls, and each call resends the growing history, so a 20-call run bills about **2.9M cumulative input tokens** (the last call carries about 227K). With prompt caching, about 227K of those are cache writes and the rest are cache reads.
+**Workload assumption (a planning assumption, not from the brief).** The earlier version of this note attributed the workload to "the brief"; the lab brief contains no such figures (audit C30). The assumption is: a ~60K-token document on the native-PDF path (page images are billed as well as text), plus a ~5K system prompt and tool block (65K base); 150K tokens of research material; 15-25 model calls; 20K output tokens. The SIT sample is 30 pages and about 7.6K words (about 10-13K text tokens), so the text-only path is much smaller. **UNVERIFIED until `messages.count_tokens` is run on the SIT PDF on the laptop (audit U3).** Research and outputs accrue evenly across calls and each call resends the growing history, so a 20-call run bills about **2.9M cumulative input tokens**, almost all of it as cache reads.
 
-Script: [`cost_model.py`](cost_model.py) (`python3 cost_model.py`). Edit the price table or the workload parameters to re-run it.
+The ingestion decision (`docs/DECISIONS.md` ADR-006) sends **both** the native PDF block and the canonical page-marked text (~13K) in the cached prefix, so the planning base is **78K**.
 
-| Model | Floor: every token billed once (210K in + 20K out) | **20 calls, cached** | 20 calls, no caching | 15 calls, cached | 25 calls, cached | 20 calls, cached, 60K output (heavy thinking) |
-|---|---|---|---|---|---|---|
-| Claude Fable 5.1 | $3.10 | **$4.50** | $30.15 | $4.28 | $4.71 | $7.06 |
-| **Claude Opus 5.5** | $1.24 | **$2.07** | $12.06 | $1.91 | $2.23 | $3.13 |
-| **Claude Sonnet 5.5** | $0.62 | **$1.30** | $6.03 | $1.15 | $1.46 | $1.87 |
-| Claude Haiku 4.5 | $0.31 | n/a: the context exceeds 200K by about call 17 without compaction | – | – | – | – |
-| GPT-6 Astra (UNVERIFIED) | $3.10 | $6.52 | $30.15 | $5.74 | $7.29 | $9.34 |
-| GPT-6.1 Sol (UNVERIFIED) | $0.62 | $1.04 | $6.03 | $0.95 | $1.11 | $1.56 |
-| Gemini 3.1 Pro Preview | $0.66 | $1.49* | $7.80 | $1.29 | $1.68 | $2.44 |
-| Gemini 3.8 Flash (intro price) | $0.23 | $0.45* | $2.26 | $0.39 | $0.50 | $0.65 |
+Script: [`cost_model.py`](cost_model.py) (`python3 cost_model.py`; the "ALL-OPUS" section prints every figure below).
 
-\* Gemini caching is modelled with a cache write at the input price and a cache read at the listed cached price. Explicit-cache storage fees per hour are ignored, and implicit cache hits are not guaranteed. Treat these as lower bounds.
+**Per-run agent cost, every call on Opus 5.5** (Opus 5.5: $4 in / $5 cache write (5-min) / $0.20 cache read / $20 out per MTok; claude-api skill, cached 2026-09-25):
 
-**Recommended split: Opus 5.5 orchestrator plus Sonnet 5.5 readers.** About 10 Opus calls carry the document and distilled notes (about 36K tokens of notes rather than 150K of raw pages), and about 12 Sonnet calls each read roughly 12.5K of raw research. That costs **about $1.85 per run** ($1.13 Opus + $0.72 Sonnet), against $2.07 for Opus alone. The bigger gain is that the orchestrator's context stays under about 110K, which keeps turns faster and reasoning cleaner.
+| Scenario | USD per run |
+|---|---|
+| **Planning figure: hybrid ingestion (78K base), 20 calls, 20K out, cached** | **$2.18** |
+| Native PDF only (65K base), 20 calls, cached | $2.07 |
+| Text-only ingestion (20K base) | $1.67 |
+| Large PDF (100K base) | $2.38 |
+| 25 calls, hybrid | $2.36 |
+| Hybrid, heavy thinking (60K output) | $3.24 |
+| Hybrid, 20 calls, **no caching** (for comparison; native-only base) | ~$12 |
+| Reader pattern kept but readers on Opus (10 main + 12 reader calls) | $2.57 |
 
-**Budget guidance:** plan on **$2–3 per full review** on the recommended stack. Development might be 50–100 runs, so **$100–300**, plus grading (below). Prompt caching is the single biggest lever: about 6x on Opus 5.5. Keep the system prompt, tool list and PDF as a byte-stable prefix, and check that `usage.cache_read_input_tokens` is greater than 0 from call 2 onward.
+Plan on **$2.20 per full review, $3.25 worst case**. The reader pattern costs more when the readers are also Opus ($2.57 vs $2.18), so with all-Opus the single growing-context loop is both cheaper and simpler. Context stays under about 250K by the last call, which is well inside the 1M window; server-side compaction is not needed for one document.
 
-**Grader cost per review** (rubric plus instructions about 4K, review about 10K, design PDF about 65K for grounding, about 4K output including reasoning, 3 samples with the document cached):
+**Per-condition cost** (planning shapes for the methodology conditions, all Opus 5.5, hybrid base): FULL $2.18; B0 single call $0.63; B0-$ cost-matched $2.18; A1 no research $1.02; A2 no iteration $1.52; A3 no verification $2.00; A4e effort low $1.91; A5 tools disabled $1.02.
 
-| Judge | With document | Review only |
+**Caching is the biggest lever** (about 6x on Opus 5.5: $12.06 uncached vs $2.07 cached on the native-only base). Keep the tool list, system prompt, PDF and canonical text as a byte-stable prefix; note that a top-level `effort` change invalidates the messages cache (about $0.40 to rewrite a 78K prefix, not in the figures above); the per-message effort system message avoids that but is beta (`mid-conversation-output-config-2026-07-01`), so decide at build time whether one cache rewrite per run is cheaper than a beta on the critical path; check that `usage.cache_read_input_tokens` > 0 from call 2 onward. The **Batch API** halves every token (cache reads and writes included) and suits B0, B0-$ and all grading; it does not suit the interactive agent loop.
+
+**Instrument costs (recomputed per audit C25).** The grader is the full `grading/README.md` §6.1 pipeline (segment, 2 × Pass A, 2 × Pass B, a 3rd-sample adjudication 30 % of the time; key-aware mode excluded). The matcher and judges follow `methodology/metrics.md` §2.3 and §5 (14 flaws; listwise shortlist; 3 candidates × 3 samples pairwise; adjudication of about 8 unmatched findings; G3 and citation judge on about 20 findings).
+
+| Instrument model | Grader per review | Matcher + judges per run |
 |---|---|---|
-| Claude Sonnet 5.5 | $0.35 | $0.16 |
-| Claude Opus 5.5 | $0.67 | $0.32 |
-| GPT-6.1 Sol (UNVERIFIED) | $0.33 | $0.16 |
-| Gemini 3.1 Pro Preview | $0.33 | $0.18 |
-| GPT-6 Astra (UNVERIFIED) | $1.75 | $0.80 |
+| GPT-6.1 Sol (UNVERIFIED price, no batch assumed) | $0.57 | $1.05 |
+| Gemini 3.1 Pro Preview | $0.60 | $1.15 |
+| Claude Sonnet 5.5 (batch) | $0.30 | $0.53 |
+| Claude Opus 5.5 (batch) | $0.57 | $1.05 |
+| Local open-weight (branch B short-context instruments) | n/a | $0 API |
 
-A 3-judge panel over 40 reviews costs about **$40**. The Batch API halves Claude grading cost (Opus 5.5 batch is $2/$10, Sonnet 5.5 is $1/$5). Grading is not latency-sensitive, so batch it.
+The earlier single-call estimate ($0.35 per review) understated the grader by about 1.6x. Project totals (run counts × these figures, 30 % margin, cut order) are in `docs/BUDGET.md`.
 
 ## 4. Grader design (minimises the bias that has been measured)
 
@@ -153,17 +164,51 @@ Log `response.usage`, `stop_reason`, `stop_details`, wall-clock time and tool-ca
 ## 7. Implementation snippets (Claude, verified against the skill)
 
 ```python
-# Agent call (Python SDK)
-client.beta.messages.stream(
+# Agent call (Python SDK). Eval runs: no `fallbacks`, so every call is served by claude-opus-5-5.
+with client.messages.stream(
     model="claude-opus-5-5", max_tokens=64000,
-    thinking={"type": "adaptive"},
-    output_config={"effort": "medium"},          # "high" for final synthesis
-    betas=["server-side-fallback-2026-07-01"],
-    fallbacks="default",
-    system=SYSTEM, tools=TOOLS, messages=msgs,   # PDF as a document block, cache_control on the stable prefix
-)
+    thinking={"type": "adaptive"},               # cannot be disabled on Opus 5.5
+    output_config={"effort": "medium"},          # "high" for assessment, synthesis and verify
+    system=SYSTEM, tools=TOOLS, messages=msgs,   # PDF document block + canonical page-marked text, cache_control on the stable prefix
+) as stream:
+    resp = stream.get_final_message()
 # Always: if resp.stop_reason == "refusal": log resp.stop_details and branch before reading content.
-# Never: temperature, budget_tokens, tool_choice any/tool, assistant prefill (all 400 on Opus 5.5).
+# Always: log resp.model and resp.usage (incl. usage.iterations) to runs/<id>/llm.jsonl.
+# Never: temperature, top_p, top_k, budget_tokens, tool_choice any/tool, assistant prefill (all 400 on Opus 5.5).
+# Demo-only opt-in (--allow-fallback): client.beta.messages.stream(..., betas=["server-side-fallback-2026-07-01"],
+#   fallbacks="default"); a fallback_message entry in usage.iterations means another model answered -> manifest.
 ```
 
 The non-Anthropic grader calls (OpenAI Responses API with `json_schema`, Gemini `response_schema`) should be written against each provider's current SDK docs. Their parameter names are not verified here (UNVERIFIED).
+
+---
+
+## Appendix A. Sonnet 5.5 sub-task analysis (not adopted)
+
+**Status: not adopted.** The user decided on 2026-10-02 that every agent call uses Opus 5.5. This appendix preserves the earlier analysis for reference, because it still explains the trade-off (and Sonnet 5.5 remains a candidate *grader* in branch B, which is an instrument, not an agent call).
+
+Earlier recommendation rows:
+
+| Role | Model | Settings | Why |
+|---|---|---|---|
+| Cheaper model for bulk and sub-tasks | Claude Sonnet 5.5 (`claude-sonnet-5-5`) | effort `low` for extraction and summarising fetched papers, `medium` for per-section analysis | Half Opus 5.5's price ($2/$10). Same 1M context, same tokenizer, same PDF and structured-output support, so sub-agents can receive the whole document. |
+| Optional, cheapest tier | Claude Haiku 4.5 (`claude-haiku-4-5`) | `budget_tokens` thinking (it has no `effort`) | $1/$5. 200K context and a 100-page PDF limit; it cannot hold the document plus the research, and its API surface differs from the 5.x models. |
+
+Earlier cost table (65K base, the unverified "brief" workload):
+
+| Model | Floor: every token billed once (210K in + 20K out) | 20 calls, cached | 20 calls, no caching | 15 calls, cached | 25 calls, cached | 20 calls, cached, 60K output |
+|---|---|---|---|---|---|---|
+| Claude Fable 5.1 | $3.10 | $4.50 | $30.15 | $4.28 | $4.71 | $7.06 |
+| Claude Opus 5.5 | $1.24 | $2.07 | $12.06 | $1.91 | $2.23 | $3.13 |
+| Claude Sonnet 5.5 | $0.62 | $1.30 | $6.03 | $1.15 | $1.46 | $1.87 |
+| Claude Haiku 4.5 | $0.31 | n/a: context exceeds 200K by about call 17 without compaction | – | – | – | – |
+| GPT-6 Astra (UNVERIFIED) | $3.10 | $6.52 | $30.15 | $5.74 | $7.29 | $9.34 |
+| GPT-6.1 Sol (UNVERIFIED) | $0.62 | $1.04 | $6.03 | $0.95 | $1.11 | $1.56 |
+| Gemini 3.1 Pro Preview | $0.66 | $1.49* | $7.80 | $1.29 | $1.68 | $2.44 |
+| Gemini 3.8 Flash (intro price) | $0.23 | $0.45* | $2.26 | $0.39 | $0.50 | $0.65 |
+
+\* Gemini caching modelled with a cache write at the input price; explicit-cache storage fees ignored. Lower bounds.
+
+Earlier split: **Opus 5.5 orchestrator plus Sonnet 5.5 readers**, about 10 Opus calls carrying the document and distilled notes and about 12 Sonnet calls each reading about 12.5K of raw research, **about $1.85 per run** ($1.13 Opus + $0.72 Sonnet) against $2.07 for Opus alone, with the orchestrator's context kept under about 110K.
+
+Why it was not adopted (user decision; the research reasons that support it): the saving was about $0.22-0.33 per run (on the order of $100-150 over the whole project matrix); Sonnet 5.5 has the wider classifier set, including `frontier_llm`, which an AI-platform design document could plausibly trip; prompt caches are per model, so a two-model loop forfeits cache reuse between them; and one model is simpler to explain and to reproduce.

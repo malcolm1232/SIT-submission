@@ -764,7 +764,7 @@ Each requirement from Section 2 is validated by a specific method with a concret
 
 ## 23. Readiness Assessment
 
-This section answers a direct question: could an engineering team, or an AI coding assistant, build each component from this document alone? The honest answer is partial.
+This section answers a direct question: could the engineering team build each component from this document alone? The honest answer is partial.
 
 | Component | Ready? | What would still need to be decided |
 |---|---|---|
