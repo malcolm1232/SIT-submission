@@ -25,6 +25,7 @@ def finding(i: int) -> dict[str, Any]:
     return {"id": f"FND-{i:03d}", "rank": i, "severity": "high", "title": f"Finding {i} with {{braces}} and [brackets]",
             "statement": 'a "quoted" word, a comma, a colon: and a backslash \\ and \\"escaped\\" text',
             "evidence": [{"evidence_id": "E-1", "quote": "]}"}], "tags": ["x", "y"], "confidence": 0.75,
+            "note": 'an escaped quote before structure: ", [x]} {"k": 1}, and a trailing backslash \\',
             "recommendation": None, "acknowledged_in_doc": False}
 
 
