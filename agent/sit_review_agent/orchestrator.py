@@ -17,9 +17,10 @@ finished first) and the stage's last checkpoint (``assess``) is written.
 Checkpoints and resume (ADR-009): every stage 1 member writes its checkpoint when it ends (the
 checkpoint ordinal, not the file name, says which is latest); every finished assess shard is stored
 in ``shards/<k>-<name>.json``; ``budget.elapsed_s`` is set at every checkpoint. Resume re-runs only
-the members and shards that had not finished and restores the run clock from ``elapsed_s``. While
-research runs, checkpoints record the ledger offset from before research started, because research
-is the only member that writes the ledger during stage 1 and resume re-runs it from the start.
+the members and shards that had not finished and restores the run clock from ``elapsed_s``. The
+ledger offset a checkpoint records never covers half of research (the only member that writes the
+ledger during stage 1): understand and plan end before research starts, and assess's checkpoint is
+written when the stage closes, so no checkpoint is written while research runs.
 
 Failure handling (exit codes in :mod:`sit_review_agent.errors`):
 
@@ -114,18 +115,13 @@ class Orchestrator:
         if missing:
             raise ValueError(f"orchestrator needs every phase; missing {missing}")
         self.phases = dict(phases)
-        #: Ledger offset from before research started, recorded in checkpoints while it runs.
-        self._ledger_hold: int | None = None
 
     def checkpoint(self, ctx: RunContext, phase: PhaseName) -> Path:
         ctx.sync_state()
         ctx.state.budget.elapsed_s = round(max(0.0, ctx.elapsed_s()), 3)
-        offsets = journal_offsets(ctx.run_dir)
-        if self._ledger_hold is not None:
-            offsets = offsets.model_copy(update={"ledger_jsonl": self._ledger_hold})
         ckpt = Checkpoint(run_id=ctx.state.run_id, phase=phase, seq=PHASE_ORDER.index(phase) + 1,
                           created_utc=isoformat_z(ctx.clock.now_utc()), hashes=pinned_hashes(ctx),
-                          offsets=offsets, state=ctx.state)
+                          offsets=journal_offsets(ctx.run_dir), state=ctx.state)
         return write_checkpoint(ctx.run_dir, ckpt)
 
     def _flush_state(self, ctx: RunContext) -> None:
@@ -278,8 +274,6 @@ class Orchestrator:
             iso = isolate(ctx, p)
             isos[p], t0[p] = iso, ctx.clock.monotonic()
             phase = self._member_phase(p)
-            if p is PhaseName.RESEARCH:
-                self._ledger_hold = ctx.ledger.offset()
             if p is PhaseName.ASSESS and sharded:
                 coro = phase.run_shards(iso.ctx, done=dict(shard_results), on_end=store)  # type: ignore[attr-defined]
             else:
@@ -321,7 +315,6 @@ class Orchestrator:
             for t in running:
                 t.cancel()
             await asyncio.gather(*running, return_exceptions=True)
-            self._ledger_hold = None
             if isinstance(exc, AgentError | _StageFailure):
                 raise exc.error if isinstance(exc, _StageFailure) else exc from None
             self._flush_state(ctx)
@@ -351,8 +344,6 @@ class Orchestrator:
             return
         exc = task.exception()
         if exc is not None:
-            if p is PhaseName.RESEARCH:
-                self._ledger_hold = None
             ctx.state.current_phase = p
             self._flush_state(ctx)
             from sit_review_agent.phases._isolation import MemberInterrupted
@@ -375,8 +366,6 @@ class Orchestrator:
                               f"{ctx.state.budget.phase_seconds[p.value]:.1f}s; merged when stage 1 closes")
             return
         merge_member(ctx, iso)
-        if p is PhaseName.RESEARCH:
-            self._ledger_hold = None
         if p is PhaseName.ASSESS:               # a phase without shards: merged now, checkpointed at the close
             ctx.state.budget.phase_seconds[p.value] = seconds
             return
@@ -398,7 +387,6 @@ class Orchestrator:
             impact = "the plan is one document-only question per criterion"
         elif p is PhaseName.RESEARCH:
             merge_member(ctx, iso)              # what research recorded before it was stopped
-            self._ledger_hold = None
             if ctx.state.stop_reason is None:
                 ctx.state.stop_reason = StopReason.of(StopReasonCode.DEADLINE, "stage_limits_s.stage_1_end")
             impact = "research ended early; the evidence register keeps what it had gathered"

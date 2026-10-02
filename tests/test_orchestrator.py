@@ -212,17 +212,17 @@ async def test_stage_1_members_end_in_any_order(tmp_path: Path, order: tuple[str
 
 
 async def test_a_checkpoint_never_holds_a_running_members_state(tmp_path: Path) -> None:
-    """Members run on copies of the run state: a checkpoint written while research runs has none of
-    research's writes, and its ledger offset is the one from before research started."""
+    """Members run on copies of the run state: understand's checkpoint, written while plan is still
+    running, has none of plan's writes; plan's own checkpoint has them."""
     clock, log = FakeClock(), []
     gate = asyncio.Event()
 
-    class SlowResearch:
-        name = PhaseName.RESEARCH
+    class SlowPlan:
+        name = PhaseName.PLAN
 
         async def run(self, ctx: RunContext) -> RunContext:
             ctx.state.queries_issued = 7
-            ctx.ledger.add_doc(doc_id="D", page=1, section_ref="1", excerpt="research entry")
+            ctx.state.add_degradation(DegradationType.OTHER, "plan wrote this", "test")
             await gate.wait()
             return ctx
 
@@ -236,13 +236,13 @@ async def test_a_checkpoint_never_holds_a_running_members_state(tmp_path: Path) 
             return ctx
 
     ctx = make_ctx(tmp_path, clock)
-    before = ctx.ledger.offset()
-    await Orchestrator(phases(log, research=SlowResearch(), assess=LateAssess())).run(ctx)
-    plan_ckpt = load_checkpoint(ctx.run_dir.checkpoints / "03-plan.json")
-    assert plan_ckpt.state.queries_issued == 0
-    research_ckpt = load_checkpoint(ctx.run_dir.checkpoints / "04-research.json")
-    assert research_ckpt.state.queries_issued == 7 and research_ckpt.offsets.ledger_jsonl > before
-    assert ctx.state.queries_issued == 7
+    await Orchestrator(phases(log, plan=SlowPlan(), assess=LateAssess())).run(ctx)
+    understand = load_checkpoint(ctx.run_dir.checkpoints / "02-understand.json")
+    plan = load_checkpoint(ctx.run_dir.checkpoints / "03-plan.json")
+    assert understand.ordinal is not None and plan.ordinal is not None and understand.ordinal < plan.ordinal
+    assert understand.state.queries_issued == 0 and understand.state.degradations == []
+    assert plan.state.queries_issued == 7 and [d.event for d in plan.state.degradations] == ["plan wrote this"]
+    assert ctx.state.queries_issued == 7 and len(ctx.state.degradations) == 1
 
 
 async def test_stage_1_backstop_stops_a_member_past_the_limit(tmp_path: Path) -> None:

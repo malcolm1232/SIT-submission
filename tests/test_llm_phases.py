@@ -866,5 +866,27 @@ async def test_orchestrator_runs_model_phases_and_checkpoints(tmp_path: Path, cf
     assert stored == ["01-all.json"]                                           # the finished shard, for resume
 
 
+@pytest.mark.parametrize(("slack", "repairs"), [(61.0, True), (60.0, False)])
+async def test_anchor_repair_call_needs_more_than_60_s_of_slack(tmp_path: Path, slack: float, repairs: bool) -> None:
+    """Design section 4: verify makes its one repair call only when more than 60 s remain before the
+    verify and verdict reserve; otherwise the unresolved anchors stay unresolved, disclosed."""
+    from sit_review_agent.phases.verify import VerifyPhase
+    from test_ingest_verify_report import Q_LOAD as R_LOAD
+    from test_ingest_verify_report import Q_MAIL, REPAIR, add_external, draft, ext_cite, ingested, meta
+    from test_ingest_verify_report import anchor as r_anchor
+
+    ctx = await ingested(tmp_path, {"verify": [REPAIR]})
+    ev = add_external(ctx)
+    ctx.state.finding_drafts = [draft("FND-001", anchors=[r_anchor("6.2", 11, Q_MAIL), r_anchor("4.1", 2, R_LOAD)],
+                                      evidence=[ext_cite(ev)])]
+    ctx.state.finding_meta = {"FND-001": meta("FND-001")}
+    sr = ctx.config.stop_rules
+    ctx.clock.advance(sr.deadline_seconds - sr.report_reserve_seconds - slack)  # type: ignore[attr-defined]
+    ctx = await VerifyPhase().run(ctx)
+    assert bool(ctx.llm.calls) is repairs
+    skipped = [d for d in ctx.state.degradations if d.event.startswith("anchor repair call skipped")]
+    assert bool(skipped) is not repairs
+
+
 def test_llm_result_type_is_what_phases_consume() -> None:
     assert {f.name for f in dataclasses.fields(LLMResult)} >= {"call_id", "model", "parsed", "usage", "fallback"}
