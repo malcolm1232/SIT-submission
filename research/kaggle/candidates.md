@@ -110,7 +110,7 @@ benchmark / eval data, (b) labelled data for an LLM-as-judge / rubric grader, (c
 - **Transferable technique:** Use a red-team checklist on the grader: trigger words and jargon, sentence-length manipulation, odd formatting, contradictions, fabricated citations, tone switching, deliberate ambiguity. These come from a community repo, **not** a winning solution [GH] ([zixi-liu repo](https://github.com/zixi-liu/LLMs-You-Cant-Please-Them-All)). Winning solutions are UNVERIFIED. No public writeup could be read.
 
 ### K4. Learning Agency Lab - Automated Essay Scoring 2.0
-- **URL:** https://www.kaggle.com/competitions/learning-agency-lab-automated-essay-scoring-2
+- **URL:** https://www.kaggle.com/competitions/learning-agency-lab-automated-essay-scoring-2 (slug UNVERIFIED: the competition page never appeared in search results; related notebook: https://www.kaggle.com/code/docxian/automated-essay-scoring-first-glance [S])
 - **Year:** 2024, concluded 3 July, 2,700+ teams [S] ([competition report](https://hippocampus-garden.com/kaggle_aes2/)).
 - **Task:** Holistic essay score 1-6. Metric is quadratic weighted kappa (QWK) [S] (same report).
 - **Data / size:** About 17k training essays: ~13k from PERSUADE 2.0 and ~4k "Kaggle-only" essays [S] (same report). Released as ASAP 2.0 [S] ([Learning Agency Lab page](https://the-learning-agency-lab.com/learning-exchange/asap-2-0-dataset/)).
@@ -225,7 +225,7 @@ benchmark / eval data, (b) labelled data for an LLM-as-judge / rubric grader, (c
 - **Fit:** Low as data. Its value is in evaluation design: freeze the agent, then evaluate on artefacts written afterwards. That is what our `eval/blind/` set and the SIT demo-day "new design artefact" do.
 
 ### K18. Kaggle Community Benchmarks and the `kaggle-benchmarks` SDK
-- **URLs:** https://github.com/Kaggle/kaggle-benchmarks and https://www.kaggle.com/benchmarks
+- **URLs:** https://github.com/Kaggle/kaggle-benchmarks; task editor at https://www.kaggle.com/benchmarks/tasks/new [GH] (named in the SDK README)
 - **Year:** Community Benchmarks launched Jan 2026 [S] ([Google blog](https://blog.google/innovation-and-ai/technology/developers-tools/kaggle-community-benchmarks/)).
 - **What it is** [GH]: a Python library for defining eval tasks with `@kbench.task`. It supports structured (pydantic) outputs, tool use, multi-turn conversations and dataset-level runs, and produces Kaggle leaderboards. Licence is **Apache-2.0**. Its built-in LLM-as-judge assertion (`assess_response_with_judge`) is reported only via search [S] (same Google blog).
 - **Fit:** Medium, as **infrastructure** for (a). We could publish our design-review eval (synthetic artefacts with sealed answer keys) as a reproducible Kaggle benchmark. It is not a source of data.
@@ -240,7 +240,7 @@ benchmark / eval data, (b) labelled data for an LLM-as-judge / rubric grader, (c
 - **Year:** 2026 [S]. A 16-question reasoning and adversarial-safety exam for agents.
 - **Fit:** Low. Generic, and not about document review.
 
-**Searched, not found:** No Kaggle competition was found on **scientific peer review, design or architecture review, requirements quality, or technical-document QA**. Searches: [peer review](https://arxiv.org/pdf/2511.06304) (search returned only surveys), plus the queries listed in the README. The absence is a search result, not a proof.
+**Searched, not found:** No Kaggle competition was found on **scientific peer review, design or architecture review, requirements quality, or technical-document QA**. The query "Kaggle competition peer review scientific paper review generation" returned only surveys and non-Kaggle work, for example [Kaggle Chronicles](https://arxiv.org/pdf/2511.06304) and [AI4Research survey](https://arxiv.org/pdf/2507.01903) [S]. The absence is a search result, not a proof.
 
 ---
 
