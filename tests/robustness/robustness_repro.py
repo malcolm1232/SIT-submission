@@ -2,7 +2,7 @@
 (README.md, "Failing, needs decision"). Offline, no key, no network:
 
     python tests/robustness/robustness_repro.py            # all of them
-    python tests/robustness/robustness_repro.py BEH-25     # one
+    python tests/robustness/robustness_repro.py NET-02     # one
 
 Each prints what the scenario expects and what the agent did. Not collected by pytest (the suite
 never asserts known-wrong behaviour)."""
@@ -36,12 +36,6 @@ def _summary(rec: RunRecord) -> str:
     return "\n  ".join(out)
 
 
-def beh25() -> str:
-    rec = run(Scenario(id="BEH-25", faults="BEH-25"))
-    return ("expected: checkpoint + a partial report listing the completed stages, exit 4 (ADR-009 item 5)\n  "
-            + _summary(rec) + f"\n  partial report written: {rec.run_dir.report_md.exists()}")
-
-
 def llm05() -> str:
     rec = run(Scenario(id="LLM-05", faults="LLM-05"))
     budget = rec.config.stop_rules.deadline_seconds + 30
@@ -51,35 +45,6 @@ def llm05() -> str:
 def net02() -> str:
     rec = run(Scenario(id="NET-02", faults="NET-02"))
     return "expected: non-zero exit with an actionable message within 10 s (virtual)\n  " + _summary(rec)
-
-
-def beh10() -> str:
-    def flip(p: dict[str, Any]) -> None:
-        f = next(x for x in p["findings"] if x["id"] == "FND-001")
-        f["severity"], f["confidence"] = "low", 0.3                      # no new evidence, no revision note
-        p["revisions"] = [r for r in p["revisions"] if r["finding_id"] != "FND-001"]
-
-    rec = run(Scenario(id="BEH-10", patches={"refine": flip}))
-    meta = rec.state["finding_meta"]["FND-001"]["history"]
-    return ("expected: the flip is rejected ('no change without a new ledger ID or a named reasoning error')\n  "
-            + _summary(rec) + "\n  FND-001 history: " + json.dumps(meta)[:400])
-
-
-def beh12() -> str:
-    def conflict(p: dict[str, Any]) -> None:
-        f = next(x for x in p["findings"] if x["id"] == "FND-002")
-        f.update(kind="risk", category="unsupported_or_incorrect_claim", severity="medium",
-                 disposition="refinement_now", no_change_rationale=None, affected_decisions=[])
-        f["recommendation"] = {
-            "issue": "The campus design system limits the booking screens unnecessarily.",
-            "rationale": "A bespoke component library would let the team move faster on new screens.",
-            "expected_benefit": "Faster delivery of new booking screens for students.",
-            "change_summary": "Replace the campus design system with a bespoke component library for the front end.",
-            "objective_refs": ["Reserve study rooms"], "supporting_evidence_ids": [], "verification": None}
-
-    rec = run(Scenario(id="BEH-12", patches={"assess": conflict, "refine": conflict}))
-    return ("expected: verify catches a recommendation that reverses approved decision AD-001 (D-3) without "
-            "an affected_decisions 'challenges' label\n  " + _summary(rec))
 
 
 def inf08() -> str:
@@ -124,8 +89,7 @@ def inf08() -> str:
             os.environ["SIT_MCP_API_KEY"] = saved
 
 
-REPROS: dict[str, Callable[[], str]] = {"BEH-25": beh25, "LLM-05": llm05, "NET-02": net02, "BEH-10": beh10,
-                                        "BEH-12": beh12, "INF-08": inf08}
+REPROS: dict[str, Callable[[], str]] = {"LLM-05": llm05, "NET-02": net02, "INF-08": inf08}
 
 
 def main(argv: list[str]) -> int:

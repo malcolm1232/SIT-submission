@@ -38,9 +38,15 @@ from sit_review_agent.context import RunContext
 from sit_review_agent.errors import LLMTimeoutError, LLMTruncatedError
 from sit_review_agent.llm.gateway import FakeGateway, FakeResponse, FaultInjectingLLMGateway, LLMRequest
 from sit_review_agent.llm.outputs import FindingDraft
-from sit_review_agent.models import DegradationType, StopReason, StopReasonCode
+from sit_review_agent.models import (
+    AffectedDecision,
+    DegradationType,
+    Finding,
+    RegistryEntry,
+    StopReason,
+    StopReasonCode,
+)
 from sit_review_agent.orchestrator import Orchestrator
-from sit_review_agent.models import Finding, RegistryEntry
 from sit_review_agent.phases.verify import hollow_fields, unlabelled_conflicts
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.prompts import PromptBundle
@@ -226,19 +232,20 @@ def test_severity_change_needs_a_reason_or_new_evidence(reason: str, kept: str, 
 # ============================================================================= 9. verify (BEH-12)
 
 
-_AD = RegistryEntry.model_validate({
-    "registry_id": "AD-001", "type": "approved_decision", "doc_ref": "D-3",
-    "statement": "The booking front end is built from the campus design system component library.",
-    "doc_anchor": {"doc_id": "doc", "page": 1, "section_ref": "1", "quote": "q" * 20}})
+@pytest.fixture(scope="module")
+def fixture_review(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    return run(Scenario(id="REG-9"), tmp_path_factory.mktemp("reg9")).report   # type: ignore[return-value]
 
 
-def _finding_with(change: str, relation: str | None = None) -> Finding:
-    rec = run(Scenario(id="REG-9"))
-    f = next(f for f in rec.report["findings"] if f["recommendation"] is not None)
+def _finding_with(review: dict[str, Any], change: str, relation: str | None) -> Finding:
+    f = json.loads(json.dumps(next(f for f in review["findings"] if f["recommendation"] is not None)))
     f["recommendation"]["change_summary"] = change
-    f["affected_decisions"] = ([{"registry_id": "AD-001", "relation": relation, "justification": "j" * 20}]
-                               if relation else [])
-    return Finding.model_validate(f)
+    f["affected_decisions"] = []
+    out = Finding.model_validate(f)
+    if relation:                                # a label only (the >= 2 evidence rule is INV-10's, not this check's)
+        out = out.model_copy(update={"affected_decisions": [AffectedDecision(
+            registry_id="AD-001", relation=relation, justification="The change replaces the approved library.")]})
+    return out
 
 
 @pytest.mark.parametrize("change, relation, expected", [
@@ -247,6 +254,8 @@ def _finding_with(change: str, relation: str | None = None) -> Finding:
     ("Add the campus design system's date picker component library entry to section 5.", None, []),
     ("Replace the polling worker with a queue.", None, []),
 ])
-def test_unlabelled_reversal_of_an_approved_decision_is_detected(change: str, relation: str | None,
-                                                                 expected: list[str]) -> None:
-    assert unlabelled_conflicts(_finding_with(change, relation), [_AD]) == expected
+def test_unlabelled_reversal_of_an_approved_decision_is_detected(fixture_review: dict[str, Any], change: str,
+                                                                 relation: str | None, expected: list[str]) -> None:
+    registry = [RegistryEntry.model_validate(e) for e in fixture_review["decision_registry"]]
+    assert [e.registry_id for e in registry] == ["AD-001"]
+    assert unlabelled_conflicts(_finding_with(fixture_review, change, relation), registry) == expected

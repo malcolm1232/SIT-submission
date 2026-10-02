@@ -50,3 +50,62 @@ token pre-count), OVF-07 (sample-specific hosts in `tools/sources.py`).
 
 After: ruff clean on `agent harness tests`; full pytest passes (the count includes the other
 workstreams' tests: 829 at the end of this session); `tests/robustness`: 96 tests in about 15 s.
+
+## Verifier edits
+
+Verifier for workstream R, 2026-10-02. Baseline: `ruff check agent harness tests` had one E501 in
+`harness/sit_eval/matcher.py` (a parallel verifier's area, not touched here); the robustness folder
+passed 96 tests. Every agent edit below is small and local, has a regression test, and was checked to
+fail against the unfixed agent (a scratch copy of the repo with the change reverted). No prompt,
+config, schema or PROMPTS.lock changed.
+
+Agent edits:
+
+7. `agent/sit_review_agent/orchestrator.py` `_run_fail` and new `_run_partial_report` (BEH-25,
+   ADR-009 item 5): on exit 4 (stage crash) the run directory now gets `report.partial.md` (completed
+   stages, crashed stage, counts of planned questions, ledger entries and unverified drafts, earlier
+   degradations, the resume command), named in `failure.json` as `partial_report`. It prints no
+   finding (none has passed verify) and names the error by class only (details stay in
+   `failure.json`). It is not `report.json`, so INV-02 ("a failed run must not look complete") holds.
+   Tests: `test_robustness_scenario[BEH-25]` (now in the passing suite, with resume),
+   `test_stage_crash_writes_a_partial_report_listing_completed_stages`,
+   `test_no_partial_report_when_the_model_is_unavailable`.
+8. `agent/sit_review_agent/phases/refine.py` (BEH-10): new `CONCLUSION_FIELDS` (`kind`, `severity`,
+   `disposition`). A refine answer that changes one of them for an existing finding with no revision
+   note reason and no new evidence ID is rejected: the earlier draft is kept and the finding's history
+   gets "rejected: severity high -> low without a revision reason or new evidence (BEH-10)". A change
+   with a reason (the prompt already requires one per finding) or a new evidence ID is accepted as
+   before. Tests: `test_robustness_scenario[BEH-10]`, `test_severity_change_needs_a_reason_or_new_evidence`
+   (both branches).
+9. `agent/sit_review_agent/phases/verify.py` new `unlabelled_conflicts` (BEH-12, L0): after hydration, a
+   finding whose recommendation `change_summary` uses a reversal verb (replace, remove, drop, abandon,
+   retire, reverse, eliminate, stop using, instead of, switch/migrate/move away from) and at least three
+   of an approved decision's content words, without an `affected_decisions` `challenges` label for that
+   decision, is disclosed as a degradation (and so in the limitations). It never drops the finding,
+   because the check is lexical. Tests: `test_robustness_scenario[BEH-12]` (also asserts no false alarm
+   on the control run), `test_unlabelled_reversal_of_an_approved_decision_is_detected` (4 cases).
+10. `agent/sit_review_agent/phases/research.py` (stop reason with zero evidence): a model stop vote when
+    the ledger holds no external evidence is now reported as `tool_failure` (no tool call succeeded)
+    or `no_marginal_gain` (calls answered but found nothing), detail "model_stop_vote with no external
+    evidence", instead of `sufficient_evidence (model_stop_vote)`. Module docstring updated. Test:
+    `test_robustness_scenario[INF-24]` now asserts `stop_reason.code == "tool_failure"`.
+
+Suite edits (`tests/robustness/**`):
+
+- `test_robustness_scenarios.py`: new cases BEH-10, BEH-12, BEH-25; INF-07 now asserts that only the
+  first call reaches the transport (a mutation that removed "disable every server after a confirmed
+  401" passed the old check); INF-24 asserts the stop reason.
+- `test_robustness_regressions.py`: tests for edits 7-9; the fix-5 test is parametrised over
+  `title` too (its old field, `recommendation.rationale = "TBD"`, was already dropped by the 15-character
+  minimum before fix 5, so it pinned only the message wording).
+- `robustness_coverage.py`, `README.md`: BEH-10, BEH-12, BEH-25 moved to the passing suite (needs
+  decision: 8 -> 5); INF-11 names `test_fault_injection.py::test_inf11_tool_error_not_retried_then_unusable`
+  (the end-to-end run never reaches the fault because the server is disabled by default); BEH-25 says
+  plainly that the "illegal transition raises" half has no `transition()` API to call and is asserted
+  structurally (TRANSITIONS and ON_CAP only move forward); fixed-defects table rows 7-10.
+- `robustness_repro.py`: BEH-25, BEH-10, BEH-12 reproductions removed (they pass now).
+- `faults/BEH-25.yaml`: header comment updated.
+- `results/robustness_results.csv` and `robustness_summary.txt` regenerated: 44 PASS, 5 FAIL (needs
+  decision), 32 BLOCKED.
+
+After: `tests/robustness` 108 passed, three consecutive runs, 15-16 s each.

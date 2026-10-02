@@ -9,7 +9,7 @@ One :class:`Coverage` per P0 ID. ``kind``:
 * ``not_schedule``: a static check, a procedure or an evaluation metric with no fault to inject;
   ``covered_by`` names the existing test or procedure.
 
-``decision`` is set for a scenario that fails because of an agent defect too large to fix here
+``decision`` is set for a scenario that fails because of an agent defect left for the owner to decide
 (left out of the passing suite, reported in the README under "Failing, needs decision").
 ``schedule`` is true when ``faults/<ID>.yaml`` exists. ``test_robustness_schedules.py`` checks
 that this table, the README table, the YAML files and scenarios.md agree.
@@ -82,7 +82,10 @@ COVERAGE: dict[str, Coverage] = {
     "INF-11": _o("document-intelligence rejects all inputs: 0 calls with the default config, canonical text and "
                  "sections identical to the fault-free run", schedule=True,
                  laptop="enable mcp-document-intelligence in config/tools.yaml, then "
-                        "`sit-review run <pdf> --faults INF-11` (called at most once)"),
+                        "`sit-review run <pdf> --faults INF-11` (called at most once)",
+                 covered_by="test_fault_injection.py::test_inf11_tool_error_not_retried_then_unusable (the "
+                            "not-retried, unusable-for-the-session half; the server is disabled by default, so "
+                            "the end-to-end run never reaches the fault)"),
     "INF-15": _l("needs the live model's relevance gate (k=3)", f"sit-review run {SAMPLE} --faults INF-15",
                  schedule=True),
     "INF-16": _o("2 MB fetched page: tool text shown to the model <= MAX_TOOL_TEXT_CHARS, full payload kept in "
@@ -195,12 +198,12 @@ COVERAGE: dict[str, Coverage] = {
     "BEH-07": _l("generic-recommendation rate (detector + judge)", "sit-review run <pdf>, scored by `sit-eval`"),
     "BEH-08": _l("padding on planted docs (P_adj); clean-doc half BLOCKED (C22)", "sit-review run <pdf>, `sit-eval`"),
     "BEH-09": _l("critical planted-flaw recall", "sit-review run eval/synthetic/<doc>/design_v1.pdf, `sit-eval`"),
-    "BEH-10": _o("refine flips a finding's severity with no revision note and no new evidence",
-                 decision="no 'no change without cause' rule: refine's unexplained flip is accepted and logged "
-                          "with an empty note"),
-    "BEH-12": _o("model recommends replacing an approved decision without labelling the conflict",
-                 decision="an unlabelled conflict with the registry is not caught at L0 (invariants.py: "
-                          "'Undeclared conflicts need the L1 judge')"),
+    "BEH-10": _o("L0: refine flips a finding's severity with no revision reason and no new evidence: the flip is "
+                 "rejected, the earlier draft kept, the rejection in the change log (fixed by the verifier)",
+                 laptop="pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1)"),
+    "BEH-12": _o("L0: model recommends replacing an approved decision without a 'challenges' label: verify "
+                 "discloses it (lexical check; fixed by the verifier)",
+                 laptop=f"sit-review run {SAMPLE}, zero unlabelled conflicts judged by `sit-eval` (L1)"),
     "BEH-13": _l("constraint violations (judge with the registry)", f"sit-review run {SAMPLE}, judged by `sit-eval`"),
     "BEH-14": _l("long run, context budget", f"sit-review run docs/long_150.pdf ({L1_DOC})"),
     "BEH-15": _l("stability over k=5 replayed runs", "sit-review run <pdf> --replay <cassettes> (k=5)"),

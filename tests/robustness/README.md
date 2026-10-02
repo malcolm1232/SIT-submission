@@ -12,7 +12,7 @@ orchestrator. Offline only: no key, no network, no `claude` CLI (ADR-008).
 pytest tests/robustness -q                              # the suite (about 15 s)
 ROBUSTNESS_RESULTS_CSV=tests/robustness/results/robustness_results.csv pytest tests/robustness -q
                                                         # the same, and writes the real results table
-python tests/robustness/robustness_repro.py [ID]        # the "needs decision" reproductions below
+python tests/robustness/robustness_repro.py [ID]        # the "needs decision" reproductions below (LLM-05, NET-02, INF-08)
 ```
 
 One scenario through the CLI, offline (the built-in scripted model; the cassettes cover both
@@ -38,9 +38,9 @@ verifier"). On the laptop the same `--faults <ID>` applies to a live run:
 | `fixtures/tools/*.json` | Hand-authored `replace_content` fixtures: an injected page (ADV-04/05), irrelevant results (INF-15, BEH-01), benchmark evidence (ADV-14), content-farm results (ADV-16). Invented; `.example` / `.invalid` domains, no key |
 | `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, the process-fault layer and an outbound log |
 | `oracles.py` | INV-01..INV-11 as post-run checks (INV-03..INV-10 call `sit_review_agent.invariants`), plus OPS-10, BEH-23, BEH-28 and DEMO-06 |
-| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 41 P0 scenarios, 56 runs plus 3 resumes and one shared fault-free control run |
+| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 44 P0 scenarios, 59 runs plus 4 resumes and one shared fault-free control run |
 | `test_robustness_schedules.py` | Every schedule loads and resolves; this table, the registry, the cases and scenarios.md agree; cassette keys; no secret in a fixture; the offline CLI drill above runs (INF-24, INF-03) |
-| `test_robustness_regressions.py` | Regression tests for the six agent defects fixed here |
+| `test_robustness_regressions.py` | Regression tests for the agent defects fixed here (six by the implementer, four by the verifier) |
 | `test_robustness_results_csv.py` | The results writer |
 | `robustness_coverage.py` | The coverage registry this README's table is checked against |
 | `robustness_results.py` | Writer for `results/robustness_results.csv` and `results/robustness_summary.txt` (research §8 columns) |
@@ -85,10 +85,10 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 
 | Coverage | Scenarios | Of which need a decision |
 |---|---|---|
-| offline | 46 | 5 (LLM-05, NET-02, BEH-10, BEH-12, BEH-25) |
+| offline | 46 | 2 (LLM-05, NET-02) |
 | laptop | 28 | 0 |
 | not a schedule | 7 | 3 (INF-08, LLM-10, OVF-07) |
-| **total** | **81** | **8** |
+| **total** | **81** | **5** |
 
 | ID | Sev | Lvl | Coverage | Schedule | What runs offline, or why not | Laptop (live model / MCP) | Covered by / needs decision |
 |---|---|---|---|---|---|---|---|
@@ -96,15 +96,15 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | INF-03 | S1 | L0 | offline | yes | mcp-research-information down all run: report within budget, server named in limitations, no ledger entry or citation from it | - | - |
 | INF-04 | S2 | L0 | offline | yes | HTTP 500 from mcp-research-information: <= 3 attempts per call, breaker open after 3 calls, the 4th refused, web search still serves, disclosed | - | - |
 | INF-05 | S2 | L0 | offline | yes | 429 Retry-After 20 on the first web call: retry >= 20 s later (virtual), cap lowered to 1 | - | - |
-| INF-07 | S1 | L0 | offline | yes | 401 on every MCP call: <= 1 confirmation retry, all servers disabled, SIT_MCP_API_KEY named, no key characters anywhere, 'No external research was possible' | - | - |
+| INF-07 | S1 | L0 | offline | yes | 401 on every MCP call: <= 1 confirmation retry, all servers disabled (only the first call reaches the transport), SIT_MCP_API_KEY named, no key characters anywhere, 'No external research was possible' | - | - |
 | INF-08 | S2 | L0 | not a schedule (needs decision) | - | environment condition (key unset), not a fault schedule; probed offline | `unset SIT_MCP_API_KEY; sit-review run <pdf>` (expected: exit within 5 s) | test_tool_gateways.py::test_preflight_missing_key_names_the_variable_and_fails, ::test_mcp_missing_key_and_disabled_server; test_selftest_cli.py::test_cli_plan_only_and_no_tools (--no-tools branch); **Needs decision:** `sit-review run` with servers enabled and the key unset does not exit within 5 s: it spends model calls and continues doc-only (preflight does flag it) |
 | INF-10 | S2 | L0 | offline | yes | malformed body on every web search, once per kind (html, non_json, truncated_json, wrong_id): retried once, classified, nothing stored | - | - |
-| INF-11 | S2 | L0 | offline | yes | document-intelligence rejects all inputs: 0 calls with the default config, canonical text and sections identical to the fault-free run | enable mcp-document-intelligence in config/tools.yaml, then `sit-review run <pdf> --faults INF-11` (called at most once) | - |
+| INF-11 | S2 | L0 | offline | yes | document-intelligence rejects all inputs: 0 calls with the default config, canonical text and sections identical to the fault-free run | enable mcp-document-intelligence in config/tools.yaml, then `sit-review run <pdf> --faults INF-11` (called at most once) | test_fault_injection.py::test_inf11_tool_error_not_retried_then_unusable (the not-retried, unusable-for-the-session half; the server is disabled by default, so the end-to-end run never reaches the fault) |
 | INF-15 | S2 | L1 | laptop | yes | needs the live model's relevance gate (k=3) | `sit-review run <sit_sample.pdf> --faults INF-15` | - |
 | INF-16 | S2 | L0 | offline | yes | 2 MB fetched page: tool text shown to the model <= MAX_TOOL_TEXT_CHARS, full payload kept in tools.jsonl, no context error | - | - |
 | INF-18 | S2 | L0 | offline | yes | p = 0.3 flaky calls, seeds 1..10: 10/10 complete, coverage >= 90 % of the fault-free run | - | - |
 | INF-19 | S1 | L0 | offline | yes | first web call hangs: times out within call_timeout_s + 1 s, retried, run completes | - | - |
-| INF-24 | S1 | L0, L2 | offline | yes | every server down: zero external evidence, 'No external research was possible' in the report, research ends in < 150 s virtual | `sit-review run <pdf> --faults INF-24` | - |
+| INF-24 | S1 | L0, L2 | offline | yes | every server down: zero external evidence, 'No external research was possible' in the report, stop reason tool_failure, research ends in < 150 s virtual | `sit-review run <pdf> --faults INF-24` | - |
 | LLM-01 | S1 | L0 | offline | yes | 429 retry-after 15 on assess attempt 0: retried >= 15 s later, attempts within the policy, assess completes | - | - |
 | LLM-02 | S1 | L0 | offline | yes | 429 without retry-after on every call: exit 3 after max_retries + 1 attempts, checkpoint, 'spend cap' message, resumable | - | - |
 | LLM-03 | S1 | L0 | offline | yes | 529 on four attempts then recovery (exit 0, no model switch, manifest accurate); persistent variant: exit 3, then resume completes | - | - |
@@ -148,8 +148,8 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | BEH-07 | S2 | L1 | laptop | - | generic-recommendation rate (detector + judge) | `sit-review run <pdf>`, scored by `sit-eval` | - |
 | BEH-08 | S2 | L1 | laptop | - | padding on planted docs (P_adj); clean-doc half BLOCKED (C22) | `sit-review run <pdf>`, `sit-eval` | - |
 | BEH-09 | S1 | L1 | laptop | - | critical planted-flaw recall | `sit-review run eval/synthetic/<doc>/design_v1.pdf`, `sit-eval` | - |
-| BEH-10 | S1 | L0, L1 | offline (needs decision) | - | refine flips a finding's severity with no revision note and no new evidence | - | **Needs decision:** no 'no change without cause' rule: refine's unexplained flip is accepted and logged with an empty note |
-| BEH-12 | S1 | L0, L1 | offline (needs decision) | - | model recommends replacing an approved decision without labelling the conflict | - | **Needs decision:** an unlabelled conflict with the registry is not caught at L0 (invariants.py: 'Undeclared conflicts need the L1 judge') |
+| BEH-10 | S1 | L0, L1 | offline | - | L0: refine flips a finding's severity with no revision reason and no new evidence: the flip is rejected, the earlier draft kept, the rejection in the change log (fixed by the verifier) | pushback runs: `sit-review run <pdf>` with a no-new-evidence pushback turn (k=5; L1) | - |
+| BEH-12 | S1 | L0, L1 | offline | - | L0: model recommends replacing an approved decision without a 'challenges' label: verify discloses it (lexical check; fixed by the verifier) | sit-review run <sit_sample.pdf>, zero unlabelled conflicts judged by `sit-eval` (L1) | - |
 | BEH-13 | S2 | L1 | laptop | - | constraint violations (judge with the registry) | `sit-review run <sit_sample.pdf>`, judged by `sit-eval` | - |
 | BEH-14 | S2 | L1 | laptop | - | long run, context budget | `sit-review run docs/long_150.pdf` (fixture not authored yet (research/robustness/README.md §6.3)) | - |
 | BEH-15 | S2 | L1 | laptop | - | stability over k=5 replayed runs | `sit-review run <pdf> --replay <cassettes>` (k=5) | - |
@@ -157,7 +157,7 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 | BEH-20 | S2 | L1 | offline | - | L0: verdict 'fit' with a critical finding: the inconsistency is disclosed | `sit-review run <sit_sample.pdf>` (k=3) | test_ingest_verify_report.py::test_verdict_inconsistent_with_severities_is_disclosed |
 | BEH-23 | S2 | L0 | offline | - | oracle on every run: a fault or evidence gap always shows in limitations and the rendered 'Unresolved issues' / 'Evidence limitations' sections | - | - |
 | BEH-24 | S1 | L0 | offline | - | max_tool_calls 3 with a third question never attempted: budget_tool_calls, caveat, not-attempted list non-empty, report produced | - | - |
-| BEH-25 | S1 | L0 | offline (needs decision) | yes | exception in assess (process fault applied by the harness) | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed; states.TRANSITIONS (illegal transitions); **Needs decision:** exit 4, state.json and failure.json are written, but no partial report (ADR-009 item 5 and the scenario require one) |
+| BEH-25 | S1 | L0 | offline | yes | exception in assess (process fault applied by the harness): exit 4, checkpoint, failure.json, report.partial.md listing the completed stages and no finding, no report.json; resume completes. Illegal transitions: there is no transition() call to make; the test asserts TRANSITIONS and ON_CAP only move forward (fixed by the verifier) | - | test_orchestrator.py::test_phase_crash_is_typed_and_state_flushed |
 | BEH-27 | S1 | L1 | laptop | - | claims about the doc vs gold facts (judge) | `sit-review run <pdf>`, judged by `sit-eval` | - |
 | BEH-28 | S2 | L0 | offline | - | oracle on every run: INV-03 schema plus every brief section rendered in report.md | - | - |
 | DEMO-01 | S1 | L0, L2 | offline | - | a criterion appended to a copied criteria.yaml (4-line form): in the manifest, the plan, the coverage map and report.md | stopwatch rehearsal (runbook §4.2 #1) | - |
@@ -178,15 +178,14 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 
 Agent defects a P0 scenario exposes that are too large, or too much a design choice, to fix in this
 workstream. Each is out of the passing suite (no test asserts the current behaviour); its schedule
-is kept. `python tests/robustness/robustness_repro.py <ID>` reproduces it offline.
+is kept. `python tests/robustness/robustness_repro.py <ID>` reproduces LLM-05, NET-02 and INF-08 offline.
+BEH-25, BEH-10 and BEH-12 were in this table; the verifier fixed them and they are now in the passing
+suite (see "Agent defects fixed here").
 
 | ID | Expected (scenarios.md) | What the agent does | Options |
 |---|---|---|---|
-| BEH-25 | Stage crash: checkpoint, a partial report listing the completed stages, exit 4 (also ADR-009 item 5) | Exit 4, `state.json`, checkpoints and `failure.json` (with `completed_phases`), but no partial report | Render a minimal `report.partial.md` from state on `StageCrash` (what it may contain without looking like a review is the decision), or amend BEH-25 / ADR-009 to accept `failure.json` (INV-02 allows a structured failure record) |
 | LLM-05 | A stalled call errors within the timeout + 1 s; INV-01: the run ends within the deadline + 30 s | With `llm.timeout_s: 1800` (raised after the first live run, HANDOVER §8) one hang costs 1800 s; the run ends at 1802 s virtual against a 540 s deadline. The deadline is checked only between phases | Bound each model attempt by the remaining budget (deadline propagation, research §1.1), or set the deadline and the timeout consistently (the live run used `--deadline 2400`) |
 | NET-02 | Fully offline at start: non-zero exit with an actionable message within 10 s | Exit 3 after the model retry budget, 19 s virtual (15-30 s jittered); the message is "network unreachable" | A connectivity probe before the first model call, or connection errors on the very first call not retried |
-| BEH-10 | A conclusion changes only with a new ledger ID or a named reasoning error; the flip is rejected | `refine` lowers FND-001 from high to low with no revision note and no new evidence; accepted, logged with the default note "revised" | A rule in refine/verify: a severity or disposition change needs a revision reason or a new evidence ID, else the draft is kept |
-| BEH-12 | L0: a recommendation that reverses an approved decision without the `challenges` label is caught in verify | Accepted (`invariants.py`: "Undeclared conflicts need the L1 judge") | A lexical or model check in verify, or amend BEH-12's L0 half to L1 only |
 | INF-08 | Missing MCP key: exit within 5 s with an actionable message before any model spend (or doc-only with `--no-tools`) | `sit-review run` warns "SIT_MCP_API_KEY is not set (use --no-tools ...)", then spends 6 model calls and finishes doc-only (exit 0). `sit-review preflight` does fail | Fail fast in `run_review` when servers are enabled and the key is unset, or accept the doc-only continuation (runbook §6 prefers continuing when the key is revoked) |
 | LLM-10 | Count tokens before sending; never send an over-limit request (150-page fixture) | No pre-send token count; only the `budget_tokens` stop rule and the backend's "prompt is too long" error | Needs the 150-page fixture and a token-count design |
 | OVF-07 | Zero sample-specific terms in `agent/`, `config/`, `prompts/` | `tools/sources.py` lists `github.com/pgvector`, `pgvector.dev`, `kafka.apache.org` as official vendor hosts (the sample's stack); `scripts/leakage_grep.py` does not exist | Drop or generalise those hosts, and build the TF-IDF grep against the sample on the laptop |
@@ -204,6 +203,10 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
 | 4 | INF-24 | "No external research was possible" appeared only once every breaker was open; a model that tried each server once and stopped got a report without it | `phases/research._finish`: also when every call that reached a server failed and none succeeded |
 | 5 | LLM-09 | Placeholder findings ("TBD" title, statement, rationale) were reported | `phases/verify`: `hollow_fields`; a hollow finding or sound area is dropped and disclosed |
 | 6 | BEH-17 | A `doc` citation whose quote is not in the document became a `doc` ledger entry holding that text (an external fact recorded as document text) | `_model_calls._EvidenceResolver.doc_entry`: the fallback uses the anchor's own quote |
+| 7 | BEH-25 (verifier) | A stage crash wrote `failure.json` and checkpoints but no partial report (ADR-009 item 5) | `orchestrator._run_fail` writes `report.partial.md` on exit 4: completed stages, crashed stage, counts, resume command; never a finding (none is verified); named in `failure.json` (`partial_report`) |
+| 8 | BEH-10 (verifier) | `refine` could change a finding's `severity`, `disposition` or `kind` with no reason and no new evidence | `phases/refine`: such a change is rejected, the earlier draft kept, and the rejection noted in the finding's history; a change with a revision reason or a new evidence ID is accepted as before |
+| 9 | BEH-12 (verifier) | A recommendation reversing an approved decision without a `challenges` label was not caught at L0 | `phases/verify.unlabelled_conflicts`: a reversal verb in the change summary plus >= 3 of the decision's content words; disclosed as a degradation (never drops the finding: the check is lexical) |
+| 10 | INF-24 (verifier) | A model stop vote with zero external evidence was reported as `sufficient_evidence (model_stop_vote)` | `phases/research`: reported as `tool_failure` (every call failed) or `no_marginal_gain` (calls answered, nothing found) |
 
 ## Design decisions and deviations from research/robustness
 
@@ -265,9 +268,8 @@ Each is small and local, has a regression test in `test_robustness_regressions.p
   query (`policy.MAX_ARG_CHARS`); the whole 657-character fixture document passes. ADV-05's pass
   criterion is the canary, so the suite sends bulk text over the limit; whether shorter verbatim
   passages may leave the machine is a policy decision.
-- When every tool call fails and the model votes to stop, research still reports
-  `stop_reason: sufficient_evidence (model_stop_vote)` with zero evidence (by the documented
-  stop-vote rule); fix 4 adds the doc-only disclosure but leaves the stop reason.
+- (Fixed by the verifier, fix 10.) When every tool call failed and the model voted to stop, research
+  reported `stop_reason: sufficient_evidence (model_stop_vote)` with zero evidence.
 - scenarios.md: BEH-02's "exactly 2 refine cycles" and BEH-17's "caught because the anchor does not
   resolve" assume a different architecture (deviations 6, 7); LLM-10 and OVF-07 name a fixture and a
   script that do not exist; DEMO-04 is tagged L0 but its simulation is L2 only; the 1800 s model
