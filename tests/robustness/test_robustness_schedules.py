@@ -10,7 +10,16 @@ import re
 from pathlib import Path
 
 import pytest
-from robustness_coverage import COVERAGE, p0_rows, schedule_files
+from robustness_coverage import (
+    AWAITING_INTEGRATION,
+    CONCURRENT,
+    CONCURRENT_META,
+    COVERAGE,
+    SCENARIOS_MD,
+    Coverage,
+    p0_rows,
+    schedule_files,
+)
 from robustness_harness import CASSETTES, FAULTS_DIR, HERE
 from test_robustness_scenarios import CASES
 
@@ -75,8 +84,30 @@ def test_readme_table_lists_every_p0_scenario_with_its_coverage() -> None:
     assert set(found) == set(COVERAGE)
     for sid, cells in found.items():
         c = COVERAGE[sid]
-        assert cells[3] == KIND_LABEL[c.kind] + (" (needs decision)" if c.decision else ""), (sid, cells[3])
+        assert cells[3] == _label(c), (sid, cells[3])
         assert cells[4] == ("yes" if c.schedule else "-"), sid
+        assert cells[5] == c.how or not c.awaiting, sid                  # a changed expectation is stated verbatim
+
+
+def _label(c: Coverage) -> str:
+    return (KIND_LABEL[c.kind] + (" (needs decision)" if c.decision else "")
+            + (" (awaiting integration)" if c.awaiting and AWAITING_INTEGRATION else ""))
+
+
+def test_readme_lists_the_concurrent_scenarios() -> None:
+    """The six concurrent-stage scenarios: in the README's own table, with new IDs (no clash with any
+    scenarios.md row, of any tier), awaiting integration until the concurrent orchestrator is in."""
+    readme = (HERE / "README.md").read_text(encoding="utf-8")
+    section = readme.split("### The six scenarios", 1)[1].split("\n### ", 1)[0]
+    found = {m.group(1): [c.strip() for c in line.strip("|").split("|")]
+             for line in section.splitlines() if (m := re.match(r"^\| ([A-Z]+-\d\d) \|", line))}
+    assert set(found) == set(CONCURRENT) == set(CONCURRENT_META)
+    every_id = set(re.findall(r"^\| ([A-Z]+-\d\d) \|", SCENARIOS_MD.read_text(encoding="utf-8"), re.M))
+    assert every_id and not every_id & set(CONCURRENT)
+    for sid, cells in found.items():
+        meta, c = CONCURRENT_META[sid], CONCURRENT[sid]
+        assert cells[1:3] == [meta["sev"], meta["level"]] and cells[3] == _label(c) and cells[4] == "yes", sid
+        assert c.kind == "offline" and c.schedule and c.awaiting, sid
 
 
 def test_cassettes_are_keyed_by_their_arguments() -> None:

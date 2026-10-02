@@ -1,11 +1,17 @@
 # LLM-05 (S1, P0, L0): stalled model call. The per-attempt timeout is config/agent.yaml
 # llm.timeout_s = 1800 s, bounded by the run deadline minus the verify + report reserve (runtime
-# policy 2026-10-02, agent/sit_review_agent/llm/runtime.py). With --profile demo (540 s) the hang is
-# cut at 420 s and not retried: "out of time before assessment", run within the deadline. With the
-# default deadline (3600 s) the hang costs 1800 s and the retry succeeds.
+# policy 2026-10-02, agent/sit_review_agent/llm/runtime.py). `nth: [0]` = the first assess call: the
+# only one in the sequential design, shard 0 (launched first) in the concurrent stage 1 of the latency
+# redesign (2026-10-03), so the other shards are not hung.
+# Concurrent design (expected, awaiting integration): with --profile demo (540 s) the hang is cut at
+# stage_limits_s.stage_1_end (265 s), not retried, disclosed naming the shard; its criteria are not
+# assessed; the other shards' findings survive; a salvaged, disclosed report with exit 0.
+# Sequential design (what the offline case asserts until integration): cut at 420 s, "out of time
+# before assessment", no finding. With the default deadline (3600 s) the hang costs 1800 s and the
+# retry succeeds in both designs.
 id: LLM-05
-description: The first attempt of the assess call hangs (no tokens until the client timeout).
+description: The first attempt of the first assess call hangs (no tokens until the client timeout).
 seed: 42
 llm:
-  - match: {stage: assess, attempt: 0}
+  - match: {stage: assess, nth: [0], attempt: 0}
     fault: {type: hang}
