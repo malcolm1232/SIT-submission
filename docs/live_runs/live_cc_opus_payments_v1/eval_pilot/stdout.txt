@@ -1,0 +1,20 @@
+WARNING: eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim
+{
+ "status": "pilot_unfrozen",
+ "scores_json": "runs/eval/pilot_payments_v1/scores.json",
+ "scores_md": "runs/eval/pilot_payments_v1/scores.md",
+ "headline": {
+  "recall": 0.7142857142857143,
+  "lenient_recall": 1.0,
+  "precision_adjudicated": 0.95,
+  "severity_weighted_recall": 0.7166666666666667,
+  "hallucinated_finding_rate": null
+ },
+ "calls": {
+  "calls_total": 57,
+  "calls_live": 57,
+  "calls_failed": 0,
+  "cost_usd_reported": 6.891791
+ }
+}
+exit 0

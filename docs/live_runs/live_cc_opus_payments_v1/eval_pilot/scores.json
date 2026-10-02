@@ -1,0 +1,5366 @@
+{
+ "schema_version": "1.0",
+ "kind": "sit_eval.scores",
+ "generated_at": "2026-10-02T14:11:40Z",
+ "inputs": {
+  "report_path": "docs/live_runs/live_cc_opus_payments_v1/report.json",
+  "report_sha256": "d1637d57e45a50c49c5832b5d5e444a49c7226edae90eea5df20fb186d4de569",
+  "review_id": "REV-live_cc_opus_payments_v1",
+  "run_id": "live_cc_opus_payments_v1",
+  "review_mode": "full",
+  "condition": null,
+  "split": null,
+  "key_path": "eval/synthetic/payments_orchestration/answer_key.canonical.json",
+  "key_sha256": "e9169d9b99532dace9123bc3520d2243cb1c932e7b73038434ab2c70fc2b3466",
+  "item_id": "synthetic-payments-orchestration-001",
+  "key_split": "S-dev",
+  "scored_run_ready": false,
+  "doc_version": "v1",
+  "doc_source": "pdf:eval/synthetic/payments_orchestration/design_v1.pdf (sit_review_agent.ingest.ingest, pdfplumber)",
+  "doc_sha256_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+  "doc_sha256_text_matches_review": true
+ },
+ "prereg": {
+  "path": "/home/user/SIT/eval/prereg.yaml",
+  "exists": true,
+  "frozen": false,
+  "sha256": "63cd8a6fcb52dfea54874defffb06a7cff00405007272493af0631c11b464c40",
+  "lock_sha256": null,
+  "matcher_prompt_sha256": null,
+  "ok_to_score": true,
+  "label": "pilot_unfrozen",
+  "message": "eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim"
+ },
+ "prompts": {
+  "bundle_sha256": "d9e14df564478b453b54e47560ef72a5d98a457a262f7bc31dd7809905a996dd",
+  "lock_ok": true,
+  "problems": []
+ },
+ "judge": {
+  "judge_kind": "claude_code",
+  "model": "claude-opus-5-5",
+  "effort": "high",
+  "max_tokens": 16000,
+  "samples": 3,
+  "seed": 20261002,
+  "granularity": "per_flaw_batch",
+  "shortlist_k": 3,
+  "severity_epsilon": 0.01,
+  "concurrency": 4,
+  "max_cost_usd": 12.0,
+  "grounding_judges": false,
+  "recommendation_judge": false,
+  "theta_q": 0.9,
+  "condition": null,
+  "embedding_prefilter": false,
+  "adaptive_samples": true,
+  "blinding": "prompts carry no run id, model, condition, provenance or confidence; findings shuffled per listwise call with the recorded seed"
+ },
+ "status": "pilot_unfrozen",
+ "warnings": [
+  "eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim",
+  "answer key has scored_run_ready = false (pending: author_model, generation_date, canary_guid, core_insight, anchor_quote, expected_disposition, approved_decisions, key_second_review, external_fact_verification, sound_overlap_annotations, v2_changed_sections, author_type); core_insight is filled from the description and credit items, so matcher scores are provisional",
+  "call granularity per_flaw_batch is a DEVIATION from prereg matcher.pairwise_scoring (one call per pair); it needs the owner's approval before any scored run",
+  "adaptive third sample: the third pairwise sample is asked only when the first two disagree or one failed (the median of 3 is then unchanged); this reading of prereg '3 samples, median' needs the owner's approval before any scored run",
+  "grounding judges switched off: G3 and citation support metrics are null"
+ ],
+ "metrics": {
+  "recall": {
+   "value": 0.7142857142857143,
+   "reason": null,
+   "status": "primary",
+   "tp": 10,
+   "g": 14
+  },
+  "precision_strict": {
+   "value": 0.5,
+   "reason": null,
+   "status": "secondary",
+   "tp": 10,
+   "n": 20
+  },
+  "precision_adjudicated": {
+   "value": 0.95,
+   "reason": null,
+   "status": "key_secondary",
+   "tp": 10,
+   "v": 9,
+   "n": 20
+  },
+  "precision_adjudicated_partial_credit": {
+   "value": 0.95,
+   "reason": null,
+   "status": "exploratory",
+   "tp": 10,
+   "v_or_partial": 9,
+   "n": 20,
+   "partial_key_findings": [
+    "FND-004",
+    "FND-012",
+    "FND-016",
+    "FND-017"
+   ]
+  },
+  "f1_strict": {
+   "value": 0.588235294117647,
+   "reason": null,
+   "status": "secondary"
+  },
+  "f1_adjudicated": {
+   "value": 0.8154506437768242,
+   "reason": null,
+   "status": "secondary"
+  },
+  "duplication_rate": {
+   "value": 0.0,
+   "reason": null,
+   "status": "secondary"
+  },
+  "non_specific_rate": {
+   "value": 0.05,
+   "reason": null,
+   "status": "secondary"
+  },
+  "adjudication_counts": {
+   "value": {
+    "NON_SPECIFIC": 1,
+    "VALID_UNPLANTED": 9
+   },
+   "reason": null,
+   "status": "secondary",
+   "bases": {
+    "llm": 10
+   }
+  },
+  "lenient_recall": {
+   "value": 1.0,
+   "reason": null,
+   "status": "secondary",
+   "tp": 14,
+   "g": 14
+  },
+  "lenient_precision_strict": {
+   "value": 0.7,
+   "reason": null,
+   "status": "secondary",
+   "tp": 14,
+   "n": 20
+  },
+  "lenient_precision_adjudicated": {
+   "value": 0.95,
+   "reason": null,
+   "status": "secondary",
+   "tp": 14,
+   "v": 5,
+   "n": 20
+  },
+  "lenient_f1_strict": {
+   "value": 0.8235294117647058,
+   "reason": null,
+   "status": "secondary"
+  },
+  "lenient_f1_adjudicated": {
+   "value": 0.9743589743589743,
+   "reason": null,
+   "status": "secondary"
+  },
+  "lenient_duplication_rate": {
+   "value": 0.0,
+   "reason": null,
+   "status": "secondary"
+  },
+  "lenient_non_specific_rate": {
+   "value": 0.05,
+   "reason": null,
+   "status": "secondary"
+  },
+  "lenient_adjudication_counts": {
+   "value": {
+    "NON_SPECIFIC": 1,
+    "VALID_UNPLANTED": 5
+   },
+   "reason": null,
+   "status": "secondary",
+   "bases": {
+    "llm": 6
+   }
+  },
+  "pooled_recall": {
+   "value": null,
+   "reason": "no pooled supplementary key G+ exists yet (built from human-confirmed VALID_UNPLANTED after an evaluation round, metrics.md §2.3 step 5)",
+   "status": "secondary"
+  },
+  "per_category": {
+   "value": {
+    "acceptance_criterion_cannot_validate": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "typed_recall": 1.0,
+     "gold": 1,
+     "matched": 1,
+     "agent_findings": 1
+    },
+    "ambiguous_requirement": {
+     "recall": 0.0,
+     "precision": 1.0,
+     "f1": 0.0,
+     "typed_recall": 0.0,
+     "gold": 1,
+     "matched": 0,
+     "agent_findings": 1
+    },
+    "decision_depends_on_pending_item": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "typed_recall": 1.0,
+     "gold": 1,
+     "matched": 1,
+     "agent_findings": 1
+    },
+    "internal_contradiction": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "typed_recall": 1.0,
+     "gold": 3,
+     "matched": 3,
+     "agent_findings": 5
+    },
+    "missing_or_unverifiable_requirement": {
+     "recall": 0.0,
+     "precision": 0.75,
+     "f1": 0.0,
+     "typed_recall": 0.0,
+     "gold": 2,
+     "matched": 0,
+     "agent_findings": 4
+    },
+    "scalability_or_failure_mode": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "typed_recall": 1.0,
+     "gold": 2,
+     "matched": 2,
+     "agent_findings": 3
+    },
+    "security_privacy_gap": {
+     "recall": 1.0,
+     "precision": 1.0,
+     "f1": 1.0,
+     "typed_recall": 1.0,
+     "gold": 2,
+     "matched": 2,
+     "agent_findings": 3
+    },
+    "unsupported_or_incorrect_claim": {
+     "recall": 0.5,
+     "precision": 1.0,
+     "f1": 0.6666666666666666,
+     "typed_recall": 0.0,
+     "gold": 2,
+     "matched": 1,
+     "agent_findings": 2
+    }
+   },
+   "reason": null,
+   "status": "exploratory",
+   "note": "recall by gold category, precision by the agent's category; macro-over-docs is computed by `sit-eval aggregate`"
+  },
+  "category_label_accuracy": {
+   "value": 0.9,
+   "reason": null,
+   "status": "exploratory",
+   "confusion": [
+    {
+     "gold": "acceptance_criterion_cannot_validate",
+     "agent": "acceptance_criterion_cannot_validate",
+     "n": 1
+    },
+    {
+     "gold": "decision_depends_on_pending_item",
+     "agent": "decision_depends_on_pending_item",
+     "n": 1
+    },
+    {
+     "gold": "internal_contradiction",
+     "agent": "internal_contradiction",
+     "n": 3
+    },
+    {
+     "gold": "scalability_or_failure_mode",
+     "agent": "scalability_or_failure_mode",
+     "n": 2
+    },
+    {
+     "gold": "security_privacy_gap",
+     "agent": "security_privacy_gap",
+     "n": 2
+    },
+    {
+     "gold": "unsupported_or_incorrect_claim",
+     "agent": "internal_contradiction",
+     "n": 1
+    }
+   ]
+  },
+  "severity_weighted_recall": {
+   "value": 0.7166666666666667,
+   "reason": null,
+   "status": "key_secondary",
+   "variants": {
+    "weights_primary__mapping_primary": 0.7166666666666667,
+    "weights_primary__mapping_sensitivity": 0.71875,
+    "weights_sensitivity__mapping_primary": 0.7105263157894737,
+    "weights_sensitivity__mapping_sensitivity": 0.7142857142857143
+   }
+  },
+  "critical_recall": {
+   "value": 0.75,
+   "reason": null,
+   "status": "secondary"
+  },
+  "severity_agreement_qwk": {
+   "value": 0.3820224719101125,
+   "reason": null,
+   "status": "secondary",
+   "n_pairs": 10,
+   "exact_agreement": 0.2,
+   "under_rated": 4,
+   "over_rated": 4,
+   "confusion": [
+    {
+     "gold": "critical",
+     "agent": "high",
+     "n": 3
+    },
+    {
+     "gold": "high",
+     "agent": "critical",
+     "n": 1
+    },
+    {
+     "gold": "high",
+     "agent": "high",
+     "n": 2
+    },
+    {
+     "gold": "high",
+     "agent": "medium",
+     "n": 1
+    },
+    {
+     "gold": "low",
+     "agent": "high",
+     "n": 1
+    },
+    {
+     "gold": "low",
+     "agent": "medium",
+     "n": 2
+    }
+   ]
+  },
+  "ndcg_at_G": {
+   "value": 0.6496121725544721,
+   "reason": null,
+   "status": "deferred",
+   "k": 14
+  },
+  "ndcg_at_5": {
+   "value": 0.6621903787502408,
+   "reason": null,
+   "status": "deferred"
+  },
+  "mrr_critical": {
+   "value": 0.5,
+   "reason": null,
+   "status": "deferred"
+  },
+  "critical_in_top3": {
+   "value": 0,
+   "reason": null,
+   "status": "deferred",
+   "note": "all critical flaws (first 3 by key order when more than 3) matched within ranks 1-3"
+  },
+  "quote_fabrication_rate": {
+   "value": 0.0,
+   "reason": null,
+   "status": "secondary",
+   "n_quotes": 82,
+   "failing": []
+  },
+  "location_validity_rate": {
+   "value": 0.926829268292683,
+   "reason": null,
+   "status": "exploratory",
+   "note": "G2 (agent verify_anchor) pass rate"
+  },
+  "hallucinated_finding_rate": {
+   "value": null,
+   "reason": "G3 premise judge switched off (--no-grounding-judges)",
+   "status": "key_secondary"
+  },
+  "hallucinated_finding_rate_without_g3": {
+   "value": 0.0,
+   "reason": null,
+   "status": "exploratory",
+   "note": "G1 failures plus adjudicated HALLUCINATED only"
+  },
+  "false_absence_rate": {
+   "value": null,
+   "reason": "G3 judge switched off",
+   "status": "deferred",
+   "absence_claims": 0
+  },
+  "fabricated_citation_rate": {
+   "value": null,
+   "reason": "no external citations in this review",
+   "status": "key_secondary",
+   "labels": {}
+  },
+  "read_before_cite_rate": {
+   "value": null,
+   "reason": "no external citations",
+   "status": "secondary"
+  },
+  "source_type_accuracy": {
+   "value": 1.0,
+   "reason": null,
+   "status": "secondary"
+  },
+  "citation_precision": {
+   "value": null,
+   "reason": "citation support judge switched off (--no-grounding-judges)",
+   "status": "secondary"
+  },
+  "citation_precision_lenient": {
+   "value": null,
+   "reason": "citation support judge switched off (--no-grounding-judges)",
+   "status": "secondary"
+  },
+  "citation_recall": {
+   "value": null,
+   "reason": "citation support judge switched off (--no-grounding-judges)",
+   "status": "deferred"
+  },
+  "rjr_struct": {
+   "value": 1.0,
+   "reason": null,
+   "status": "secondary"
+  },
+  "unjustified_recommendation_rate": {
+   "value": 0.05,
+   "reason": null,
+   "status": "secondary",
+   "finding_ids": [
+    "FND-020"
+   ]
+  },
+  "rjr_subst": {
+   "value": null,
+   "reason": "needs the citation judge (Q_evid) and the recommendation judge (Q_benefit, Q_rat); recommendation_judge is off (prereg deferred metric)",
+   "status": "deferred"
+  },
+  "action_type_accuracy": {
+   "value": null,
+   "reason": "BLOCKED: expected_disposition is not authored in this key (spec C8)",
+   "status": "blocked"
+  },
+  "cdr": {
+   "value": 1.0,
+   "reason": null,
+   "status": "key_secondary",
+   "declined": {
+    "S01": true,
+    "S02": true,
+    "S03": true,
+    "S04": true,
+    "S05": true
+   },
+   "false_positive_findings": {
+    "S01": [],
+    "S02": [],
+    "S03": [],
+    "S04": [],
+    "S05": []
+   },
+   "units_removed": []
+  },
+  "bait_resistance": {
+   "value": null,
+   "reason": "BLOCKED: no sound section has bait = true",
+   "status": "blocked"
+  },
+  "justified_decline_rate": {
+   "value": 0.8,
+   "reason": null,
+   "status": "exploratory",
+   "note": "G1 on the sound area's anchors only; G3 is not run on sound-area justifications"
+  },
+  "fully_sound_doc_accuracy": {
+   "value": null,
+   "reason": "BLOCKED: this key has flaws (no fully sound control document exists)",
+   "status": "blocked"
+  },
+  "balanced_unit_accuracy": {
+   "value": 0.9166666666666667,
+   "reason": null,
+   "status": "secondary",
+   "unit_detection_rate": 0.8333333333333334,
+   "flawed_units": 36,
+   "note": "flawed unit = a section id named in a gold flaw location"
+  },
+  "approved_decision_violation_rate": {
+   "value": null,
+   "reason": "BLOCKED: approved_decisions[] is empty in this key",
+   "status": "blocked"
+  },
+  "calibration_inputs": {
+   "value": [
+    {
+     "finding_id": "FND-001",
+     "confidence": 0.9,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-002",
+     "confidence": 0.9,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-003",
+     "confidence": 0.85,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-004",
+     "confidence": 0.6,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-005",
+     "confidence": 0.85,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-006",
+     "confidence": 0.85,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-007",
+     "confidence": 0.8,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-008",
+     "confidence": 0.7,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-009",
+     "confidence": 0.8,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-010",
+     "confidence": 0.8,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-011",
+     "confidence": 0.8,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-012",
+     "confidence": 0.5,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-013",
+     "confidence": 0.75,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-014",
+     "confidence": 0.75,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-015",
+     "confidence": 0.55,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-016",
+     "confidence": 0.6,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-017",
+     "confidence": 0.7,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-018",
+     "confidence": 0.8,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-019",
+     "confidence": 0.65,
+     "label": 1
+    },
+    {
+     "finding_id": "FND-020",
+     "confidence": 0.6,
+     "label": 0
+    }
+   ],
+   "reason": null,
+   "status": "deferred",
+   "n": 20,
+   "note": "duplicates excluded (metrics.md §7.1); label = TP (strict) or VALID_UNPLANTED"
+  },
+  "ece": {
+   "value": 0.2125,
+   "reason": null,
+   "status": "deferred",
+   "bins": 5
+  },
+  "brier": {
+   "value": 0.09237500000000001,
+   "reason": null,
+   "status": "deferred"
+  },
+  "brier_skill": {
+   "value": -0.9447368421052618,
+   "reason": null,
+   "status": "deferred"
+  },
+  "auroc": {
+   "value": 0.8421052631578947,
+   "reason": null,
+   "status": "deferred"
+  },
+  "selective_precision": {
+   "value": {
+    "0.5": 0.95,
+    "0.7": 1.0,
+    "0.9": 1.0
+   },
+   "reason": null,
+   "status": "deferred",
+   "note": "adjudicated precision among findings with confidence >= t (duplicates excluded)"
+  },
+  "doc_verdict_calibration": {
+   "value": null,
+   "reason": "the key has no document-level fitness label",
+   "status": "deferred"
+  },
+  "stale_finding_rate": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "resolved_acknowledgement": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "persisted_recall": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "new_flaw_recall": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "changed_section_coverage": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "adv_v2": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "copy_through_rate": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "false_resolution_rate": {
+   "value": null,
+   "reason": "v1 review: re-review metrics apply only to a v2 document",
+   "status": "exploratory"
+  },
+  "efficiency": {
+   "value": {
+    "cost_usd": 3.678512,
+    "input_tokens": 169004,
+    "output_tokens": 116264,
+    "cached_tokens": 6198,
+    "price_table_date": "2026-09-25",
+    "tool_calls": 0,
+    "tool_calls_by_tool": {},
+    "wall_time_s": 3372.195,
+    "per_stage_s": {
+     "assess": 2933.181,
+     "ingest": 2.064,
+     "plan": 157.991,
+     "research": 0.0,
+     "understand": 158.276,
+     "verify": 32.697
+    },
+    "stop_reason": {
+     "code": "tool_failure",
+     "group": "error"
+    }
+   },
+   "reason": null,
+   "status": "secondary",
+   "source": "manifest.json",
+   "note": "cost is the backend's own estimate; median and IQR across runs come from aggregate"
+  },
+  "research_yield": {
+   "value": null,
+   "reason": "no external sources retrieved",
+   "status": "deferred"
+  },
+  "overrun": {
+   "value": null,
+   "reason": "needs per-step working state (not in report.json or manifest.json)",
+   "status": "deferred"
+  }
+ },
+ "findings": [
+  {
+   "finding_id": "FND-001",
+   "rank": 1,
+   "kind": "risk",
+   "category": "security_privacy_gap",
+   "severity": "critical",
+   "confidence": 0.9,
+   "statement": "Section 9.2 keys the Redis fast path as idem:resp:{idempotency_key}, with no merchant_id, and returns the stored response on a hit before DynamoDB or any request-hash comparison runs. Section 9.1 accepts order and invoice numbers as keys. Two merchants that reuse the same order number within 24 hours will collide on one Redis key, so the second merchant receives the first merchant's payment object (card BIN and last 4, amounts, references) and its own payment is never created. A reused key with a different body also gets the cached response instead of HTTP 422. This breaks P3 and FR-5 and leaks cross-merchant data.",
+   "matched_flaw_strict": "F09",
+   "matched_flaw_lenient": "F09",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-002",
+   "rank": 2,
+   "kind": "risk",
+   "category": "internal_contradiction",
+   "severity": "high",
+   "confidence": 0.9,
+   "statement": "Section 13.1 has the Fraud Hook detokenise the full card number using the Card Adapter's client library and service role, and send it to the third-party vendor FRV-1. This contradicts P2 (PAN leaves the Vault only over the Card Adapter's connection to an acquirer), Section 12.1 (only the Card Adapter's identity may detokenise) and Section 12.2, which scopes the Fraud Hook out of the CDE with 'Token, BIN, last 4 only'. Sharing the service role also breaks P9. The NFR-5 assessment against the Section 12.2 CDE boundary would not hold as written, and FRV-1 would receive cardholder data while its contract and DPA are still pending.",
+   "matched_flaw_strict": "F01",
+   "matched_flaw_lenient": "F01",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-003",
+   "rank": 3,
+   "kind": "risk",
+   "category": "scalability_or_failure_mode",
+   "severity": "high",
+   "confidence": 0.85,
+   "statement": "Section 11.1 treats 'no response within 2,500 ms' as retryable, and Section 11.2 discards responses that arrive after the timeout and then submits to the next acquirer. A late approval leaves a live authorization hold on the customer's card at the first acquirer while the second acquirer also approves. The design specifies no reversal message, no record of the orphaned authorization and no reconciliation of it. The claim that 'cascading cannot create a duplicate charge' therefore does not hold for timeouts, and discarding a provider response conflicts with P1 and P10.",
+   "matched_flaw_strict": "F10",
+   "matched_flaw_lenient": "F10",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-004",
+   "rank": 4,
+   "kind": "unresolved_assumption",
+   "category": "unsupported_or_incorrect_claim",
+   "severity": "high",
+   "confidence": 0.6,
+   "statement": "Sections 12.4 and NFR-6 keep the encrypted CVC until settlement or for up to 72 hours. The stated uses include incremental authorizations (tips, hotel extensions), which happen after the initial authorization has completed, and the design asserts that Requirements 3.2.1 and 3.3.2 allow retention 'until the transaction is settled'. The evidence register contains no source confirming that reading, and the companion PCI DSS Scoping Memo is still a draft. If a QSA reads the standard as prohibiting retention of sensitive authentication data after authorization, NFR-5 fails and AD-009 would have to change. This review cannot confirm or refute the clause and treats it as unverified.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": "F06",
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-005",
+   "rank": 5,
+   "kind": "risk",
+   "category": "internal_contradiction",
+   "severity": "high",
+   "confidence": 0.85,
+   "statement": "NFR-4 requires zero RPO for authorized payments and ledger postings on loss of an AWS region. Section 20.2 states that the only cross-region copy is asynchronous with 'typical lag under one second', so commits inside the lag window are lost on unplanned failover. Section 20.2 also says idempotency state is reconstructed from the payment table, but the Section 19 payment table has no idempotency_key, request hash or merchant_id column. Merchant retries after failover would therefore create new payments, which breaks FR-5. The design challenges AD-004 against NFR-4, and the NFR-4 game day cannot demonstrate zero loss for postings that had not yet replicated.",
+   "matched_flaw_strict": "F03",
+   "matched_flaw_lenient": "F03",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-006",
+   "rank": 6,
+   "kind": "risk",
+   "category": "internal_contradiction",
+   "severity": "high",
+   "confidence": 0.85,
+   "statement": "Section 16.2 starts the matcher only after every file for day T has arrived. ACQ-TH1's file lands at 06:30 ICT, which is 07:30 SGT, and the matcher plus report generation take 60 minutes at 2025 volume, so the earliest publication is 08:30 SGT even at today's volume. 2027 daily attempts are about twice the 2025 level. No cut-off or partial-run path exists for a late or missing file, so one provider can block every merchant's report and the downstream payouts (FR-17). NFR-8 cannot be met under AD-016 as written.",
+   "matched_flaw_strict": "F02",
+   "matched_flaw_lenient": "F02",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-007",
+   "rank": 7,
+   "kind": "gap",
+   "category": "missing_or_unverifiable_requirement",
+   "severity": "high",
+   "confidence": 0.8,
+   "statement": "Section 7.2 allows no transition from PARTIALLY_REFUNDED or REFUNDED to SETTLED, yet Section 16.2 moves every matched payment to SETTLED. A payment refunded before its settlement line arrives therefore cannot be settled without breaching FR-2 and will fall into exceptions, which counts against the NFR-8 99.9% auto-match target. There is no CAPTURED to CAPTURED transition, so FR-1's partial capture supports only one capture, and release of the uncaptured remainder is unspecified. Section 8 records the authorization as a 'ledger journal', while Section 14.3 puts holds in a separate memo ledger, and no refund or FX journal examples are given for FR-10.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": "VALID_UNPLANTED"
+  },
+  {
+   "finding_id": "FND-008",
+   "rank": 8,
+   "kind": "risk",
+   "category": "scalability_or_failure_mode",
+   "severity": "high",
+   "confidence": 0.7,
+   "statement": "Section 12.3 puts every KEK in one HSM in ap-southeast-1a. DEKs are not cached, so every tokenise and detokenise call needs the HSM, while Section 20.1 says every service runs across three AZs. The trigger for a second HSM (sustained card volume above 1,500 TPS) is never reached under the design target, because 55% card share of 2,000 TPS is 1,100 TPS. Mapping a Vault 503 to a retryable outcome makes every cascade candidate fail the same way while still consuming per-card reattempt counters. Losing the HSM or its AZ stops card acceptance until an HSM is restored from backup, which threatens NFR-3. AWS availability guidance and restore times are unverified in the register.",
+   "matched_flaw_strict": "F11",
+   "matched_flaw_lenient": "F11",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-009",
+   "rank": 9,
+   "kind": "risk",
+   "category": "security_privacy_gap",
+   "severity": "high",
+   "confidence": 0.8,
+   "statement": "Section 18.4 lets a Finance or Owner user change the payout account in the portal, with a confirmation email sent only to the person who made the change. MFA is optional for Finance (Section 18.3), and Finance also holds refund rights (Section 18.2). A phished Finance password alone can redirect all of a merchant's payouts, and the only alert goes to the attacker. This conflicts with P9's separation of money-moving and configuration permissions, and exposes Serindit Pay and its merchants to direct financial loss.",
+   "matched_flaw_strict": "F08",
+   "matched_flaw_lenient": "F08",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-010",
+   "rank": 10,
+   "kind": "risk",
+   "category": "internal_contradiction",
+   "severity": "high",
+   "confidence": 0.8,
+   "statement": "Section 28 launches Singapore cards after Phase 7. The Fraud Hook is Phase 8, still blocked on the FRV-1 contract, and the PCI DSS assessment, load test and DR game days are Phase 9. Live card traffic would therefore run without the fraud scoring FR-9 requires for every card payment, before NFR-5 is assessed and before NFR-1, NFR-2 and NFR-4 are demonstrated. Section 27 also says neither open gap blocks the first cohort, but it does not consider these. The document names no owner for accepting that risk.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": "VALID_UNPLANTED"
+  },
+  {
+   "finding_id": "FND-011",
+   "rank": 11,
+   "kind": "risk",
+   "category": "internal_contradiction",
+   "severity": "medium",
+   "confidence": 0.8,
+   "statement": "Section 21.1 leaves cascades out of the p99 budget because 'fewer than 1% of card payments cascade', yet Section 10.5 gives 3.8% retryable outcomes and the NFR-2 test injects 3.8%. Any attempt that hits the 2,500 ms timeout already exceeds NFR-2's 1,500 ms on its own, and NFR-2 explicitly includes any cascade. The 3DS step is absent from the budget and from NFR-2's wording. As written, NFR-2 is likely to fail its own acceptance test, or it is ambiguous about what it measures.",
+   "matched_flaw_strict": "F05",
+   "matched_flaw_lenient": "F05",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-012",
+   "rank": 12,
+   "kind": "validation_need",
+   "category": "unsupported_or_incorrect_claim",
+   "severity": "high",
+   "confidence": 0.5,
+   "statement": "Section 9.3 rests the merchant_id partition key on a single partition sustaining 10,000 WCU per second, and counts two writes per request, about 1,800 WCU for the largest merchant. The register cannot confirm that per-partition limit. The count also ignores item size, even though response_body is up to 4 KB, and ignores any item-collection size constraint from the LSI for a merchant with 45% of peak traffic. If the real limits are lower, the largest merchant's idempotency writes will throttle on campaign days, causing failed payments for 45% of peak traffic and threatening NFR-1 and NFR-3.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": "F04",
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-013",
+   "rank": 13,
+   "kind": "gap",
+   "category": "scalability_or_failure_mode",
+   "severity": "medium",
+   "confidence": 0.75,
+   "statement": "Section 9.2 relies on the stuck-payment sweeper to clear IN_PROGRESS locks, but Section 20.3 scans only payments in AUTHORISING. A pod that crashes after the conditional put but before the payment exists, or while the payment is in CREATED (fraud or 3DS stage), leaves a key that returns 409 for up to 24 hours. Section 20.4 covers a Redis outage but not DynamoDB unavailability or throttling, so it is undefined whether the API fails open (risking duplicates) or fails closed. Because order IDs are accepted as keys, a merchant retry after the 24-hour expiry creates a second charge, a residual FR-5 risk the document does not discuss.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": "VALID_UNPLANTED"
+  },
+  {
+   "finding_id": "FND-014",
+   "rank": 14,
+   "kind": "unresolved_assumption",
+   "category": "decision_depends_on_pending_item",
+   "severity": "medium",
+   "confidence": 0.75,
+   "statement": "AD-010 makes VTS and MDES network tokens the primary card-on-file credential from launch, and Phase 3 is marked 'No - ready'. Backlog item 2 shows the Token Requestor registration, the commercial agreement and certification are not yet started. The backlog acknowledges the item, but nothing links it to the decision or the phase gate, and it has no owner, date or fallback. Without a TRID, all card-on-file traffic falls back to PAN, so the confirmed decision and the readiness rating are not true at launch.",
+   "matched_flaw_strict": "F14",
+   "matched_flaw_lenient": "F14",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-015",
+   "rank": 15,
+   "kind": "validation_need",
+   "category": "missing_or_unverifiable_requirement",
+   "severity": "medium",
+   "confidence": 0.55,
+   "statement": "Section 11.3 stops reattempting 'at the scheme limits applicable to the card', and the FR-7 test checks those limits, but the document never states the limits, the source rule set, or whether a cascade of codes 05, 91 or 96 to a different acquirer counts as a reattempt. Section 27 still rates the Retry Engine 'Ready'. The register holds no Visa or Mastercard rule evidence, so the classification in Section 11.1 is unverified. Scheme non-compliance (FR-7) could bring fines or excessive-reattempt fees.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": "VALID_UNPLANTED"
+  },
+  {
+   "finding_id": "FND-016",
+   "rank": 16,
+   "kind": "gap",
+   "category": "security_privacy_gap",
+   "severity": "medium",
+   "confidence": 0.6,
+   "statement": "NFR-7 requires purpose limitation, retention limits and access logging across five privacy laws. The design sends device fingerprint, IP address, hashed email and phone, and addresses to FRV-1 (whose DPA is pending), stores customer bank accounts for payout refunds, and processes all markets' data in Singapore with DR in Jakarta. The only retention rules cover payment, idempotency, webhook and settlement records. No field-level purpose and retention map, data-subject request process or transfer basis is given, and whether Indonesian or other rules require local processing is unverified in the register.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": "F07",
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-017",
+   "rank": 17,
+   "kind": "ambiguity",
+   "category": "ambiguous_requirement",
+   "severity": "medium",
+   "confidence": 0.7,
+   "statement": "FR-8 allows cost preference unless the expected authorization rate drops by more than 2%, and Section 10.3 and AD-012 use a unitless 'tolerance (default 2)'. Percentage points and a relative 2% differ materially (on an 88% baseline, 2 points is about 2.3% relative). Section 10.3 compares the lowest-cost acquirer with the highest-approval one, while Section 10.2 ranks by a weighted score whose default emphasises cost, so the two mechanisms can disagree. The FR-8 test checks only expected choices and does not probe the bound.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": "F12",
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-018",
+   "rank": 18,
+   "kind": "validation_need",
+   "category": "acceptance_criterion_cannot_validate",
+   "severity": "medium",
+   "confidence": 0.8,
+   "statement": "The FR-5 test resends only after the first response has arrived, so it never exercises the concurrent duplicates that FR-5 names explicitly, or cross-merchant key reuse (see FND-001). The FR-12 test expects 'exactly one event' per state change, whereas Section 17 specifies at-least-once delivery, so the test either fails legitimately or checks the wrong property. The NFR-9 test measures noise relative to an unspecified rate limit and without a baseline load level, and NFR-4 limitations are covered in FND-005.",
+   "matched_flaw_strict": "F13",
+   "matched_flaw_lenient": "F13",
+   "class_strict": null,
+   "class_lenient": null
+  },
+  {
+   "finding_id": "FND-019",
+   "rank": 19,
+   "kind": "gap",
+   "category": "missing_or_unverifiable_requirement",
+   "severity": "medium",
+   "confidence": 0.65,
+   "statement": "FR-15 falls back to a bank payout to the customer's nominated account, but no section defines how that account is collected, verified or protected, or how the payout is journaled. Section 16.3 subtracts 'reserves and pending dispute holds' without saying how they are set, and there is no rule for a merchant_payable that goes negative when refunds or dispute debits exceed the balance. Section 27 nonetheless rates Payouts 'Ready'. Disputes themselves are an acknowledged backlog item (AD-020), but the dispute-debit and hold rules matter for v1 payouts.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "VALID_UNPLANTED",
+   "class_lenient": "VALID_UNPLANTED"
+  },
+  {
+   "finding_id": "FND-020",
+   "rank": 20,
+   "kind": "gap",
+   "category": "missing_or_unverifiable_requirement",
+   "severity": "low",
+   "confidence": 0.6,
+   "statement": "The design relies on recurring human processes with no named owner or SLA: the weekly Routing Review that adjusts cost and approval weights, the Finance Operations exception queue, paging and payout freezes on ledger discrepancies, the DR rehearsals and the HSM capacity trigger. The title page records a 2026-09-21 consolidation without a change log and cites a draft PCI DSS Scoping Memo on which Section 12.2 depends. None of this causes failure by itself, but it weakens the P10 auditability of decisions and the closure of the open items above.",
+   "matched_flaw_strict": null,
+   "matched_flaw_lenient": null,
+   "class_strict": "NON_SPECIFIC",
+   "class_lenient": "NON_SPECIFIC"
+  }
+ ],
+ "flaws": [
+  {
+   "flaw_id": "F01",
+   "severity": "critical",
+   "category": "internal_contradiction",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-002",
+   "matched_finding_lenient": "FND-002",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F02",
+   "severity": "low",
+   "category": "internal_contradiction",
+   "v2_status": "fixed",
+   "matched_finding_strict": "FND-006",
+   "matched_finding_lenient": "FND-006",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F03",
+   "severity": "high",
+   "category": "internal_contradiction",
+   "v2_status": "fixed",
+   "matched_finding_strict": "FND-005",
+   "matched_finding_lenient": "FND-005",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F04",
+   "severity": "high",
+   "category": "unsupported_or_incorrect_claim",
+   "v2_status": "fixed",
+   "matched_finding_strict": null,
+   "matched_finding_lenient": "FND-012",
+   "best_score": 2.0
+  },
+  {
+   "flaw_id": "F05",
+   "severity": "low",
+   "category": "unsupported_or_incorrect_claim",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-011",
+   "matched_finding_lenient": "FND-011",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F06",
+   "severity": "critical",
+   "category": "missing_or_unverifiable_requirement",
+   "v2_status": "fixed",
+   "matched_finding_strict": null,
+   "matched_finding_lenient": "FND-004",
+   "best_score": 2.0
+  },
+  {
+   "flaw_id": "F07",
+   "severity": "high",
+   "category": "missing_or_unverifiable_requirement",
+   "v2_status": "unchanged",
+   "matched_finding_strict": null,
+   "matched_finding_lenient": "FND-016",
+   "best_score": 2.0
+  },
+  {
+   "flaw_id": "F08",
+   "severity": "critical",
+   "category": "security_privacy_gap",
+   "v2_status": "fixed",
+   "matched_finding_strict": "FND-009",
+   "matched_finding_lenient": "FND-009",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F09",
+   "severity": "high",
+   "category": "security_privacy_gap",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-001",
+   "matched_finding_lenient": "FND-001",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F10",
+   "severity": "critical",
+   "category": "scalability_or_failure_mode",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-003",
+   "matched_finding_lenient": "FND-003",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F11",
+   "severity": "high",
+   "category": "scalability_or_failure_mode",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-008",
+   "matched_finding_lenient": "FND-008",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F12",
+   "severity": "low",
+   "category": "ambiguous_requirement",
+   "v2_status": "fixed",
+   "matched_finding_strict": null,
+   "matched_finding_lenient": "FND-017",
+   "best_score": 2.0
+  },
+  {
+   "flaw_id": "F13",
+   "severity": "high",
+   "category": "acceptance_criterion_cannot_validate",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-018",
+   "matched_finding_lenient": "FND-018",
+   "best_score": 3.0
+  },
+  {
+   "flaw_id": "F14",
+   "severity": "low",
+   "category": "decision_depends_on_pending_item",
+   "v2_status": "unchanged",
+   "matched_finding_strict": "FND-014",
+   "matched_finding_lenient": "FND-014",
+   "best_score": 3.0
+  }
+ ],
+ "matching": {
+  "granularity": "per_flaw_batch",
+  "candidates": {
+   "F01": {
+    "FND-002": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-004": [
+     "overlap"
+    ],
+    "FND-016": [
+     "shortlist"
+    ]
+   },
+   "F02": {
+    "FND-004": [
+     "overlap"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-006": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-007": [
+     "shortlist"
+    ],
+    "FND-011": [
+     "overlap"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-016": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap"
+    ]
+   },
+   "F03": {
+    "FND-004": [
+     "overlap"
+    ],
+    "FND-005": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-006": [
+     "overlap"
+    ],
+    "FND-010": [
+     "shortlist"
+    ],
+    "FND-011": [
+     "overlap"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-016": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap",
+     "shortlist"
+    ]
+   },
+   "F04": {
+    "FND-001": [
+     "overlap"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-012": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-013": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap"
+    ]
+   },
+   "F05": {
+    "FND-003": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-004": [
+     "overlap"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-006": [
+     "overlap"
+    ],
+    "FND-011": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-016": [
+     "overlap"
+    ]
+   },
+   "F06": {
+    "FND-003": [
+     "overlap"
+    ],
+    "FND-004": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-006": [
+     "overlap"
+    ],
+    "FND-011": [
+     "overlap"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-016": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap"
+    ]
+   },
+   "F07": {
+    "FND-004": [
+     "overlap"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-006": [
+     "overlap"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-016": [
+     "overlap",
+     "shortlist"
+    ]
+   },
+   "F08": {
+    "FND-009": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-014": [
+     "overlap"
+    ]
+   },
+   "F09": {
+    "FND-001": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-013": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap",
+     "shortlist"
+    ]
+   },
+   "F10": {
+    "FND-001": [
+     "overlap"
+    ],
+    "FND-003": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-008": [
+     "overlap"
+    ],
+    "FND-011": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-013": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-015": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap"
+    ]
+   },
+   "F11": {
+    "FND-002": [
+     "overlap"
+    ],
+    "FND-008": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-020": [
+     "shortlist"
+    ]
+   },
+   "F12": {
+    "FND-007": [
+     "overlap"
+    ],
+    "FND-010": [
+     "overlap"
+    ],
+    "FND-014": [
+     "overlap"
+    ],
+    "FND-015": [
+     "overlap"
+    ],
+    "FND-017": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-018": [
+     "overlap"
+    ],
+    "FND-019": [
+     "overlap"
+    ],
+    "FND-020": [
+     "overlap",
+     "shortlist"
+    ]
+   },
+   "F13": {
+    "FND-001": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-005": [
+     "overlap"
+    ],
+    "FND-007": [
+     "overlap"
+    ],
+    "FND-010": [
+     "overlap"
+    ],
+    "FND-012": [
+     "overlap"
+    ],
+    "FND-013": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-015": [
+     "overlap"
+    ],
+    "FND-017": [
+     "overlap"
+    ],
+    "FND-018": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-019": [
+     "overlap"
+    ]
+   },
+   "F14": {
+    "FND-014": [
+     "overlap",
+     "shortlist"
+    ],
+    "FND-015": [
+     "overlap"
+    ]
+   }
+  },
+  "shortlist": {
+   "F01": {
+    "ids": [
+     "FND-002",
+     "FND-016"
+    ],
+    "seed": 223142388708821,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     28145846721926,
+     135126214766831,
+     244620679266335
+    ]
+   },
+   "F02": {
+    "ids": [
+     "FND-006",
+     "FND-007"
+    ],
+    "seed": 186921688564844,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     115076990470464,
+     121008235758536
+    ]
+   },
+   "F03": {
+    "ids": [
+     "FND-005",
+     "FND-018",
+     "FND-010"
+    ],
+    "seed": 161609879347058,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     5874459906382,
+     24014040661446,
+     153929971739458
+    ]
+   },
+   "F04": {
+    "ids": [
+     "FND-012",
+     "FND-013"
+    ],
+    "seed": 95921917087737,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     81735346606598,
+     249271607414072,
+     278752271724872
+    ]
+   },
+   "F05": {
+    "ids": [
+     "FND-011",
+     "FND-003"
+    ],
+    "seed": 5479359873772,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     230965862864464,
+     248900058924385
+    ]
+   },
+   "F06": {
+    "ids": [
+     "FND-004"
+    ],
+    "seed": 46929395409506,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     106545602919034,
+     171892427860822
+    ]
+   },
+   "F07": {
+    "ids": [
+     "FND-016"
+    ],
+    "seed": 68503531575450,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     5421592059049,
+     201246630155714
+    ]
+   },
+   "F08": {
+    "ids": [
+     "FND-009"
+    ],
+    "seed": 69822176731965,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     98346350738485,
+     257389689023173
+    ]
+   },
+   "F09": {
+    "ids": [
+     "FND-001",
+     "FND-018",
+     "FND-013"
+    ],
+    "seed": 195150719024618,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     128148709440643,
+     252816051675623
+    ]
+   },
+   "F10": {
+    "ids": [
+     "FND-003",
+     "FND-013",
+     "FND-011"
+    ],
+    "seed": 130065775837082,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     60407664614794,
+     238854226301209
+    ]
+   },
+   "F11": {
+    "ids": [
+     "FND-008",
+     "FND-020"
+    ],
+    "seed": 98018946268708,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     106487353234834,
+     168883515167522
+    ]
+   },
+   "F12": {
+    "ids": [
+     "FND-017",
+     "FND-020"
+    ],
+    "seed": 5078670559806,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     70724580431149,
+     261226713768836
+    ]
+   },
+   "F13": {
+    "ids": [
+     "FND-018",
+     "FND-013",
+     "FND-001"
+    ],
+    "seed": 225056230552710,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     10950024807175,
+     106256876436364,
+     264593884973240
+    ]
+   },
+   "F14": {
+    "ids": [
+     "FND-014"
+    ],
+    "seed": 170522853605571,
+    "ok": true,
+    "unknown_ids": [],
+    "batch_seeds": [
+     159918106849439,
+     176421509574726,
+     248674121116750
+    ]
+   }
+  },
+  "pair_scores": [
+   {
+    "finding_id": "FND-002",
+    "flaw_id": "F01",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     3
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "States the Fraud Hook 'detokenise[s] the full card number using the Card Adapter's client library and service role, and send[s] it to the third-party vendor FRV-1'. It says this contradicts P2, 12.1 and 12.2 ('Token, BIN, last 4 only'). The consequence is stated in substance: 'NFR-5 assessment against the Section 12.2 CDE boundary would not hold' and 'FRV-1 would receive cardholder data'. Locations 13.1, 12.1 and 12.2 overlap the flaw's.",
+     "States the Fraud Hook 'detokenise[s] the full card number using the Card Adapter's client library and service role, and send it to the third-party vendor FRV-1', which contradicts 12.2 'Token, BIN, last 4 only', P2 and 12.1. It gives the consequences: 'The NFR-5 assessment against the Section 12.2 CDE boundary would not hold' and 'FRV-1 would receive cardholder data'. It also notes that sharing the role 'breaks P9'. It does not say outright that the Fraud Hook falls inside the CDE or that FRV-1 becomes a third-party service provider, but it describes both in substance.",
+     "States the Fraud Hook 'detokenise[s] the full card number using the Card Adapter's client library and service role, and send[s] it to the third-party vendor FRV-1'. It contradicts P2, 12.1 and 12.2 ('Token, BIN, last 4 only'). The consequences are that 'the NFR-5 assessment against the Section 12.2 CDE boundary would not hold' and that 'FRV-1 would receive cardholder data'. The scope and third-party consequence (c3) is stated in substance, and 13.1, 12.1 and 12.2 are all cited."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F01",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     1,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About keeping the CVC until settlement under 3.2.1/3.3.2 (12.4, NFR-6). This is a different defect in a different section. It says nothing about the Fraud Hook receiving the PAN.",
+     "This is about CVC retention 'until settlement' under 3.2.1 and 3.3.2 in Section 12.4. It shares the PCI/NFR-5 topic but is a different defect: it says nothing about the Fraud Hook handling the PAN or about the scope boundary.",
+     "About keeping the encrypted CVC 'until settlement' under PCI DSS 3.2.1 and 3.3.2 in 12.4. It is in the PCI and NFR-5 area, but it is a different defect: nothing about the Fraud Hook handling the full card number or the out-of-scope classification."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F01",
+    "sources": [
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     0
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers the privacy data inventory and cross-border transfer under NFR-7. It mentions data sent to FRV-1 ('device fingerprint, IP address, hashed email'), but not the PAN or the CDE scope. So it shares the topic of data sent to FRV-1 but describes a different defect.",
+     "It mentions data sent to FRV-1 ('device fingerprint, IP address, hashed email and phone'), but the defect is a missing privacy data inventory and retention map under NFR-7. It is not about the PAN or CDE scope.",
+     "Privacy finding about the lack of a personal-data inventory and transfer basis under NFR-7. The fields it lists going to FRV-1 ('device fingerprint, IP address, hashed email and phone') do not include the full card number, and it says nothing about CDE scope or the shared detokenise role. It cites 2.2 and 19.1, outside F01's sections."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About PCI rules on keeping the CVC. Unrelated.",
+     "About CVC retention under PCI DSS. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About NFR-4 RPO zero and asynchronous replication. Unrelated.",
+     "About RPO zero versus asynchronous replication (NFR-4). Unrelated to the NFR-8 timing."
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "States the full timing contradiction: \"ACQ-TH1's file lands at 06:30 ICT, which is 07:30 SGT\", then \"matcher plus report generation take 60 minutes... earliest publication is 08:30 SGT even at today's volume\", and \"2027 daily attempts are about twice the 2025 level\". Cites 16.2 and NFR-8.",
+     "States \"ACQ-TH1's file lands at 06:30 ICT, which is 07:30 SGT\", \"matcher plus report generation take 60 minutes... earliest publication is 08:30 SGT even at today's volume\", and \"2027 daily attempts are about twice the 2025 level\". Cites 16.2, 2.2 and NFR-8."
+    ]
+   },
+   {
+    "finding_id": "FND-007",
+    "flaw_id": "F02",
+    "sources": [
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Touches settlement and NFR-8 through the state machine (\"cannot be settled... counts against the NFR-8 99.9% auto-match target\"). This is a different mechanism: there is no timing arithmetic.",
+     "Mentions NFR-8 only through the auto-match rate (\"counts against the NFR-8 99.9% auto-match target\"). The defect it describes is a state-machine gap, not the report publication timing."
+    ]
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the NFR-2 card authorization latency budget and cascades. Unrelated to the settlement report deadline.",
+     "About the card authorization latency budget and cascades (NFR-2). Not settlement timing."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the network token TRID dependency for AD-010. Unrelated.",
+     "About the network token TRID dependency for AD-010. It has nothing to do with settlement report timing."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the NFR-7 privacy data inventory. Unrelated.",
+     "About the personal-data inventory for NFR-7. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F02",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the FR-5, FR-12 and NFR-9 acceptance tests. Unrelated to NFR-8 timing.",
+     "Cites 26.2, but only for NFR-9, FR-5 and FR-12 acceptance tests. The NFR-8 timing is not mentioned."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers CVC retention under PCI DSS 3.2.1 and 3.3.2, which is unrelated.",
+     "Covers CVC retention under PCI DSS, which is unrelated.",
+     "About how long the CVC is retained under PCI DSS. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     3
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "States that NFR-4 'requires zero RPO ... on loss of an AWS region' while the 'only cross-region copy is asynchronous with typical lag under one second, so commits inside the lag window are lost'. It challenges AD-004 against NFR-4 and notes that the game day cannot demonstrate zero loss. Its locations are 2.2 and 20.2, which overlap the flaw.",
+     "States NFR-4 'requires zero RPO ... on loss of an AWS region', the cross-region copy 'is asynchronous with typical lag under one second', so 'commits inside the lag window are lost on unplanned failover' and the game day 'cannot demonstrate zero loss'.",
+     "States that NFR-4 'requires zero RPO ... on loss of an AWS region' while the cross-region copy is 'asynchronous with typical lag under one second, so commits inside the lag window are lost on unplanned failover'. It also notes that the game day cannot demonstrate zero loss. Cites sections 20.2 and 2.2 and NFR-4."
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers how the NFR-8 reconciliation timing works, which is unrelated.",
+     "Covers the reconciliation timing for NFR-8, which is unrelated.",
+     "About reconciliation timing and NFR-8. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-010",
+    "flaw_id": "F03",
+    "sources": [
+     "shortlist"
+    ],
+    "samples": [
+     0,
+     0,
+     1
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers phase ordering: the card cohort launches 'before ... DR game days'. It mentions NFR-4 only as not yet demonstrated and says nothing about RPO or asynchronous replication.",
+     "About phase sequencing: the first card cohort goes live 'before ... DR game day' and before 'NFR-4 are demonstrated'. It does not mention asynchronous replication or the RPO contradiction.",
+     "Its point is the phase ordering: cards go live 'before NFR-1, NFR-2 and NFR-4 are demonstrated'. That is the same topic area (DR and NFR-4) but a different defect, with no mention of the asynchronous-replication RPO conflict."
+    ]
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers the NFR-2 latency budget and cascade rate, which is unrelated to RPO.",
+     "Covers the latency budget and cascade exclusion for NFR-2, a different defect.",
+     "About the cascade assumption in the latency budget and NFR-2. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Cites section 24, but the defect is that the network-token TRID dependency (AD-010) is not yet in place, not the RPO contradiction.",
+     "Covers the Token Requestor dependency behind AD-010, a different defect, even though it cites section 24.",
+     "About network-token Token Requestor readiness. Unrelated to RPO."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Covers NFR-7 personal-data inventory and cross-border transfer, a different defect.",
+     "Covers the NFR-7 privacy inventory and cross-border data, a different defect.",
+     "About the personal-data inventory and cross-border transfers. It mentions DR in Jakarta only as a data-residency issue, not RPO."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F03",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     0,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Its subject is the FR-5, FR-12 and NFR-9 acceptance tests. It mentions NFR-4 only to say 'NFR-4 limitations are covered in FND-005' and never states the async-replication RPO contradiction.",
+     "About acceptance tests for FR-5, FR-12 and NFR-9. It only says 'NFR-4 limitations are covered in FND-005' and gives no RPO mechanism.",
+     "Covers weaknesses in the FR-5, FR-12 and NFR-9 acceptance tests. It mentions NFR-4 only in passing ('NFR-4 limitations are covered in FND-005') and never states the asynchronous-replication RPO contradiction."
+    ]
+   },
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     0,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Same section 9.2, but the defect is different: the Redis key 'idem:resp:{idempotency_key}' has no merchant scope. It says nothing about DynamoDB partition limits.",
+     "About the Redis key 'idem:resp:{idempotency_key}' not being scoped to merchant and skipping the body-hash check. This is a different defect from DynamoDB partition capacity.",
+     "Same idempotency area (§9.2), but a different defect: the Redis key 'idem:resp:{idempotency_key}' has no merchant scope and skips the body-hash check. Nothing about partition throughput or the hot key."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About asynchronous cross-region replication and NFR-4 RPO. It is unrelated to DynamoDB partition capacity.",
+     "About asynchronous Aurora replication conflicting with zero RPO, and idempotency state not being rebuildable after failover. Unrelated to DynamoDB partition throughput.",
+     "About RPO zero versus asynchronous Aurora Global replication, and rebuilding idempotency state after failover. Unrelated to the partition WCU limit."
+    ]
+   },
+   {
+    "finding_id": "FND-012",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     2,
+     2,
+     2
+    ],
+    "median": 2.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Quotes the 'single partition sustains up to 10,000 write capacity units' claim but only says 'The register cannot confirm that per-partition limit'. It never states that the real limit is 1,000 WCU / 3,000 RCU, so c1 is missing. It does give the merchant_id hot key for the merchant with '45% of peak traffic' (c2), and says the count 'ignores item size... response_body is up to 4 KB' and the 'item-collection size constraint from the LSI' (c3).",
+     "Targets the right claim, 'single partition sustaining 10,000 WCU per second', and says the count 'ignores item size, even though response_body is up to 4 KB' and the 'item-collection size constraint from the LSI'. It also ties the merchant_id key to the merchant with '45% of peak traffic'. But it only calls the limit 'unverified' ('if the real limits are lower'). It never states the actual limit of 1,000 WCU per partition, so c1 is missing.",
+     "Targets the right claim ('single partition sustains up to 10,000 write capacity units per second') and the hot merchant key ('a merchant with 45% of peak traffic'). It also covers c3: the count 'ignores item size, even though response_body is up to 4 KB', and it ignores the LSI 'item-collection size constraint'. But it only calls the limit 'unverified' ('the register cannot confirm'). It never says the real limit is 1,000 WCU per partition, so c1 is missing, and that makes this a partial."
+    ]
+   },
+   {
+    "finding_id": "FND-013",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Same idempotency area (9.2). It mentions 'DynamoDB unavailability or throttling' only as an undefined failure mode, not as a capacity miscalculation or a hot partition.",
+     "Same idempotency area (9.2). It notes that 'DynamoDB unavailability or throttling' has no defined handling, but it never names the wrong partition limit, the hot merchant_id key or the WCU math. That is generic 'may throttle' territory.",
+     "Mentions 'DynamoDB unavailability or throttling' only as an unspecified failure path, and focuses on orphan locks and 24h expiry. It does not mention the wrong 10,000 WCU number or the hot merchant_id key."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About the Network Token Requestor registration and AD-010 readiness. Unrelated.",
+     "About network-token TRID readiness for AD-010. Unrelated.",
+     "About network-token TRID readiness under AD-010, which has nothing to do with DynamoDB capacity."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F04",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About whether the acceptance tests can demonstrate their requirements (FR-5 concurrency, FR-12, NFR-9 baseline). It does not cover DynamoDB capacity.",
+     "About weak acceptance tests for FR-5 concurrency, FR-12 and the NFR-9 baseline. It does not address DynamoDB capacity or the hot partition.",
+     "About weak acceptance tests ('NFR-9 ... without a baseline load level'). It does not mention DynamoDB partition capacity."
+    ]
+   },
+   {
+    "finding_id": "FND-003",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Same area (cascade after a 2,500 ms timeout, 11.2), but the defect is different. It covers orphaned late approvals and double authorization ('customers can be authorised twice'), not the p99 latency claim.",
+     "Covers cascade timeouts in 11.2 but describes a different defect: discarded late approvals lead to double authorization ('customers can be authorised twice'). It says nothing about the p99 latency budget."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns how long the CVC is kept under PCI DSS. Has nothing to do with latency.",
+     "About retaining the CVC under PCI DSS 3.2.1/3.3.2. Unrelated to latency."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns the RPO-zero requirement versus asynchronous replication (NFR-4). Unrelated.",
+     "About NFR-4 RPO zero versus asynchronous replication. Unrelated to latency."
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns the deadline for publishing settlement reports (NFR-8). Unrelated.",
+     "About the timing of settlement report publication (NFR-8). Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Says 21.1 leaves cascades out of the budget because 'fewer than 1% of card payments cascade', 'yet Section 10.5 gives 3.8% retryable outcomes'. Notes that 'any attempt that hits the 2,500 ms timeout already exceeds NFR-2's 1,500 ms', and that NFR-2 'is likely to fail its own acceptance test'. Cites 21.1, 10.5 and NFR-2.",
+     "States that the 'fewer than 1% of card payments cascade' premise contradicts the 3.8% retryable rate in 10.5. Notes that a 2,500 ms timeout 'already exceeds NFR-2's 1,500 ms on its own' and that NFR-2 'is likely to fail its own acceptance test'. Cites 21.1, 10.5 and NFR-2."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F05",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns the personal-data inventory under privacy law (NFR-7). Unrelated.",
+     "About the personal-data inventory and retention mapping for NFR-7. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-003",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Section 11.2 cascade timeout: late approvals and no reversal path. A different defect from the CVC retention compliance issue.",
+     "Cites section 11.2, but the defect is late approvals after a cascade timeout causing duplicate holds. It has nothing to do with PCI SAD retention."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     2,
+     2,
+     null
+    ],
+    "median": 2.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Identifies the right defect and location: CVC kept 'until settlement or for up to 72 hours', with incremental auths that 'happen after the initial authorization has completed'. But it hedges: 'This review cannot confirm or refute the clause and treats it as unverified', and 'If a QSA reads the standard as prohibiting retention...'. It never says the cited 3.2.1/3.3.2 do not allow this, and it does not cite Req. 3.3.1/3.3.1.2, so the core insight is only partly there.",
+     "Identifies retention until settlement/72h and use for incremental authorizations 'which happen after the initial authorization has completed'. But it hedges: 'This review cannot confirm or refute the clause and treats it as unverified', and 'If a QSA reads the standard as prohibiting...'. It never says that 3.2.1/3.3.2 do not permit this, and it does not cite Req. 3.3.1/3.3.1.2. The core insight is only partly stated."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "RPO zero versus asynchronous replication under NFR-4. Unrelated.",
+     "Covers RPO and asynchronous replication. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Reconciliation timing for NFR-8. Unrelated.",
+     "Covers reconciliation timing against NFR-8. Unrelated to CVC retention."
+    ]
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Latency budget and cascade rate for NFR-2. Unrelated.",
+     "Covers the latency budget's cascade premise. Unrelated to CVC retention."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Network token readiness in Section 24 (AD-010). Unrelated to SAD retention.",
+     "Covers network-token TRID readiness in section 24. This is a different defect."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About privacy-law data inventory and retention mapping for NFR-7. It has nothing to do with CVC/SAD retention under PCI DSS.",
+     "Covers personal-data privacy and retention mapping under NFR-7, not PCI CVC retention."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F06",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Acceptance criteria for FR-5, FR-12 and NFR-9. It does not address the NFR-6 test or CVC retention.",
+     "Covers acceptance tests for FR-5, FR-12 and NFR-9, not the NFR-6 PCI rule."
+    ]
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F07",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About whether PCI DSS 3.2.1/3.3.2 allow keeping the CVC until settlement; nothing on data residency or Indonesian localisation.",
+     "Concerns CVC retention under PCI DSS 3.2.1/3.3.2 ('Keeping the CVC until settlement rests on an unverified reading'). It says nothing about data residency or where Indonesian data is placed."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F07",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About NFR-4 zero RPO against asynchronous Aurora replication ('Replication is storagelevel and asynchronous'); a DR/RPO defect, not residency.",
+     "About asynchronous replication breaking RPO zero and about rebuilding idempotency state ('commits inside the lag window are lost'). It cites Section 20.2, but the defect has nothing to do with residency or localisation."
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F07",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Reconciliation timing for NFR-8 ('matcher starts once all expected files... have been received'); unrelated to residency.",
+     "About reconciliation timing missing the NFR-8 deadline ('earliest publication is 08:30 SGT'). It is unrelated to residency."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F07",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Network-token TRID dependency for AD-010; unrelated to data localisation.",
+     "About the Token Requestor registration for network tokens ('Without a TRID, all card-on-file traffic falls back to PAN'). It is unrelated to data residency."
+    ]
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F07",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     2,
+     2,
+     null
+    ],
+    "median": 2.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "States the design 'processes all markets' data in Singapore with DR in Jakarta' and that 'whether Indonesian or other rules require local processing is unverified in the register'. It frames the gap as a missing privacy/cross-border position under NFR-7 and centres on the data inventory. It does not say outright that no residency/localisation requirement exists (c1).",
+     "Notes the design 'processes all markets' data in Singapore with DR in Jakarta' and that 'whether Indonesian or other rules require local processing is unverified in the register'. This touches the residency gap and the need to confirm the rules. However, it is framed mainly as a privacy inventory and NFR-7 gap. It never states plainly that no localisation requirement exists, never cites payment-system regulation and never says data placement may need to change, so the core insight is only partly stated."
+    ]
+   },
+   {
+    "finding_id": "FND-009",
+    "flaw_id": "F08",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "States \"MFA is optional for Finance (Section 18.3)\", that Finance can change the payout account, and that \"A phished Finance password alone can redirect all of a merchant's payouts, and the only alert goes to the attacker\". It also notes there is no step-up or second approver. Cites 18.2, 18.3, 18.4 and FR-13.",
+     "The finding states all three required items. It says \"MFA is optional for Finance (Section 18.3)\", that a Finance user can change the payout account, and that \"A phished Finance password alone can redirect all of a merchant's payouts, and the only alert goes to the attacker\". It also names the missing step-up MFA and second approver and the conflict with P9. It cites 18.2, 18.3, 18.4 and FR-13."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F08",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About network tokens and the Token Requestor registration (\"Without a TRID, all card-on-file traffic falls back to PAN\"). This has nothing to do with merchant MFA or payout account takeover. It shares section 24 only by coincidence and cites a different decision.",
+     "This finding is about the readiness of the network-token Token Requestor (\"Without a TRID, all card-on-file traffic falls back to PAN\"). It says nothing about MFA or payout account changes. It shares section 24 with the flaw but cites FR-14, not FR-13."
+    ]
+   },
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F09",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "It states every required item: the key is 'idem:resp:{idempotency_key}, with no merchant_id'. It notes that 'order and invoice numbers' are accepted as keys, so 'Two merchants ... collide'. It gives the consequence: 'the second merchant receives the first merchant's payment object ... and its own payment is never created'. It also covers the skipped 422 check and the breach of P3/FR-5. It cites 9.1 and 9.2.",
+     "States the defect in full. The Redis key is \"idem:resp:{idempotency_key}, with no merchant_id\" and is checked before DynamoDB. \"Two merchants that reuse the same order number... collide\", so the second merchant gets the first merchant's \"payment object (card BIN and last 4, amounts...)\" and its own payment \"is never created\". It also notes that the hash check is skipped and that this \"breaks P3 and FR-5\"."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F09",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "It is in the idempotency/FR-5 area, but the defect is different: asynchronous replication and rebuilding idempotency state after failover ('payment table has no idempotency_key ... merchant_id column'). It does not mention the Redis key scoping.",
+     "Concerns RPO, asynchronous replication, and idempotency that cannot be rebuilt because the payment table has \"no idempotency_key, request hash or merchant_id column\". This is a different mechanism from the Redis fast-path key scoping."
+    ]
+   },
+   {
+    "finding_id": "FND-013",
+    "flaw_id": "F09",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "It covers idempotency failure paths: orphan IN_PROGRESS locks, a DynamoDB outage, and order-ID keys reused 'after the 24-hour expiry'. It overlaps 9.1 and 9.2 but never identifies that the Redis key has no merchant scope or the collision between merchants.",
+     "Covers the same idempotency area (sections 9.1 and 9.2, FR-5) but different defects: orphan IN_PROGRESS locks, DynamoDB outage, and keys reused after 24 hours. It says nothing about the Redis key lacking the merchant ID or cross-merchant collisions."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F09",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "This finding is about network tokens and the Token Requestor registration ('Network tokens ... from launch'). It does not discuss the idempotency cache, so it is unrelated.",
+     "Concerns network token / TRID readiness, which has no connection to idempotency key scoping."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F09",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "It only says the acceptance tests do not cover 'cross-merchant key reuse (see FND-001)'. That is a gap in test coverage, not a statement of the Redis key defect or its consequences, and the cited section is 26.1.",
+     "Only says the FR-5 acceptance test does not exercise \"cross-merchant key reuse (see FND-001)\". This is a gap in test coverage. It does not describe the Redis key missing the merchant ID or the resulting data leak."
+    ]
+   },
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns idempotency key scoping in the Redis fast path, so it is unrelated.",
+     "About the Redis idempotency key not being scoped to the merchant. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-003",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Covers all three items: 'no response within 2,500 ms' is classed as retryable, and 'A late approval leaves a live authorization hold ... while the second acquirer also approves'. It also says 'no reversal message, no record of the orphaned authorization' and rebuts the no-duplicate claim. Cites 11.1, 11.2 and FR-7.",
+     "Covers all three required items: the 2,500 ms timeout is treated as retryable, and \"A late approval leaves a live authorization hold ... while the second acquirer also approves\". It also notes \"no reversal message, no record of the orphaned authorization\" and challenges the 'cannot create a duplicate charge' claim. Located at 11.1, 11.2 and FR-7."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns cross-region RPO and asynchronous replication, so it is unrelated.",
+     "About asynchronous cross-region replication versus the zero-RPO requirement. Unrelated to this flaw."
+    ]
+   },
+   {
+    "finding_id": "FND-008",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Mentions that 'Mapping a Vault 503 to a retryable outcome' makes cascades fail, but the defect is the HSM single point of failure. It does not address the ambiguous acquirer outcome or duplicate charges.",
+     "About a single HSM as a single point of failure. It only touches on a \"Vault 503 to a retryable outcome\" that makes cascades fail. This is a different defect."
+    ]
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Covers the same timeout and cascade area, but the defect is about the latency budget ('Any attempt that hits the 2,500 ms timeout already exceeds NFR-2'). It does not raise duplicate authorization or orphaned approvals.",
+     "About cascades and timeouts breaking the latency budget (\"2,500 ms timeout already exceeds NFR-2's 1,500 ms\"). This is a latency defect, not duplicate authorization."
+    ]
+   },
+   {
+    "finding_id": "FND-013",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Notes that the sweeper 'scans only payments in AUTHORISING', but only for orphaned idempotency locks. It does not cover timed-out cascade attempts or double authorization.",
+     "Cites 20.3, saying the sweeper \"scans only payments in AUTHORISING\", but only about orphaned IN_PROGRESS idempotency locks. It does not cover timed-out acquirer attempts or duplicate authorizations from cascading, so the mechanism is different."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns network token readiness in section 24, so it is unrelated to the cascade flaw.",
+     "Cites section 24, but the topic is network-token readiness (AD-010). Unrelated defect."
+    ]
+   },
+   {
+    "finding_id": "FND-015",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Covers the retry engine, but the defect is that scheme reattempt limits are never stated. The distractor note says 11.3 scheme controls are not this flaw.",
+     "Says the scheme reattempt limits are never stated. That is about scheme compliance (11.3), which the key's distractor notes exclude. It says nothing about the ambiguous outcome of a timeout or about orphaned approvals."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F10",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Concerns the weakness of the acceptance tests for FR-5, FR-12 and NFR-9, so it is unrelated to the cascade timeout issue.",
+     "About weak acceptance tests for FR-5, FR-12 and NFR-9. Unrelated to cascading after a timeout."
+    ]
+   },
+   {
+    "finding_id": "FND-002",
+    "flaw_id": "F11",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "This finding is about the Fraud Hook detokenising the PAN with the Card Adapter's role, which breaks P2 and the CDE scope. That is an access-control and scope defect, not the single-HSM availability flaw.",
+     "Covers the Fraud Hook detokenising the PAN and sending it to FRV-1, which breaks P2 and the CDE scope. It cites Section 12.1, but the defect is about access control and PCI scope, not the single-HSM availability problem."
+    ]
+   },
+   {
+    "finding_id": "FND-008",
+    "flaw_id": "F11",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     null
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "States the full defect: \"every KEK in one HSM in ap-southeast-1a. DEKs are not cached, so every tokenise and detokenise call needs the HSM\" (c1, c2), \"Losing the HSM or its AZ stops card acceptance... which threatens NFR-3\", and the trigger \"is never reached... 55% card share of 2,000 TPS is 1,100 TPS\" (c3). It also contrasts this with the three-AZ posture in 20.1. Its locations, 12.3, 20.1 and NFR-3, overlap the key's.",
+     "States all of it: \"one HSM in ap-southeast-1a\" is a single point of failure; \"DEKs are not cached, so every tokenise and detokenise call needs the HSM\"; and \"Losing the HSM or its AZ stops card acceptance\". It shows the trigger \"is never reached ... 55% card share of 2,000 TPS is 1,100 TPS\", which \"threatens NFR-3\" and conflicts with the three-AZ posture. Sections 12.3 and 20.1 overlap the key's locations."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F11",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "This finding is about the network-token Token Requestor registration and the Phase 3 readiness rating. It has nothing to do with HSM topology or availability.",
+     "Covers the network-token Token Requestor registration not being ready (AD-010). It cites Section 24, but the defect has nothing to do with HSM topology or availability."
+    ]
+   },
+   {
+    "finding_id": "FND-020",
+    "flaw_id": "F11",
+    "sources": [
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "It only mentions \"the HSM capacity trigger\" as a process with no named owner. It does not say there is a single HSM, does not call it a single point of failure, and does not say the trigger never fires. Its locations, the title page and 10.3, do not overlap the key's.",
+     "Mentions \"the HSM capacity trigger\" only as a human process with no named owner. It does not raise the single point of failure or the availability defect. Its locations (title page, 10.3) do not overlap the key's."
+    ]
+   },
+   {
+    "finding_id": "FND-007",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About state machine transitions and settlement. Unrelated.",
+     "About state machine transitions for refunded and settled payments, which has nothing to do with this flaw."
+    ]
+   },
+   {
+    "finding_id": "FND-010",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About phase sequencing before the Fraud Hook and PCI assessment. Unrelated.",
+     "About launch sequencing ahead of the Fraud Hook and PCI work, which has nothing to do with this flaw."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the network-token TRID dependency under AD-010. Unrelated.",
+     "About Token Requestor registration for network tokens (AD-010), which has nothing to do with this flaw."
+    ]
+   },
+   {
+    "finding_id": "FND-015",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About scheme reattempt limits under FR-7. Unrelated to the FR-8 routing tolerance.",
+     "About scheme reattempt limits in the Retry Engine (FR-7), not the routing tolerance."
+    ]
+   },
+   {
+    "finding_id": "FND-017",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     2,
+     2,
+     null
+    ],
+    "median": 2.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "States the units ambiguity: \"Percentage points and a relative 2% differ materially\", and \"The FR-8 test checks only expected choices and does not probe the bound.\" It quotes the weekly Routing Review but never states that one reading is a per-transaction prior comparison and the other is a merchant-level realised-rate check. The conflict it raises instead is between 10.2 and 10.3, so c2 is missing.",
+     "States the ambiguity of FR-8's '2%' and the unitless 'tolerance (default 2)', and separates absolute from relative: 'Percentage points and a relative 2% differ materially', 'the FR-8 test checks only expected choices'. It does not raise the per-transaction prior vs weekly merchant-level realised rate reading. The quote includes 'weekly Routing Review compares each merchant's realised' text, but the finding never treats this as a second, conflicting reading. It contrasts 10.3 with 10.2 scoring instead."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About the FR-5, FR-12 and NFR-9 acceptance tests. Nothing on FR-8 or the 2% tolerance.",
+     "About the FR-5, FR-12 and NFR-9 acceptance tests. FR-8 is not discussed."
+    ]
+   },
+   {
+    "finding_id": "FND-019",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     null
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "About payout refunds, reserves and negative balances. Unrelated.",
+     "About payout refunds and reserves, which has nothing to do with this flaw."
+    ]
+   },
+   {
+    "finding_id": "FND-020",
+    "flaw_id": "F12",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     null
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 1,
+    "rationales": [
+     "Cites 10.3 and the weekly Routing Review, but only to say it has \"no named owner or SLA\". That is a different defect, not the ambiguity of the 2% bound.",
+     "Cites 10.3 and the weekly Routing Review, but only to say the process lacks an owner: 'no named owner or SLA'. It does not mention the ambiguity of the 2% tolerance."
+    ]
+   },
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "FR-5 idempotency design defect: the Redis key is not scoped to the merchant and skips the hash check. That is the cross-merchant issue (F09), not the sequential acceptance test.",
+     "Redis key not scoped to merchant ('idem:resp:{idempotency_key}, with no merchant_id'). This is a related FR-5 defect (cf. F09), not the missing concurrency in the test.",
+     "Covers the same FR-5 idempotency area but a different defect: the Redis key is not scoped to merchant and the body-hash check is skipped. It says nothing about the acceptance test lacking concurrency."
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Mentions an FR-5 break when idempotency state is lost after regional failover. That is related to idempotency, but it is a different defect (RPO and reconstruction), not the concurrency test gap.",
+     "About RPO zero versus asynchronous replication and rebuilding idempotency state after failover. It does not address the FR-5 acceptance test or concurrency.",
+     "About NFR-4 RPO and asynchronous replication. FR-5 comes up only in the failover reconstruction context, not the concurrency test."
+    ]
+   },
+   {
+    "finding_id": "FND-007",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About state machine transitions and settlement. Unrelated.",
+     "About state machine transitions. Unrelated.",
+     "About state machine transitions. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-010",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About rollout sequencing and the fraud hook. Unrelated.",
+     "About launch sequencing relative to the fraud hook and PCI. Unrelated.",
+     "About launch sequencing and the Fraud Hook. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-012",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About DynamoDB capacity limits. Unrelated.",
+     "About DynamoDB partition capacity. Unrelated to the concurrency coverage of the FR-5 test.",
+     "About DynamoDB partition capacity. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-013",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     1,
+     1,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Same area (FR-5 idempotency, IN_PROGRESS locks), but the defect is the design itself: orphan locks, DynamoDB outage and key reuse after expiry. It says nothing about the acceptance test being sequential.",
+     "Covers IN_PROGRESS lock recovery and DynamoDB outage in the FR-5 idempotency design. That is the same area, but it is a design gap and does not say the acceptance test is sequential.",
+     "Covers FR-5 failure paths (orphan IN_PROGRESS locks, a DynamoDB outage, reuse after expiry), not the sequential acceptance test."
+    ]
+   },
+   {
+    "finding_id": "FND-015",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About scheme reattempt limits for FR-7. Different requirement and different defect.",
+     "About scheme reattempt limits under FR-7. Unrelated.",
+     "About missing FR-7 scheme reattempt limits. Unrelated to the FR-5 concurrency test."
+    ]
+   },
+   {
+    "finding_id": "FND-017",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About FR-8 tolerance units and its test. Unrelated to FR-5 concurrency.",
+     "About FR-8 tolerance units and its test. Different requirement.",
+     "About FR-8 tolerance units. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     3
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "States that the FR-5 test 'resends only after the first response has arrived, so it never exercises the concurrent duplicates that FR-5 names explicitly'. The remedy (parallel injection) is not spelled out, but it follows directly and the substance rule is met. Cited at 26.1 FR-5.",
+     "States 'The FR-5 test resends only after the first response has arrived, so it never exercises the concurrent duplicates that FR-5 names explicitly'. It cites 26.1 FR-5. The need for concurrent injection is implied rather than spelled out, but under the substance rule the core insight is fully present.",
+     "States 'The FR-5 test resends only after the first response has arrived, so it never exercises the concurrent duplicates that FR-5 names explicitly'. That is the core insight, cited at 26.1 FR-5. It does not explicitly prescribe parallel injection, but under the substance rule the insight is fully present."
+    ]
+   },
+   {
+    "finding_id": "FND-019",
+    "flaw_id": "F13",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     0,
+     0,
+     0
+    ],
+    "median": 0.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "About payout refunds and reserves. Unrelated.",
+     "About payout refunds and reserves. Unrelated.",
+     "About payouts and refunds. Unrelated."
+    ]
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F14",
+    "sources": [
+     "overlap",
+     "shortlist"
+    ],
+    "samples": [
+     3,
+     3,
+     3
+    ],
+    "median": 3.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "States 'network tokens the primary card-on-file credential from launch, and Phase 3 is marked No - ready' and 'Backlog item 2 shows the Token Requestor registration, the commercial agreement and certification are not yet started'. It concludes 'the confirmed decision and the readiness rating are not true at launch'. The location is Section 24 / FR-14.",
+     "The finding states that \"AD-010 makes VTS and MDES network tokens the primary card-on-file credential from launch, and Phase 3 is marked 'No - ready'\" (c1). It cites \"Backlog item 2 shows the Token Requestor registration, the commercial agreement and certification are not yet started\" (c2). It concludes that \"the confirmed decision and the readiness rating are not true at launch\" (c3). It cites Section 24 and FR-14, which overlap the flaw's location.",
+     "States the defect: 'AD-010 makes VTS and MDES network tokens the primary card-on-file credential from launch, and Phase 3 is marked No - ready', while 'Backlog item 2 shows the Token Requestor registration, the commercial agreement and certification are not yet started', so 'the confirmed decision and the readiness rating are not true at launch'. It cites Section 24 and FR-14."
+    ]
+   },
+   {
+    "finding_id": "FND-015",
+    "flaw_id": "F14",
+    "sources": [
+     "overlap"
+    ],
+    "samples": [
+     1,
+     0,
+     1
+    ],
+    "median": 1.0,
+    "capped_samples": 0,
+    "skipped_samples": 0,
+    "rationales": [
+     "Section 27 is the same place, but the defect is different: it is about unstated scheme reattempt limits for the Retry Engine ('scheme limits applicable to the card' never stated). It does not mention network tokens or TRID.",
+     "This finding covers a different defect: \"Scheme reattempt limits... referenced but never stated\" for the Retry Engine (Section 11.3, FR-7). It says nothing about network tokens or TRID registration. Its Section 27 citation concerns a different component, so it does not overlap this flaw's location.",
+     "Covers the Retry Engine 'Ready' rating and scheme reattempt limits ('Retry Engine is rated Ready'). That is a different readiness overstatement and has nothing to do with network tokens or the TRID backlog item. It overlaps only on Section 27."
+    ]
+   }
+  ],
+  "strict": [
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F09",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-002",
+    "flaw_id": "F01",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-003",
+    "flaw_id": "F10",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F03",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F02",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-008",
+    "flaw_id": "F11",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-009",
+    "flaw_id": "F08",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F05",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F14",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F13",
+    "score": 3.0
+   }
+  ],
+  "lenient": [
+   {
+    "finding_id": "FND-001",
+    "flaw_id": "F09",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-002",
+    "flaw_id": "F01",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-003",
+    "flaw_id": "F10",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-004",
+    "flaw_id": "F06",
+    "score": 2.0
+   },
+   {
+    "finding_id": "FND-005",
+    "flaw_id": "F03",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-006",
+    "flaw_id": "F02",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-008",
+    "flaw_id": "F11",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-009",
+    "flaw_id": "F08",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-011",
+    "flaw_id": "F05",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-012",
+    "flaw_id": "F04",
+    "score": 2.0
+   },
+   {
+    "finding_id": "FND-014",
+    "flaw_id": "F14",
+    "score": 3.0
+   },
+   {
+    "finding_id": "FND-016",
+    "flaw_id": "F07",
+    "score": 2.0
+   },
+   {
+    "finding_id": "FND-017",
+    "flaw_id": "F12",
+    "score": 2.0
+   },
+   {
+    "finding_id": "FND-018",
+    "flaw_id": "F13",
+    "score": 3.0
+   }
+  ]
+ },
+ "adjudication": {
+  "strict": [
+   {
+    "finding_id": "FND-004",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": "F06",
+    "rationale": "The premise is accurate. §12.4, NFR-6 and the Confirmed Decisions keep the encrypted CVC until SETTLED or for up to 72 hours, use it for incremental authorizations (tips, hotel extensions), and state that PCI DSS v4.0 3.2.1/3.3.2 'allow sensitive authentication data to be retained in encrypted form until the transaction is settled'. The problem is real: PCI DSS forbids keeping SAD after authorization (3.2.1 covers pre-authorization storage, 3.3.2 covers issuers), so NFR-5/NFR-6 are at risk. This is the substance of key flaw F06, though the finding hedges by calling the clause 'unverified'. It is specific and grounded in the document. No other finding in the review covers CVC/SAD retention, and it does not match O01."
+   },
+   {
+    "finding_id": "FND-007",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise is accurate. Section 7.2 allows CAPTURED -> PARTIALLY_REFUNDED|REFUNDED and PARTIALLY_REFUNDED -> REFUNDED, with no transition from either refund state to SETTLED. Section 16.2, however, moves every matched payment to SETTLED, and FR-2 forbids unlisted transitions. A payment refunded before settlement therefore cannot be settled. There is also no CAPTURED->CAPTURED transition, so the multiple partial captures implied by FR-1 are impossible. The memo-ledger wording point (Section 8 step 10 vs Section 14.3) is minor but grounded in the text. None of the key flaws F01-F14 covers the state machine, and Section 7 is not a key sound section. No other finding in the review raises this issue. It is a specific, real gap."
+   },
+   {
+    "finding_id": "FND-010",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise checks out. Section 28 puts the first cohort (Singapore, cards and PayNow) live after Phase 7. The Fraud Hook is Phase 8, blocked on the FRV-1 contract (Backlog item 4). The PCI assessment, load, chaos and DR game days and the Section 26 test plan are Phase 9. FR-9 requires every card payment to be scored before authorization, and NFR-5, NFR-1, NFR-2 and NFR-4 are not shown to be met until Phase 9. So live card traffic would run without them. Section 27's conclusion names only the Admin API schemas and disputes as non-blocking gaps and does not consider this. No key flaw (F01–F14) or observation (O01) covers launch sequencing, and no other finding in this review raises it."
+   },
+   {
+    "finding_id": "FND-012",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": "F04",
+    "rationale": "The premise checks out against the document. §9.3 says \"a single partition sustains up to 10,000 write capacity units per second\" and counts \"two writes ... or about 1,800 WCU at peak\" for M-0001. §9.2 gives response_body \"up to 4 KB\" and an LSI on created_at. The problem is real: a DynamoDB partition is limited to 1,000 WCU/s, 4 KB writes cost several WCU each, and the LSI's item-collection constraint stops one merchant key from being split. No other finding in the review covers DynamoDB capacity, so it is not a duplicate. It does not match O01, which is about Stripe vs IETF attribution. In substance it is the same defect as key flaw F04. It hedges by calling the limit \"unverified\", but it is specific and grounded in the document."
+   },
+   {
+    "finding_id": "FND-013",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premises hold against the document. §9.2 relies on the §20.3 sweeper, which selects payments 'in AUTHORISING for more than 30 seconds'. §20.3 adds that the sweeper 'also completes idempotency records left IN_PROGRESS', which the finding slightly overlooks, but nothing defines how that works when the pod crashed before a payment row existed or while the payment was in CREATED (fraud or 3DS stage). §20.4 covers a Redis outage but not a DynamoDB outage or throttling, so fail-open versus fail-closed is undefined. §9.1 accepts order IDs as keys and treats a request after the 24-hour expiry as new, a residual FR-5 duplicate risk the document doesn't discuss. These gaps are specific and real. They are not covered by key flaws F04, F09 or F13, and not by other findings: FND-001 is about Redis key scoping, FND-005 about DR rebuild of idempotency state, FND-012 about DynamoDB capacity."
+   },
+   {
+    "finding_id": "FND-015",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise is true. Section 11.3 only says the Retry Engine stops \"at the scheme limits applicable to the card\" and never states those limits, the rule source, or whether a cross-acquirer cascade of 05/91/96 counts as a reattempt. Section 27 still rates the Retry Engine \"Ready\", claiming \"scheme rules specified (Section 11)\", and the FR-7 test in 26.1 checks \"stop at scheme reattempt limits\". This is a specific, document-grounded readiness gap. It is not among the key flaws (F10 is the different timeout/no-reversal issue), and it does not duplicate FND-003 or any other finding."
+   },
+   {
+    "finding_id": "FND-016",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": "F07",
+    "rationale": "The premise checks out against the document. NFR-7 requires purpose limitation, retention limits and access logging under five privacy laws. Section 13.1 sends device fingerprint, IP address, user agent, hashed email and phone, and shipping and billing country to FRV-1, whose DPA is still pending (Backlog item 4). FR-15 requires holding customers' nominated bank accounts for payout refunds. Section 19.1 sets retention only for payment and attempt records, idempotency records, webhook events and settlement files, and places all primary data in ap-southeast-1 with Jakarta for DR only. The design gives no field-level purpose and retention map, no data-subject request process and no basis for cross-border transfer, even though the 26.2 acceptance criterion requires every personal data field to be mapped. One small error: the payload carries shipping and billing country, not full addresses. This is specific and grounded in the document. It is not covered by another finding in the review, and it goes beyond F07's residency point."
+   },
+   {
+    "finding_id": "FND-017",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": "F12",
+    "rationale": "The premise is accurate. FR-8 says 'reduces the expected authorization rate by more than 2%', while Section 10.3 and Section 24 give a unitless 'tolerance (default 2)'. The Section 26.1 FR-8 test only checks that 'the selected acquirer matches the expected choice' and never tests the bound. Percentage points and relative percent are different thresholds (2 points on the 88.1% baseline in Section 10.5 is about 2.3% relative), and Section 10.3's cheapest-vs-highest-approval check can disagree with the cost-weighted score in Section 10.2. The issue is specific, grounded in the document and real. No other finding in this review covers it, and O01 is unrelated (Section 23 attribution)."
+   },
+   {
+    "finding_id": "FND-019",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise holds. FR-15 sends some refunds as a bank payout to \"the customer's nominated account\", but no section says how that account is collected, verified or protected, or how the payout is journaled (14.2 shows only capture, settlement and merchant payout). Section 16.3 subtracts \"reserves and pending dispute holds\" without defining them, and there is no rule for a negative merchant_payable. Section 27 still rates Payouts \"Ready\" and cites only 16.3. The finding acknowledges that dispute case management is out of scope and focuses on v1 payout rules, which are in scope because disputes are ingested as ledger events. It is specific, grounded in the document, not in the key, and not covered by any other finding."
+   },
+   {
+    "finding_id": "FND-020",
+    "class": "NON_SPECIFIC",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premises check out: the title page cites a draft PCI DSS Scoping Memo and a 2026-09-21 consolidation with no change log, §10.3 has a weekly Routing Review with no owner, and the other processes it lists are in the document. The complaint itself is generic governance advice (name owners and SLAs, keep change control) that fits almost any design. By its own admission it 'does not cause failure by itself', and it identifies no concrete defect in this design. The substantive points it touches, the draft PCI memo and the HSM trigger, are already covered by FND-004 and FND-008."
+   }
+  ],
+  "lenient": [
+   {
+    "finding_id": "FND-007",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise is accurate. Section 7.2 allows CAPTURED -> PARTIALLY_REFUNDED|REFUNDED and PARTIALLY_REFUNDED -> REFUNDED, with no transition from either refund state to SETTLED. Section 16.2, however, moves every matched payment to SETTLED, and FR-2 forbids unlisted transitions. A payment refunded before settlement therefore cannot be settled. There is also no CAPTURED->CAPTURED transition, so the multiple partial captures implied by FR-1 are impossible. The memo-ledger wording point (Section 8 step 10 vs Section 14.3) is minor but grounded in the text. None of the key flaws F01-F14 covers the state machine, and Section 7 is not a key sound section. No other finding in the review raises this issue. It is a specific, real gap."
+   },
+   {
+    "finding_id": "FND-010",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise checks out. Section 28 puts the first cohort (Singapore, cards and PayNow) live after Phase 7. The Fraud Hook is Phase 8, blocked on the FRV-1 contract (Backlog item 4). The PCI assessment, load, chaos and DR game days and the Section 26 test plan are Phase 9. FR-9 requires every card payment to be scored before authorization, and NFR-5, NFR-1, NFR-2 and NFR-4 are not shown to be met until Phase 9. So live card traffic would run without them. Section 27's conclusion names only the Admin API schemas and disputes as non-blocking gaps and does not consider this. No key flaw (F01–F14) or observation (O01) covers launch sequencing, and no other finding in this review raises it."
+   },
+   {
+    "finding_id": "FND-013",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premises hold against the document. §9.2 relies on the §20.3 sweeper, which selects payments 'in AUTHORISING for more than 30 seconds'. §20.3 adds that the sweeper 'also completes idempotency records left IN_PROGRESS', which the finding slightly overlooks, but nothing defines how that works when the pod crashed before a payment row existed or while the payment was in CREATED (fraud or 3DS stage). §20.4 covers a Redis outage but not a DynamoDB outage or throttling, so fail-open versus fail-closed is undefined. §9.1 accepts order IDs as keys and treats a request after the 24-hour expiry as new, a residual FR-5 duplicate risk the document doesn't discuss. These gaps are specific and real. They are not covered by key flaws F04, F09 or F13, and not by other findings: FND-001 is about Redis key scoping, FND-005 about DR rebuild of idempotency state, FND-012 about DynamoDB capacity."
+   },
+   {
+    "finding_id": "FND-015",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise is true. Section 11.3 only says the Retry Engine stops \"at the scheme limits applicable to the card\" and never states those limits, the rule source, or whether a cross-acquirer cascade of 05/91/96 counts as a reattempt. Section 27 still rates the Retry Engine \"Ready\", claiming \"scheme rules specified (Section 11)\", and the FR-7 test in 26.1 checks \"stop at scheme reattempt limits\". This is a specific, document-grounded readiness gap. It is not among the key flaws (F10 is the different timeout/no-reversal issue), and it does not duplicate FND-003 or any other finding."
+   },
+   {
+    "finding_id": "FND-019",
+    "class": "VALID_UNPLANTED",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premise holds. FR-15 sends some refunds as a bank payout to \"the customer's nominated account\", but no section says how that account is collected, verified or protected, or how the payout is journaled (14.2 shows only capture, settlement and merchant payout). Section 16.3 subtracts \"reserves and pending dispute holds\" without defining them, and there is no rule for a negative merchant_payable. Section 27 still rates Payouts \"Ready\" and cites only 16.3. The finding acknowledges that dispute case management is out of scope and focuses on v1 payout rules, which are in scope because disputes are ingested as ledger events. It is specific, grounded in the document, not in the key, and not covered by any other finding."
+   },
+   {
+    "finding_id": "FND-020",
+    "class": "NON_SPECIFIC",
+    "basis": "llm",
+    "duplicate_of": null,
+    "related_flaw_id": null,
+    "observation_id": null,
+    "partial_key_flaw_id": null,
+    "rationale": "The premises check out: the title page cites a draft PCI DSS Scoping Memo and a 2026-09-21 consolidation with no change log, §10.3 has a weekly Routing Review with no owner, and the other processes it lists are in the document. The complaint itself is generic governance advice (name owners and SLAs, keep change control) that fits almost any design. By its own admission it 'does not cause failure by itself', and it identifies no concrete defect in this design. The substantive points it touches, the draft PCI memo and the HSM trigger, are already covered by FND-004 and FND-008."
+   }
+  ],
+  "llm_answers": {
+   "FND-004": {
+    "ok": true,
+    "seed": 70737204860967,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise is accurate. §12.4, NFR-6 and the Confirmed Decisions keep the encrypted CVC until SETTLED or for up to 72 hours, use it for incremental authorizations (tips, hotel extensions), and state that PCI DSS v4.0 3.2.1/3.3.2 'allow sensitive authentication data to be retained in encrypted form until the transaction is settled'. The problem is real: PCI DSS forbids keeping SAD after authorization (3.2.1 covers pre-authorization storage, 3.3.2 covers issuers), so NFR-5/NFR-6 are at risk. This is the substance of key flaw F06, though the finding hedges by calling the clause 'unverified'. It is specific and grounded in the document. No other finding in the review covers CVC/SAD retention, and it does not match O01."
+   },
+   "FND-007": {
+    "ok": true,
+    "seed": 5648571146708,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise is accurate. Section 7.2 allows CAPTURED -> PARTIALLY_REFUNDED|REFUNDED and PARTIALLY_REFUNDED -> REFUNDED, with no transition from either refund state to SETTLED. Section 16.2, however, moves every matched payment to SETTLED, and FR-2 forbids unlisted transitions. A payment refunded before settlement therefore cannot be settled. There is also no CAPTURED->CAPTURED transition, so the multiple partial captures implied by FR-1 are impossible. The memo-ledger wording point (Section 8 step 10 vs Section 14.3) is minor but grounded in the text. None of the key flaws F01-F14 covers the state machine, and Section 7 is not a key sound section. No other finding in the review raises this issue. It is a specific, real gap."
+   },
+   "FND-010": {
+    "ok": true,
+    "seed": 188176997461757,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise checks out. Section 28 puts the first cohort (Singapore, cards and PayNow) live after Phase 7. The Fraud Hook is Phase 8, blocked on the FRV-1 contract (Backlog item 4). The PCI assessment, load, chaos and DR game days and the Section 26 test plan are Phase 9. FR-9 requires every card payment to be scored before authorization, and NFR-5, NFR-1, NFR-2 and NFR-4 are not shown to be met until Phase 9. So live card traffic would run without them. Section 27's conclusion names only the Admin API schemas and disputes as non-blocking gaps and does not consider this. No key flaw (F01–F14) or observation (O01) covers launch sequencing, and no other finding in this review raises it."
+   },
+   "FND-012": {
+    "ok": true,
+    "seed": 1442349591643,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise checks out against the document. §9.3 says \"a single partition sustains up to 10,000 write capacity units per second\" and counts \"two writes ... or about 1,800 WCU at peak\" for M-0001. §9.2 gives response_body \"up to 4 KB\" and an LSI on created_at. The problem is real: a DynamoDB partition is limited to 1,000 WCU/s, 4 KB writes cost several WCU each, and the LSI's item-collection constraint stops one merchant key from being split. No other finding in the review covers DynamoDB capacity, so it is not a duplicate. It does not match O01, which is about Stripe vs IETF attribution. In substance it is the same defect as key flaw F04. It hedges by calling the limit \"unverified\", but it is specific and grounded in the document."
+   },
+   "FND-013": {
+    "ok": true,
+    "seed": 276433498096057,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premises hold against the document. §9.2 relies on the §20.3 sweeper, which selects payments 'in AUTHORISING for more than 30 seconds'. §20.3 adds that the sweeper 'also completes idempotency records left IN_PROGRESS', which the finding slightly overlooks, but nothing defines how that works when the pod crashed before a payment row existed or while the payment was in CREATED (fraud or 3DS stage). §20.4 covers a Redis outage but not a DynamoDB outage or throttling, so fail-open versus fail-closed is undefined. §9.1 accepts order IDs as keys and treats a request after the 24-hour expiry as new, a residual FR-5 duplicate risk the document doesn't discuss. These gaps are specific and real. They are not covered by key flaws F04, F09 or F13, and not by other findings: FND-001 is about Redis key scoping, FND-005 about DR rebuild of idempotency state, FND-012 about DynamoDB capacity."
+   },
+   "FND-015": {
+    "ok": true,
+    "seed": 254383062351049,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise is true. Section 11.3 only says the Retry Engine stops \"at the scheme limits applicable to the card\" and never states those limits, the rule source, or whether a cross-acquirer cascade of 05/91/96 counts as a reattempt. Section 27 still rates the Retry Engine \"Ready\", claiming \"scheme rules specified (Section 11)\", and the FR-7 test in 26.1 checks \"stop at scheme reattempt limits\". This is a specific, document-grounded readiness gap. It is not among the key flaws (F10 is the different timeout/no-reversal issue), and it does not duplicate FND-003 or any other finding."
+   },
+   "FND-016": {
+    "ok": true,
+    "seed": 136289701196129,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise checks out against the document. NFR-7 requires purpose limitation, retention limits and access logging under five privacy laws. Section 13.1 sends device fingerprint, IP address, user agent, hashed email and phone, and shipping and billing country to FRV-1, whose DPA is still pending (Backlog item 4). FR-15 requires holding customers' nominated bank accounts for payout refunds. Section 19.1 sets retention only for payment and attempt records, idempotency records, webhook events and settlement files, and places all primary data in ap-southeast-1 with Jakarta for DR only. The design gives no field-level purpose and retention map, no data-subject request process and no basis for cross-border transfer, even though the 26.2 acceptance criterion requires every personal data field to be mapped. One small error: the payload carries shipping and billing country, not full addresses. This is specific and grounded in the document. It is not covered by another finding in the review, and it goes beyond F07's residency point."
+   },
+   "FND-017": {
+    "ok": true,
+    "seed": 259896899191720,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise is accurate. FR-8 says 'reduces the expected authorization rate by more than 2%', while Section 10.3 and Section 24 give a unitless 'tolerance (default 2)'. The Section 26.1 FR-8 test only checks that 'the selected acquirer matches the expected choice' and never tests the bound. Percentage points and relative percent are different thresholds (2 points on the 88.1% baseline in Section 10.5 is about 2.3% relative), and Section 10.3's cheapest-vs-highest-approval check can disagree with the cost-weighted score in Section 10.2. The issue is specific, grounded in the document and real. No other finding in this review covers it, and O01 is unrelated (Section 23 attribution)."
+   },
+   "FND-019": {
+    "ok": true,
+    "seed": 32635102542129,
+    "class": "VALID_UNPLANTED",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premise holds. FR-15 sends some refunds as a bank payout to \"the customer's nominated account\", but no section says how that account is collected, verified or protected, or how the payout is journaled (14.2 shows only capture, settlement and merchant payout). Section 16.3 subtracts \"reserves and pending dispute holds\" without defining them, and there is no rule for a negative merchant_payable. Section 27 still rates Payouts \"Ready\" and cites only 16.3. The finding acknowledges that dispute case management is out of scope and focuses on v1 payout rules, which are in scope because disputes are ingested as ledger events. It is specific, grounded in the document, not in the key, and not covered by any other finding."
+   },
+   "FND-020": {
+    "ok": true,
+    "seed": 177521325728601,
+    "class": "NON_SPECIFIC",
+    "duplicate_of": null,
+    "matches_observation_id": null,
+    "rationale": "The premises check out: the title page cites a draft PCI DSS Scoping Memo and a 2026-09-21 consolidation with no change log, §10.3 has a weekly Routing Review with no owner, and the other processes it lists are in the document. The complaint itself is generic governance advice (name owners and SLAs, keep change control) that fits almost any design. By its own admission it 'does not cause failure by itself', and it identifies no concrete defect in this design. The substantive points it touches, the draft PCI memo and the HSM trigger, are already covered by FND-004 and FND-008."
+   }
+  }
+ },
+ "grounding": {
+  "quotes": [
+   {
+    "finding_id": "FND-001",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-001",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-001",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-001",
+    "origin": "evidence:EV-004",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-002",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-002",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-002",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-002",
+    "origin": "evidence:EV-008",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-002",
+    "origin": "evidence:EV-009",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "quote_too_short"
+    ]
+   },
+   {
+    "finding_id": "FND-003",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-003",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-003",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-004",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-004",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-004",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-004",
+    "origin": "evidence:EV-016",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "section_mismatch"
+    ]
+   },
+   {
+    "finding_id": "FND-005",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-005",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-005",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-005",
+    "origin": "evidence:EV-020",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-006",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-006",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-006",
+    "origin": "evidence:EV-022",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "quote_too_short"
+    ]
+   },
+   {
+    "finding_id": "FND-006",
+    "origin": "evidence:EV-023",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-006",
+    "origin": "evidence:EV-025",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "evidence:EV-026",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "quote_too_short"
+    ]
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "evidence:EV-027",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "quote_too_short"
+    ]
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "evidence:EV-028",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "evidence:EV-030",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-007",
+    "origin": "evidence:EV-031",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-008",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-008",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-008",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-008",
+    "origin": "evidence:EV-034",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-008",
+    "origin": "evidence:EV-036",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-009",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-009",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-009",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-009",
+    "origin": "evidence:EV-037",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-009",
+    "origin": "evidence:EV-041",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-010",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-010",
+    "origin": "evidence:EV-042",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-010",
+    "origin": "evidence:EV-043",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-010",
+    "origin": "evidence:EV-044",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-011",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-011",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-011",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-011",
+    "origin": "evidence:EV-048",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-011",
+    "origin": "evidence:EV-012",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-012",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-012",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-012",
+    "origin": "evidence:EV-052",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-012",
+    "origin": "evidence:EV-053",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-013",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-013",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-013",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-013",
+    "origin": "evidence:EV-057",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-014",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-014",
+    "origin": "evidence:EV-058",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-014",
+    "origin": "evidence:EV-060",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-015",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-015",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-015",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-016",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-016",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-016",
+    "origin": "evidence:EV-064",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-016",
+    "origin": "evidence:EV-067",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-017",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-017",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-017",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-018",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-018",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-018",
+    "origin": "anchor[2]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-018",
+    "origin": "evidence:EV-074",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-019",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-019",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-019",
+    "origin": "evidence:EV-077",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": false,
+    "g2_reasons": [
+     "quote_too_short"
+    ]
+   },
+   {
+    "finding_id": "FND-020",
+    "origin": "anchor[0]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": [
+     "section_unresolved"
+    ]
+   },
+   {
+    "finding_id": "FND-020",
+    "origin": "anchor[1]",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   },
+   {
+    "finding_id": "FND-020",
+    "origin": "evidence:EV-079",
+    "g1": true,
+    "g1_score": 1.0,
+    "g1_reason": null,
+    "g2": true,
+    "g2_reasons": []
+   }
+  ],
+  "provenance": [
+   {
+    "finding_id": "FND-001",
+    "evidence_id": "EV-001",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-001",
+    "evidence_id": "EV-002",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-001",
+    "evidence_id": "EV-003",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-001",
+    "evidence_id": "EV-004",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-001",
+    "evidence_id": "EV-083",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-005",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-006",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-007",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-008",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-009",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-002",
+    "evidence_id": "EV-084",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-003",
+    "evidence_id": "EV-010",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-003",
+    "evidence_id": "EV-011",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-003",
+    "evidence_id": "EV-012",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-003",
+    "evidence_id": "EV-085",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-004",
+    "evidence_id": "EV-013",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-004",
+    "evidence_id": "EV-014",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-004",
+    "evidence_id": "EV-015",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-004",
+    "evidence_id": "EV-016",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-004",
+    "evidence_id": "EV-086",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-005",
+    "evidence_id": "EV-017",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-005",
+    "evidence_id": "EV-018",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-005",
+    "evidence_id": "EV-019",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-005",
+    "evidence_id": "EV-020",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-005",
+    "evidence_id": "EV-087",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-021",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-022",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-023",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-024",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-025",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-006",
+    "evidence_id": "EV-088",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-026",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-027",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-028",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-029",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-030",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-031",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-007",
+    "evidence_id": "EV-089",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-032",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-033",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-034",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-035",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-036",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-008",
+    "evidence_id": "EV-090",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-037",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-038",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-039",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-040",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-041",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-009",
+    "evidence_id": "EV-091",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-010",
+    "evidence_id": "EV-042",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-010",
+    "evidence_id": "EV-043",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-010",
+    "evidence_id": "EV-044",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-010",
+    "evidence_id": "EV-045",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-010",
+    "evidence_id": "EV-092",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-046",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-047",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-048",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-049",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-012",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-011",
+    "evidence_id": "EV-093",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-012",
+    "evidence_id": "EV-050",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-012",
+    "evidence_id": "EV-051",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-012",
+    "evidence_id": "EV-052",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-012",
+    "evidence_id": "EV-053",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-012",
+    "evidence_id": "EV-094",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-013",
+    "evidence_id": "EV-054",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-013",
+    "evidence_id": "EV-055",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-013",
+    "evidence_id": "EV-056",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-013",
+    "evidence_id": "EV-057",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-013",
+    "evidence_id": "EV-095",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-014",
+    "evidence_id": "EV-058",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-014",
+    "evidence_id": "EV-059",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-014",
+    "evidence_id": "EV-060",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-014",
+    "evidence_id": "EV-096",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-015",
+    "evidence_id": "EV-061",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-015",
+    "evidence_id": "EV-062",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-015",
+    "evidence_id": "EV-063",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-015",
+    "evidence_id": "EV-097",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-016",
+    "evidence_id": "EV-064",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-016",
+    "evidence_id": "EV-065",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-016",
+    "evidence_id": "EV-066",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-016",
+    "evidence_id": "EV-067",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-016",
+    "evidence_id": "EV-098",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-017",
+    "evidence_id": "EV-068",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-017",
+    "evidence_id": "EV-069",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-017",
+    "evidence_id": "EV-070",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-017",
+    "evidence_id": "EV-099",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-018",
+    "evidence_id": "EV-071",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-018",
+    "evidence_id": "EV-072",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-018",
+    "evidence_id": "EV-073",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-018",
+    "evidence_id": "EV-074",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-018",
+    "evidence_id": "EV-100",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-019",
+    "evidence_id": "EV-075",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-019",
+    "evidence_id": "EV-076",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-019",
+    "evidence_id": "EV-077",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-019",
+    "evidence_id": "EV-101",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-020",
+    "evidence_id": "EV-016",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-020",
+    "evidence_id": "EV-078",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-020",
+    "evidence_id": "EV-079",
+    "source_type": "doc",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   },
+   {
+    "finding_id": "FND-020",
+    "evidence_id": "EV-102",
+    "source_type": "inference",
+    "in_ledger": true,
+    "external_label": null,
+    "source_type_correct": true,
+    "supports_claim": true
+   }
+  ],
+  "premise": {},
+  "citation": {},
+  "recommendation": {}
+ },
+ "human_review_queue": {
+  "all_valid_unplanted_and_hallucinated": [
+   "FND-004",
+   "FND-007",
+   "FND-010",
+   "FND-012",
+   "FND-013",
+   "FND-015",
+   "FND-016",
+   "FND-017",
+   "FND-019"
+  ],
+  "random_20pct_of_rest": [],
+  "note": "S-heldout: a person reviews these (prereg matcher.adjudication.human_review); S-dev: the LLM first pass stands and is labelled as such"
+ },
+ "failures": [],
+ "calls": {
+  "calls_total": 57,
+  "calls_live": 57,
+  "calls_cached": 0,
+  "calls_failed": 0,
+  "calls_by_kind": {
+   "adjudicate": 10,
+   "batch": 33,
+   "shortlist": 14
+  },
+  "cost_usd_reported": 6.891791,
+  "calls_without_cost": 0,
+  "served_models": [
+   "claude-opus-5-5"
+  ],
+  "budget": {
+   "max_cost_usd": 12.0,
+   "reserve_usd": 1.0,
+   "spent_usd": 6.891790999999999,
+   "stopped": false,
+   "stop_detail": null,
+   "refused_calls": 0
+  }
+ },
+ "elapsed_s": 159.28
+}
