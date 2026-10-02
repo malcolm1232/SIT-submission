@@ -41,13 +41,16 @@ TOOLS = [{"name": "mcp-internet-search__search", "description": "Web search.",
 
 
 def cli_result(structured: Any = None, *, is_error: bool = False, result: str = "", stop: str = "tool_use",
-               model: str = "claude-opus-5-5", cost: float = 0.01) -> dict[str, Any]:
+               model: str = "claude-opus-5-5", cost: float = 0.01, n: int = 1,
+               model_usage: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A ``claude -p`` result. ``cost`` and ``modelUsage`` are cumulative over the CLI session, as
+    the real CLI reports them: ``n`` is how many calls of 100 in / 20 out tokens the session holds."""
     return {"type": "result", "subtype": "error_during_execution" if is_error else "success", "is_error": is_error,
             "result": result, "structured_output": structured, "stop_reason": stop, "session_id": "ignored",
             "num_turns": 2, "total_cost_usd": cost, "terminal_reason": "completed",
             "usage": {"input_tokens": 100, "output_tokens": 20, "cache_creation_input_tokens": 1000,
                       "cache_read_input_tokens": 50},
-            "modelUsage": {model: {"inputTokens": 100, "outputTokens": 20, "costUSD": cost}}}
+            "modelUsage": model_usage or {model: {"inputTokens": 100 * n, "outputTokens": 20 * n, "costUSD": cost}}}
 
 
 class FakeRunner:
@@ -102,7 +105,7 @@ def user(*texts: str) -> dict[str, Any]:
 
 
 async def test_first_call_shape_and_resume(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
-    gw, runner, rd = make(tmp_path, base_cfg, cli_result(PLAN), cli_result({"text": "second"}))
+    gw, runner, rd = make(tmp_path, base_cfg, cli_result(PLAN), cli_result({"text": "second"}, cost=0.02, n=2))
     msgs = [user("DOCUMENT TEXT", "Plan the review.")]
     res = await gw.call(req(msgs))
     first = runner.calls[0]
@@ -132,7 +135,8 @@ async def test_first_call_shape_and_resume(tmp_path: Path, base_cfg: EffectiveCo
     msgs2 = [*msgs, res.assistant_message(), user("Now say something.")]
     res2 = await gw.call(req(msgs2, schema=None))
     argv2 = runner.calls[1]["argv"]
-    assert flag(argv2, "--resume") == sid and "--session-id" not in argv2
+    assert flag(argv2, "--resume") == sid and "--fork-session" in argv2
+    assert flag(argv2, "--session-id") not in (sid, "--fork-session")
     assert runner.calls[1]["stdin"] == "Now say something."
     assert json.loads(flag(argv2, "--json-schema")) == TEXT_SCHEMA
     assert res2.text == "second" and res2.parsed is None
@@ -204,6 +208,9 @@ def test_render_tool_catalogue_is_stable() -> None:
     assert a == render_tool_catalogue(json.loads(json.dumps(TOOLS)))
     assert a.startswith("# Tools available in this phase") and "## mcp-internet-search__search" in a
     assert "call-0001" in a and "final: null" in a and "tool_calls: []" in a
+    # Live check (haiku): without this warning the model called `search` natively, got "No such tool
+    # available" and answered without evidence.
+    assert "NOT functions you can invoke" in a and "No such tool available" in a
 
 
 async def test_envelope_with_neither_calls_nor_final(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
@@ -336,8 +343,7 @@ def test_fallback_and_budget_flags(tmp_path: Path, base_cfg: EffectiveConfig) ->
     cfg = base_cfg.model_copy(update={"agent": base_cfg.agent.model_copy(
         update={"allow_fallback": True, "claude_code": cc})})
     gw = ClaudeCodeGateway(cfg, RunDir(tmp_path / "r"), runner=FakeRunner())
-    argv = gw.build_argv(req([user("x")]), system_text="s", schema_json="{}", session_flag="--session-id",
-                         session_uuid="u")
+    argv = gw.build_argv(req([user("x")]), system_text="s", schema_json="{}", session_uuid="u")
     assert flag(argv, "--fallback-model") and flag(argv, "--max-budget-usd") == "0.5" and argv[-1] == "--verbose"
     from sit_review_agent.errors import ConfigError
 
@@ -411,3 +417,148 @@ async def test_subprocess_runner_stdin_env_cwd_and_timeout(tmp_path: Path) -> No
     assert run.returncode == 0 and run.stdout.strip() == "HELLO!" + str(tmp_path)
     with pytest.raises(TimeoutError):
         await subprocess_runner([sys.executable, "-c", "import time; time.sleep(30)"], "", {}, tmp_path, 0.2)
+
+
+# ------------------------------------------------------------------------------ verifier regressions
+
+
+async def test_api_keys_stripped_from_child_env_unless_inherited(tmp_path: Path, base_cfg: EffectiveConfig,
+                                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-secret-1")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "secret-2")
+    assert base_cfg.agent.claude_code.inherit_api_key is False
+    gw, runner, rd = make(tmp_path, base_cfg, cli_result(PLAN))
+    await gw.call(req([user("doc")]))
+    env = runner.calls[0]["env"]
+    assert "ANTHROPIC_API_KEY" not in env and "ANTHROPIC_AUTH_TOKEN" not in env
+    assert "PATH" in env and env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] == "1"
+    assert "sk-ant-secret-1" not in rd.llm_log.read_text() and "secret-2" not in rd.llm_log.read_text()
+
+    cc = base_cfg.agent.claude_code.model_copy(update={"inherit_api_key": True})
+    cfg = base_cfg.model_copy(update={"agent": base_cfg.agent.model_copy(update={"claude_code": cc})})
+    gw2, runner2, _ = make(tmp_path / "b", cfg, cli_result(PLAN))
+    await gw2.call(req([user("doc")]))
+    assert runner2.calls[0]["env"]["ANTHROPIC_API_KEY"] == "sk-ant-secret-1"
+
+
+async def test_cumulative_cost_and_model_usage_counted_per_call(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
+    # Verified live: on --resume (and in a fork) total_cost_usd and modelUsage are session totals.
+    cfg = base_cfg.model_copy(update={"agent": base_cfg.agent.model_copy(update={"allow_fallback": True})})
+    opus55 = {"inputTokens": 100, "outputTokens": 20}
+    opus5 = {"inputTokens": 100, "outputTokens": 20}
+    gw, _, rd = make(tmp_path, cfg,
+                     cli_result({"text": "1"}, cost=0.01),
+                     cli_result({"text": "2"}, cost=0.03,
+                                model_usage={"claude-opus-5-5": opus55, "claude-opus-5": opus5}),
+                     cli_result({"text": "3"}, cost=0.04,
+                                model_usage={"claude-opus-5-5": {"inputTokens": 200, "outputTokens": 40},
+                                             "claude-opus-5": opus5}))
+    msgs = [user("a")]
+    r1 = await gw.call(req(msgs, schema=None))
+    msgs += [r1.assistant_message(), user("b")]
+    # Call 2: only claude-opus-5 did work in this call (opus-5-5's counters did not move).
+    r2 = await gw.call(req(msgs, schema=None))
+    msgs += [r2.assistant_message(), user("c")]
+    r3 = await gw.call(req(msgs, schema=None))
+    assert (r1.model, r2.model, r3.model) == ("claude-opus-5-5", "claude-opus-5", "claude-opus-5-5")
+    assert r1.fallback is None and r2.fallback is not None and r3.fallback is None
+    assert len(gw.fallback_events()) == 1
+    assert gw.cost_total_usd == pytest.approx(0.04)
+    assert [e["call_cost_usd"] for e in JsonlWriter(rd.llm_log).read()] == pytest.approx([0.01, 0.02, 0.01])
+
+
+async def test_failed_attempts_never_continue_a_polluted_session(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
+    # Verified live: a killed `--resume` call leaves its user turn in that session's transcript, so
+    # every resumed attempt forks from the last good session into a fresh id.
+    gw, runner, _ = make(tmp_path, base_cfg,
+                         cli_result({"text": "1"}),
+                         TimeoutError(),
+                         cli_result({"text": "2"}, cost=0.02, n=2),
+                         cli_result(None, stop="refusal", cost=0.03, n=3),
+                         cli_result({"text": "3"}, cost=0.03, n=3))
+    msgs = [user("a")]
+    r1 = await gw.call(req(msgs, schema=None))
+    sid1 = flag(runner.calls[0]["argv"], "--session-id")
+    msgs += [r1.assistant_message(), user("b")]
+    r2 = await gw.call(req(msgs, schema=None))
+    a_timeout, a_ok = runner.calls[1]["argv"], runner.calls[2]["argv"]
+    assert flag(a_timeout, "--resume") == sid1 == flag(a_ok, "--resume")
+    assert "--fork-session" in a_timeout and "--fork-session" in a_ok
+    assert len({sid1, flag(a_timeout, "--session-id"), flag(a_ok, "--session-id")}) == 3
+    assert runner.calls[1]["stdin"] == runner.calls[2]["stdin"] == "b"
+    sid2 = flag(a_ok, "--session-id")
+
+    msgs += [r2.assistant_message(), user("c")]
+    with pytest.raises(LLMRefusalError):
+        await gw.call(req(msgs, schema=None))
+    # The phase retries with reframed wording in place of the refused turn (robustness LLM-06).
+    await gw.call(req([*msgs[:-1], user("c, reframed")], schema=None))
+    assert flag(runner.calls[3]["argv"], "--resume") == sid2 == flag(runner.calls[4]["argv"], "--resume")
+    assert runner.calls[4]["stdin"] == "c, reframed"
+    assert gw.cost_total_usd == pytest.approx(0.04)     # 0.01 + 0.01 + 0.01 (refused) + 0.01
+
+
+@pytest.mark.parametrize(("out", "error"), [
+    (cli_result(is_error=True, result="Invalid API key · Please run /login"), LLMAuthError),
+    (cli_result(is_error=True, result="API Error: 400 invalid_request_error: Prompt is too long"), LLMBadRequestError),
+    ({**cli_result(is_error=True), "result": None, "errors": ["OAuth token has expired"]}, LLMAuthError),
+    ({**cli_result(is_error=True), "subtype": "error_max_structured_output_retries", "result": None,
+      "errors": ["no valid output"]}, LLMSchemaError),
+])
+async def test_non_retryable_cli_errors(tmp_path: Path, base_cfg: EffectiveConfig, out: dict[str, Any],
+                                        error: type[Exception]) -> None:
+    gw, runner, _ = make(tmp_path, base_cfg, out, cli_result(PLAN))
+    with pytest.raises(error):
+        await gw.call(req([user("doc")]))
+    assert len(runner.calls) == 1
+
+
+async def test_error_text_in_errors_list_is_classified(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
+    # `error_*` subtypes carry no `result`, only `errors`; status digits inside numbers do not count.
+    limited = {**cli_result(is_error=True), "result": None, "errors": ["API Error: 429 rate_limit_error"]}
+    gw, runner, _ = make(tmp_path, cfg_with(base_cfg, max_retries=1), limited, limited)
+    with pytest.raises(LLMRateLimitError):
+        await gw.call(req([user("doc")]))
+    assert len(runner.calls) == 2
+    gw2, _, _ = make(tmp_path / "b", cfg_with(base_cfg, max_retries=0),
+                     cli_result(is_error=True, result="context of 14290 tokens lost"))
+    with pytest.raises(LLMUnavailableError):
+        await gw2.call(req([user("doc")]))
+
+
+async def test_assistant_turn_must_stay_where_it_was_returned(tmp_path: Path, base_cfg: EffectiveConfig) -> None:
+    gw, runner, _ = make(tmp_path, base_cfg, cli_result(PLAN), cli_result(PLAN, cost=0.02, n=2))
+    msgs = [user("doc")]
+    res = await gw.call(req(msgs))
+    with pytest.raises(LLMBadRequestError, match="append-only"):
+        await gw.call(req([*msgs, user("inserted"), res.assistant_message(), user("next")]))
+    await gw.call(req([*msgs, res.assistant_message(), user("next")]))      # the legitimate append
+    assert len(runner.calls) == 2
+
+
+def test_output_schema_uses_llm_facing_schema_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sit_review_agent.llm import claude_code, outputs
+
+    def stub(model: type) -> dict[str, Any]:
+        raise NotImplementedError
+
+    monkeypatch.setattr(outputs, "llm_facing_schema", stub)
+    assert claude_code._output_schema(PlanOutput) == _schema_for(PlanOutput)
+    monkeypatch.setattr(outputs, "llm_facing_schema", lambda model: {"type": "object", "title": model.__name__})
+    assert claude_code._output_schema(PlanOutput) == {"type": "object", "title": "PlanOutput"}
+
+
+def test_schema_for_keeps_maps_open() -> None:
+    from pydantic import BaseModel
+
+    class Inner(BaseModel):
+        x: int
+
+    class WithMap(BaseModel):
+        counts: dict[str, int]
+        inner: Inner
+
+    schema = _schema_for(WithMap)
+    assert schema["additionalProperties"] is False and schema["$defs"]["Inner"]["additionalProperties"] is False
+    assert schema["properties"]["counts"]["additionalProperties"] == {"type": "integer"}
+    jsonschema.Draft202012Validator(schema).validate({"counts": {"a": 1}, "inner": {"x": 1}})

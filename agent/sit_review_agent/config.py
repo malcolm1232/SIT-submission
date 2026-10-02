@@ -78,6 +78,8 @@ class ClaudeCodeSettings(_Cfg):
     executable: str = "claude"
     extra_args: list[str] = Field(default_factory=list)
     max_budget_usd_per_call: float | None = Field(None, gt=0, description="passed as --max-budget-usd when set")
+    inherit_api_key: bool = Field(False, description="false: drop ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN from "
+                                                     "the claude -p environment so it bills the subscription")
 
 
 class PhasesConfig(_Cfg):

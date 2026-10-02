@@ -6,9 +6,12 @@ Run by hand from the repo root with the agent venv active (not collected by pyte
     python scripts/smoke_claude_code_backend.py                           # claude-opus-5-5
     python scripts/smoke_claude_code_backend.py --model claude-haiku-4-5  # cheap check
 
-It bills to whatever `claude` is logged in with (subscription, cloud credits, or an
-ANTHROPIC_API_KEY in the environment). config.SUPPORTED_MODELS rejects haiku, so the model is
-overridden on the gateway after construction, not in the config.
+It bills to whatever `claude` is logged in with (subscription or cloud credits).
+ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN are removed from the child environment unless
+`claude_code.inherit_api_key: true` in config/agent.yaml. The other `claude_code:` keys
+(`executable`, `extra_args`, `max_budget_usd_per_call`) and `llm.timeout_s` / `llm.max_retries`
+apply as in a run. config.SUPPORTED_MODELS rejects haiku, so the model is overridden on the
+gateway after construction, not in the config.
 """
 
 from __future__ import annotations

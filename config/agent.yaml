@@ -27,6 +27,7 @@ claude_code:                       # used only when llm.backend is claude_code
   executable: claude               # Claude Code CLI on PATH (check with `claude --version`)
   extra_args: []                   # appended to every `claude -p` call; --bare and --no-session-persistence are rejected
   max_budget_usd_per_call: null    # number: passed as --max-budget-usd (client-side estimate); null = no cap
+  inherit_api_key: false           # false: strip ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN so claude -p bills the subscription / cloud credits
 
 phases:                            # only research and refine may be disabled
   ingest: true

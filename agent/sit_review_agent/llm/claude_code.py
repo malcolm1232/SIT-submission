@@ -9,8 +9,12 @@ command contract was verified in a cloud session (Claude Code 2.1.287; ADR-010):
 * ``--bare`` is never passed (it breaks host-managed auth in cloud sessions) and
   ``--no-session-persistence`` is never passed (it breaks ``--resume``);
 * the user prompt goes to stdin (argv strings are capped at 128 KiB on Linux);
-* a conversation is one CLI session: ``--session-id <uuid>`` on its first call, ``--resume <uuid>``
-  afterwards, always from the same ``cwd`` (the run directory) so the CLI finds the transcript;
+* a conversation is a chain of CLI sessions: ``--session-id <uuid>`` on its first call, then
+  ``--resume <last good uuid> --fork-session --session-id <new uuid>`` on every later attempt, always
+  from the same ``cwd`` (the run directory) so the CLI finds the transcript. Forking keeps failed
+  attempts (a killed ``--resume`` leaves its user turn in the transcript) out of the history;
+* ``total_cost_usd`` and ``modelUsage`` are cumulative over a session (a fork inherits them), so
+  cost and served model are computed as per-call deltas; ``usage`` is per invocation;
 * structured output always goes through ``--json-schema``. Native ``tool_use`` is impossible with
   every CLI tool off, so when a request carries ``tools`` the gateway renders them into the system
   prompt (:func:`render_tool_catalogue`) and asks for an envelope
@@ -31,6 +35,7 @@ import copy
 import json
 import os
 import random
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -76,6 +81,8 @@ MAX_ARGV_TEXT_CHARS = 100_000
 CLI_FALLBACK_MODEL = "claude-opus-5"
 #: Flags that must never reach the CLI (ADR-010, verified).
 FORBIDDEN_FLAGS = frozenset({"--bare", "--no-session-persistence"})
+#: Removed from the child environment unless ``claude_code.inherit_api_key`` (billing, ADR-010).
+API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 PREFLIGHT_TIMEOUT_S = 30.0
 BACKEND = "claude_code"
 
@@ -186,11 +193,13 @@ def render_tool_catalogue(tools: list[dict[str, Any]]) -> str:
     lines = [
         "# Tools available in this phase",
         "",
-        "You cannot call these tools natively. To call tools, answer with `tool_calls` listing each call "
-        "as {\"id\", \"name\", \"input\"} and `final: null`. Use ids `call-0001`, `call-0002`, ... and keep "
-        "numbering across the conversation; several calls in one answer are fine. The results come back in "
-        "the next user turn as `[tool result <id>]` sections. When you are done, answer with `tool_calls: []` "
-        "and the final object in `final`.",
+        "These tools are NOT functions you can invoke in this session: a direct call to them fails with "
+        "\"No such tool available\". The only function you can invoke is the one that returns your structured "
+        "answer, and that answer is how you call tools. To call tools, return the structured answer with "
+        "`tool_calls` listing each call as {\"id\", \"name\", \"input\"} and `final: null`; the caller runs them. "
+        "Use ids `call-0001`, `call-0002`, ... and keep numbering across the conversation; several calls in one "
+        "answer are fine. The results come back in the next user turn as `[tool result <id>]` sections. When "
+        "you are done, answer with `tool_calls: []` and the final object in `final`.",
     ]
     for t in tools:
         schema = json.dumps(t.get("input_schema") or {"type": "object"}, sort_keys=True, ensure_ascii=False)
@@ -204,11 +213,27 @@ def render_tool_catalogue(tools: list[dict[str, Any]]) -> str:
 
 @dataclass
 class _Conversation:
-    session_uuid: str
+    """Gateway-side state of one ``conversation_id``.
+
+    ``session_uuid`` is the CLI session of the last *successful* call. Every later call resumes it
+    with ``--fork-session`` into a fresh session id, so a failed attempt (timeout kill, refusal,
+    truncation, schema error, API error) never leaves its user turn or answer in the transcript the
+    next attempt continues from (verified: a killed ``--resume`` call leaves its user turn behind).
+    """
+
+    session_uuid: str | None = None
     sent_message_count: int = 0
     produced: list[list[dict[str, Any]]] = field(default_factory=list)   # assistant contents returned
+    produced_at: list[int] = field(default_factory=list)                 # message index each must take
     prefix_sha256: str | None = None            # hash of messages[:sent_message_count]
-    started: bool = False                       # a CLI transcript is known to exist
+    # The CLI reports total_cost_usd and modelUsage cumulatively over the session (and a fork
+    # inherits its parent's totals), so per-call figures are deltas against the last good session.
+    cost_seen: float = 0.0
+    model_usage_seen: dict[str, dict[str, float]] = field(default_factory=dict)
+
+    @property
+    def started(self) -> bool:
+        return self.session_uuid is not None
 
 
 class _AttemptFailed(Exception):
@@ -221,16 +246,24 @@ class _AttemptFailed(Exception):
         self.out = out
 
 
+_AUTH_MARKERS = ("authentication", "invalid api key", "/login", "oauth token", "not logged in", "login expired")
+_BAD_REQUEST_MARKERS = ("invalid_request_error", "prompt is too long", "credit balance is too low")
+
+
 def _classify(text: str, *, call_id: str, phase: str) -> tuple[LLMError, bool]:
+    """Typed error for the CLI's error text, and whether the retry policy retries it. Auth and
+    bad-request errors are never retried (gateway contract item 2)."""
     t = text.lower()
     short = text[:500]
-    if "authentication" in t:
+    if any(m in t for m in _AUTH_MARKERS) or re.search(r"\b40[13]\b", t):
         return LLMAuthError("Claude Code reported an authentication error; check the Claude Code login / host "
                             "credentials (run `claude` interactively once)", call_id=call_id, phase=phase), False
-    if "rate limit" in t or "usage limit" in t or "429" in t:
+    if any(m in t for m in _BAD_REQUEST_MARKERS) or re.search(r"\b400\b", t):
+        return LLMBadRequestError(f"Claude Code request rejected: {short}", call_id=call_id, phase=phase), False
+    if "rate limit" in t or "usage limit" in t or re.search(r"\b429\b", t):
         return LLMRateLimitError(f"Claude Code rate/usage limit: {short}", retry_after_s=None, call_id=call_id,
                                  phase=phase), True
-    if "overloaded" in t or "529" in t or "503" in t:
+    if "overloaded" in t or re.search(r"\b(529|503)\b", t):
         return LLMOverloadedError(f"model overloaded: {short}", call_id=call_id, phase=phase), True
     if "timed out" in t or "timeout" in t:
         return LLMTimeoutError(f"Claude Code timed out: {short}", call_id=call_id, phase=phase), True
@@ -246,6 +279,31 @@ def _usage_of(out: dict[str, Any]) -> Usage:
 
     return Usage(n("input_tokens"), n("output_tokens"), n("cache_creation_input_tokens"),
                  n("cache_read_input_tokens"))
+
+
+_MODEL_USAGE_COUNTERS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")
+
+
+def _model_counters(out: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """``modelUsage`` token counters per model (cumulative over the CLI session)."""
+    mu = out.get("modelUsage")
+    if not isinstance(mu, dict):
+        return {}
+    res: dict[str, dict[str, float]] = {}
+    for k, v in mu.items():
+        v = v if isinstance(v, dict) else {}
+        res[str(k)] = {c: float(v[c]) if isinstance(v.get(c), int | float) else 0.0 for c in _MODEL_USAGE_COUNTERS}
+    return res
+
+
+def _error_text(out: dict[str, Any]) -> str:
+    """Error text of an ``is_error`` result: ``result`` (API errors) plus ``errors`` (the
+    ``error_*`` subtypes carry no ``result``, only ``errors: [str]``)."""
+    parts = [str(out["result"])] if out.get("result") else []
+    errs = out.get("errors")
+    if isinstance(errs, list):
+        parts += [str(e) for e in errs if e]
+    return "; ".join(parts) or str(out.get("subtype") or "")
 
 
 class ClaudeCodeGateway:
@@ -273,6 +331,7 @@ class ClaudeCodeGateway:
         self.executable = cc.executable
         self.extra_args = list(cc.extra_args)
         self.max_budget_usd_per_call = cc.max_budget_usd_per_call
+        self.inherit_api_key = cc.inherit_api_key
         self.model = config.agent.model
         self.allow_fallback = config.agent.allow_fallback
         self.max_retries = config.agent.llm.max_retries
@@ -324,6 +383,11 @@ class ClaudeCodeGateway:
 
     def env(self, request: LLMRequest) -> dict[str, str]:
         env = dict(os.environ)
+        if not self.inherit_api_key:
+            # An API key in the environment would make `claude -p` bill that key instead of the
+            # subscription / cloud credits (ADR-010). Only the names are ever mentioned, never values.
+            for name in API_KEY_ENV_VARS:
+                env.pop(name, None)
         env.update({"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", "CLAUDE_CODE_DISABLE_ATTACHMENTS": "1",
                     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(request.max_tokens)})
         return env
@@ -337,12 +401,15 @@ class ClaudeCodeGateway:
         final = _output_schema(request.output_schema) if request.output_schema is not None else dict(TEXT_SCHEMA)
         return envelope_schema(final) if request.tools else final
 
-    def build_argv(self, request: LLMRequest, *, system_text: str, schema_json: str, session_flag: str,
-                   session_uuid: str) -> list[str]:
+    def build_argv(self, request: LLMRequest, *, system_text: str, schema_json: str, session_uuid: str,
+                   resume_from: str | None = None) -> list[str]:
+        """``session_uuid`` is the id this attempt's transcript gets. With ``resume_from`` the call
+        continues that session through ``--resume <id> --fork-session``, leaving it untouched."""
+        resume = ["--resume", resume_from, "--fork-session"] if resume_from is not None else []
         argv = [self.executable, "-p", "--model", self.model, "--system-prompt", system_text,
                 "--tools", "", "--strict-mcp-config", "--disallowedTools", "mcp__*", "--disable-slash-commands",
                 "--output-format", "json", "--effort", request.effort, "--json-schema", schema_json,
-                session_flag, session_uuid]
+                *resume, "--session-id", session_uuid]
         if self.allow_fallback:
             argv += ["--fallback-model", CLI_FALLBACK_MODEL]
         if self.max_budget_usd_per_call is not None:
@@ -416,6 +483,10 @@ class ClaudeCodeGateway:
         for i, (m, mine) in enumerate(zip(assistant, conv.produced, strict=True)):
             if m.get("content") != mine:
                 raise bad(f"assistant turn {i + 1} differs from the one this gateway returned")
+        for i, pos in enumerate(conv.produced_at):
+            if pos >= len(msgs) or msgs[pos].get("role") != "assistant":
+                raise bad(f"assistant turn {i + 1} must be message {pos + 1}, right after the turns it answered "
+                          "(history must be append-only)")
         new_user = [m for m in msgs[conv.sent_message_count:] if m.get("role") == "user"]
         if not new_user:
             raise bad("no new user turn to send")
@@ -434,14 +505,26 @@ class ClaudeCodeGateway:
                     self._tool_id_alias[cand] = model_id
                 return cand
 
-    def _served_model(self, out: dict[str, Any]) -> str:
-        mu = out.get("modelUsage")
-        if not isinstance(mu, dict) or not mu:
+    def _call_model_usage(self, out: dict[str, Any], conv: _Conversation) -> dict[str, dict[str, float]]:
+        """Per-model counters spent by this call only: ``modelUsage`` minus the last good session's
+        totals (``modelUsage`` is cumulative over a session and inherited by a fork)."""
+        res: dict[str, dict[str, float]] = {}
+        for k, now in _model_counters(out).items():
+            seen = conv.model_usage_seen.get(k, {})
+            delta = {c: now[c] - seen.get(c, 0.0) for c in _MODEL_USAGE_COUNTERS}
+            if any(v > 0 for v in delta.values()):
+                res[k] = delta
+        return res
+
+    def _served_model(self, call_usage: dict[str, dict[str, float]]) -> str:
+        """The model that served this call: the requested one if it did any work, else the one
+        with the most output tokens in this call."""
+        if not call_usage:
             return self.model
-        for k in mu:
+        for k in call_usage:
             if k == self.model or k.startswith(self.model):
                 return self.model if k == self.model else k
-        return max(mu, key=lambda k: (mu[k] or {}).get("outputTokens", 0) if isinstance(mu[k], dict) else 0)
+        return max(call_usage, key=lambda k: call_usage[k]["outputTokens"])
 
     def _backoff(self, attempt: int) -> float:
         delay = min(self.backoff_max_s, self.backoff_base_s * (2 ** attempt))
@@ -455,7 +538,7 @@ class ClaudeCodeGateway:
         phase = request.phase.value
         conv = self._conversations.get(request.conversation_id)
         if conv is None:
-            conv = _Conversation(session_uuid=str(uuid.uuid4()))
+            conv = _Conversation()
             self._conversations[request.conversation_id] = conv
         new_turns = self._new_turns(request, conv)
         prompt, pdf_dropped = self.render_user_turns(new_turns)
@@ -478,13 +561,11 @@ class ClaudeCodeGateway:
         t_call = self.clock.monotonic()
         attempt = 0
         while True:
-            if not conv.started and attempt > 0:
-                # The failed first attempt may or may not have created a transcript under the old
-                # uuid; a fresh one avoids "session id already in use" (ADR-010 note in claude_code.py).
-                conv.session_uuid = str(uuid.uuid4())
-            flag = "--resume" if conv.started else "--session-id"
-            argv = self.build_argv(request, system_text=system_text, schema_json=schema_json, session_flag=flag,
-                                   session_uuid=conv.session_uuid)
+            # A fresh session id per attempt: a failed attempt may have created (or, resuming in
+            # place, polluted) a transcript, so retries never reuse it (see _Conversation).
+            attempt_uuid = str(uuid.uuid4())
+            argv = self.build_argv(request, system_text=system_text, schema_json=schema_json,
+                                   session_uuid=attempt_uuid, resume_from=conv.session_uuid)
             logged_argv = [("sha256:" + sha256_text(a)) if i > 0 and argv[i - 1] in ("--system-prompt", "--json-schema")
                            else a for i, a in enumerate(argv)]
             started_at = isoformat_z(self.clock.now_utc())
@@ -492,7 +573,8 @@ class ClaudeCodeGateway:
             base_entry: dict[str, Any] = {
                 "call_id": call_id, "phase": phase, "purpose": request.purpose,
                 "conversation_id": request.conversation_id, "request_sha256": req_hash, "started_at": started_at,
-                "backend": BACKEND, "cli_session_id": conv.session_uuid, "argv": logged_argv,
+                "backend": BACKEND, "cli_session_id": attempt_uuid, "cli_resumed_from": conv.session_uuid,
+                "argv": logged_argv,
                 "prompt_sha256": prompt_hash, "pdf_dropped": pdf_dropped, "attempt": attempt,
             }
             try:
@@ -501,7 +583,7 @@ class ClaudeCodeGateway:
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
                                            outcome=type(fail.error).__name__))
-                self._log_failure(base_entry, fail, elapsed)
+                self._log_failure(base_entry, fail, elapsed, conv)
                 if fail.retry and attempt < self.max_retries:
                     delay = self._backoff(attempt)
                     if self.progress is not None:
@@ -513,9 +595,13 @@ class ClaudeCodeGateway:
                 raise fail.error from None
             elapsed = self.clock.monotonic() - t0
             attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
+            conv.session_uuid = attempt_uuid
+            conv.cost_seen = result["cost_cumulative"]
+            conv.model_usage_seen = result["model_usage_cumulative"]
             conv.sent_message_count = len(request.messages)
             conv.prefix_sha256 = sha256_json(request.messages)
             conv.produced.append(copy.deepcopy(result["content"]))
+            conv.produced_at.append(len(request.messages))
             return LLMResult(call_id=call_id, phase=request.phase, conversation_id=request.conversation_id,
                              model=result["served"], stop_reason=result["stop_reason"],
                              content=copy.deepcopy(result["content"]), parsed=result["parsed"],
@@ -524,13 +610,15 @@ class ClaudeCodeGateway:
                              latency_s=self.clock.monotonic() - t_call, attempts=attempts,
                              fallback=result["fallback"], resumed=False)
 
-    def _log_failure(self, base: dict[str, Any], fail: _AttemptFailed, elapsed: float) -> None:
+    def _log_failure(self, base: dict[str, Any], fail: _AttemptFailed, elapsed: float, conv: _Conversation) -> None:
         out = fail.out or {}
         u = _usage_of(out) if out else Usage()
-        self.log.log({**base, "model": self._served_model(out) if out else self.model,
+        self.log.log({**base, "model": self._served_model(self._call_model_usage(out, conv)) if out else self.model,
                       "stop_reason": out.get("stop_reason"), "outcome": type(fail.error).__name__,
                       "error": str(fail.error)[:500], "usage": u.__dict__, "content": [],
                       "num_turns": out.get("num_turns"), "total_cost_usd": out.get("total_cost_usd"),
+                      "call_cost_usd": (max(0.0, float(out["total_cost_usd"]) - conv.cost_seen)
+                                        if isinstance(out.get("total_cost_usd"), int | float) else None),
                       "terminal_reason": out.get("terminal_reason"), "elapsed_s": elapsed})
 
     async def _run(self, argv: list[str], prompt: str, env: dict[str, str], phase: str,
@@ -565,36 +653,40 @@ class ClaudeCodeGateway:
                 call_id=call_id, phase=phase), retry=True) from None
 
         # A JSON result means the CLI ran; account for what it spent even if the answer is unusable.
+        # ``usage`` is per invocation; ``total_cost_usd`` and ``modelUsage`` are cumulative over the
+        # session (verified with Claude Code 2.1.287), so those two are taken as deltas.
         usage = _usage_of(out)
         self._usage = self._usage + usage
         cost = out.get("total_cost_usd")
-        if isinstance(cost, int | float):
-            self._cost += float(cost)
-        mu = out.get("modelUsage")
-        if isinstance(mu, dict):
-            self._served.update(str(k) for k in mu)
-        served = self._served_model(out)
+        cost_cumulative = float(cost) if isinstance(cost, int | float) else conv.cost_seen
+        call_cost = max(0.0, cost_cumulative - conv.cost_seen)
+        self._cost += call_cost
+        call_usage = self._call_model_usage(out, conv)
+        self._served.update(call_usage)
+        served = self._served_model(call_usage)
         self._served.add(served)
 
         stop = out.get("stop_reason")
         if stop == "max_tokens":
-            conv.started = True
             raise _AttemptFailed(LLMTruncatedError("output truncated at max_tokens", max_tokens=request.max_tokens,
                                                    call_id=call_id, phase=phase), retry=False, out=out)
         if stop == "refusal":
-            conv.started = True
             self._refusals.append({"call_id": call_id, "stage": phase, "category": None})
             raise _AttemptFailed(LLMRefusalError("model declined", category=None, call_id=call_id, phase=phase),
                                  retry=False, out=out)
         if out.get("is_error"):
-            text = str(out.get("result") or out.get("subtype") or "")
-            if out.get("subtype") == "error_max_budget_usd":
+            subtype = out.get("subtype")
+            if subtype == "error_max_budget_usd":
                 raise _AttemptFailed(LLMUnavailableError(
                     f"claude -p hit --max-budget-usd {self.max_budget_usd_per_call}", call_id=call_id, phase=phase),
                     retry=False, out=out)
-            err, retry = _classify(text, call_id=call_id, phase=phase)
+            if subtype == "error_max_structured_output_retries":
+                # The CLI already re-asked the model for schema-valid output; like any schema
+                # violation this is not retried (LLM-08).
+                raise _AttemptFailed(LLMSchemaError(f"claude -p found no schema-valid output: {_error_text(out)[:500]}",
+                                                    call_id=call_id, phase=phase), retry=False, out=out)
+            err, retry = _classify(_error_text(out), call_id=call_id, phase=phase)
             raise _AttemptFailed(err, retry=retry, out=out)
-        conv.started = True
 
         fallback: FallbackEvent | None = None
         if self.allow_fallback and served != self.model:
@@ -606,11 +698,13 @@ class ClaudeCodeGateway:
             parsed_out = self._interpret(request, out, call_id)
         except LLMSchemaError as err:
             raise _AttemptFailed(err, retry=False, out=out) from None
-        result = {**parsed_out, "served": served, "usage": usage, "fallback": fallback}
+        result = {**parsed_out, "served": served, "usage": usage, "fallback": fallback,
+                  "cost_cumulative": cost_cumulative,
+                  "model_usage_cumulative": _model_counters(out) or conv.model_usage_seen}
         self.log.log({**base_entry, "model": served, "stop_reason": result["stop_reason"], "outcome": "ok",
                       "usage": usage.__dict__, "content": result["content"], "num_turns": out.get("num_turns"),
-                      "total_cost_usd": out.get("total_cost_usd"), "terminal_reason": out.get("terminal_reason"),
-                      "cli_stop_reason": stop})
+                      "total_cost_usd": out.get("total_cost_usd"), "call_cost_usd": call_cost,
+                      "terminal_reason": out.get("terminal_reason"), "cli_stop_reason": stop})
         return result
 
     def _interpret(self, request: LLMRequest, out: dict[str, Any], call_id: str) -> dict[str, Any]:
