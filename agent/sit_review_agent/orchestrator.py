@@ -46,6 +46,7 @@ from sit_review_agent.context import RunContext
 from sit_review_agent.errors import AgentError, RunInterrupted, StageCrash
 from sit_review_agent.models import DegradationType, DocumentRole, StopReason, StopReasonCode
 from sit_review_agent.phases.base import Phase
+from sit_review_agent.progress import milestone
 from sit_review_agent.rundir import RunDir, write_json_atomic
 from sit_review_agent.state.checkpoint import Checkpoint, PinnedHashes, journal_offsets, write_checkpoint
 from sit_review_agent.state.run_state import RunMode
@@ -221,6 +222,19 @@ class Orchestrator:
             ctx.state.completed_phases.append(phase)
         self.checkpoint(ctx, phase)
         ctx.progress.emit(phase.value, f"done in {ctx.state.budget.phase_seconds[phase.value]:.1f}s{note}", "done")
+        if not note:                            # a member stopped at the stage 1 limit reaches no milestone
+            self._milestone(ctx, phase)
+
+    @staticmethod
+    def _milestone(ctx: RunContext, phase: PhaseName) -> None:
+        """The stage milestones of ``progress.MILESTONES`` that end with ``phase`` (the merged list is
+        announced by :meth:`_close`)."""
+        if phase is PhaseName.UNDERSTAND:
+            milestone(ctx.progress, "intent", phase.value, registry_entries=len(ctx.registry.entries()))
+        elif phase is PhaseName.PLAN and ctx.state.plan is not None:
+            milestone(ctx.progress, "plan", phase.value, questions=len(ctx.state.plan.questions))
+        elif phase is PhaseName.REPORT and ctx.run_dir.report_json.is_file():
+            milestone(ctx.progress, "verified", phase.value, findings=len(ctx.state.findings))
 
     # ------------------------------------------------------------------ stage 1
 
@@ -421,6 +435,8 @@ class Orchestrator:
                 ctx.state.completed_phases.append(p)
             self.checkpoint(ctx, p)
             ctx.progress.emit(p.value, f"stage 1 closed; merged in {ctx.clock.monotonic() - t0:.1f}s", "done")
+            milestone(ctx.progress, "merged", PhaseName.REFINE.value, findings=len(ctx.state.finding_drafts),
+                      shards=len(results))
         elif p in ended:
             if p not in ctx.state.completed_phases:
                 ctx.state.completed_phases.append(p)
