@@ -53,6 +53,22 @@ def prereg_status(prereg: Path | None = None, lock: Path | None = None) -> dict[
             "message": msg}
 
 
+PILOT_COST_FIELD = "costs.per_run_usd.heavy_case_FULL"
+
+
+def pilot_cost_threshold_usd(prereg: Path | None = None) -> float | None:
+    """The pilot checkpoint's FULL-run cost threshold (``stop_rule.pilot_checkpoint`` reads
+    ``costs.per_run_usd.heavy_case_FULL``); ``None`` when the prereg or the field is missing."""
+    p = prereg or prereg_path()
+    if not p.exists():
+        return None
+    data = yaml.safe_load(p.read_bytes()) or {}
+    node: Any = data
+    for part in PILOT_COST_FIELD.split("."):
+        node = node.get(part) if isinstance(node, dict) else None
+    return float(node) if isinstance(node, int | float) and not isinstance(node, bool) else None
+
+
 def enforce(status: dict[str, Any], *, prompt_bundle_sha256: str, prompt_lock_problems: list[str]) -> None:
     """Raise :class:`PreregRefusal` when a frozen prereg forbids this run."""
     if not status["frozen"]:

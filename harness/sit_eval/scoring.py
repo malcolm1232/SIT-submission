@@ -17,12 +17,14 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 from sit_eval import lc12
+from sit_eval import usage as usage_mod
 from sit_eval.calls import BudgetStop, JudgeRunner
 from sit_eval.grounding import QuoteFinder, run_grounding
 from sit_eval.loaders import DocInput, ReviewInput
 from sit_eval.matcher import Matcher, MatcherSettings, MatchResult, finding_views, flaw_views
 from sit_eval.metrics import compute_metrics
 from sit_eval.paths import SCHEMAS_DIR
+from sit_eval.usage import usage_completeness
 
 SCORES_SCHEMA_VERSION = "1.0"
 #: The agent's code-set verdict of a run that produced no assessment (spec VerdictLabel).
@@ -261,6 +263,10 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
         warnings.append(PLUMBING_NOTE)
     if _verdict_label(rin) == NOT_ASSESSED:
         warnings.append(NOT_ASSESSED_NOTE)
+    # usage completeness (SIT FABLE ruling #28): the loader read it; a ReviewInput built without it is read here
+    usage = rin.usage if rin.usage is not None else usage_completeness(
+        rin.manifest if rin.manifest is not None else rin.data.get("run_manifest"), rin.run_dir)
+    warnings += usage_mod.warnings_for(usage)
     doc = docin.document
     doc_text = doc.text
     base = _base(rin, key, key_path, docin, version, opts, prereg, prompts_info)
@@ -282,7 +288,7 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
                 "metrics": {}, "stop": {"reason": str(stop)}, "calls": runner.summary(),
                 "elapsed_s": round(time.monotonic() - t0, 2)}
     metrics = compute_metrics(match=match, grounding=grounding, key=key, version=version, review=rin.data,
-                              manifest=rin.manifest, doc=doc, prior_scores=prior_scores)
+                              manifest=rin.manifest, doc=doc, prior_scores=prior_scores, usage=usage)
     failures = match.failures + grounding.failures
     if match.shortlist_failed and match.candidate_rule == "shortlist_bounded":
         warnings.append(f"shortlist failed for {', '.join(match.shortlist_failed)}: under shortlist_bounded these "

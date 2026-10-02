@@ -194,11 +194,13 @@ def options(**over: Any) -> ScoreOptions:
 def run_pipeline(tmp_path: Path, review: dict[str, Any], key: dict[str, Any], responder: Callable[..., Any], *,
                  version: str = "v1", judge: Any = None, reserve_usd: float = 0.0, prior: dict[str, Any] | None = None,
                  out_dir: Path | None = None, runner_exploratory: bool | None = None,
-                 **opts: Any) -> tuple[dict[str, Any], Any, JudgeRunner]:
+                 manifest: dict[str, Any] | None = None, **opts: Any) -> tuple[dict[str, Any], Any, JudgeRunner]:
     """Score ``review`` against ``key`` with a fake judge. The builder keys are unsigned (``scored_run_ready``
     false), so LC12 needs the exploratory override: ``exploratory`` defaults to the key's sign-off state, as
     ``sit-eval score --exploratory`` would be needed on the command line. Pass ``exploratory=False`` to test the
-    refusal, ``runner_exploratory`` to give the runner another cache mode than the options."""
+    refusal, ``runner_exploratory`` to give the runner another cache mode than the options, ``manifest`` to stand
+    for a ``manifest.json`` beside the report (usage completeness is then read from it or, failing that, from an
+    ``llm.jsonl`` the test wrote under ``tmp_path``)."""
     opts.setdefault("exploratory", not key["authoring_status"]["scored_run_ready"])
     report = tmp_path / "report.json"
     report.write_text(json.dumps(review), encoding="utf-8")
@@ -206,7 +208,7 @@ def run_pipeline(tmp_path: Path, review: dict[str, Any], key: dict[str, Any], re
     key_path.write_text(json.dumps(key), encoding="utf-8")
     doc = Document.from_page_marked_text(doc_text(), doc_id="DOC-test")
     docin = DocInput(document=doc, source="test", sha256_text=doc.sha256_text, sha256_matches_review=None)
-    rin = ReviewInput(data=review, review=None, report_path=report, run_dir=tmp_path, manifest=None)  # type: ignore[arg-type]
+    rin = ReviewInput(data=review, review=None, report_path=report, run_dir=tmp_path, manifest=manifest)  # type: ignore[arg-type]
     o = options(**opts)
     fake = judge if judge is not None else FakeJudge(responder)
     runner = JudgeRunner(fake, model=o.model, effort=o.effort, max_tokens=o.max_tokens, concurrency=o.concurrency,
