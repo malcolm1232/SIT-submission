@@ -317,3 +317,47 @@ The limitation that remains is that a second truncation is not recovered by spli
 ### Mutations (each restored from a `cp` copy, checked with `filecmp` and `git status`)
 
 All 12 caught: second truncation raising again; a third call at the same cap; event without call IDs; assess truncation not a not-assessed reason; truncation typed `budget_or_deadline_hit`; manifest list emptied; plan rationale "declined"; assess coverage note dropped; label without reason; coverage cell back to "not applicable"; rationale reason "deadline"; `PhaseCall.declined` ignoring `truncated` (survived at first, caught after `test_a_call_truncated_twice_is_neither_declined_nor_cut` was added).
+
+## Session 4 accounting fixes
+
+Fresh Opus worker, 2026-10-03.
+Source: the agent observations of the demo measurement run (`SIT-wt/demo/docs/live_runs/demo_profile_measure_1/MEASUREMENT.md`) and the "not verified" list of `docs/transcripts/session4/truncation_fallback.md`.
+Full report: `docs/transcripts/session4/accounting_fixes.md`.
+Commits: `8279338` (branch name), `b93df32` (Located at), `0e14c4c` (failed calls in the budget, interface change), `8ef32d4` (unknown usage), `3a7ee4c` (decision #25 and deviation entry 9), then this record and the report.
+
+### Reproduced first (offline, each as a failing test before the fix)
+
+- Branch: a `.git` whose HEAD is `ref: refs/heads/s4/demo` gave `branch: demo`; a detached HEAD gave `branch: null` and a missing `git` binary gave `dirty: null`, both without a crash (already correct, now pinned).
+- Located at: the live `report.json` holds three different intent quotes, two of them on p.2 §1; the renderer printed page and section only, so the location read twice. The data was not duplicated; the renderer was the cause. A model that repeats one quote exactly would also have printed twice (no dedupe anywhere).
+- Budget: understand truncated twice at 7,500 input tokens per call left `state.budget.input_tokens` at 0, and with a 10,000-token budget the run went on to plan.
+- Unknown usage: a `claude -p` attempt cut by the deadline (fake runner) was logged with zero usage and the manifest summed it as zero.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/manifest.py` | `git_state` keeps the full branch name (strips `refs/heads/` only) | `tests/test_accounting_fixes.py` (slashed branch, packed refs in a linked worktree, detached HEAD, no `git` binary) |
+| `agent/sit_review_agent/report/render.py`, `templates/report.md.j2` | `intent_locations`: each location once, first-seen order, "(N passages)" when a section holds several anchors | `test_located_at_names_each_location_once` |
+| `agent/sit_review_agent/phases/_model_calls.py`, `phases/understand.py` | `unique_anchors`: an exact repeat of an anchor (document, page, section, normalised quote) is dropped for intent, findings and sound areas | `test_understand_keeps_a_repeated_anchor_once`, `test_finding_and_sound_area_anchors_keep_a_repeat_once` |
+| `agent/sit_review_agent/errors.py` | Interface change: `LLMError(..., usage=None)` and `LLMError.usage` (billed usage of the failed call's attempts; `None` = no attempt reported usage) | `tests/test_budget_counts_failed_calls.py` |
+| `agent/sit_review_agent/llm/gateway.py` | `billed(err, usage)`; set by `AnthropicGateway` (a response that arrived and failed), `FakeGateway` (scripted refusal, truncation, schema error), `FaultInjectingLLMGateway` (`schema_violation` keeps the inner call's usage) | same, plus `test_max_tokens_is_truncation_not_retried` |
+| `agent/sit_review_agent/llm/claude_code.py` | Failed attempts with a JSON result summed per call and attached to the raised error | `test_claude_code_error_carries_the_billed_usage_of_every_attempt` |
+| `agent/sit_review_agent/replay.py` | A replayed recorded failure carries the recorded usage, so a replay counts the budget like the live run | `test_replay_counts_a_recorded_failed_call_like_the_live_run` |
+| `agent/sit_review_agent/llm/usage_budget.py` (new) | `add_usage(budget, usage)`, used for results and errors in every phase; `describe_unrecorded`, `cost_lower_bound_line` | all of the above |
+| `phases/_model_calls.py`, `research.py`, `verify.py`, `report.py` | Every handler of a model error adds `exc.usage` to `state.budget` | phase tests in `test_budget_counts_failed_calls.py` |
+| `agent/sit_review_agent/llm/gateway.py` | `USAGE_UNRECORDED_REASONS`, `unrecorded_usage(reason)`; `AnthropicGateway` logs `usage: null` and `usage_unrecorded` for a failure without an HTTP status (`deadline_cut`, `timeout_kill`, `connection_lost`) and for an interrupt; `FakeGateway` for a scripted cut or timeout | `tests/test_unrecorded_usage.py` |
+| `agent/sit_review_agent/llm/claude_code.py` | Same marker for `deadline_cut`, `timeout_kill`, `process_fault` (no JSON result) and `interrupted`; a CLI that never started keeps zero usage | same |
+| `agent/sit_review_agent/manifest.py` | `unrecorded_reason` (also reads older zero-usage cut or timeout entries), `journal_usage()["calls_with_unrecorded_usage"]`, `extra.model.calls_with_unrecorded_usage` and `extra.model.cost_usd_lower_bound` | same |
+| `report/templates/report.md.j2`, `phases/report.py`, `orchestrator.py`, `kruns.py` | Tokens row "a lower bound: N model calls with unrecorded usage (stage, reason)"; a closing console warning for a finished or failed run; `--k` table `>=` per run and a note on the total, `calls_with_unrecorded_usage` and `cost_usd_lower_bound` in the group summary | same |
+| `agent/README.md`, `docs/REPRODUCIBILITY.md` §6 and §8 | Module map row, interface-change note, unknown-usage policy; manifest schema lines | none (text) |
+| `docs/USER_DECISIONS.md` #25, `eval/prereg_deviations.md` entry 9 | Three not-assessed reasons (`deadline`, `truncated`, `declined`), dated amendment | none (text) |
+
+The helper module was first named `llm/accounting.py`; the repository leakage check flagged "Accounting" as a term of a synthetic eval document, so it was renamed `usage_budget.py` rather than allow-listed.
+
+### Mutations (each restored from a `cp` copy; `git status` checked after each batch)
+
+All 33 caught.
+Branch: `rsplit` back (3 tests fail).
+Located at: renderer without grouping; understand without dedupe; findings and sound areas without dedupe.
+Budget (12): `add_usage` removed from each `call_model` handler (truncation, refusal, schema, deadline), from all research handlers, from verify, from report; `billed` made a no-op; the Claude Code per-call sum dropped; `schema_violation` without the inner usage; replay without recorded usage; `add_usage` a no-op.
+Unknown usage (17): each Claude Code reason label dropped (3); the log override; the Claude Code and Anthropic interrupt entries; the Anthropic no-status branch; the fake gateway's killed flag; the explicit marker ignored; the legacy inference; the lower-bound flag; the report.md note; the report and failed-run console lines; the `--k` cell, total note and collector.
