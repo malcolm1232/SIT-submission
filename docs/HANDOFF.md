@@ -14,6 +14,7 @@ Read in this order (about 30 minutes):
 3. `research/audit/fresh_eyes.md` (prioritised build plan; the "minimum viable agent" section)
 4. `eval/EVAL_PLAN.md` (Tier A: 132 runs, about $565-640 all-in, about 18 owner hours)
 5. `agent/README.md` (module map and the interface freeze rule) and `harness/README.md` (the `sit-eval` harness)
+7. `docs/HANDOVER_FABLE.md`: the handover for the SIT FABLE advisor session (decisions are delegated to it; the owner starts it)
 6. `docs/HANDOVER_FULL.md` §10 (state at the end of session 3 and the next steps), §9, §6
 
 ## Operating rules that were in force
