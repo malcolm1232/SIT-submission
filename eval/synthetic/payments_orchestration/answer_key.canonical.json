@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/payments_orchestration/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "b9ba2b5d7adcc92c7e849d5bef31cd0e2d4fbeecd7c4b8a47c37c30a89db811d"
+      "sha256": "5a04fba0c23e6161418520b15c4d87ac549de2ed1891a7c4c73165c072487886"
     }
   },
   "scoring": {
@@ -626,7 +626,7 @@
       },
       "description": "Section 9.3 says a single DynamoDB partition sustains up to 10,000 WCU/s. On that basis it keys the idempotency table by `merchant_id`, so all of marketplace M-0001's peak traffic (~900 TPS) goes to one partition key. It also counts each request as 2 WCU (lock plus completion), even though the completion item carries a response body of up to 4 KB, and the table has an LSI.",
       "rationale": "Per AWS DynamoDB documentation, one partition is limited to 1,000 WCU and 3,000 RCU per second. The claimed 10,000 WCU is off by 10x, and on-demand mode does not lift per-partition limits. Writes cost 1 WCU per KB of item size, so the completion update is ~4-5 WCU, and LSI maintenance consumes further write capacity, giving at least 4,500 WCU on one partition key. With an LSI, DynamoDB cannot split an item collection across partitions (no split-for-heat), and item collections are capped at 10 GB. Twenty-four hours of M-0001 records at ~4 KB each is tens of GB. The largest merchant would be throttled or rejected during campaign peaks, which breaks NFR-1, FR-5 and NFR-9.",
-      "core_insight": "Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU, so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS on one partition key that will be throttled.",
+      "core_insight": "The 10,000 WCU per-partition claim is wrong (the limit is 1,000 WCU), so keying the idempotency table by merchant_id puts the largest merchant's peak writes on one partition key that will be throttled.",
       "credit": {
         "mode": "substance",
         "items": [
@@ -1165,7 +1165,7 @@
       },
       "description": "All KEKs live in an AWS CloudHSM cluster with a single HSM in ap-southeast-1a. Every detokenise unwraps a DEK in the HSM, with no caching, and every card authorization needs detokenise. A second HSM is deferred until card volume passes 1,500 TPS, which the design peak never reaches (55% of 2,000 = 1,100 TPS).",
       "rationale": "One HSM, or the loss of one AZ, stops all card payments (~55% of volume). Recovery means creating a new HSM from a backup, which takes minutes to tens of minutes. This contradicts NFR-3 (99.95%) and the three-AZ posture everywhere else. AWS recommends at least two HSMs in different AZs for production clusters. The scaling trigger is set where it will never fire.",
-      "core_insight": "Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3.",
+      "core_insight": "Every card authorization needs an HSM unwrap with no DEK caching, and the cluster has one HSM in one AZ, so losing it stops all card payments, contrary to NFR-3.",
       "credit": {
         "mode": "substance",
         "items": [

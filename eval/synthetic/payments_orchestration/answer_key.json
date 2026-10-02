@@ -541,7 +541,7 @@
         ]
       },
       "F04": {
-        "core_insight": "Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU, so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS on one partition key that will be throttled.",
+        "core_insight": "The 10,000 WCU per-partition claim is wrong (the limit is 1,000 WCU), so keying the idempotency table by merchant_id puts the largest merchant's peak writes on one partition key that will be throttled.",
         "anchor_quote": "DynamoDB serves each partition key value from a single partition, and a single partition sustains up to 10,000 write capacity units per second.",
         "anchor_page": 8,
         "anchor_doc": "design_v1",
@@ -637,7 +637,7 @@
         ]
       },
       "F11": {
-        "core_insight": "Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3.",
+        "core_insight": "Every card authorization needs an HSM unwrap with no DEK caching, and the cluster has one HSM in one AZ, so losing it stops all card payments, contrary to NFR-3.",
         "anchor_quote": "The Vault's KEKs are held in an AWS CloudHSM cluster with one HSM in ap-southeast-1a.",
         "anchor_page": 10,
         "anchor_doc": "design_v1",

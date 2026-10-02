@@ -35,8 +35,12 @@ def test_plumbing_scores_json_is_valid(plumbing_run: Path):
     assert validate_scores(s) == []
     assert s["status"] == "plumbing_only" and any("PLUMBING ONLY" in w for w in s["warnings"])
     assert any("UNFROZEN" in w for w in s["warnings"]) and s["prereg"]["label"] == "pilot_unfrozen"
-    assert any("scored_run_ready = false" in w for w in s["warnings"])
+    # The warning follows the real key's state: present while the key is unsigned (LC12), absent once the owner has
+    # signed it (eval/KEY_SIGNOFF.md section 4, whose last step runs this suite).
+    ready = json.loads(PAYMENTS_KEY.read_text(encoding="utf-8"))["authoring_status"]["scored_run_ready"]
+    assert any("scored_run_ready = false" in w for w in s["warnings"]) is (not ready)
     inp = s["inputs"]
+    assert inp["scored_run_ready"] is ready
     # the canonical text came from the agent's own ingest of the PDF and equals what the agent verified
     assert inp["doc_sha256_text_matches_review"] is True and "sit_review_agent.ingest.ingest" in inp["doc_source"]
     assert len(s["findings"]) == 20 and len(s["flaws"]) == 14          # FND-021 is a strength; F15 is v2-only

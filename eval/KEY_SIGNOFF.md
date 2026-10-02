@@ -199,12 +199,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F04 · high (legacy major) · unsupported_or_incorrect_claim
 - Location: §9.2; 9.3; 24 (NFR-1, NFR-9, FR-5)
-- **Core insight (draft, edited by SIT FABLE decision #19):** Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU, so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS on one partition key that will be throttled.
+- **Core insight (draft, edited by SIT FABLE decision #19):** The 10,000 WCU per-partition claim is wrong (the limit is 1,000 WCU), so keying the idempotency table by merchant_id puts the largest merchant's peak writes on one partition key that will be throttled.
   - Before: Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU (and 3,000 RCU), so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS (at least 1,800 WCU even on the document's own two-writes count) on one partition key that will be throttled.
 - **Anchor** (design_v1.pdf p. 8): "DynamoDB serves each partition key value from a single partition, and a single partition sustains up to 10,000 write capacity units per second."
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_testing`)
 - Linked approved decisions: AD-006
-- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted "(and 3,000 RCU)", "at least 1,800 WCU" and "even on the document's own two-writes count" (and the parentheses they leave empty). "~900 TPS" is kept because credit item c2 names it.
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted "(and 3,000 RCU)", "at least 1,800 WCU" and "even on the document's own two-writes count"; the text is now SIT FABLE's "Keep" text verbatim (first letter capitalised). "~900 TPS" is not in the core insight: credit item c2 still names it, and a number a credit item needs lives in the credit item.
 
 #### F05 · low (legacy minor) · unsupported_or_incorrect_claim
 - Location: §21.1; 10.5; 11.2; 2.2 (NFR-2)
@@ -255,12 +255,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F11 · high (legacy major) · scalability_or_failure_mode
 - Location: §12.1; 12.3; 24; 20.1 (NFR-3)
-- **Core insight (draft, edited by SIT FABLE decision #19):** Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3.
+- **Core insight (draft, edited by SIT FABLE decision #19):** Every card authorization needs an HSM unwrap with no DEK caching, and the cluster has one HSM in one AZ, so losing it stops all card payments, contrary to NFR-3.
   - Before: Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3 and the three-AZ posture elsewhere; the 1,500 TPS trigger for a second HSM is above the design peak and never fires.
 - **Anchor** (design_v1.pdf p. 10): "The Vault's KEKs are held in an AWS CloudHSM cluster with one HSM in ap-southeast-1a."
 - **Expected disposition:** `refinement_now`
 - Linked approved decisions: AD-008
-- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted the 1,500 TPS trigger clause and the secondary "three-AZ posture elsewhere" contradiction, which no credit item requires.
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted the 1,500 TPS trigger clause and the secondary "three-AZ posture elsewhere" contradiction, which no credit item requires; the text is now SIT FABLE's "Keep" text verbatim (first letter capitalised).
 
 #### F12 · low (legacy minor) · ambiguous_requirement
 - Location: §2.1; 10.3; 24; 26.1 (FR-8)
@@ -687,15 +687,15 @@ SIT FABLE (#18, for the owner) accepted `research/audit/eval_data_audit.md` as t
 
 | File | sha256 |
 |---|---|
-| `eval/synthetic/payments_orchestration/answer_key.json` | `b9ba2b5d7adcc92c7e849d5bef31cd0e2d4fbeecd7c4b8a47c37c30a89db811d` |
+| `eval/synthetic/payments_orchestration/answer_key.json` | `5a04fba0c23e6161418520b15c4d87ac549de2ed1891a7c4c73165c072487886` |
 | `eval/synthetic/clinical_rpm/answer_key.json` | `64c71a6de410a544c89ac3fc8899c2ad129823140ed1e6388f9798c3631ebb54` |
 | `eval/synthetic/research_lakehouse/answer_key.json` | `56ca982cdf4b136af1ddbcf2a1386d512dac9198687c8a6ccfa8043dccca2a51` |
-| `eval/synthetic/payments_orchestration/answer_key.canonical.json` | `51ca4fbf508efa78e1d870264a7ef581d777f86083dc88fe464679d59442c219` |
+| `eval/synthetic/payments_orchestration/answer_key.canonical.json` | `8eda2e5de12e54e98b2e4e4b242a2f86e8da7b8aa534594b363fa45ac4705011` |
 | `eval/synthetic/clinical_rpm/answer_key.canonical.json` | `44833c1c01d8e89918c67991910ae583d6efc4aa22cdea8d20e4a436e7878735` |
 | `eval/synthetic/research_lakehouse/answer_key.canonical.json` | `7c92bf91252858da076636b9e70bf4623fe049df4ab3a4e894e42c591bcce52a` |
 | `spec/convert_answer_keys.py` (sets the credit-item roles) | `7986801c9b7b0f1476c93a96842287caa261016b04e3819dccfca5e6ad3e26a8` |
 
-Check with `shasum -a 256 <file>` (or `sha256sum`). Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the commit that applied the decisions and in `docs/transcripts/session4/keys_builder.md`.
+Check with `shasum -a 256 <file>` (or `sha256sum`). Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the message of the last commit that changed this sheet (the verification pass, after it set payments F04 and F11 to the "Keep" texts verbatim) and in `docs/transcripts/session4/keys_verifier.md`.
 
 ## 10. Signature
 
