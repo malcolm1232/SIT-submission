@@ -36,6 +36,27 @@ def _cls(f: dict[str, Any]) -> str:
     return c or "-"
 
 
+def _efficiency_lines(eff: dict[str, Any]) -> list[str]:
+    """The efficiency bullets; a run whose usage is not fully accounted says so first (ruling #28)."""
+    status = eff.get("usage_completeness")
+    lines: list[str] = []
+    if status == "unrecorded":
+        lines += [f"**COST AND TOKENS ARE A LOWER BOUND** - {eff.get('usage_note')}", ""]
+    elif status == "unknown":
+        lines += [f"**USAGE COMPLETENESS UNKNOWN** - {eff.get('usage_note')}", ""]
+    for k, v in eff.items():
+        if k == "calls_with_unrecorded_usage":
+            if v:
+                lines.append(f"- {k}:")
+                lines += [f"  - {c.get('call_id')} {c.get('stage')} attempt {c.get('attempt')}: "
+                          f"{str(c.get('reason')).replace('_', ' ')}, wall {_fmt(c.get('wall_s'))} s" for c in v]
+            else:
+                lines.append(f"- {k}: none")
+        elif k != "usage_note":
+            lines.append(f"- {k}: {_fmt(v)}")
+    return lines
+
+
 def render_scores_md(s: dict[str, Any]) -> str:
     inp = s["inputs"]
     lines = [f"# Scores: {inp['run_id']} vs {inp['item_id']} ({inp['doc_version']})", ""]
@@ -84,7 +105,7 @@ def render_scores_md(s: dict[str, Any]) -> str:
             lines.append("")
         eff = m.get("efficiency", {}).get("value") or {}
         if eff:
-            lines += ["## Efficiency (from the run manifest)", ""] + [f"- {k}: {_fmt(v)}" for k, v in eff.items()]
+            lines += ["## Efficiency (from the run manifest)", ""] + _efficiency_lines(eff)
             lines.append("")
     if s.get("flaws"):
         lines += ["## Key flaws", "", "| Flaw | Severity | Strict match | Lenient match | Best median score |",

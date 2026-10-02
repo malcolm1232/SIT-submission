@@ -42,7 +42,8 @@
             "properties": {"judge_kind": {"enum": ["fake", "claude_code", "anthropic_api"]},
                            "granularity": {"enum": ["pairwise", "per_flaw_batch"]},
                            "samples": {"type": "integer", "minimum": 1}, "seed": {"type": "integer"}}},
-  "metrics": {"type": "object", "additionalProperties": {"$ref": "#/$defs/Metric"}},
+  "metrics": {"type": "object", "additionalProperties": {"$ref": "#/$defs/Metric"},
+              "properties": {"efficiency": {"$ref": "#/$defs/Efficiency"}}},
   "warnings": {"type": "array", "items": {"type": "string"}},
   "calls": {"type": "object", "required": ["calls_total", "calls_live", "calls_cached", "calls_failed", "budget"],
             "properties": {"calls_total": {"type": "integer", "minimum": 0},
@@ -99,6 +100,49 @@
    },
    "if": {"properties": {"value": {"type": "null"}}},
    "then": {"properties": {"reason": {"type": "string", "minLength": 1}}}
+  },
+  "Efficiency": {
+   "description": "MM section 10 per run. SIT FABLE ruling #28 (2026-10-03): usage_completeness is complete only when the run manifest (extra.model.calls_with_unrecorded_usage) or, for an older manifest, the run's llm.jsonl shows every billed model call with recorded usage; otherwise cost_usd and the token counts are null with usage_reason unrecorded_usage or usage_completeness_unknown, and the recorded figures stand beside them as *_lower_bound",
+   "allOf": [{"$ref": "#/$defs/Metric"}],
+   "properties": {
+    "value": {
+     "type": ["object", "null"],
+     "required": ["cost_usd", "input_tokens", "output_tokens", "cached_tokens", "usage_completeness", "usage_reason",
+                  "usage_source", "calls_with_unrecorded_usage"],
+     "properties": {
+      "cost_usd": {"type": ["number", "null"]},
+      "input_tokens": {"type": ["integer", "null"]},
+      "output_tokens": {"type": ["integer", "null"]},
+      "cached_tokens": {"type": ["integer", "null"]},
+      "cost_usd_lower_bound": {"type": ["number", "null"]},
+      "input_tokens_lower_bound": {"type": ["integer", "null"]},
+      "output_tokens_lower_bound": {"type": ["integer", "null"]},
+      "cached_tokens_lower_bound": {"type": ["integer", "null"]},
+      "usage_completeness": {"enum": ["complete", "unrecorded", "unknown"]},
+      "usage_reason": {"enum": ["unrecorded_usage", "usage_completeness_unknown", null]},
+      "usage_note": {"type": ["string", "null"]},
+      "usage_source": {"type": "string"},
+      "calls_with_unrecorded_usage": {"type": "array", "items": {"type": "object", "required": ["call_id", "stage", "reason"],
+                                      "properties": {"reason": {"type": "string"}, "wall_s": {"type": ["number", "null"]}}}}
+     },
+     "allOf": [
+      {"if": {"properties": {"usage_completeness": {"const": "complete"}}},
+       "then": {"properties": {"usage_reason": {"const": null},
+                               "calls_with_unrecorded_usage": {"maxItems": 0}}},
+       "else": {"required": ["cost_usd_lower_bound", "input_tokens_lower_bound", "output_tokens_lower_bound",
+                             "cached_tokens_lower_bound", "usage_note"],
+                "properties": {"cost_usd": {"const": null}, "input_tokens": {"const": null},
+                               "output_tokens": {"const": null}, "cached_tokens": {"const": null},
+                               "usage_reason": {"type": "string"}, "usage_note": {"type": "string", "minLength": 1}}}},
+      {"if": {"properties": {"usage_completeness": {"const": "unrecorded"}}},
+       "then": {"properties": {"usage_reason": {"const": "unrecorded_usage"},
+                               "calls_with_unrecorded_usage": {"minItems": 1}}}},
+      {"if": {"properties": {"usage_completeness": {"const": "unknown"}}},
+       "then": {"properties": {"usage_reason": {"const": "usage_completeness_unknown"},
+                               "calls_with_unrecorded_usage": {"maxItems": 0}}}}
+     ]
+    }
+   }
   },
   "Pairs": {"type": "array", "items": {"type": "object", "required": ["finding_id", "flaw_id", "score"],
             "properties": {"score": {"type": "number", "minimum": 2, "maximum": 3}}}},

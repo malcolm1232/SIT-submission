@@ -17,6 +17,7 @@ from rapidfuzz import fuzz
 from sit_eval.grounding import GroundingResult
 from sit_eval.locations import anchors_location, key_location
 from sit_eval.matcher import PARTIAL_KEY_MATCH, W_PRIMARY, W_SENSITIVITY, MatchResult
+from sit_eval.usage import UsageCompleteness, describe, usage_completeness
 from sit_review_agent.ingest import Document
 
 SEV_ORDER = ["low", "medium", "high", "critical"]
@@ -113,7 +114,10 @@ def auroc(conf: list[float], y: list[int]) -> float | None:
 
 def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, key: dict[str, Any], version: str,
                     review: dict[str, Any], manifest: dict[str, Any] | None, doc: Document | None,
-                    prior_scores: dict[str, Any] | None = None) -> dict[str, Any]:
+                    prior_scores: dict[str, Any] | None = None,
+                    usage: UsageCompleteness | None = None) -> dict[str, Any]:
+    """``usage`` is the run's usage completeness (``sit_eval.usage``); without it, it is read from the manifest
+    field alone (no call log), so a manifest that predates the field counts as unknown."""
     out: dict[str, Any] = {}
     findings = match.findings
     N = len(findings)
@@ -315,7 +319,7 @@ def compute_metrics(*, match: MatchResult, grounding: GroundingResult | None, ke
     # ---- v1 -> v2 (§8)
     out.update(_v2_metrics(match, key, version, review, prior_scores))
     # ---- efficiency (§10)
-    out.update(_efficiency(review, manifest))
+    out.update(_efficiency(review, manifest, usage))
     return out
 
 
@@ -609,9 +613,15 @@ def _v2_metrics(match: MatchResult, key: dict[str, Any], version: str, review: d
     return out
 
 
-def _efficiency(review: dict[str, Any], manifest: dict[str, Any] | None) -> dict[str, Any]:
+#: The usage figures of the ``efficiency`` metric that are null unless every billed call's usage was recorded.
+USAGE_FIGURES = ("cost_usd", "input_tokens", "output_tokens", "cached_tokens")
+EFFICIENCY_NOTE = "cost is the backend's own estimate; median and IQR across runs come from aggregate"
+
+
+def _efficiency(review: dict[str, Any], manifest: dict[str, Any] | None,
+                usage: UsageCompleteness | None = None) -> dict[str, Any]:
     rm = manifest or review.get("run_manifest") or {}
-    usage = rm.get("usage") or {}
+    recorded = rm.get("usage") or {}
     extra = rm.get("extra") or {}
     timing = extra.get("timing") or {}
     wall = timing.get("wall_clock_s")
@@ -622,15 +632,23 @@ def _efficiency(review: dict[str, Any], manifest: dict[str, Any] | None) -> dict
     ext = {e["evidence_id"] for e in ledger if e.get("source_type") == "external"}
     cited = {e.get("evidence_id") for f in review.get("findings", []) for e in f.get("evidence", [])} & ext
     sr = review.get("stop_reason") or {}
+    # SIT FABLE ruling #28: a run with any call of unrecorded usage (or whose completeness is unknown) has null
+    # cost and tokens, with the recorded figures beside them as lower bounds; a fully accounted run is unchanged
+    uc = usage if usage is not None else usage_completeness(rm, None)
+    figures = {k: recorded.get(k) for k in USAGE_FIGURES}
+    if uc.lower_bound:
+        figures = {**{k: None for k in USAGE_FIGURES}, **{f"{k}_lower_bound": recorded.get(k) for k in USAGE_FIGURES}}
+    words = describe(uc)
     return {
-        "efficiency": M({"cost_usd": usage.get("cost_usd"), "input_tokens": usage.get("input_tokens"),
-                         "output_tokens": usage.get("output_tokens"), "cached_tokens": usage.get("cached_tokens"),
-                         "price_table_date": usage.get("price_table_date"),
-                         "tool_calls": usage.get("tool_calls", len(calls)), "tool_calls_by_tool": dict(by_tool),
+        "efficiency": M({**figures,
+                         "price_table_date": recorded.get("price_table_date"),
+                         "tool_calls": recorded.get("tool_calls", len(calls)), "tool_calls_by_tool": dict(by_tool),
                          "wall_time_s": wall, "per_stage_s": timing.get("per_stage_s"),
-                         "stop_reason": {"code": sr.get("code"), "group": sr.get("group")}},
+                         "stop_reason": {"code": sr.get("code"), "group": sr.get("group")},
+                         "usage_completeness": uc.status, "usage_reason": uc.reason, "usage_note": words or None,
+                         "usage_source": uc.source, "calls_with_unrecorded_usage": list(uc.calls)},
                         status="secondary", source=src,
-                        note="cost is the backend's own estimate; median and IQR across runs come from aggregate"),
+                        note=EFFICIENCY_NOTE + (f"; {words}" if words else "")),
         "research_yield": M(ratio(len(cited), len(ext)), "no external sources retrieved" if not ext else None,
                             status="deferred"),
         "overrun": M(None, "needs per-step working state (not in report.json or manifest.json)", status="deferred"),

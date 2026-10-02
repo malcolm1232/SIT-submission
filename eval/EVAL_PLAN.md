@@ -69,6 +69,10 @@ Instruments:
 
 **Tier A approval figure: $650** (covers both grader branches at the planning cost). The $701-776 sensitivity row is what the pilot checkpoint protects against: if the pilot median FULL cost exceeds $3.24, re-plan before freezing (BUDGET §5).
 
+The checkpoint's median is `sit-eval aggregate` `conditions.FULL.cost_usd.median_fully_accounted`, over FULL runs in which every billed model call's usage was recorded (prereg `costs.usage_completeness`; SIT FABLE ruling #28, 2026-10-03).
+A run with a model call that was killed or cut has null cost and tokens with its recorded figures beside them as lower bounds, is excluded from that median and counted; the aggregate's `pilot_checkpoint` is `fail` if the lower-bound median over all FULL runs exceeds $3.24, `pass` only if every FULL run is fully accounted and the median is at or below it, else `not_evaluable`.
+A lower bound can fail the checkpoint but never pass it.
+
 Wall time, from the measurements in the run-time note above: the 132 runs are 93 FULL-shaped runs (84 FULL and 9 A5) and 39 single-call runs (24 B0 and 15 B0-$). Floor: 93 × 959 s + 39 × 520 s = 109,467 s = 30.4 h of run time, which is 10.1-15.2 h of laptop wall time at 2-3 in parallel. Cap: 132 × 3,600 s = 132 h of run time, which is 44-66 h of wall time at 2-3 in parallel. The pilot (A-2) times research and refine and replaces the floor with a measured median. Instruments: scoring 101 matched runs × 245.6 s = 6.9 h, and Opus grading 101 reviews × 549.3 s = 15.4 h; the Sonnet control grader has not been timed. The earlier line (132 runs × 8-10 min ≈ 18-22 h, about 7-11 h of wall time) is withdrawn.
 
 ### 1.3 Grading and human workload (one person, the owner)
@@ -107,7 +111,7 @@ Tier A must be sufficient on its own. Each claim is worded at the strength its e
 | CL8 | Results on two sealed held-out documents, with the S-dev to S-heldout gap read against B0 (no generalisation claim) | H8 | A-3, A-4 FULL and B0 | Recall DiD |
 | CL9 | On the SIT document, how the agent's findings compare with a key the owner wrote independently: both-found, owner-only, model-only | H9 | A-6 (3 runs); T1 | Recall vs the owner key, counts |
 | CL10 | The measuring instruments are valid enough for the numbers reported, at the tier reached | H10 | A-2 pairs; B-gen; grader V1, V4, V10; T4, T5, T7 | Matcher κ, B-gen Recall, grader agreement |
-| CL11 | Cost and run time per review, by condition | descriptive | All 132 runs' manifests | Cost (USD), tokens, tool calls, wall time |
+| CL11 | Cost and run time per review, by condition | descriptive | All 132 runs' manifests | Cost (USD), tokens, tool calls, wall time; median and IQR over fully accounted runs, the share excluded for unrecorded usage, a lower-bound median over all runs, and the intention-to-treat share of runs with any cut model call (ruling #28) |
 | CL12 | The evaluation was pre-registered and leak-checked: frozen hash timestamped outside the repo, held-out access logged, leakage audit clean | LC1-LC12 | Leakage audit; access log | Leakage table |
 
 Claims the submission will **not** make in Tier A: that research, iteration or the verify stage each contribute (A1-A3 not run); that the results hold for another model (A4 is Tier B and within one family in any case); that `high` is the best effort level (A4b is Tier B); anything about independently authored designs (no Blind set), other domains (no OOD document), confidence calibration or ranking quality.

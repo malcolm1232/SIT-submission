@@ -195,13 +195,20 @@ def score(
     m = scores.get("metrics") or {}
     headline = {k: (m.get(k) or {}).get("value") for k in ("recall", "lenient_recall", "precision_adjudicated",
                                                             "severity_weighted_recall", "hallucinated_finding_rate")}
+    eff = (m.get("efficiency") or {}).get("value") or {}
+    cost = {"usage_completeness": eff.get("usage_completeness"), "cost_usd": eff.get("cost_usd"),
+            "cost_usd_lower_bound": eff.get("cost_usd_lower_bound"),
+            "calls_with_unrecorded_usage": len(eff.get("calls_with_unrecorded_usage") or [])} if eff else None
+    if eff.get("usage_note"):
+        typer.echo(f"the agent run's cost is a lower bound: {eff['usage_note']}", err=True)
     typer.echo(json.dumps({"status": scores["status"], "exploratory": scores["exploratory"],
                            "exploratory_note": scores["exploratory_note"],
                            "outside_preregistered_analysis": scores["outside_preregistered_analysis"],
                            "scores_json": str(js), "scores_md": str(md),
-                           "headline": headline, "calls": {k: scores["calls"][k] for k in
-                                                           ("calls_total", "calls_live", "calls_failed",
-                                                            "cost_usd_reported")}}, indent=1, default=str))
+                           "headline": headline, "cost": cost,
+                           "calls": {k: scores["calls"][k] for k in
+                                     ("calls_total", "calls_live", "calls_failed", "cost_usd_reported")}},
+                          indent=1, default=str))
     if scores["status"] == "stopped_budget":
         raise typer.Exit(3)
 
@@ -232,11 +239,23 @@ def aggregate_cmd(
     try:
         res = aggregate(list(scores), metrics=metric or None, compare=tuple(compare) if compare else None,
                         B=bootstrap_b or cfg.statistics.bootstrap_b, seed=cfg.statistics.seed,
-                        paired_seed=cfg.statistics.paired_seed, exploratory=exploratory, prereg_frozen=frozen)
+                        paired_seed=cfg.statistics.paired_seed, exploratory=exploratory, prereg_frozen=frozen,
+                        pilot_threshold_usd=prereg_mod.pilot_cost_threshold_usd())
     except lc12.ExploratoryInputRefusal as exc:
         _fail(f"refusing to aggregate: {exc}")
     for line in lc12.notes(exploratory, prereg_frozen=frozen):
         typer.echo(line, err=True)
+    dropped = res["dropped_inputs"]
+    if dropped:   # ruling #29: each dropped file is a run of unknown cost, listed with its reason
+        typer.echo(f"{len(dropped)} scores file{'s' if len(dropped) != 1 else ''} dropped from the aggregate "
+                   "(counted as missing, each a run of unknown cost):", err=True)
+        for d in dropped:
+            typer.echo(f"  {d['path']} ({d['reason']}, condition {d['condition'] or 'unknown'}): {d['detail']}",
+                       err=True)
+    cp = res["pilot_checkpoint"]
+    limit = f"${cp['threshold_usd']:g}" if cp["threshold_usd"] is not None else "no threshold"
+    typer.echo(f"pilot checkpoint ({cp['condition']} cost median vs {limit}): {cp['verdict']} - {cp['reason']}",
+               err=True)
     text = json.dumps(res, indent=1, default=str)
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)

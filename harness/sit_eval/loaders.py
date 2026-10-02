@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from referencing import Registry, Resource
 
 from sit_eval.paths import answer_key_schema_path, finding_schema_path
+from sit_eval.usage import UsageCompleteness, usage_completeness
 from sit_review_agent.ingest import Document, ingest
 from sit_review_agent.invariants import spec_validator
 from sit_review_agent.models import Review
@@ -42,6 +43,7 @@ class ReviewInput:
     report_path: Path
     run_dir: Path | None                 # directory holding report.json, if it looks like a run dir
     manifest: dict[str, Any] | None      # manifest.json next to report.json, if present
+    usage: UsageCompleteness | None = None   # whether every billed model call's usage was recorded (sit_eval.usage)
 
     @property
     def under_review(self) -> dict[str, Any]:
@@ -82,7 +84,10 @@ def load_review(path: str | Path) -> ReviewInput:
         raise LoadError(f"{report}: rejected by sit_review_agent.models.Review: {str(exc)[:500]}") from exc
     manifest_path = report.parent / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else None
-    return ReviewInput(data=data, review=review, report_path=report, run_dir=report.parent, manifest=manifest)
+    # usage completeness: the manifest field, else the legacy rule over llm.jsonl beside the report, else unknown
+    usage = usage_completeness(manifest if manifest is not None else data.get("run_manifest"), report.parent)
+    return ReviewInput(data=data, review=review, report_path=report, run_dir=report.parent, manifest=manifest,
+                       usage=usage)
 
 
 @lru_cache(maxsize=1)
