@@ -235,11 +235,18 @@ def code_anchor(doc: Document, offset: int, *, min_tokens: int = 8) -> DocAnchor
 
 
 def settle_registry_anchors(ctx: RunContext) -> list[str]:
-    """Code-only check of the registry anchors right after ``understand`` (before any registry hash
-    is recorded, so INV-10 holds). An unresolved anchor is rebuilt around the entry's own ID
-    (``doc_ref``, e.g. ``D-3``) where the document states it; an entry that cannot be anchored is
-    removed and disclosed. Returns notes; does nothing once hashes exist."""
-    if ctx.registry.hashes() or not ctx.documents:
+    """Code-only check of the registry anchors right after ``understand`` (before any later phase
+    has used the registry, so INV-10 holds). An unresolved anchor is rebuilt around the entry's own
+    ID (``doc_ref``, e.g. ``D-3``) where the document states it; an entry that cannot be anchored is
+    removed and disclosed. Returns notes.
+
+    ``understand`` freezes the registry and records its hash as iteration 0 (so a run without
+    research still has one); that freeze-time record is replaced by the settled registry's hash.
+    Once a research iteration has recorded a hash, or any phase after ``understand`` has completed,
+    this does nothing (the registry the later phases saw is what the report shows)."""
+    hashes = ctx.registry.hashes()
+    later = set(ctx.state.completed_phases) - {PhaseName.INGEST, PhaseName.UNDERSTAND}
+    if any(h.iteration > 0 for h in hashes) or later or not ctx.documents:
         return []
     notes: list[str] = []
     kept: list[RegistryEntry] = []
@@ -268,7 +275,10 @@ def settle_registry_anchors(ctx: RunContext) -> list[str]:
                 f"{e.doc_ref} was not used as an approved decision or constraint in this review")
             notes.append(f"{e.registry_id} ({e.doc_ref}): removed (no verifiable passage)")
     if changed:
-        ctx.registry = DecisionRegistry(kept, frozen=ctx.registry.frozen)
+        settled = DecisionRegistry(kept, frozen=ctx.registry.frozen)
+        if hashes:                                   # re-record the freeze-time hash for the settled registry
+            settled.record_iteration(0)
+        ctx.registry = settled
         ctx.sync_state()
     for n in notes:
         ctx.emit(f"registry anchor check: {n}")
@@ -521,6 +531,9 @@ class VerifyPhase:
         except (LLMRefusalError, LLMSchemaError, LLMTruncatedError) as exc:
             if exc.call_id:
                 ctx.state.llm_calls.setdefault(PhaseName.VERIFY.value, []).append(exc.call_id)
+            if isinstance(exc, LLMRefusalError):
+                ctx.state.refusals.append({"call_id": exc.call_id, "stage": PhaseName.VERIFY.value,
+                                           "category": exc.category})
             _degrade(ctx, f"anchor repair call failed ({type(exc).__name__})",
                      "unresolved anchors were not re-quoted; affected findings may be listed as unverified")
             return exc.call_id
@@ -530,6 +543,12 @@ class VerifyPhase:
         b.output_tokens += res.usage.output_tokens
         b.cache_read_input_tokens += res.usage.cache_read_input_tokens
         b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+        if res.fallback is not None:
+            ctx.state.fallback_events.append(res.fallback)
+            ctx.state.add_degradation(DegradationType.MODEL_FALLBACK,
+                                      f"verify call {res.call_id} was served by {res.fallback.to_model} instead of "
+                                      f"{res.fallback.from_model}",
+                                      "part of this review was produced by another model; the run is not eval evidence")
         out: AnchorRepairOutput | None = res.parsed
         if out is None:
             return res.call_id
@@ -570,6 +589,12 @@ class _EmptyAnchor:
 
 
 def _short(exc: BaseException) -> str:
+    if isinstance(exc, ValidationError) and exc.errors():
+        # The first line of a ValidationError only says "1 validation error for Finding"; the
+        # disclosure must say which rule the finding broke.
+        e = exc.errors()[0]
+        loc = ".".join(str(x) for x in e.get("loc", ())) or exc.title
+        return f"{type(exc).__name__}: {loc}: {e.get('msg', '')}"[:200]
     text = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
     return f"{type(exc).__name__}: {text}"[:200]
 

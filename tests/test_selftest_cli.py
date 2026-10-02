@@ -1,6 +1,6 @@
 """``sit-review selftest`` end to end and CLI smoke tests (workstream C, "phase 3").
 
-Covers what tests/test_pending.py's ``test_selftest_end_to_end`` describes, plus the CLI surface
+Covers what the removed tests/test_pending.py's ``test_selftest_end_to_end`` describes, plus the CLI surface
 the runbook uses: ``run`` / ``review`` with the §4.2 override flags, ``explain`` (both argument
 forms), ``resume`` and ``run --resume`` with drift refusal (exit 5) and ``--accept-drift``,
 ``--plan-only``, ``--no-tools``, exit codes per ``errors.ExitCode``, and no traceback (INV-11).

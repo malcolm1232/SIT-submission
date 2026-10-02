@@ -3,9 +3,13 @@
 * :class:`LLMGateway` is the protocol every phase uses; phases never touch the SDK.
 * :class:`AnthropicGateway` is the live implementation (``anthropic`` 1.x ``AsyncAnthropic``,
   ``max_retries=0`` so the gateway owns retries, streaming for every call, ``thinking: adaptive``,
-  ``output_config.effort``, structured outputs via ``output_format=<Pydantic type>``).
+  ``output_config.effort``, structured outputs via ``output_config.format = {"type":
+  "json_schema", "schema": llm_facing_schema(T)}`` on the stream, parsed and validated here; see
+  the class docstring for why not ``messages.parse``). ``llm.claude_code.ClaudeCodeGateway`` is the
+  other live backend (ADR-010); ``llm.backend.build_llm_gateway`` picks one.
 * :class:`FakeGateway` replays scripted responses keyed by phase (L0 tests, ``selftest``).
 * :class:`FaultInjectingLLMGateway` wraps any gateway with a robustness fault schedule.
+* :func:`prepare_resume` makes a freshly built stack continue a run (call IDs, ``resumed`` flag).
 
 Contract every implementation honours:
 
@@ -19,7 +23,10 @@ Contract every implementation honours:
 4. One effort level per ``conversation_id`` (ADR-002); a change raises :class:`EffortChangedError`.
 5. Every call (and every failed attempt) is appended to ``llm.jsonl`` via :class:`LLMCallLog`,
    with the request body minus PDF bytes (referenced by hash) and the response content blocks
-   exactly as returned, so assistant turns can be replayed byte for byte (ADR-009 item 3).
+   as returned, except that configured secrets and canary tokens are redacted in the logged copy
+   (INV-08, :func:`redact_log_entry`). Conversations are replayed from the live result objects
+   (``LLMResult.assistant_message``) or, for ``ClaudeCodeGateway``, the CLI's own transcript, never
+   from ``llm.jsonl`` (ADR-009 item 3).
 6. Never sent: ``temperature``/``top_p``/``top_k``, ``budget_tokens``, forced ``tool_choice``,
    assistant prefill (all 400 on Opus 5.5).
 """
@@ -27,6 +34,7 @@ Contract every implementation honours:
 from __future__ import annotations
 
 import copy
+import dataclasses
 from collections import deque
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -148,6 +156,9 @@ class LLMResult(Generic[T]):
     latency_s: float
     attempts: list[LLMAttempt]
     fallback: FallbackEvent | None = None
+    #: True for a call of the stage that was re-run after ``sit-review resume`` (ADR-009 item 2);
+    #: the same flag is written as ``resumed: true`` on its ``llm.jsonl`` entries. Set by the
+    #: gateways from :func:`prepare_resume`.
     resumed: bool = False
 
     def assistant_message(self) -> dict[str, Any]:
@@ -200,14 +211,60 @@ def request_sha256(body: dict[str, Any]) -> str:
     return sha256_json(strip_pdf_bytes(body)[0])
 
 
-class LLMCallLog:
-    """Appends one JSON object per call (and per failed attempt) to ``runs/<id>/llm.jsonl``."""
+#: Environment variables whose values never reach ``llm.jsonl`` (INV-08); the tool config's
+#: ``auth_env`` is added by the live gateways.
+LOG_SECRET_ENV = ("SIT_MCP_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
 
-    def __init__(self, run_dir: RunDir) -> None:
+
+def redact_log_entry(entry: dict[str, Any], redactor: Any) -> dict[str, Any]:
+    """``entry`` as it may be written to ``llm.jsonl`` (INV-08: "no canary key value appears in any
+    artefact ... log"): every configured secret replaced by ``tools.cassette.Redactor`` and every
+    robustness canary token (``tools.policy.CANARY_RE``) masked, in every string of the entry. This
+    covers the model's ``tool_use`` inputs (a canary the model writes into a tool call that the tool
+    policy then blocks), request bodies, response text and error messages. Only the logged copy is
+    changed: request hashes are computed before, and history is replayed from the live objects (or
+    the CLI's own transcript), never from ``llm.jsonl``."""
+    from sit_review_agent.tools.policy import CANARY_RE
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items()}
+        if isinstance(v, list | tuple):
+            return [walk(x) for x in v]
+        if isinstance(v, str):
+            return CANARY_RE.sub(REDACTED_CANARY, redactor.text(v))
+        return v
+
+    return walk(entry)
+
+
+#: What :func:`redact_log_entry` writes in place of a canary token.
+REDACTED_CANARY = "***REDACTED-CANARY***"
+
+
+class LLMCallLog:
+    """Appends one JSON object per call (and per failed attempt) to ``runs/<id>/llm.jsonl``.
+
+    Every entry goes through :func:`redact_log_entry` (``redactor`` defaults to the values of
+    :data:`LOG_SECRET_ENV`). ``resumed_phases`` is set by the resume path
+    (:func:`prepare_resume`): entries of those phases are logged with ``resumed: true`` (ADR-009
+    item 2: model calls of the stage that is re-run after a resume)."""
+
+    def __init__(self, run_dir: RunDir, *, redactor: Any = None, secret_env: Sequence[str] = ()) -> None:
+        from sit_review_agent.tools.cassette import Redactor
+
         self.writer = JsonlWriter(run_dir.llm_log)
+        self.redactor = redactor if redactor is not None else Redactor.from_env(
+            tuple(dict.fromkeys([*LOG_SECRET_ENV, *secret_env])))
+        self.resumed_phases: set[str] = set()
+
+    def is_resumed(self, phase: PhaseName | str) -> bool:
+        return str(phase.value if isinstance(phase, PhaseName) else phase) in self.resumed_phases
 
     def log(self, entry: dict[str, Any]) -> int:
-        return self.writer.append(entry)
+        if entry.get("phase") is not None and self.is_resumed(str(entry["phase"])):
+            entry = {**entry, "resumed": True}
+        return self.writer.append(redact_log_entry(entry, self.redactor))
 
 
 class EffortGuard:
@@ -420,7 +477,7 @@ class AnthropicGateway:
         self.timeout_s = config.agent.llm.timeout_s
         self.backoff_base_s = config.agent.llm.backoff_base_s
         self.backoff_max_s = config.agent.llm.backoff_max_s
-        self.log = LLMCallLog(run_dir)
+        self.log = LLMCallLog(run_dir, secret_env=(config.tools.auth_env,))
         self._client = client
         self._guard = EffortGuard()
         self._usage = Usage()
@@ -635,7 +692,7 @@ class AnthropicGateway:
                          model=served, stop_reason=stop or "end_turn", content=copy.deepcopy(content), parsed=parsed,
                          text=text, tool_uses=tool_uses, usage=usage, request_id=request_id,
                          request_sha256=req_hash, latency_s=latency, attempts=attempts, fallback=fallback,
-                         resumed=False)
+                         resumed=self.log.is_resumed(request.phase))
 
     async def _anthropic_simple(self, op: Any, *, label: str, retries: int) -> Any:
         """Run ``await op()`` with the gateway's error mapping and up to ``retries`` retries (no
@@ -742,6 +799,10 @@ class FakeGateway:
         self._refusals: list[dict[str, Any]] = []
         self._seq = 0
 
+    def next_call_id(self) -> str:
+        self._seq += 1
+        return f"llm-{self._seq:04d}"
+
     def remaining(self, phase: PhaseName | str | None = None) -> int:
         if phase is not None:
             return len(self.script.get(str(phase), ()))
@@ -750,8 +811,7 @@ class FakeGateway:
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         self._guard.check(request)
         self.calls.append(request)
-        self._seq += 1
-        call_id = f"llm-{self._seq:04d}"
+        call_id = self.next_call_id()
         queue = self.script.get(str(request.phase))
         if not queue:
             raise FakeScriptExhausted(f"no scripted response left for phase {request.phase}",
@@ -807,7 +867,8 @@ class FakeGateway:
                          model=served, stop_reason=stop, content=content, parsed=parsed, text=text,
                          tool_uses=list(resp.tool_uses), usage=resp.usage, request_id=None,
                          request_sha256=req_hash, latency_s=0.0,
-                         attempts=[LLMAttempt(attempt=0, started_at=started, elapsed_s=0.0, outcome="ok")])
+                         attempts=[LLMAttempt(attempt=0, started_at=started, elapsed_s=0.0, outcome="ok")],
+                         resumed=self.log.is_resumed(request.phase) if self.log is not None else False)
 
     def usage_total(self) -> Usage:
         return self._usage
@@ -835,6 +896,24 @@ class FaultInjectingLLMGateway:
         self.inner = inner
         self.schedule = schedule     # tools.faults.FaultSchedule (typed there to avoid an import cycle)
         self.clock = clock or SystemClock()
+        self._refusals: list[dict[str, Any]] = []      # injected refusals (the inner never saw them)
+
+    @property
+    def native_pdf(self) -> bool:
+        """The wrapped backend's PDF capability (``llm.backend.supports_native_pdf``)."""
+        override = self.__dict__.get("_native_pdf_override")
+        return bool(getattr(self.inner, "native_pdf", True)) if override is None else bool(override)
+
+    @native_pdf.setter
+    def native_pdf(self, value: bool) -> None:
+        self.__dict__["_native_pdf_override"] = bool(value)
+
+    def _terminal_call_id(self) -> str | None:
+        """A call ID from the inner gateway's sequence for an injected fault that ends the call
+        (no inner call follows), so the ``llm.jsonl`` entry, the error and the refusal record can
+        be joined; ``None`` when the inner gateway does not number calls."""
+        fn = getattr(self.inner, "next_call_id", None)
+        return str(fn()) if callable(fn) else None
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         """One logical call. Each *attempt* is matched against the ``llm:`` rules (``stage`` =
@@ -851,7 +930,11 @@ class FaultInjectingLLMGateway:
         ``schema_violation`` -> the real response is corrupted and fails validation
         (:class:`LLMSchemaError`). ``latency`` delays the attempt; ``flaky`` picks one of its
         ``inner`` faults with a seeded RNG. Injected failures are logged to the inner gateway's
-        ``llm.jsonl`` (``fault`` field) when it has one."""
+        ``llm.jsonl`` (``fault`` field) when it has one: a fault that is retried is logged with
+        ``call_id: null`` (the attempt that succeeds is logged by the inner gateway under its own
+        ID, and the result's ``attempts`` list starts with the faulted attempts); a fault that ends
+        the call takes the next call ID of the inner gateway, so the entry, the raised error and an
+        injected refusal (:meth:`refusals`) can be joined. Usage is the inner gateway's only."""
         import json as _json
         import random as _random
 
@@ -878,6 +961,7 @@ class FaultInjectingLLMGateway:
         log = getattr(self.inner, "log", None)
         seed = getattr(self.schedule, "seed", 0)
         attempt = 0
+        injected: list[LLMAttempt] = []        # faulted attempts, prepended to the result's attempts
         while True:
             elapsed = self.clock.monotonic() - st["t0"]
             rng = fa.seeded_rng(seed, "llm", phase, seq, attempt)
@@ -899,8 +983,10 @@ class FaultInjectingLLMGateway:
             if delay:
                 await self.clock.sleep(delay)
             if spec is None:
-                return await self.inner.call(request)
+                return self._with_injected(await self.inner.call(request), injected)
             kind = spec if isinstance(spec, str) else spec.type.value
+            t_attempt, started_attempt = self.clock.monotonic(), isoformat_z(self.clock.now_utc())
+            status_code: int | None = None
             err: LLMError
             retry = True
             wait: float | None = None
@@ -914,6 +1000,7 @@ class FaultInjectingLLMGateway:
             elif kind in ("http_status", "auth"):
                 extra = spec.model_extra or {}
                 status = int(extra.get("status", extra.get("code", extra.get("value", 401 if kind == "auth" else 500))))
+                status_code = status
                 ra = extra.get("retry_after")
                 if status in (401, 403):
                     err, retry = LLMAuthError(f"HTTP {status}: the model API refused the credentials; check "
@@ -936,9 +1023,6 @@ class FaultInjectingLLMGateway:
                                             max_tokens=request.max_tokens, phase=phase)
                 else:
                     category = extra.get("category")
-                    refusals = getattr(self.inner, "_refusals", None)
-                    if isinstance(refusals, list):
-                        refusals.append({"call_id": None, "stage": phase, "category": category})
                     err = LLMRefusalError("model declined [injected fault]", category=category, phase=phase)
                 retry = False
             elif kind == "schema_violation":
@@ -965,13 +1049,25 @@ class FaultInjectingLLMGateway:
                 err, retry = LLMSchemaError(f"structured output did not validate: {problem} [injected fault]",
                                             call_id=res.call_id, phase=phase), False
             else:                                   # MCP- or process-level fault types: not for this layer
-                return await self.inner.call(request)
+                return self._with_injected(await self.inner.call(request), injected)
+            final = not retry or attempt >= max_retries
+            if final and err.call_id is None:
+                # The call ends here: number it like a real call (schema_violation keeps the
+                # inner call's ID). A retried fault is logged with call_id null: the attempt that
+                # succeeds later is logged by the inner gateway under its own ID.
+                err.call_id = self._terminal_call_id()
+            if isinstance(err, LLMRefusalError):
+                self._refusals.append({"call_id": err.call_id, "stage": phase, "category": err.category})
+            injected.append(LLMAttempt(attempt=attempt, started_at=started_attempt,
+                                       elapsed_s=self.clock.monotonic() - t_attempt, outcome=type(err).__name__,
+                                       status_code=status_code,
+                                       retry_after_s=getattr(err, "retry_after_s", None)))
             if log is not None:
-                log.log({"call_id": None, "phase": phase, "purpose": request.purpose,
+                log.log({"call_id": err.call_id if final else None, "phase": phase, "purpose": request.purpose,
                          "conversation_id": request.conversation_id, "attempt": attempt,
                          "outcome": type(err).__name__, "fault": kind, "message": str(err),
-                         "started_at": isoformat_z(self.clock.now_utc())})
-            if not retry or attempt >= max_retries:
+                         "started_at": started_attempt})
+            if final:
                 raise err
             if wait is None:
                 wait = min(max_s, base_s * (2 ** attempt)) * (0.5 + 0.5 * st["rng"].random())
@@ -980,6 +1076,17 @@ class FaultInjectingLLMGateway:
                                      f"{wait:.0f} s", "warn")
             await self.clock.sleep(wait)
             attempt += 1
+
+    @staticmethod
+    def _with_injected(res: LLMResult[Any], injected: list[LLMAttempt]) -> LLMResult[Any]:
+        """The inner result with the faulted attempts in front (renumbered so that ``attempts`` is
+        ``0..n`` over the whole logical call); usage is the inner call's only (an injected fault
+        spends nothing). ``latency_s`` is left as the inner gateway measured it."""
+        if not injected:
+            return res
+        n = len(injected)
+        inner = [dataclasses.replace(a, attempt=a.attempt + n) for a in res.attempts]
+        return dataclasses.replace(res, attempts=[*injected, *inner])
 
     def usage_total(self) -> Usage:
         return self.inner.usage_total()
@@ -991,4 +1098,34 @@ class FaultInjectingLLMGateway:
         return self.inner.fallback_events()
 
     def refusals(self) -> list[dict[str, Any]]:
-        return self.inner.refusals()
+        """The inner gateway's refusals plus the injected ones (each with its call ID)."""
+        return [*self.inner.refusals(), *self._refusals]
+
+
+# ------------------------------------------------------------------------------ resume hook
+
+
+def prepare_resume(gw: Any, *, last_call_number: int, resumed_phase: PhaseName | str | None) -> None:
+    """Make a freshly built gateway stack continue a run (ADR-009), walking ``gw`` and every
+    ``.inner`` layer:
+
+    * call numbering continues after ``llm-<last_call_number>``, so a resumed call never reuses an
+      ID already in ``llm.jsonl`` (every gateway here numbers calls with ``_seq``: ``AnthropicGateway``,
+      ``ClaudeCodeGateway``, ``FakeGateway``; ``FaultInjectingLLMGateway`` borrows its inner's);
+    * calls of ``resumed_phase`` (the stage that is re-run from its checkpoint) are logged with
+      ``resumed: true`` and returned with ``LLMResult.resumed`` (ADR-009 item 2).
+
+    The resume path calls this instead of setting gateway internals itself. Layers that have
+    neither attribute (test doubles) are left alone."""
+    seen: set[int] = set()
+    layer = gw
+    while layer is not None and id(layer) not in seen:
+        seen.add(id(layer))
+        seq = layer.__dict__.get("_seq") if hasattr(layer, "__dict__") else None
+        if isinstance(seq, int) and not isinstance(seq, bool):
+            layer._seq = max(seq, int(last_call_number))
+        log = getattr(layer, "log", None)
+        if isinstance(log, LLMCallLog) and resumed_phase is not None:
+            log.resumed_phases.add(str(resumed_phase.value if isinstance(resumed_phase, PhaseName)
+                                       else resumed_phase))
+        layer = getattr(layer, "inner", None)

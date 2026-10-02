@@ -149,6 +149,35 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
 
 
+def merged_refusals(ctx: RunContext) -> list[dict[str, Any]]:
+    """Every refusal of the run, once: ``state.refusals`` (written by the phases, survives resume)
+    plus the gateway's own record (``LLMGateway.refusals()``, this process only) for any refusal a
+    phase did not record. Entries are matched on ``(call_id, stage)`` as a multiset, so a refusal
+    known to both is counted once and an injected refusal without a call ID is not doubled."""
+    out = [dict(r) for r in ctx.state.refusals]
+    pool = [(r.get("call_id"), r.get("stage")) for r in out]
+    for r in ctx.llm.refusals():
+        key = (r.get("call_id"), r.get("stage"))
+        if key in pool:
+            pool.remove(key)
+        else:
+            out.append(dict(r))
+    return out
+
+
+def merged_fallback_events(ctx: RunContext) -> list[FallbackEvent]:
+    """Every model fallback of the run, once: ``state.fallback_events`` plus the gateway's events
+    that no phase recorded (multiset by equality; each event's ``reason`` names its call ID)."""
+    out = list(ctx.state.fallback_events)
+    pool = list(out)
+    for ev in ctx.llm.fallback_events():
+        if ev in pool:
+            pool.remove(ev)
+        else:
+            out.append(ev)
+    return out
+
+
 def tool_call_ids(run_dir: RunDir) -> list[str]:
     """Distinct tool call IDs in ``tools.jsonl`` (replayed entries share their original ID)."""
     return list(dict.fromkeys(str(e["call_id"]) for e in JsonlWriter(run_dir.tools_log).read() if e.get("call_id")))
@@ -246,8 +275,8 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
     efforts = {p.value: cfg.effort_for(p) for p in PHASE_ORDER if p in EFFORT_KEY}
     effort_values = set(efforts.values())
     betas = [FALLBACK_BETA] if cfg.agent.allow_fallback else []
-    fallbacks: list[FallbackEvent] = list(st.fallback_events) or list(ctx.llm.fallback_events())
-    refusals = list(st.refusals) or list(ctx.llm.refusals())
+    fallbacks = merged_fallback_events(ctx)
+    refusals = merged_refusals(ctx)
 
     under = next((d for d in st.documents if d.role is DocumentRole.UNDER_REVIEW), None)
     doc_obj = next((d for d in ctx.documents.values() if d.role is DocumentRole.UNDER_REVIEW), None)

@@ -153,12 +153,15 @@ class _ResearchRun:
             return ctx
         questions = state.plan.questions if state.plan is not None else []
         external = [q for q in questions if q.needs_external and q.capability != "none"]
+        if ctx.tools is None:
+            # Checked first: ``plan`` gives every question capability "none" when no tool is
+            # enabled, so in a --no-tools run ``external`` is always empty. The doc-only review is
+            # disclosed either way, and every question that needs external evidence is unanswered.
+            self._doc_only("no tool gateway (--no-tools, or every server is disabled)", "no_tools")
+            return ctx
         if not external:
             ctx.emit("no question needs external evidence; research skipped")
             self._finish(StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "no_external_questions"))
-            return ctx
-        if ctx.tools is None:
-            self._doc_only("no tool gateway (--no-tools, or every server is disabled)", "no_tools")
             return ctx
         try:
             specs = await ctx.tools.list_tools()
@@ -261,6 +264,12 @@ class _ResearchRun:
                     res = await ctx.llm.call(self._request(purpose))
             except LLMRefusalError as exc:
                 category = exc.category or "none given"
+                # Every refusal is recorded (as the other phases do), not only the last one, so the
+                # manifest's model.refusals is complete after a resume too (REPRODUCIBILITY §8).
+                if exc.call_id:
+                    self.call_ids.append(exc.call_id)
+                self.state.refusals.append({"call_id": exc.call_id, "stage": PhaseName.RESEARCH.value,
+                                            "category": exc.category})
                 if self.refusal_retries_left > 0:
                     self.refusal_retries_left -= 1
                     ctx.emit(f"model declined (category: {category}); retrying with review framing", "warn")
@@ -268,8 +277,6 @@ class _ResearchRun:
                     purpose = "refusal_retry"
                     continue
                 self.state.declined_sections.append(PhaseName.RESEARCH.value)
-                self.state.refusals.append({"call_id": exc.call_id, "stage": PhaseName.RESEARCH.value,
-                                            "category": exc.category})
                 self._degrade("refusal", DegradationType.OTHER,
                               f"model declined during research (category: {category}) after one framed retry",
                               "research ended early; open questions are reported as unanswered")
@@ -294,6 +301,13 @@ class _ResearchRun:
             b.output_tokens += res.usage.output_tokens
             b.cache_read_input_tokens += res.usage.cache_read_input_tokens
             b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+            if res.fallback is not None:          # disclosed like the other phases do (INV-07, INV-09)
+                self.state.fallback_events.append(res.fallback)
+                self.state.add_degradation(
+                    DegradationType.MODEL_FALLBACK,
+                    f"research call {res.call_id} was served by {res.fallback.to_model} instead of "
+                    f"{res.fallback.from_model}",
+                    "part of this review was produced by another model; the run is not eval evidence")
             return res, None
 
     # ================================================================== one iteration
@@ -554,12 +568,24 @@ class _ResearchRun:
                       "doc-only review: every question that needs external evidence is reported as a validation "
                       "need, and confidence is lowered")
         questions = self.state.plan.questions if self.state.plan is not None else []
-        external = [q for q in questions if q.needs_external and q.capability != "none"]
+        external = [q for q in questions if q.needs_external]
         self._finish(StopReason.of(StopReasonCode.TOOL_FAILURE, detail), external)
 
     def _finish(self, stop: StopReason, external: list[ResearchQuestion] | None = None) -> None:
         state, ctx = self.state, self.ctx
-        external = external or []
+        external = list(external or [])
+        # Questions that need external evidence but have no enabled capability ("none", set by
+        # plan when the capability's server is disabled) were never researched: they are reported
+        # as unanswered too, never left "open" and silently dropped.
+        ids = {q.id for q in external}
+        uncovered = [q for q in (state.plan.questions if state.plan is not None else [])
+                     if q.needs_external and q.id not in ids and q.status == "open"]
+        if uncovered and ctx.tools is not None:
+            self._degrade("uncovered", DegradationType.TOOL_UNAVAILABLE,
+                          f"{len(uncovered)} question(s) need external evidence but no enabled tool capability "
+                          f"covers them: {', '.join(q.id for q in uncovered)}",
+                          "they were not researched and are reported as unanswered validation needs")
+        external += uncovered
         not_attempted = [q.id for q in external if q.status == "open"]
         for q in external:
             if q.status == "open":

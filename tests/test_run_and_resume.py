@@ -1,6 +1,6 @@
 """run_review / resume_run end to end (workstream C, "phase 3"), offline.
 
-Covers what tests/test_pending.py's phase-3 entries ``test_resume_reuses_completed_tool_calls``
+Covers what the removed tests/test_pending.py's phase-3 entries ``test_resume_reuses_completed_tool_calls``
 and (with test_ingest_verify_report.py) ``test_verify_and_report_produce_valid_review`` describe:
 ``run_review`` with ``transport: fake`` and strict replay cassettes, resume after every phase with
 an identical report (ADR-009), resume in the middle of research without repeating a tool call or

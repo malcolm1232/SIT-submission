@@ -1,7 +1,7 @@
 """ingest, verify (anchors, the one repair call, hydration) and report (assembly, invariants,
 rendering, explain) - workstream C, "phase 3".
 
-Covers what tests/test_pending.py's ``test_verify_and_report_produce_valid_review`` and
+Covers what the removed tests/test_pending.py's ``test_verify_and_report_produce_valid_review`` and
 ``test_explain_reads_run_dir_only`` describe (that shared file is not edited here).
 """
 

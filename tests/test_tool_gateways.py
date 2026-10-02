@@ -2,7 +2,7 @@
 over an in-process ASGI server, no sockets), PolicyToolGateway (allowlist, URL policy, sanitiser,
 budget), source extraction and authority classes.
 
-Covers the ``tests/test_pending.py`` entry ``test_mcp_gateway_cold_start_and_session_reinit``
+Covers the removed ``tests/test_pending.py`` entry ``test_mcp_gateway_cold_start_and_session_reinit``
 ("one retry on cold-start-like failure; re-initialize on 404; 401 disables all servers").
 """
 

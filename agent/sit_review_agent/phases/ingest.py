@@ -16,6 +16,7 @@ the tool gateway and its lifetime), so cold starts still overlap ingest and unde
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -105,7 +106,9 @@ class IngestPhase:
         refs: list[DocumentRef] = []
         docs: dict[str, Document] = {}
         for ref in ctx.state.documents:
-            doc = load_input(ref)
+            # In a worker thread: pdfplumber is CPU-bound, and the background MCP warm-up started
+            # by run_review must keep making progress while it runs (robustness §10 item 2).
+            doc = await asyncio.to_thread(load_input, ref)
             meta = doc.write(ctx.run_dir)
             native = doc.pdf_bytes is not None and doc.native_pdf_ok and native_backend
             refs.append(DocumentRef(

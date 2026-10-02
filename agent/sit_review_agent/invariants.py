@@ -294,7 +294,12 @@ def check_INV_07(review: Review | Mapping[str, Any], run_dir: Path | None = None
 def check_INV_08(run_dir: Path, canaries: Sequence[str]) -> InvariantResult:
     """No canary secret appears in any file of the run directory (report, logs, ledger,
     checkpoints, snapshots). The outbound-request half of INV-08 needs the recording proxy's log
-    and is checked by the robustness harness on the laptop, not here."""
+    and is checked by the robustness harness on the laptop, not here.
+
+    ``llm.jsonl`` is in scope: INV-08 says "any artefact (report, log, ...)", and the model can
+    write a canary into a ``tool_use`` input (ADV-05) that the tool policy then blocks. Every
+    gateway therefore logs through ``llm.gateway.LLMCallLog``, which applies
+    ``llm.gateway.redact_log_entry`` (configured secrets and canary tokens) to each entry."""
     if not canaries:
         return InvariantResult("INV-08", passed=True, skipped=True, reason="no canaries given")
     problems: list[str] = []

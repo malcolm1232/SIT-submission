@@ -124,6 +124,9 @@ async def _verdict_call(ctx: RunContext) -> tuple[ReportOutput | None, str | Non
                 raise                       # bugs (bad request, effort change, exhausted fake script)
             if exc.call_id:
                 ctx.state.llm_calls.setdefault(PhaseName.REPORT.value, []).append(exc.call_id)
+            if isinstance(exc, LLMRefusalError):
+                ctx.state.refusals.append({"call_id": exc.call_id, "stage": PhaseName.REPORT.value,
+                                           "category": exc.category})
             if isinstance(exc, _RETRYABLE) and attempt < retries:
                 cat = getattr(exc, "category", None) or "none given"
                 ctx.emit(f"model declined the verdict (category: {cat}); retrying with review framing", "warn")
@@ -250,7 +253,9 @@ def _ensure_disclosures(ctx: RunContext, calls: list[ResearchLogEntry], stop: St
             DegradationType.TOOL_ERROR, DegradationType.TOOL_UNAVAILABLE}:
         st.add_degradation(DegradationType.TOOL_UNAVAILABLE, "research stopped because tools failed",
                            "external evidence is missing or partial")
-    fb = list(st.fallback_events) or list(ctx.llm.fallback_events())
+    from sit_review_agent.manifest import merged_fallback_events
+
+    fb = merged_fallback_events(ctx)
     have = sum(1 for d in st.degradations if d.type is DegradationType.MODEL_FALLBACK)
     for ev in fb[have:]:
         st.add_degradation(DegradationType.MODEL_FALLBACK, f"{ev.role}: {ev.from_model} -> {ev.to_model} ({ev.reason})",

@@ -55,6 +55,3 @@ ignore = ["B008"]   # typer option defaults are function calls by design
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = [
-    "phase(n): test for a module that is not implemented yet (see agent/README.md workstreams)",
-]

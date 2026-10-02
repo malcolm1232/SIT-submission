@@ -252,6 +252,18 @@ class ServerConnection:
         except TimeoutError:
             await self.close()
             raise TimeoutError(f"initialize did not complete within {timeout_s:.0f}s") from None
+        except BaseException:
+            # Cancelled while waiting (the run ended or the warm-up was cancelled): the owner task
+            # is not registered with the gateway yet, so nobody else would ever stop it. There is
+            # no session to close gracefully, so it is cancelled at once.
+            self._closing.set()
+            task, self._task = self._task, None
+            self.session = None
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await task
+            raise
         if self.session is None:
             err = self.error or ConnectionError("session closed during initialize")
             await self.close()

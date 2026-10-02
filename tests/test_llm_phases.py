@@ -1,6 +1,6 @@
 """understand / plan / assess / refine (workstream A) with ``FakeGateway``: offline, no key.
 
-Covers what ``tests/test_pending.py`` names ``test_model_phases_with_fake_gateway`` (each phase
+Covers what the removed ``tests/test_pending.py`` names ``test_model_phases_with_fake_gateway`` (each phase
 writes the RunState fields its docstring lists), plus the phase contract: conversation IDs, effort,
 cached prefix, prompts via ``ctx.prompts.render``, call IDs, refusal-then-reframed-retry, persistent
 refusal as a degradation, schema repair, truncation retry, the registry freeze, criterion coverage

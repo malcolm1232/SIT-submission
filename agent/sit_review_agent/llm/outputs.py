@@ -293,8 +293,8 @@ def llm_facing_schema(model: type[BaseModel]) -> dict[str, Any]:
     """JSON Schema actually sent for ``model``: Pydantic's schema with the keywords structured
     outputs reject stripped (``minLength``, ``maxLength``, ``minimum``, ``maximum``,
     ``minItems``, ``maxItems``, ``pattern``, ``format``) and ``additionalProperties: false`` on
-    every object. Used for ``count_tokens`` and logging; the SDK's ``output_format`` does its own
-    transformation. Which keywords the API accepts is UNVERIFIED (spec/README.md).
+    every object. This is the schema actually sent (see the closing note below); which keywords
+    the API accepts is UNVERIFIED (spec/README.md).
 
     Details (workstream A):
 

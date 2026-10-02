@@ -31,34 +31,44 @@ the cap is recorded as a degradation. After every completed phase it writes an a
 
 ## Module map
 
+Status as checked by the integration verifier (2026-10-02): every row is implemented and covered
+by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can confirm (ADR-008).
+
 | Module | Role | Status |
 |---|---|---|
 | `models.py` | Pydantic v2 copy of `spec/finding.schema.json` (Finding, DocAnchor, EvidenceItem, Recommendation, Provenance, LedgerEntry, RegistryEntry, SoundArea, Verdict, StopReason, ResearchLog / ResearchLogEntry, RunManifest, Review, plus `ManifestExtra` for REPRODUCIBILITY §8). The schema's `allOf` rules are validators | done |
 | `config.py` | Typed loader for `config/*.yaml`, CLI overrides, `EffectiveConfig.sha256()` | done |
 | `states.py`, `stop_rules.py` | Phase enum and transitions; `@register` stop-rule registry; closed `StopReasonCode` | done |
-| `orchestrator.py` | `Orchestrator.run` (done). `run_review` and `resume_run` (stubs) | partial, C |
+| `orchestrator.py` | `Orchestrator.run`; `run_review` (run dir, gateways, manifest, background MCP warm-up started right after the tool stack, LLM preflight, exit-code mapping, `failure.json` for every failure after the run dir exists) and `resume_run` (ADR-009: drift check, ledger truncation, `SelfReplayGateway`, call IDs continued via `llm.gateway.prepare_resume` and `CallIds.advance_to`) | done |
 | `context.py` | `RunContext`: the run state plus services, passed to every phase | done |
 | `state/run_state.py` | `RunState`, the serialisable checkpoint payload | done |
 | `state/evidence_ledger.py` | Append-only ledger with `EV-nnn` IDs, `ledger.jsonl` journal, `hydrate()` | done |
 | `state/decision_registry.py` | `AD-nnn` registry, `freeze()`, hash per iteration, INV-10 checks | done |
 | `state/checkpoint.py` | Atomic per-phase checkpoints, drift check, journal truncation | done |
-| `llm/gateway.py` | `LLMGateway` protocol, `LLMRequest` / `LLMResult` / `Usage`, `FakeGateway` (done); `AnthropicGateway`, `FaultInjectingLLMGateway` (stubs) | partial, A/B |
-| `llm/outputs.py` | Structured-output draft types for each phase (`UnderstandOutput` … `ReportOutput`, `FindingDraft`) | done (types); `llm_facing_schema` stub, A |
+| `llm/gateway.py` | `LLMGateway` protocol, `LLMRequest` / `LLMResult` / `Usage`; `LLMCallLog` (redacts secrets and canaries, flags `resumed: true`); `AnthropicGateway` (streamed `output_config.format`, gateway-owned retries, typed stop reasons, `models_retrieve`, `preflight`); `FakeGateway`; `FaultInjectingLLMGateway`; `prepare_resume` | done (A, B); Anthropic API behaviour UNVERIFIED live |
+| `llm/outputs.py` | Structured-output draft types for each phase (`UnderstandOutput` … `ReportOutput`, `FindingDraft`) and `llm_facing_schema` (the schema both backends send) | done |
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
-| `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done |
+| `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done; envelope tool loop UNVERIFIED live on Opus |
 | `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
-| `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, layer stack and `build_tool_gateway`. `ReplayGateway`, `RecordingGateway`, `FakeToolGateway` and `LoggingToolGateway` are done; `MCPToolGateway`, `PolicyToolGateway`, `FaultInjectingGateway` and `SelfReplayGateway` are stubs | partial, B/C |
+| `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, `CallIds`, the layer stack and `build_tool_gateway`: `MCPToolGateway`, `ReplayGateway`, `RecordingGateway`, `FakeToolGateway`, `FaultInjectingGateway`, `SelfReplayGateway`, `PolicyToolGateway`, `LoggingToolGateway` | done (B, C); live MCP behaviour UNVERIFIED (auth header, cold starts) |
+| `tools/mcp_client.py` | Live MCP plumbing for `MCPToolGateway`: httpx2 + streamable-HTTP session factory with an error-status hook, failure classification, one owner task per server session, `find_layer` / `start_warm_up` | done (B) |
+| `tools/policy.py` | Pure policy checks for `PolicyToolGateway`: URL policy (`fetch_only_from_results`, added query strings), argument sanitiser (secrets, canaries, key-shaped tokens, bulk text), `scrub_args` | done (B) |
+| `tools/fault_apply.py` | Rule matching shared by the MCP and LLM fault injectors (seeded `flaky`, `offline` windows, latency) | done (B) |
 | `tools/faults.py` | Robustness fault-schedule model and loader | done |
 | `tools/cassette.py` | Cassette key, argument canonicalisation, `Redactor` | done |
-| `tools/sources.py` | `ExternalSource`; `extract_sources`, `classify_authority` | stub, B |
+| `tools/sources.py` | `ExternalSource`; `extract_sources` (search hits, JSON records, fetched pages), `classify_authority`, `independence_key` | done (B) |
 | `ingest/text.py` | Normalisation and the `[[PAGE n]]` marker | done |
-| `ingest/pdf.py` | `ingest()` (pdfplumber), `Document` (pages, sections, requirement index, PDF block) | done (heading detection is heuristic, C refines) |
+| `ingest/pdf.py` | `ingest()` (pdfplumber), `Document` (pages, sections, requirement index, PDF block) | done (heading detection is heuristic: numbered lists inside tables become extra sections) |
 | `ingest/anchor.py` | `verify_anchor`, `verify_finding_anchors`, anchor-table rows | done |
-| `phases/*.py` | One class per phase; each docstring says what the phase reads and writes | stubs, A/B/C |
-| `report/render.py`, `report/explain.py`, `manifest.py`, `selftest.py` | Markdown report, `explain`, manifest, selftest and preflight | stubs, B/C |
+| `phases/ingest.py`, `verify.py`, `report.py` | Ingest (pdfplumber in a worker thread), anchor verification with one repair turn and registry-anchor settlement after `understand`, hydration, report assembly and invariant gate | done (C) |
+| `phases/understand.py`, `plan.py`, `assess.py`, `refine.py` | The model phases of workstream A | done (A) |
+| `phases/_model_calls.py` | Private plumbing of A's phases: `call_model` (refusal reframing, schema repair, `max_tokens` retry, bookkeeping), anchor fixes (`extend_quote`), finding normalisation, coverage reconciliation, `resolve_evidence` (model `NEW-n` doc/inference evidence into the ledger; invented IDs dropped) | done (A) |
+| `phases/research.py` | The hand-written research tool loop (B) | done (B) |
+| `report/render.py`, `report/explain.py`, `manifest.py`, `selftest.py` | Markdown report, `explain`, manifest (refusals and fallbacks merged from run state and gateway), `selftest` and `preflight` | done (B, C) |
 | `invariants.py` | `check_INV_03` … `check_INV_10`, `check_all` (ports `spec/validate_examples.py`) | done; the outbound-request half of INV-08 runs in the harness |
 | `prompts.py` | Prompt bundle, `PROMPTS.lock`, StrictUndefined rendering | done |
 | `rundir.py`, `progress.py`, `clock.py`, `hashing.py`, `errors.py`, `paths.py` | Run-directory layout and JSONL journal; progress lines and heartbeat; `FakeClock`; hashes; typed errors and exit codes | done |
+| `cli.py` | `sit-review` / `dra`: `run` (`review`), `resume`, `explain`, `selftest`, `preflight`, `states`; typed errors to exit codes, never a traceback (INV-11) | done (C) |
 
 ## The phase contract
 
@@ -92,8 +102,10 @@ manifest.
 
 ## Workstreams for the three parallel implementers
 
-Skipped tests in `tests/test_pending.py` name their workstream as "phase 1", "phase 2" or
-"phase 3". Unskip a test in the same change that implements its module.
+All three workstreams are merged; `tests/test_pending.py` (the skipped placeholders) was removed
+once every entry was covered by a real test. Cross-workstream seams are pinned by
+`tests/test_integration_seams.py`, `tests/test_e2e_synthetic.py` (real phases on a synthetic PDF,
+doc-only, resume) and `tests/test_adversarial_invariants.py` (INV-03..INV-11).
 
 | Workstream | Owns | Done when |
 |---|---|---|

@@ -193,24 +193,32 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
                      documents=refs)
-    llm = _run_build_llm(cfg, rd, clk, prog, sched, llm_factory)
-    tools = _run_build_tools(cfg, rd, clk, prog, sched, None, tools_factory)
-    ctx = RunContext(config=cfg, run_dir=rd, state=state, llm=llm, tools=tools,
-                     ledger=EvidenceLedger(rd, clock=clk), registry=DecisionRegistry(), prompts=prompts,
-                     clock=clk, progress=prog, plan_only=request.plan_only)  # type: ignore[arg-type]
+    ctx: RunContext | None = None
+    warm: asyncio.Task[None] | None = None
     try:
+        llm = _run_build_llm(cfg, rd, clk, prog, sched, llm_factory)
+        tools = _run_build_tools(cfg, rd, clk, prog, sched, None, tools_factory)
+        ctx = RunContext(config=cfg, run_dir=rd, state=state, llm=llm, tools=tools,
+                         ledger=EvidenceLedger(rd, clock=clk), registry=DecisionRegistry(), prompts=prompts,
+                         clock=clk, progress=prog, plan_only=request.plan_only)  # type: ignore[arg-type]
+        # Right after the tool stack exists, so cold starts overlap models.retrieve, the LLM
+        # preflight, ingest and understand (robustness §10 item 2, runbook §7 drill 1).
+        warm = _run_start_warmup(ctx)
         from sit_review_agent.manifest import start_manifest
 
         start_manifest(ctx, models_retrieve=await _run_models_retrieve(ctx))
-    except AgentError:
-        await _run_close_tools(ctx)
-        raise
-    ctx.emit(f"run {run_id}: {rd.root}")
-    failed = await _run_llm_preflight(ctx)
+        ctx.emit(f"run {run_id}: {rd.root}")
+        failed = await _run_llm_preflight(ctx)
+    except BaseException as exc:  # noqa: BLE001 - recorded in failure.json (INV-02), re-raised typed
+        err = await _run_setup_failed(rd, run_id, ctx, warm, exc)
+        if err is exc:
+            raise
+        raise err from exc
     if failed is not None:
+        await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
         return _run_fail(ctx, failed)
-    return await _run_execute(ctx, phases, PhaseName.INGEST, stdin, stdout)
+    return await _run_execute(ctx, phases, PhaseName.INGEST, stdin, stdout, warm)
 
 
 async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bool = False,
@@ -288,34 +296,47 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
     state.current_phase = None
     prog = progress or _run_console_progress(clk, rd)
     sched = _run_fault_schedule(config)
-    llm = _run_build_llm(config, rd, clk, prog, sched, llm_factory)
-    _run_advance_ids(llm, "_seq", _run_max_id(rd.llm_log, "llm-"))
-    tools_offset = rd.tools_log.stat().st_size if rd.tools_log.exists() else 0
-    tools = _run_build_tools(config, rd, clk, prog, sched, tools_offset, tools_factory)
-    registry = DecisionRegistry(state.registry, frozen=state.registry_frozen)
-    registry._hashes = list(state.registry_hashes)                 # restore the per-iteration hashes (INV-10)
-    ctx = RunContext(config=config, run_dir=rd, state=state, llm=llm, tools=tools,
-                     ledger=EvidenceLedger.load(rd, upto=ledger_upto, clock=clk), registry=registry,
-                     prompts=prompts, clock=clk, progress=prog)    # type: ignore[arg-type]
-    ctx.documents = _run_load_documents(rd, state)
+    ctx: RunContext | None = None
+    warm: asyncio.Task[None] | None = None
     try:
+        from sit_review_agent.llm.gateway import prepare_resume
+
+        llm = _run_build_llm(config, rd, clk, prog, sched, llm_factory)
+        # New LLM call IDs continue after the logged ones; calls of the stage being re-run are
+        # logged ``resumed: true`` (ADR-009 item 2).
+        prepare_resume(llm, last_call_number=_run_max_id(rd.llm_log, "llm-"),
+                       resumed_phase=_run_rerun_phase(rd, ckpt, start_at))
+        tools_offset = rd.tools_log.stat().st_size if rd.tools_log.exists() else 0
+        tools = _run_build_tools(config, rd, clk, prog, sched, tools_offset, tools_factory)
+        registry = DecisionRegistry(state.registry, frozen=state.registry_frozen)
+        registry._hashes = list(state.registry_hashes)             # restore the per-iteration hashes (INV-10)
+        ctx = RunContext(config=config, run_dir=rd, state=state, llm=llm, tools=tools,
+                         ledger=EvidenceLedger.load(rd, upto=ledger_upto, clock=clk), registry=registry,
+                         prompts=prompts, clock=clk, progress=prog)    # type: ignore[arg-type]
+        ctx.documents = _run_load_documents(rd, state)
+        if start_at is not None:
+            warm = _run_start_warmup(ctx)
         from sit_review_agent.manifest import start_manifest
 
         start_manifest(ctx, deviations=deviations)
-    except AgentError:
-        await _run_close_tools(ctx)
-        raise
-    ctx.emit(f"resuming run {state.run_id} at {start_at.value if start_at else 'end'}"
-             + (f" (accepted drift: {'; '.join(d for d in deviations if d.startswith('--accept'))})"
-                if accept_drift and any(d.startswith("--accept") for d in deviations) else ""))
-    if start_at is None:                                            # pragma: no cover - report checkpoint w/o file
-        await _run_close_tools(ctx)
-        return RunOutcome(run_dir=rd.root, exit_code=0, report_md=rd.report_md if rd.report_md.exists() else None)
-    failed = await _run_llm_preflight(ctx)
+        ctx.emit(f"resuming run {state.run_id} at {start_at.value if start_at else 'end'}"
+                 + (f" (accepted drift: {'; '.join(d for d in deviations if d.startswith('--accept'))})"
+                    if accept_drift and any(d.startswith("--accept") for d in deviations) else ""))
+        if start_at is None:                                        # pragma: no cover - report checkpoint w/o file
+            await _run_close_tools(ctx)
+            return RunOutcome(run_dir=rd.root, exit_code=0,
+                              report_md=rd.report_md if rd.report_md.exists() else None)
+        failed = await _run_llm_preflight(ctx)
+    except BaseException as exc:  # noqa: BLE001 - recorded in failure.json (INV-02), re-raised typed
+        err = await _run_setup_failed(rd, state.run_id, ctx, warm, exc)
+        if err is exc:
+            raise
+        raise err from exc
     if failed is not None:
+        await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
         return _run_fail(ctx, failed)
-    return await _run_execute(ctx, phases, start_at, stdin, stdout)
+    return await _run_execute(ctx, phases, start_at, stdin, stdout, warm)
 
 
 # ------------------------------------------------------------------------- run_review helpers
@@ -362,7 +383,7 @@ def _run_build_llm(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: ob
     """``FakeGateway`` with the selftest fixture script for ``transport: fake``; otherwise the
     backend named by ``llm.backend`` (ADR-010). Wrapped by the fault injector when a schedule is set."""
     from sit_review_agent.config import Transport
-    from sit_review_agent.llm.backend import build_llm_gateway, supports_native_pdf
+    from sit_review_agent.llm.backend import build_llm_gateway
     from sit_review_agent.llm.gateway import FaultInjectingLLMGateway
 
     if factory is not None:
@@ -374,9 +395,8 @@ def _run_build_llm(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: ob
     else:
         gw = build_llm_gateway(cfg, rd, clock=clock, progress=progress)  # type: ignore[arg-type]
     if sched is not None:
-        native = supports_native_pdf(gw)
         gw = FaultInjectingLLMGateway(gw, sched, clock=clock)  # type: ignore[arg-type]
-        gw.native_pdf = native  # type: ignore[attr-defined]   # keep the backend's PDF capability visible
+        # The wrapper forwards ``native_pdf`` from the backend it wraps (llm.backend.supports_native_pdf).
     return gw
 
 
@@ -405,7 +425,7 @@ def _run_build_tools(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: 
         gw = build_tool_gateway(cfg, rd, clock=clock, progress=progress, fault_schedule=sched,  # type: ignore[arg-type]
                                 resume_offset=resume_offset, base=base)
     if gw is not None and resume_offset is not None:
-        _run_advance_ids(gw, "ids", _run_max_id(rd.tools_log, "call-"), make=CallIds)
+        _run_advance_ids(gw, _run_max_id(rd.tools_log, "call-"))
     return gw
 
 
@@ -419,18 +439,33 @@ def _run_chain(gw: object) -> list[object]:
     return out
 
 
-def _run_advance_ids(gw: object, attr: str, n: int, *, make: object = None) -> None:
-    """Continue call numbering after ``n`` on every layer that numbers calls (``_seq`` on LLM
-    gateways, a shared ``CallIds`` on tool layers), so resumed calls never reuse a logged ID."""
+def _run_advance_ids(gw: object, n: int) -> None:
+    """Continue tool call numbering after ``call-<n>`` on every :class:`CallIds` of the stack
+    (``ids`` on base layers, ``_ids`` captured by the policy and fault layers; usually one shared
+    object), advanced in place so no layer keeps an older counter and resumed calls never reuse a
+    logged ID."""
+    from sit_review_agent.tools.gateway import CallIds
+
     if n <= 0:
         return
-    shared = make(n) if make is not None else None  # type: ignore[operator]
     for layer in _run_chain(gw):
-        cur = getattr(layer, attr, None)
-        if shared is not None and cur is not None and type(cur).__name__ == "CallIds":
-            setattr(layer, attr, shared)
-        elif shared is None and isinstance(cur, int):
-            setattr(layer, attr, max(cur, n))
+        for attr in ("ids", "_ids"):
+            cur = getattr(layer, attr, None)
+            if isinstance(cur, CallIds):
+                cur.advance_to(n)
+
+
+def _run_rerun_phase(rd: RunDir, ckpt: object, start_at: PhaseName | None) -> PhaseName | None:
+    """The stage a resume re-runs, if it had already made model calls after the checkpoint (its
+    re-issued calls are logged ``resumed: true``, ADR-009 item 2); else ``None``."""
+    from sit_review_agent.rundir import JsonlWriter
+
+    if start_at is None:
+        return None
+    upto = ckpt.offsets.llm_jsonl if ckpt is not None else 0  # type: ignore[attr-defined]
+    log = JsonlWriter(rd.llm_log)
+    after = log.read()[len(log.read(upto)):]
+    return start_at if any(e.get("phase") == start_at.value for e in after) else None
 
 
 def _run_max_id(path: Path, prefix: str) -> int:
@@ -525,6 +560,55 @@ def _run_start_warmup(ctx: RunContext) -> object:
     return None
 
 
+async def _run_stop_warmup(warm: object) -> None:
+    """Cancel the background warm-up (if still running) and wait for it to finish, so no MCP
+    connection task outlives the run (also on errors and Ctrl-C)."""
+    if warm is None:
+        return
+    warm.cancel()  # type: ignore[attr-defined]
+    try:
+        await warm  # type: ignore[misc]
+    except BaseException:  # noqa: BLE001 - a cancelled or failed warm-up is not the run's error
+        pass
+
+
+async def _run_setup_failed(rd: RunDir, run_id: str, ctx: RunContext | None, warm: object,
+                            exc: BaseException) -> AgentError:
+    """A failure after the run directory exists but before the orchestrator starts (gateway
+    construction, manifest, LLM preflight): stop the warm-up, close the tools, write
+    ``failure.json`` (INV-02) and return the typed error to raise (an :class:`AgentError` as is,
+    Ctrl-C as :class:`RunInterrupted`, anything else as :class:`StageCrash`, exit 4; INV-11)."""
+    if isinstance(exc, AgentError):
+        err: AgentError = exc
+    elif isinstance(exc, KeyboardInterrupt | asyncio.CancelledError):
+        err = RunInterrupted("interrupted while starting the run")
+    else:
+        err = StageCrash("run", exc)
+    import json as _json
+
+    await _run_stop_warmup(warm)
+    if ctx is not None:
+        await _run_close_tools(ctx)
+    record: dict[str, object] = {}
+    if rd.failure.is_file():                    # resume: keep what the earlier failure recorded
+        try:
+            record = dict(_json.loads(rd.failure.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            record = {}
+    done = [p.value for p in ctx.state.completed_phases] if ctx is not None else record.get("completed_phases", [])
+    record.update({"run_id": run_id, "exit_code": int(err.exit_code), "error": type(err).__name__,
+                   "message": str(err)[:4000], "phase": None, "completed_phases": done, "stage": "setup",
+                   "resumable": bool(done), "resume": f"sit-review resume {rd.root}"})
+    record.pop("cause", None)
+    if not isinstance(exc, AgentError):
+        record["cause"] = f"{type(exc).__name__}: {str(exc)[:2000]}"
+    try:
+        write_json_atomic(rd.failure, record)
+    except OSError:
+        pass
+    return err
+
+
 async def _run_close_tools(ctx: RunContext) -> None:
     if ctx.tools is not None:
         try:
@@ -615,13 +699,13 @@ def _run_wrap_phases(phases: Mapping[PhaseName, Phase] | None, stdin: object, st
 
 
 async def _run_execute(ctx: RunContext, phases: Mapping[PhaseName, Phase] | None, start_at: PhaseName,
-                       stdin: object, stdout: object) -> RunOutcome:
-    """Run the orchestrator, map errors to exit codes, record failures, close the gateways."""
+                       stdin: object, stdout: object, warm: object = None) -> RunOutcome:
+    """Run the orchestrator, map errors to exit codes, record failures, close the gateways and
+    stop the background warm-up (started by the caller right after the tool stack was built)."""
     from sit_review_agent.manifest import finalise_manifest
     from sit_review_agent.models import Outcome
 
     rd = ctx.run_dir
-    warm = _run_start_warmup(ctx)
     try:
         ctx = await Orchestrator(_run_wrap_phases(phases, stdin, stdout)).run(ctx, start_at=start_at)
     except AgentError as exc:
@@ -629,12 +713,7 @@ async def _run_execute(ctx: RunContext, phases: Mapping[PhaseName, Phase] | None
     except Exception as exc:  # noqa: BLE001 - never a traceback (INV-11): a typed stage crash
         return _run_fail(ctx, StageCrash(ctx.state.current_phase.value if ctx.state.current_phase else "run", exc))
     finally:
-        if warm is not None:
-            warm.cancel()  # type: ignore[attr-defined]
-            try:
-                await warm  # type: ignore[misc]
-            except BaseException:  # noqa: BLE001 - cancelled warm-up
-                pass
+        await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
     if rd.report_json.is_file() and PhaseName.REPORT in ctx.state.completed_phases:
         ctx.emit(f"report: {rd.report_md}", "done")

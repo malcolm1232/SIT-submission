@@ -338,7 +338,7 @@ class ClaudeCodeGateway:
         self.timeout_s = config.agent.llm.timeout_s
         self.backoff_base_s = config.agent.llm.backoff_base_s
         self.backoff_max_s = config.agent.llm.backoff_max_s
-        self.log = LLMCallLog(run_dir)
+        self.log = LLMCallLog(run_dir, secret_env=(config.tools.auth_env,))
         self._guard = EffortGuard()
         self._conversations: dict[str, _Conversation] = {}
         self._usage = Usage()
@@ -608,7 +608,7 @@ class ClaudeCodeGateway:
                              text=result["text"], tool_uses=result["tool_uses"], usage=result["usage"],
                              request_id=None, request_sha256=req_hash,
                              latency_s=self.clock.monotonic() - t_call, attempts=attempts,
-                             fallback=result["fallback"], resumed=False)
+                             fallback=result["fallback"], resumed=self.log.is_resumed(request.phase))
 
     def _log_failure(self, base: dict[str, Any], fail: _AttemptFailed, elapsed: float, conv: _Conversation) -> None:
         out = fail.out or {}

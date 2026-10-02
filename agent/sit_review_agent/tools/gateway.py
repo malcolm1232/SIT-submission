@@ -191,6 +191,11 @@ class CallIds:
         self._n += 1
         return f"call-{self._n:04d}"
 
+    def advance_to(self, n: int) -> None:
+        """Continue after ``call-<n>`` (resume, ADR-009): never goes backwards. Advancing the shared
+        object in place keeps every layer that holds it (policy, fault injector, base) in step."""
+        self._n = max(self._n, int(n))
+
 
 def _result(call_id: str, server: str, tool: str, args: dict[str, Any], *, status: ToolCallStatus, started_at: str,
             text: str = "", content: list[dict[str, Any]] | None = None, is_error: bool = False,

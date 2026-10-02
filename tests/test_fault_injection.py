@@ -6,7 +6,7 @@ the other P0 tool faults the policy layer must absorb (INF-03/04/05/09/10/11/18/
 Faults are injected BELOW the policy (``build_tool_gateway(..., fault_schedule=...)``) and below the
 LLM retry policy (``FaultInjectingLLMGateway``), so the policies are what is tested.
 
-Covers the ``tests/test_pending.py`` entry ``test_fault_injection_drills``.
+Covers the removed ``tests/test_pending.py`` entry ``test_fault_injection_drills``.
 """
 
 from __future__ import annotations

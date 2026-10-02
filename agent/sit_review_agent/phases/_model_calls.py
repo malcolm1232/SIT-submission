@@ -515,9 +515,18 @@ class _EvidenceResolver:
         self.stats = EvidenceStats()
         self._doc_index: dict[tuple[str, str], str] = {
             (e.url_or_citation, e.excerpt or ""): e.evidence_id for e in self.ledger if e.source_type is SourceType.DOC}
+        #: Ledger IDs that existed when the model answered: the only register IDs it can have meant.
+        self._shown: set[str] = {e.evidence_id for e in self.ledger}
 
-    def known(self, eid: str) -> bool:
-        return eid in self.ledger
+    def resolve_id(self, model_id: str) -> str | None:
+        """The ledger entry an ID written by the model stands for: the entry created here for one
+        of its temporary IDs, or a register ID it was shown; else ``None``. An ``EV-`` ID the model
+        invented never resolves to an entry this resolver adds later in the same pass under the
+        same name (that would silently cite unrelated evidence, e.g. "external" evidence in a
+        document-only run)."""
+        if model_id in self.map:
+            return self.map[model_id]
+        return model_id if model_id in self._shown else None
 
     def doc_entry(self, quote: str | None, anchor: DocAnchorDraft | None) -> str | None:
         """A ledger ``doc`` entry for ``quote`` (located in the canonical text when found there,
@@ -552,12 +561,12 @@ class _EvidenceResolver:
         for f in findings:
             anchor = f.doc_anchors[0] if f.doc_anchors else None
             for c in f.evidence:
-                if c.source_type is SourceType.DOC and not self.known(c.evidence_id) and c.evidence_id not in self.map:
+                if c.source_type is SourceType.DOC and self.resolve_id(c.evidence_id) is None:
                     eid = self.doc_entry(c.quote, anchor)
                     if eid is not None:
                         self.map[c.evidence_id] = eid
         pending = [(f, c) for f in findings for c in f.evidence
-                   if c.source_type is SourceType.INFERENCE and not self.known(c.evidence_id)]
+                   if c.source_type is SourceType.INFERENCE and self.resolve_id(c.evidence_id) is None]
         local = {c.evidence_id for _, c in pending}
         while pending:
             progress = False
@@ -567,18 +576,17 @@ class _EvidenceResolver:
                     pending.remove(item)
                     progress = True
                     continue
-                deps = [self.map.get(d, d) for d in c.derived_from]
-                if any(d in local and d not in self.map and not self.known(d) for d in deps):
+                if any(d in local and self.resolve_id(d) is None for d in c.derived_from):
                     continue                                      # wait for a local dependency
-                self._add_inference(f, c, deps)
+                self._add_inference(f, c, c.derived_from)
                 pending.remove(item)
                 progress = True
             if not progress:                                      # a cycle: resolve with known deps only
                 f, c = pending.pop(0)
-                self._add_inference(f, c, [self.map.get(d, d) for d in c.derived_from])
+                self._add_inference(f, c, c.derived_from)
 
-    def _add_inference(self, f: FindingDraft, c: Any, deps: list[str]) -> None:
-        known = [d for d in dict.fromkeys(deps) if self.known(d)]
+    def _add_inference(self, f: FindingDraft, c: Any, deps: Sequence[str]) -> None:
+        known = [d for d in dict.fromkeys(self.resolve_id(x) for x in deps) if d is not None]
         if not known:
             anchor = f.doc_anchors[0] if f.doc_anchors else None
             base = self.doc_entry(anchor.quote if anchor else None, anchor)
@@ -594,11 +602,11 @@ class _EvidenceResolver:
         cites: list[EvidenceCitation] = []
         seen: set[str] = set()
         for c in f.evidence:
-            eid = self.map.get(c.evidence_id, c.evidence_id)
-            if eid in seen:
-                continue
-            if not self.known(eid):
+            eid = self.resolve_id(c.evidence_id)
+            if eid is None:
                 self.stats.dropped += 1
+                continue
+            if eid in seen:
                 continue
             seen.add(eid)
             e = self.ledger.get(eid)
@@ -611,7 +619,8 @@ class _EvidenceResolver:
         rec = f.recommendation
         if rec is not None:
             supporting = {c.evidence_id for c in cites if c.supports_claim}
-            sup = [i for i in dict.fromkeys(self.map.get(x, x) for x in rec.supporting_evidence_ids) if i in supporting]
+            sup = [i for i in dict.fromkeys(self.resolve_id(x) for x in rec.supporting_evidence_ids)
+                   if i is not None and i in supporting]
             if not sup:
                 sup = [c.evidence_id for c in cites if c.supports_claim]
             if not sup and f.doc_anchors:
@@ -631,7 +640,9 @@ def resolve_evidence(ctx: RunContext, findings: Sequence[FindingDraft],
     """Make every evidence citation ledger-backed, so ``verify`` can hydrate it.
 
     The model cites register IDs, and gives *new* ``doc`` and ``inference`` items temporary IDs
-    (``NEW-1``, ...; any ID not in the ledger is treated the same way). This function adds them to
+    (``NEW-1``, ...; any ID the model was not shown is treated the same way, and an unknown ID of
+    another source type is dropped, even if this pass later creates an entry with that name;
+    :meth:`_EvidenceResolver.resolve_id`). This function adds them to
     the ledger through ``ctx.ledger.add_doc`` / ``add_inference`` (doc items located in the canonical
     text where the quote is found, else at the finding's first anchor; inferences after their
     dependencies, falling back to a doc entry for the finding's first anchor), rewrites the IDs in
@@ -642,6 +653,6 @@ def resolve_evidence(ctx: RunContext, findings: Sequence[FindingDraft],
     r = _EvidenceResolver(ctx)
     r.resolve(findings)
     out = [r.rewrite(f) for f in findings]
-    areas = [a.model_copy(update={"evidence_ids": [i for i in dict.fromkeys(r.map.get(x, x) for x in a.evidence_ids)
-                                                   if r.known(i)]}) for a in sound_areas]
+    areas = [a.model_copy(update={"evidence_ids": [i for i in dict.fromkeys(r.resolve_id(x) for x in a.evidence_ids)
+                                                   if i is not None]}) for a in sound_areas]
     return out, areas, r.stats

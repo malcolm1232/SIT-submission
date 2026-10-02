@@ -1,7 +1,7 @@
 """Workstream B, phase 2: the research tool loop on FakeGateway + (Fake | Recording | strict Replay)
 tool stacks assembled by ``build_tool_gateway``.
 
-Covers the ``tests/test_pending.py`` entry ``test_research_loop_ledger_and_stop_rules`` ("parallel
+Covers the removed ``tests/test_pending.py`` entry ``test_research_loop_ledger_and_stop_rules`` ("parallel
 tool results in one user message; ledger entries per source; stop rule recorded"), plus every stop
 rule, tool-down degradation, --plan-only, refusal / schema recovery, INF-16 and ADV-04/05.
 """
@@ -393,7 +393,10 @@ async def test_refusal_is_retried_once_with_framing_then_declined(tmp_path: Path
     ctx = await ResearchPhase().run(make_ctx(tmp_path, script))
     second = ctx.llm.calls[1].messages[-1]["content"][-1]["text"]         # type: ignore[attr-defined]
     assert "professional engineering design review" in second
-    assert ctx.state.declined_sections == ["research"] and ctx.state.refusals[0]["category"] is None
+    assert ctx.state.declined_sections == ["research"]
+    # every refusal is recorded (as call_model does), with its call ID, so the manifest counts both
+    assert [(r["call_id"], r["category"]) for r in ctx.state.refusals] == [("llm-0001", "cyber"), ("llm-0002", None)]
+    assert ctx.state.llm_calls["research"] == ["llm-0001", "llm-0002"]
     assert ctx.state.stop_reason.code is StopReasonCode.ERROR and ctx.state.stop_reason.detail == "model_declined"
     assert any("declined" in d.event for d in ctx.state.degradations)
 

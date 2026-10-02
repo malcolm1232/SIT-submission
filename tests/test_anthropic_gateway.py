@@ -1,6 +1,6 @@
 """AnthropicGateway (workstream A) against an injected fake async SDK client: offline, no key.
 
-Covers what ``tests/test_pending.py`` names ``test_anthropic_gateway_request_shape`` and
+Covers what the removed ``tests/test_pending.py`` names ``test_anthropic_gateway_request_shape`` and
 ``test_anthropic_gateway_retry_and_stop_reasons``: the request body, stop-reason handling, the
 retry policy under ``FakeClock``, ``llm.jsonl`` logging, served models and fallback events, plus
 ``llm_facing_schema``. Responses and errors are real SDK types (``anthropic.types.Message``,
