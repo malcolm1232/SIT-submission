@@ -71,7 +71,11 @@ async def test_truncated_calls_are_billed_in_the_manifest_and_resume_repeats_not
     assert usage["input_tokens"] >= logged_in >= 2 * BILLED.input_tokens
     assert usage["cost_usd"] >= 2 * BILLED.output_tokens * PRICE_TABLE["usd_per_mtok"]["output"] / 1e6
     report = json.loads(rd.report_json.read_text(encoding="utf-8"))
-    assert report["verdict"]["label"] == "not_assessed"
+    # The two truncations hit one shard (its call and its one retry): that shard's criteria are not
+    # assessed and the shard is named; the other three shards still make an assessed review.
+    events = [d["event"] for d in report["research_log"]["degradations"]]
+    assert any(e.startswith("assess shard 1/4 (intent_and_fitness)") and "truncated twice" in e for e in events)
+    assert report["verdict"]["label"] != "not_assessed" and report["findings"]
     assert report["run_manifest"]["extra"]["model"]["truncations"] == manifest["extra"]["model"]["truncations"]
 
     before = rd.report_json.read_bytes()

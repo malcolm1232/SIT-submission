@@ -444,7 +444,12 @@ def test_research_keeps_the_refine_reserve(tmp_path: Path, base: EffectiveConfig
     assert _ResearchRun(ctx).params.report_reserve_seconds == sr.report_reserve_seconds + sr.refine_reserve_seconds
 
 
-async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path, base: EffectiveConfig) -> None:
+@pytest.mark.parametrize("overrun", ["ingest", "research"])
+async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path, base: EffectiveConfig,
+                                                                   overrun: str) -> None:
+    """Assess no longer waits for research (it starts with understand and plan in stage 1), so the
+    case "out of time before assessment" is a cap before stage 1: an ingest that overruns the
+    deadline leaves ingest, verify and report. A research overrun now skips refine, disclosed."""
     from sit_review_agent.context import RunContext
     from sit_review_agent.orchestrator import Orchestrator
     from sit_review_agent.progress import NullProgress
@@ -462,8 +467,8 @@ async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path
 
         async def run(self, ctx: Any) -> Any:
             ran.append(self.name.value)
-            if self.name is PhaseName.RESEARCH:
-                clock.advance(base.stop_rules.deadline_seconds)        # research overran the deadline
+            if self.name.value == overrun:
+                clock.advance(base.stop_rules.deadline_seconds)        # the phase overran the deadline
             return ctx
 
     rd = RunDir(tmp_path / "run").create()
@@ -471,9 +476,14 @@ async def test_deadline_before_assess_is_disclosed_as_out_of_time(tmp_path: Path
                      llm=FakeGateway({}), tools=None, ledger=EvidenceLedger(rd, clock=clock),
                      registry=DecisionRegistry(), prompts=PromptBundle.load(), clock=clock, progress=NullProgress())
     await Orchestrator({p: Step(p) for p in PHASE_ORDER}).run(ctx)
-    assert "assess" not in ran and ran[-2:] == ["verify", "report"]
     events = [d.event for d in ctx.state.degradations]
-    assert any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events)
+    if overrun == "ingest":
+        assert ran == ["ingest", "verify", "report"]
+        assert any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events)
+    else:
+        assert "assess" in ran and "refine" not in ran and ran[-2:] == ["verify", "report"]
+        assert any(e.startswith("stop rule") and e.endswith("before refine") for e in events)
+        assert not any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events)
 
 
 def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveConfig) -> None:

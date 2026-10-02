@@ -262,11 +262,14 @@ async def test_a_failed_run_also_says_its_cost_is_a_lower_bound(tmp_path: Path) 
     out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=selftest_config(tmp_path),
                                       run_id="killed"), llm_factory=killed, clock=FakeClock(), progress=progress)
     assert out.exit_code == 3
-    model = json.loads(RunDir(out.run_dir).manifest.read_text(encoding="utf-8"))["extra"]["model"]
+    manifest = json.loads(RunDir(out.run_dir).manifest.read_text(encoding="utf-8"))
+    model = manifest["extra"]["model"]
     assert [c["reason"] for c in model["calls_with_unrecorded_usage"]] == ["timeout_kill"]
+    # plan and the assess shards ran beside understand in stage 1, so the measured cost is theirs
+    assert manifest["usage"]["cost_usd"] > 0
     assert [e.message for e in progress.events if "lower bound" in e.message] == [
-        "cost ~$0.00 is a lower bound: 1 model call with unrecorded usage (understand, timeout kill); their tokens "
-        "and cost are not in the totals"]
+        f"cost ~${manifest['usage']['cost_usd']:.2f} is a lower bound: 1 model call with unrecorded usage "
+        "(understand, timeout kill); their tokens and cost are not in the totals"]
 
 
 async def test_anthropic_interrupted_attempt_is_logged_as_unrecorded(tmp_path: Path, cfg: EffectiveConfig) -> None:
