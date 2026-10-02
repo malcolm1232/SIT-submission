@@ -90,6 +90,8 @@ def test_key_aware_grade_with_the_flag_marks_every_artefact(tmp_path: Path, grad
     assert "**EXPLORATORY**" in md and CONFIRMATORY_LINE in md
     assert "EXPLORATORY" in r.stdout and CONFIRMATORY_LINE in r.stdout
     assert sum(len(c.calls) for c in built) > 0
+    rows = [json.loads(x) for x in (out / "grader_calls.jsonl").read_text().splitlines()]
+    assert rows and all(x["exploratory"] is True for x in rows)
 
 
 def test_key_aware_grade_on_a_signed_key_has_no_marker(tmp_path: Path, graded_inputs) -> None:
@@ -101,6 +103,7 @@ def test_key_aware_grade_on_a_signed_key_has_no_marker(tmp_path: Path, graded_in
     assert rep["key_alignment_diagnostic"]["exploratory"] is False
     assert rep["key_alignment_diagnostic"]["scored_run_ready"] is True
     assert "EXPLORATORY" not in (out / "grade.md").read_text() and "EXPLORATORY" not in r.output
+    assert all(json.loads(x)["exploratory"] is False for x in (out / "grader_calls.jsonl").read_text().splitlines())
 
 
 def test_key_blind_grade_is_not_affected(tmp_path: Path, graded_inputs) -> None:
@@ -144,3 +147,10 @@ def test_frozen_prereg_exploratory_grade_is_outside_the_preregistered_analysis(
     assert "OUTSIDE THE PRE-REGISTERED ANALYSIS" in rep["exploratory_note"]
     assert "OUTSIDE THE PRE-REGISTERED ANALYSIS" in (out / "grade.md").read_text()
     assert "OUTSIDE THE PRE-REGISTERED ANALYSIS" in r.stdout
+
+
+def test_grader_live_judge_logs_the_run_mode(tmp_path: Path) -> None:
+    from sit_eval.grader.cli import _judge
+
+    assert _judge("anthropic_api", tmp_path / "a", True).log.tags == {"exploratory": True}
+    assert _judge("claude_code", tmp_path / "c").log.tags == {"exploratory": False}

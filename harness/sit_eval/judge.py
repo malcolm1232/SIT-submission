@@ -71,8 +71,8 @@ def build_judge(kind: str, *, out_dir: Any, **options: Any) -> JudgeClient:
     default plumbing responder of :mod:`sit_eval.fakes`). Options per kind (unknown options raise
     ``ValueError``): ``claude_code`` - executable, timeout_s, max_retries, backoff_base_s,
     backoff_max_s, max_budget_usd_per_call, inherit_api_key, extra_args, runner, sleep, seed,
-    log_name; ``anthropic_api`` - client, timeout_s, max_retries, backoff_base_s, backoff_max_s,
-    price_per_mtok, sleep, seed, log_name. The model and effort come from each
+    log_name, log_tags; ``anthropic_api`` - client, timeout_s, max_retries, backoff_base_s, backoff_max_s,
+    price_per_mtok, sleep, seed, log_name, log_tags. The model and effort come from each
     :class:`JudgeRequest`, never from the client.
 
     Live-client options that the caller does not pass default to the ``judge`` section of

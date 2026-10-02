@@ -203,8 +203,9 @@ class _Grader:
         if self.key_ready is False:
             self.warnings.append(f"answer key {self.answer_key_path} is not signed off ("
                                  + (self.key_reason or "scored_run_ready = false; pending: "
-                                    + ", ".join(self.key_pending)) + "): key-aware diagnostic run under "
-                                 "--exploratory (LC12 override)")
+                                    + ", ".join(self.key_pending)) + "): "
+                                 + ("key-aware diagnostic run under --exploratory (LC12 override)" if self.exploratory
+                                    else "a real run refuses it without --exploratory (LC12)"))
         self.system = prompts.load_prompt("system.txt")
         self.n_findings = len(self.proj.get("findings") or [])
 
@@ -288,7 +289,7 @@ class _Grader:
     # ------------------------------------------------------------------------------- the calls
     def _log(self, entry: dict[str, Any]) -> None:
         with (self.out_dir / CALL_LOG).open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            fh.write(json.dumps({**entry, "exploratory": self.exploratory}, ensure_ascii=False) + "\n")
 
     async def _call(self, purpose: str, user: str, schema_name: str, sample_index: int, out_tokens: int,
                     extra_check: Callable[[dict[str, Any]], list[str]]) -> tuple[dict[str, Any], JudgeResult]:
@@ -621,10 +622,12 @@ def _make(review_path: str | Path, document_pdf: str | Path | Document, out_dir:
 
 def plan_grade(review_path: str | Path, document_pdf: str | Path | Document, *, answer_key: str | Path | None = None,
                v1_review: str | Path | None = None, v1_document: str | Path | Document | None = None,
-               samples: int = 2, model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT) -> dict[str, Any]:
-    """The ``--dry-run`` plan: call count, token and cost estimate. Makes no call."""
+               samples: int = 2, model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT,
+               exploratory: bool = False) -> dict[str, Any]:
+    """The ``--dry-run`` plan: call count, token and cost estimate. Makes no call; an unsigned key is planned,
+    and its warning says whether a real run would refuse it (LC12)."""
     g = _make(review_path, document_pdf, ".", None, answer_key, v1_review, v1_document, samples, 0,
-              costs.Budget(), model, effort, None)
+              costs.Budget(), model, effort, None, exploratory=exploratory)
     return g.plan()
 
 

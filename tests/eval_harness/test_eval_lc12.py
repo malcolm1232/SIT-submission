@@ -331,3 +331,33 @@ def test_frozen_prereg_signed_key_is_a_confirmatory_run(tmp_path: Path, frozen_p
     s = json.loads((out / "scores.json").read_text())
     assert s["prereg"]["frozen"] is True and s["exploratory"] is False
     assert "OUTSIDE" not in res.output and "OUTSIDE" not in (out / "scores.md").read_text()
+
+
+# ----------------------------------------------------------------------------- live judges' call log
+
+
+def test_live_judges_log_the_run_mode_in_every_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from sit_eval.live_judges import AnthropicJudge, CallLog, ClaudeCodeJudge
+
+    log = CallLog(tmp_path, tags={"exploratory": True})
+    log.write({"purpose": "x"})
+    assert json.loads((tmp_path / log.path.name).read_text())["exploratory"] is True
+    for cls in (ClaudeCodeJudge, AnthropicJudge):
+        assert cls(out_dir=tmp_path / cls.__name__, log_tags={"exploratory": False}).log.tags == {"exploratory": False}
+
+    seen: list[dict[str, Any]] = []
+
+    class Stop(Exception):
+        pass
+
+    def capture(kind: str, **kw: Any) -> Any:
+        seen.append(kw)
+        raise Stop
+
+    monkeypatch.setattr(judge_mod, "build_judge", capture)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-a-key")
+    for flag, signed in ((["--exploratory"], False), ([], True)):
+        res = runner.invoke(app, ["score", str(LIVE_RUN), "--key", str(key_copy(tmp_path, signed=signed)), "--doc",
+                                  str(PDF), "--judge", "anthropic_api", "--out", str(tmp_path / "o"), *flag])
+        assert isinstance(res.exception, Stop)
+        assert seen[-1]["log_tags"] == {"exploratory": bool(flag)}

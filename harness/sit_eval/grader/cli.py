@@ -15,7 +15,7 @@ app = typer.Typer(help="Lecturer grader (research/grading/grader_prompt.md).", n
 JUDGE_KINDS = ("fake", "claude_code", "anthropic_api")
 
 
-def _judge(kind: str, out_dir: Path) -> Any:
+def _judge(kind: str, out_dir: Path, exploratory: bool = False) -> Any:
     if kind not in JUDGE_KINDS:
         typer.echo(f"--judge must be one of {', '.join(JUDGE_KINDS)}", err=True)
         raise typer.Exit(2)
@@ -28,7 +28,7 @@ def _judge(kind: str, out_dir: Path) -> Any:
     from sit_eval.judge import build_judge
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    options: dict[str, Any] = {}
+    options: dict[str, Any] = {"log_tags": {"exploratory": exploratory}}   # LC12 mode in every logged attempt
     if kind == "claude_code":   # only this client takes a per-call --max-budget-usd
         options["max_budget_usd_per_call"] = load_eval_config().grader.max_budget_usd_per_call
     try:
@@ -96,16 +96,13 @@ def run(
                                   else (True, [], None))
         if dry_run:
             _print_plan(plan_grade(review, pdf, answer_key=answer_key, v1_review=v1_review, v1_document=v1_pdf,
-                                   samples=samples, model=model, effort=effort))
-            if not ready and not exploratory:
-                typer.echo(f"warning: LC12: {lc12.refusal_message(answer_key, pending, reason=reason)}; "
-                           "a real run refuses it without --exploratory")
+                                   samples=samples, model=model, effort=effort, exploratory=exploratory))
             return
         lc12.require_signed(answer_key or "", ready, pending, exploratory=exploratory, reason=reason,
                             alternative=LC12_KEY_BLIND_ALTERNATIVE)
         for line in lc12.notes(exploratory, prereg_frozen=prereg_mod.prereg_status()["frozen"]):
             typer.echo(line)
-        client = _judge(judge, out)
+        client = _judge(judge, out, exploratory)
         res = grade_review(review, pdf, out, judge=client, answer_key=answer_key, v1_review=v1_review,
                            v1_document=v1_pdf, samples=samples, seed=seed, max_cost_usd=max_cost_usd, model=model,
                            effort=effort, exploratory=exploratory)

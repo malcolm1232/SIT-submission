@@ -72,14 +72,16 @@ def argv_schema(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 class CallLog:
-    """Append-only JSONL log of judge attempts."""
+    """Append-only JSONL log of judge attempts. ``tags`` are written into every entry (``sit-eval`` passes
+    ``{"exploratory": ...}``, the run's LC12 mode)."""
 
-    def __init__(self, out_dir: str | Path, name: str = CALL_LOG_NAME) -> None:
+    def __init__(self, out_dir: str | Path, name: str = CALL_LOG_NAME, tags: dict[str, Any] | None = None) -> None:
         self.path = Path(out_dir) / name
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.tags = dict(tags or {})
 
     def write(self, entry: dict[str, Any]) -> None:
-        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **entry}
+        entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **self.tags, **entry}
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n")
 
@@ -117,7 +119,8 @@ class ClaudeCodeJudge(_Retrying):
                  max_retries: int = 3, backoff_base_s: float = 5.0, backoff_max_s: float = 120.0,
                  max_budget_usd_per_call: float | None = None, inherit_api_key: bool = False,
                  extra_args: list[str] | tuple[str, ...] = (), runner: Runner | None = None,
-                 sleep: Sleep | None = None, seed: int | None = None, log_name: str = CALL_LOG_NAME) -> None:
+                 sleep: Sleep | None = None, seed: int | None = None, log_name: str = CALL_LOG_NAME,
+                 log_tags: dict[str, Any] | None = None) -> None:
         super().__init__(max_retries=max_retries, backoff_base_s=backoff_base_s, backoff_max_s=backoff_max_s,
                          sleep=sleep, seed=seed)
         bad = sorted(FORBIDDEN_FLAGS & set(extra_args))
@@ -131,7 +134,7 @@ class ClaudeCodeJudge(_Retrying):
         self.inherit_api_key = inherit_api_key
         self.extra_args = list(extra_args)
         self.runner: Runner = runner or subprocess_runner
-        self.log = CallLog(out_dir, log_name)
+        self.log = CallLog(out_dir, log_name, log_tags)
         self._session_cost_seen: dict[str, float] = {}
         self.cost_total_usd = 0.0
 
@@ -298,13 +301,14 @@ class AnthropicJudge(_Retrying):
     def __init__(self, *, out_dir: str | Path, client: Any | None = None, timeout_s: float = 1200.0,
                  max_retries: int = 3, backoff_base_s: float = 5.0, backoff_max_s: float = 120.0,
                  price_per_mtok: dict[str, float] | None = None, sleep: Sleep | None = None,
-                 seed: int | None = None, log_name: str = CALL_LOG_NAME) -> None:
+                 seed: int | None = None, log_name: str = CALL_LOG_NAME,
+                 log_tags: dict[str, Any] | None = None) -> None:
         super().__init__(max_retries=max_retries, backoff_base_s=backoff_base_s, backoff_max_s=backoff_max_s,
                          sleep=sleep, seed=seed)
         self._client = client
         self.timeout_s = timeout_s
         self.price_per_mtok = price_per_mtok
-        self.log = CallLog(out_dir, log_name)
+        self.log = CallLog(out_dir, log_name, log_tags)
         self.cost_total_usd = 0.0
 
     @property

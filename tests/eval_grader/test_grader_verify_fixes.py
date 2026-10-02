@@ -69,7 +69,7 @@ def test_grader_non_judge_error_ends_grade_cleanly(tmp_path: Path, graded_inputs
 
 def test_grader_cli_judge_exception_exits_3(tmp_path: Path, graded_inputs, monkeypatch) -> None:
     review, pages = graded_inputs
-    monkeypatch.setattr(grader_cli, "_judge", lambda kind, out: _Raiser(TimeoutError("slow")))
+    monkeypatch.setattr(grader_cli, "_judge", lambda kind, out, exploratory=False: _Raiser(TimeoutError("slow")))
     r = runner.invoke(app, ["grade", "run", str(review), "--pdf", str(pages), "--out", str(tmp_path / "o")])
     assert r.exit_code == 3, r.output
     assert json.loads((tmp_path / "o" / "grade.json").read_text())["status"] == "failed"

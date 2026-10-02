@@ -167,6 +167,8 @@ def score(
     elif kind == "anthropic_api":
         options = {"timeout_s": cfg.judge.timeout_s, "max_retries": cfg.judge.max_retries,
                    "backoff_base_s": cfg.judge.backoff_base_s, "backoff_max_s": cfg.judge.backoff_max_s}
+    if kind != "fake":   # LC12: the live judges' call log records the run's mode in every attempt
+        options["log_tags"] = {"exploratory": exploratory}
     if kind == "claude_code" and shutil.which(cfg.judge.executable) is None:
         _fail(f"Claude Code executable {cfg.judge.executable!r} not found on PATH; install it and log in, or use "
               "--judge anthropic_api")
