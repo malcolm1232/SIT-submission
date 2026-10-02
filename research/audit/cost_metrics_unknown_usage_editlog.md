@@ -77,3 +77,31 @@ Every file was restored byte for byte (`cmp`).
 - No live run exists on this branch with the new manifest field; the manifest shape is taken from `git show 8ef32d4` (`agent/sit_review_agent/manifest.py`, `tests/test_unrecorded_usage.py`) and pinned by fixtures, not by a run of the new runtime through the harness.
 - The runtime's `unrecorded_reason` is re-implemented, not imported; `test_unrecorded_reason_pins_the_runtime_rule` is the only tie between the two, so a later change to the runtime's rule must be mirrored here.
 - Wall-time p95 in `stop_rule.pilot_checkpoint` is not computed by the harness (unchanged).
+
+## Session 4 verifier
+
+Date: 2026-10-03 (local, UTC+8); clock read 2026-10-02 21:33 UTC.
+Verifier: a fresh-context Opus session that did not build the work; report `docs/transcripts/session4/cost_metrics_verifier.md`.
+Offline only: no model call, fake judge only, nothing under `eval/blind/` opened, no `llm.jsonl` printed (the demo run's call log was read by code for numeric and key fields only).
+
+### Merge
+
+`origin/claude/happy-darwin-d0bl94` (a29acfb) merged into `s4/costmetrics` as 5033367.
+Two both-sides-added conflicts: `docs/USER_DECISIONS.md` (section #27 from main, then section #28 from this branch, the "#27 absent" sentence removed) and `eval/prereg_deviations.md` (main's amendment line on entry 9, then this branch's entry 10).
+
+### Edits
+
+| # | File | Change | Regression test |
+|---|---|---|---|
+| V1 | `tests/eval_harness/test_eval_usage_verifier.py` (new) | 23 entry shapes through the harness's and the runtime's `unrecorded_reason`; the demo run's real `llm.jsonl` through the runtime's `journal_usage` and the harness's `from_call_log` (same rows, `llm-0003 assess deadline_cut`); `sit_eval/usage.py` imports nothing from `sit_review_agent`. The builder's test pinned the harness copy to expected values only, not to the runtime's copy, which was absent from its branch. | itself |
+| V2 | `harness/sit_eval/aggregate.py` `usage_summary` | A run whose `efficiency` value carries no figure at all (no cost, no bound) was left out of the lower-bound median, so the median of the rest could exceed the true median's floor and fail the checkpoint unsoundly (runs at $5 bound and no figure: bound median $5, true median could be $2.50). It now counts at 0 and is reported as `runs_without_a_figure_counted_at_zero`; `runs_with_a_lower_bound` keeps its meaning. | `test_a_run_with_no_figure_counts_at_zero_in_the_lower_bound_median` (fails on the old line, checked) |
+| V3 | `harness/sit_eval/cli.py` `aggregate` | The checkpoint console line printed `$None` when the prereg has no threshold; it now says "no threshold". | `test_the_aggregate_console_without_a_threshold_says_so` |
+| V4 | `agent/sit_review_agent/models.py` `ManifestExtra` docstring | "Scorers never read `extra`" was untrue (the harness reads `extra.timing` and now `extra.model.calls_with_unrecorded_usage`); corrected without naming the harness package (the isolation test refuses that string in `agent/`). | `test_agent_package_is_isolated_from_the_harness` |
+| V5 | `eval/prereg.yaml` B0-$ `matching_rule`, `stop_rule.budget_stop`, `costs.usage_completeness` | B0-$ matching uses fully accounted medians only and is `not_evaluable` (reported, no n chosen) while any pilot FULL or B0 run is not fully accounted; the budget stop's spend is a lower bound when any run is not fully accounted, a lower-bound sum at or above the figure triggers the stop and one below is reported as "at least"; the zero-count rule of V2. No fill value changed, `frozen: false`, parses. | the prereg parse in `test_the_threshold_is_read_from_the_prereg` |
+| V6 | `eval/prereg_deviations.md` entry 10 | The garbled **Fields** line (a field named twice across a line break) rewritten; V5's fields, old text and new text added to the same entry. | none (text) |
+| V7 | `docs/USER_DECISIONS.md` #28, `harness/README.md` | "commit `8ef32d4`, on another branch" is no longer true after the merge; README names the parity test and the zero-count rule. | none (text) |
+
+### Re-run mutations (builder's numbering)
+
+M1 (legacy rule ignores `status_code`) killed, 1 test; M3 (manifest field ignored) killed, 10; M5 (metric keeps the cost on an incomplete run) killed, 7; M7 (checkpoint passes on a lower bound) killed, 3; M9 (schema allows a cost figure) killed, 1.
+Each by `cp` backup, one substitution, the builder's test file, restore, `cmp` equal.

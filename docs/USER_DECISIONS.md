@@ -95,7 +95,7 @@ Attributed: SIT FABLE for the owner, 2026-10-03.
 
 ## 2026-10-03 (SIT FABLE for the owner, cost metrics)
 
-One ruling by the SIT FABLE planner on the harness's cost and token metrics after the runtime began recording unknown usage as unknown (commit `8ef32d4`, on another branch).
+One ruling by the SIT FABLE planner on the harness's cost and token metrics after the runtime began recording unknown usage as unknown (commit `8ef32d4`).
 Attributed: SIT FABLE for the owner, 2026-10-03.
 
 | # | Question | Decision | Consequence |

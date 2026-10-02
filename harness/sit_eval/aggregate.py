@@ -38,8 +38,8 @@ USAGE_FIGURES = ["cost_usd", "input_tokens", "output_tokens"]
 CHECKPOINT_CONDITION = "FULL"
 USAGE_NOTE = ("median and IQR over fully accounted runs only (every billed model call's usage recorded); the "
               "lower-bound median counts every run at its recorded figure, which is a lower bound for a run with an "
-              "unrecorded call or unknown completeness, and can only rise as unknown usage is filled in; no figure "
-              "mixes the two")
+              "unrecorded call or unknown completeness, and can only rise as unknown usage is filled in; a run that "
+              "reports no figure counts at 0; no figure mixes the two")
 
 
 def load_scores(paths: list[Path]) -> tuple[list[dict[str, Any]], list[str]]:
@@ -89,7 +89,10 @@ def usage_summary(runs: list[dict[str, Any]], name: str) -> dict[str, Any]:
     status = [usage_mod.status_of(v) for v in values]
     complete = [v[name] for v, st in zip(values, status, strict=True)
                 if st == usage_mod.COMPLETE and v.get(name) is not None]
-    lower = [x for v in values if (x := usage_mod.lower_bound_of(v, name)) is not None]
+    # a run that reports no figure at all still counts in the lower-bound median, at 0 (usage is never negative);
+    # leaving it out would let the median of the rest overstate the bound and fail the checkpoint unsoundly
+    bounds = [usage_mod.lower_bound_of(v, name) for v in values]
+    lower = [0 if x is None else x for x in bounds]
     n = len(runs)
     med, iqr = _median_iqr(complete)
     lmed, liqr = _median_iqr(lower)
@@ -100,7 +103,8 @@ def usage_summary(runs: list[dict[str, Any]], name: str) -> dict[str, Any]:
             "excluded_unrecorded": {"count": n_unrec, "share": _share(n_unrec, n)},
             "excluded_unknown": {"count": n_unk, "share": _share(n_unk, n)},
             "median_lower_bound_all_runs": lmed, "iqr_lower_bound_all_runs": liqr,
-            "runs_with_a_lower_bound": len(lower), "note": USAGE_NOTE}
+            "runs_with_a_lower_bound": sum(x is not None for x in bounds),
+            "runs_without_a_figure_counted_at_zero": sum(x is None for x in bounds), "note": USAGE_NOTE}
 
 
 def _runs_with(runs: list[dict[str, Any]], status: str) -> dict[str, Any]:

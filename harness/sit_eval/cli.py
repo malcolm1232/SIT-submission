@@ -246,8 +246,9 @@ def aggregate_cmd(
     for line in lc12.notes(exploratory, prereg_frozen=frozen):
         typer.echo(line, err=True)
     cp = res["pilot_checkpoint"]
-    typer.echo(f"pilot checkpoint ({cp['condition']} cost median vs ${cp['threshold_usd']}): {cp['verdict']} - "
-               f"{cp['reason']}", err=True)
+    limit = f"${cp['threshold_usd']:g}" if cp["threshold_usd"] is not None else "no threshold"
+    typer.echo(f"pilot checkpoint ({cp['condition']} cost median vs {limit}): {cp['verdict']} - {cp['reason']}",
+               err=True)
     text = json.dumps(res, indent=1, default=str)
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)

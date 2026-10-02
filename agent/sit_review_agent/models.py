@@ -645,7 +645,9 @@ class RunManifest(SpecModel):
 class ManifestExtra(BaseModel):
     """Typed view of ``RunManifest.extra``: the docs/REPRODUCIBILITY.md §8 fields that the spec's
     ``RunManifest`` does not carry. Stored as ``extra = ManifestExtra(...).model_dump(mode="json")``.
-    Scorers never read ``extra`` (spec), but INV-09 checks it is present."""
+    INV-09 checks it is present. The evaluation harness reads two parts of it: ``extra.timing`` for
+    wall time, and ``extra.model.calls_with_unrecorded_usage`` to decide whether the run's cost and
+    tokens are complete or a lower bound (SIT FABLE ruling #28, ``docs/USER_DECISIONS.md``)."""
 
     model_config = ConfigDict(extra="forbid")
 

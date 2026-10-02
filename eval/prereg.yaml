@@ -404,7 +404,7 @@ conditions:
       predicted_outcome: Lower Recall than FULL by >= 0.10 (H1); similar Precision, adjudicated; higher Hallucinated-finding rate (H5)
     - id: B0-$
       description: B0 with best-of-n self-consistency until its median cost matches FULL's measured median cost (MR §4)
-      matching_rule: n chosen from the pilot so that n x median(B0 cost) is closest to median(FULL cost); n recorded in costs.b0_dollar_matching_n; the best-of-n selection is by the model's own self-ranking over the n outputs, never by any key-aware score
+      matching_rule: n chosen from the pilot so that n x median(B0 cost) is closest to median(FULL cost); n recorded in costs.b0_dollar_matching_n; both medians are over fully accounted runs only (costs.usage_completeness), and n is chosen only when every pilot FULL and B0 run is fully accounted; a lower bound never satisfies the match, so with any run not fully accounted the matching is not_evaluable, n is not chosen from it, and that is reported; the best-of-n selection is by the model's own self-ranking over the n outputs, never by any key-aware score
       documents: keyed_frozen
       predicted_outcome: Between B0 and FULL on Recall (H2)
     - id: B-gen
@@ -596,6 +596,10 @@ stop_rule:
   budget_stop: >-
     Hard stop at the approved Tier A figure in docs/BUDGET.md §6. If reached, stop
     launching runs, report every completed cell, and list the unrun cells as not run.
+    The spend is the sum of the launched runs' recorded costs; a run that is not fully
+    accounted (costs.usage_completeness) adds its lower bound, so the sum is itself a lower
+    bound. A lower-bound sum at or above the figure triggers the stop; a lower-bound sum below
+    it is reported as at least that amount and never as proof that the spend is under the figure.
   pilot_checkpoint: >-
     If the pilot median FULL cost exceeds costs.per_run_usd.heavy_case_FULL ($3.24) or the p95
     wall time exceeds the demo slot, re-plan before freezing (BUDGET.md §5); this is a pre-freeze
@@ -714,5 +718,6 @@ costs:
     completeness is unknown. Otherwise the run's cost and tokens are null (reason unrecorded_usage with
     the count of such calls, or usage_completeness_unknown) and the recorded figures are reported
     beside them as lower bounds. Cost and token medians and IQRs are over fully accounted runs, with
-    the count and share of runs excluded; a lower-bound median over all runs is reported beside them;
+    the count and share of runs excluded; a lower-bound median over all runs (a run that reports no
+    figure counts at 0) is reported beside them;
     no aggregate mixes the two. The share of runs with any cut call is reported intention-to-treat.
