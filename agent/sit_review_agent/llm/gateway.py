@@ -58,6 +58,7 @@ from sit_review_agent.hashing import sha256_json, sha256_text
 from sit_review_agent.llm.runtime import (
     FirstCallNetwork,
     RuntimeLimits,
+    announce_bound,
     attempt_timeout,
     check_context,
     retry_allowed,
@@ -674,6 +675,8 @@ class AnthropicGateway:
                 exc.call_id = call_id
                 log_unsent(self.log, request, call_id, exc, attempt=attempt, backend=_ANTHROPIC_BACKEND)
                 raise
+            if cut:
+                announce_bound(self.progress, self.runtime, request.phase, call_id, timeout_s)
             started_at = isoformat_z(self.clock.now_utc())
             t0 = self.clock.monotonic()
             base: dict[str, Any] = {

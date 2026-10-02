@@ -207,6 +207,116 @@ def test_phase_budgets_keep_the_reserves() -> None:
         d.attempt_timeout(A, 1800)                                   # 5 s left: no attempt is started
 
 
+#: The demo profile's stage limits (design section 4) as the runtime reads them.
+DEMO_LIMITS = {"stage_1_end": 265.0, "refine_end": 465.0, "verdict_end": 530.0}
+
+
+def staged(t: float = 0.0, *, deadline_s: float = 540, limits: dict[str, float] | None = None
+           ) -> tuple[RunDeadline, Elapsed]:
+    el = Elapsed(t)
+    return RunDeadline(deadline_s, 75, 200, el, stage_limits=dict(limits or DEMO_LIMITS)), el
+
+
+def test_stage_limits_bound_each_stage() -> None:
+    """Latency W1: every model call is bounded by the lesser of the run deadline and its stage's
+    limit (stage 1: understand, plan, research, assess; then refine; then verify and the verdict)."""
+    d, el = staged(100)
+    for p in (PhaseName.UNDERSTAND, PhaseName.PLAN, PhaseName.RESEARCH, A):
+        assert d.phase_budget(p) == 265 - 100, p
+    assert d.phase_budget(PhaseName.REFINE) == 465 - 100
+    assert d.phase_budget(PhaseName.VERIFY) == d.phase_budget(PhaseName.REPORT) == 530 - 100
+    assert d.attempt_timeout(A, 1800) == (165, True)
+    assert d.attempt_timeout(PhaseName.REFINE, 60) == (60, False)
+    el.t = 260
+    with pytest.raises(LLMDeadlineError, match="stage 1 limit"):
+        d.attempt_timeout(A, 1800)                                    # 5 s left in stage 1: not started
+    assert d.attempt_timeout(PhaseName.REFINE, 1800) == (205, True)   # refine still has its own time
+    el.t = 525
+    assert d.phase_budget(PhaseName.REPORT) == 5                       # the verdict limit, not the deadline
+
+
+def test_the_deadline_still_wins_over_a_later_stage_limit() -> None:
+    d, _ = staged(100, deadline_s=400, limits={"stage_1_end": 265, "refine_end": 465, "verdict_end": 530})
+    assert d.phase_budget(PhaseName.REFINE) == 300 and d.phase_budget(PhaseName.REPORT) == 300
+    assert d.phase_budget(A) == 165
+
+
+def test_a_stage_limit_cut_names_the_limit() -> None:
+    d, _ = staged(100)
+    msg = str(d.cut(A, 165, call_id="llm-0003"))
+    assert "cut after 165 s by the stage 1 limit (265 s on the run clock" in msg and "not retried" in msg
+    assert "by the refine limit (465 s" in d.describe_bound(PhaseName.REFINE)
+    assert "by the verdict limit (530 s" in d.describe_bound(PhaseName.REPORT)
+    late, _ = staged(100, deadline_s=400)
+    assert "by the run deadline (400 s" in late.describe_bound(PhaseName.REFINE)
+
+
+def test_build_runtime_reads_the_stage_limits(base: EffectiveConfig) -> None:
+    demo = load_config(overrides=ConfigOverrides(profile="demo"))
+    lim = build_runtime(demo, lambda: 0.0)
+    assert lim.deadline is not None and lim.deadline.stage_limits == DEMO_LIMITS
+    assert lim.deadline.attempt_timeout(A, 1800) == (265, True)
+    assert lim.deadline.attempt_timeout(PhaseName.REFINE, 1800) == (465, True)
+    assert lim.deadline.attempt_timeout(PhaseName.REPORT, 1800) == (530, True)
+    dflt = build_runtime(base, lambda: 0.0)
+    assert dflt.deadline is not None and dflt.deadline.stage_limits == {"stage_1_end": 2820, "refine_end": 3420,
+                                                                         "verdict_end": 3540}
+
+
+def test_a_deadline_below_the_stage_limits_scales_them_and_says_so(base: EffectiveConfig) -> None:
+    """Runbook §4.2: `--profile demo --deadline 300` must still produce findings (design section 7
+    verifier check), so the limits are scaled to the deadline, not refused. The scale is the
+    deadline over the run length the limits were set for (``refine_end`` + the verify and verdict
+    reserve: 465 + 75 = 540 s on the demo profile)."""
+    from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
+
+    demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    rules = demo.model_copy(update={"deadline_seconds": 300, "report_reserve_seconds": 75})
+    limits, note = effective_stage_limits(rules)
+    assert limits == {"stage_1_end": 147, "refine_end": 258, "verdict_end": 294}
+    assert note is not None and "scaled by 300/540" in note and "147 / 258 / 294 s" in note
+    assert "265 / 465 / 530 s" in note
+    warnings = deadline_warnings(rules)
+    assert warnings and warnings[0] == note
+    lim = build_runtime(load_config(overrides=ConfigOverrides(profile="demo", deadline_seconds=300))
+                        .model_copy(update={"stop_rules": rules}), lambda: 0.0)
+    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (147, True)
+    unchanged, quiet = effective_stage_limits(demo)
+    assert quiet is None and unchanged == DEMO_LIMITS
+    edge, edge_note = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 531}))
+    assert edge_note is None and edge["verdict_end"] == 530             # one second above: kept as set
+    at, at_note = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 530}))
+    assert at_note is not None and at["verdict_end"] < 530             # at the limit: scaled
+    tiny, _ = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 3}))
+    assert tiny["stage_1_end"] < tiny["refine_end"] < tiny["verdict_end"] < 3
+
+
+async def test_claude_code_announces_its_bound(tmp_path: Path, base: EffectiveConfig) -> None:
+    from sit_review_agent.progress import NullProgress
+
+    gw, runner, _, _ = claude(tmp_path, base, cli_ok())
+    gw.progress = NullProgress()
+    d, _ = staged(100)
+    attach_runtime(gw, RuntimeLimits(deadline=d))
+    await gw.call(req())
+    assert runner.calls[0]["timeout_s"] == 165
+    lines = [e.message for e in gw.progress.events]
+    assert any("llm-0001 bounded at 165 s by the stage 1 limit (265 s on the run clock" in m for m in lines), lines
+
+
+async def test_anthropic_announces_its_bound(tmp_path: Path, base: EffectiveConfig) -> None:
+    from sit_review_agent.progress import NullProgress
+
+    gw, _, _ = anthropic_gw(tmp_path, base, "hang")
+    gw.progress = NullProgress()
+    d, _ = staged(265 - 0.2)
+    d.min_attempt_s = 0.05
+    attach_runtime(gw, RuntimeLimits(deadline=d))
+    with pytest.raises(LLMDeadlineError, match="by the stage 1 limit"):
+        await asyncio.wait_for(gw.call(req()), 5)
+    assert any("bounded at 0 s by the stage 1 limit" in e.message for e in gw.progress.events)
+
+
 def test_runs_without_a_deadline_rule_keep_the_full_timeout(base: EffectiveConfig) -> None:
     stop = base.stop_rules.model_copy(update={"active": [r for r in base.stop_rules.active if r != "deadline"]})
     lim = build_runtime(base.model_copy(update={"stop_rules": stop}), lambda: 99_999.0)
@@ -227,7 +337,7 @@ def test_default_deadline_and_demo_profile(base: EffectiveConfig) -> None:
     text = (config_dir() / "profiles" / "demo.yaml").read_text(encoding="utf-8")
     assert "UNMEASURED" in text and "USER_DECISIONS #1" in text and "forks" in text
     lim = build_runtime(demo, lambda: 0.0)
-    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (420, True)
+    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (265, True)   # stage 1 limit
 
 
 async def test_claude_code_attempt_is_cut_at_the_deadline_and_not_retried(tmp_path: Path,
@@ -370,12 +480,14 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
     assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (540, 120, 200)
     assert deadline_warnings(demo) == []
+    # A deadline below the stage limits is announced first (the limits are scaled), then the reserves.
     short = deadline_warnings(rules(deadline_seconds=300))
-    assert len(short) == 1 and "leaves research no time" in short[0] and "share 120 s" in short[0]
+    assert len(short) == 2 and "scaled by 300/3600" in short[0]
+    assert "leaves research no time" in short[1] and "share 120 s" in short[1]
     none = deadline_warnings(rules(deadline_seconds=185))
-    assert len(none) == 1 and "no model call can run before verify" in none[0] and "not assessed" in none[0]
+    assert len(none) == 2 and "no model call can run before verify" in none[1] and "not assessed" in none[1]
     demo_short = deadline_warnings(demo.model_copy(update={"deadline_seconds": 300}))
-    assert len(demo_short) == 1 and "share 180 s" in demo_short[0]
+    assert len(demo_short) == 2 and "scaled by 300/" in demo_short[0] and "share 180 s" in demo_short[1]
     assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
 
 
@@ -389,8 +501,9 @@ def test_deadline_warning_boundary_is_one_model_attempt(base: EffectiveConfig) -
     sr = base.stop_rules
     fit = sr.report_reserve_seconds + sr.refine_reserve_seconds
     tight = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S / 2}))
-    assert len(tight) == 1 and "leaves research no time" in tight[0]
-    assert deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S})) == []
+    assert len(tight) == 2 and "leaves research no time" in tight[1]          # [0]: the limits are scaled
+    roomy = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S}))
+    assert len(roomy) == 1 and "scaled by" in roomy[0]
 
 
 def test_not_assessed_verdict_is_never_a_certification() -> None:
