@@ -223,6 +223,7 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
     # LC12 (eval/prereg.yaml; SIT FABLE ruling #26): refuse a key that is not signed off before any judge call
     ready, pending = lc12.key_signoff(key)
     lc12.require_signed(key_path, ready, pending, exploratory=opts.exploratory)
+    lc12.require_confirmatory_prior(None, prior_scores, exploratory=opts.exploratory)
     if runner is not None and runner.exploratory != opts.exploratory:
         raise ValueError(f"the judge runner's cache mode (exploratory={runner.exploratory}) differs from the run's "
                          f"(exploratory={opts.exploratory}): an exploratory cache must never serve a confirmatory "

@@ -214,8 +214,9 @@ already happened (none had for entries made before the freeze).
 
 - **Field:** none. `runs.population` is unchanged ("Intention-to-treat - every launched run counts").
 - **What changed outside the prereg:** the agent's output schema has a fourth verdict label, `not_assessed`,
-  set by code when a run produced no assessment (the deadline skipped or cut the assess stage, or the model
-  declined the assess call twice). Before, such a run reported `not_fit` at confidence 0. The model is never
+  set by code when a run produced no assessment (the deadline skipped or cut the assess stage, the assess
+  answer was truncated twice at the output cap, or the model declined the assess call twice). Before, such a
+  run reported `not_fit` at confidence 0. The model is never
   offered the label: its verdict schema has `fit`, `fit_with_conditions` and `not_fit` only.
 - **Effect on scoring:** none on the primary metric. A not-assessed run has no findings, so it scores 0
   recall against every key flaw and is counted (intention-to-treat). `sit-eval score` records
@@ -232,6 +233,11 @@ already happened (none had for entries made before the freeze).
   confirmed by SIT FABLE for the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #25).
 - **Scored runs before the change:** none (`frozen: false`). The pilot scoring and grading of the first live
   run are unaffected (its verdict is `fit_with_conditions`).
+- **Amended 2026-10-03:** this entry first listed two reasons. Commit `aab35fa` added a third, an assess answer
+  truncated at the output cap on the call and on its one retry (code-side key `truncated`). The three reasons
+  above are every reason the code can produce today (`agent/sit_review_agent/phases/report.py`,
+  `assessment_missing`: `deadline`, `truncated`, `declined`). The effects on scoring, verdict agreement and
+  grading are the same for all three.
 
 ---
 

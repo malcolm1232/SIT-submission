@@ -13,7 +13,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from eval_builders import LIVE_RUN, PAYMENTS_KEY, default_table, make_finding, make_flaw, make_key, make_review
+from eval_builders import (
+    LIVE_RUN,
+    PAYMENTS_KEY,
+    default_table,
+    make_finding,
+    make_flaw,
+    make_key,
+    make_review,
+    responder_from,
+)
 from eval_builders import run_pipeline as pipeline
 from typer.testing import CliRunner
 
@@ -233,6 +242,37 @@ def test_score_review_refuses_a_runner_whose_cache_mode_differs(tmp_path: Path):
     with pytest.raises(ValueError, match="exploratory"):
         pipeline(tmp_path, make_review([make_finding(1, "1")]), key, default_table(), exploratory=False,
                  runner_exploratory=True)
+
+
+# ----------------------------------------------------------------------------- --prior-scores (hub verification)
+
+
+def test_score_refuses_an_exploratory_prior_scores_without_the_flag(exploratory_run, tmp_path: Path, built):
+    """Session 4 hub verification: an exploratory scores.json given as --prior-scores (the v2 copy-through
+    input) to a confirmatory run was accepted silently, so an exploratory score fed a confirmatory one."""
+    prior = exploratory_run[0] / "scores.json"
+    out = tmp_path / "o"
+    res = score(key_copy(tmp_path, signed=True), out, "--prior-scores", str(prior))
+    assert res.exit_code == 2, res.output
+    msg = " ".join(res.output.split())
+    assert "--prior-scores" in msg and "is exploratory" in msg and "No judge call was made" in msg
+    assert built == [] and not (out / "scores.json").exists()
+    ok = score(key_copy(tmp_path, signed=True), tmp_path / "o2", "--prior-scores", str(prior), "--exploratory")
+    assert ok.exit_code == 0, ok.output
+    assert json.loads((tmp_path / "o2" / "scores.json").read_text())["exploratory"] is True
+
+
+def test_score_review_refuses_an_exploratory_prior_with_zero_judge_calls(tmp_path: Path):
+    key = make_key([make_flaw("F01", "high", "1")])
+    key["authoring_status"] = {"pending": [], "scored_run_ready": True}
+    unmarked_unsigned = {"inputs": {"scored_run_ready": False}, "findings": []}   # written before the guard
+    for prior in ({"exploratory": True, "findings": []}, unmarked_unsigned):
+        with pytest.raises(lc12.ExploratoryInputRefusal, match="--prior-scores"):
+            pipeline(tmp_path, make_review([make_finding(1, "1")]), key, default_table(), prior=prior)
+    confirmatory = {"exploratory": False, "findings": []}
+    scores, _, _ = pipeline(tmp_path, make_review([make_finding(1, "1")]), key, responder_from(default_table()),
+                            prior=confirmatory)
+    assert scores["exploratory"] is False
 
 
 # ----------------------------------------------------------------------------- aggregate

@@ -137,6 +137,11 @@ def score(
         lc12.require_signed(key, ready, pending, exploratory=exploratory)
     except lc12.UnsignedKeyRefusal as exc:
         _fail(f"refusing a scored run: {exc}")
+    prior = json.loads(prior_scores.read_text(encoding="utf-8")) if prior_scores else None
+    try:
+        lc12.require_confirmatory_prior(prior_scores, prior, exploratory=exploratory)
+    except lc12.ExploratoryInputRefusal as exc:
+        _fail(f"refusing a scored run: {exc}")
     status = prereg_mod.prereg_status()
     problems = prompts_mod.check_lock()
     bundle = prompts_mod.compute_lock()["bundle_sha256"]
@@ -179,8 +184,7 @@ def score(
     runner = JudgeRunner(client, model=opts.model, effort=opts.effort, max_tokens=opts.max_tokens,
                          concurrency=opts.concurrency, max_cost_usd=opts.max_cost_usd,
                          reserve_usd=0.0 if kind == "fake" else reserve, out_dir=out_dir, exploratory=exploratory)
-    prior = json.loads(prior_scores.read_text(encoding="utf-8")) if prior_scores else None
-    prompts_info = {"bundle_sha256": bundle, "lock_ok": not problems, "problems": problems}
+    prompts_info ={"bundle_sha256": bundle, "lock_ok": not problems, "problems": problems}
     scores = asyncio.run(score_review(rin=rin, key=key_data, key_path=key, docin=docin, version=version,
                                       runner=runner, opts=opts, prereg=status, prompts_info=prompts_info,
                                       prior_scores=prior))

@@ -218,31 +218,83 @@ def _truncate_every(stage: str) -> Any:
     return patch
 
 
-@pytest.mark.parametrize("stage", ["understand", "assess", "refine"])
-def test_a_stage_that_truncates_twice_never_ends_in_a_silent_success(stage: str, tmp_path: Path) -> None:
-    """LLM-07, persistent variant ("truncates twice"; Session 4 verifier). The one retry runs at
-    the same 128000 cap, so a second truncation is possible. Whatever the run then does, it makes
-    no third call at the same cap, accepts no truncated object and never exits 0 with a report
-    that hides the truncation. Today it ends in a typed, resumable exit 3 with no report (the
-    disclosed-degraded-report alternative is an open design question,
-    research/audit/verify_runtime_cli_editlog.md "Session 4 verifier"); if that changes, the
-    report must say the stage was not completed and an unassessed review must be not_assessed."""
+@pytest.fixture(scope="module")
+def truncation_controls(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """Fault-free runs: the full pipeline, and one with refine disabled (the assess drafts as they
+    are reported when refine does not run)."""
+    full = run(Scenario(id="REG-TRUNC2-control"), tmp_path_factory.mktemp("trunc-control"))
+    unrefined = run(Scenario(id="REG-TRUNC2-norefine", phases_enabled={"refine": False}),
+                    tmp_path_factory.mktemp("trunc-norefine"))
+    return {"stop_reason": full.report["stop_reason"],                # type: ignore[index]
+            "unrefined_titles": [f["title"] for f in unrefined.report["findings"]]}  # type: ignore[index]
+
+
+@pytest.mark.parametrize("stage", ["understand", "plan", "assess", "refine"])
+def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
+        stage: str, tmp_path: Path, truncation_controls: dict[str, Any]) -> None:
+    """LLM-07, persistent variant ("truncates twice"). The one retry runs at the same 128000 cap,
+    so a second truncation is possible. Ruling (Session 4, "treat the second truncation like a
+    deadline cut"): no third call, no truncated object, and the run continues with the stage's
+    deadline fallback and discloses it, naming the truncation, not the deadline and not a refusal.
+    The report is written, the run exits 0 as ``completed_degraded`` like a deadline-degraded run,
+    the manifest lists both truncated calls, and ``resume`` on the finished run repeats nothing."""
+    from robustness_harness import resume
+
     rec = run(Scenario(id=f"REG-TRUNC2-{stage}", faults="LLM-07", variant=_truncate_every(stage)), tmp_path)
     calls = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == stage]
     assert [e.get("outcome") for e in calls] == ["LLMTruncatedError", "LLMTruncatedError"]
     assert [e.get("purpose") for e in calls] == [stage, f"{stage}:max_tokens_retry"]
-    assert rec.raised is None                                           # INV-11: typed exit, never a traceback
-    if rec.exit_code == 0:
-        report = rec.report
-        assert report is not None
-        assert any("truncat" in d["event"] for d in report["research_log"]["degradations"])
-        if stage != "refine":
-            assert report["verdict"]["label"] == "not_assessed" and report["findings"] == []
+    assert rec.raised is None and rec.exit_code == 0 and rec.failure is None
+    report = rec.report
+    assert report is not None and rec.run_dir.report_md.is_file()
+    manifest = json.loads(rec.run_dir.manifest.read_text(encoding="utf-8"))
+    assert manifest["outcome"] == "completed_degraded"
+    assert manifest["extra"]["model"]["truncations"] == [
+        {"call_id": e["call_id"], "stage": stage, "purpose": e["purpose"]} for e in calls]
+
+    prefix = f"the {stage} answer was truncated twice at the output cap"
+    degs = report["research_log"]["degradations"]
+    mine = [d for d in degs if d["event"].startswith(prefix)]
+    assert len(mine) == 1 and mine[0]["type"] == "other", degs
+    assert all(c["call_id"] in mine[0]["event"] for c in calls)
+    assert not any(stage in d["event"] and ("deadline" in d["event"] or "declined" in d["event"]) for d in degs)
+    assert any(mine[0]["id"] in lim["degradation_ids"] for lim in report["limitations"])
+    md = rec.run_dir.report_md.read_text(encoding="utf-8")
+    assert prefix in md
+    assert f"{stage}: answer truncated twice at the output cap" in rec.run_dir.progress_log.read_text(encoding="utf-8")
+    stop = report["stop_reason"]                     # research's own stop reason, never a deadline
+    assert stop["code"] == truncation_controls["stop_reason"]["code"] and "deadline" not in stop["detail"]
+    if stage != "plan":                              # a code-built plan has no external question
+        assert stop == truncation_controls["stop_reason"]
+
+    if stage == "assess":
+        v = report["verdict"]
+        assert v["label"] == "not_assessed" and report["findings"] == [] and report["sound_areas"] == []
+        assert "cut off at the output cap" in v["rationale"] and "deadline" not in v["rationale"]
+        assert "Not assessed (answer truncated twice at the output cap)" in md
+        assert not [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == "report"]     # no verdict call
+        assert {c["note"] for c in rec.state["coverage"]} == {
+            "not assessed: the assess answer was truncated twice at the output cap"}
+        rows = [ln for ln in md.splitlines() if ln.endswith("| not assessed: the assess answer was truncated twice "
+                                                             "at the output cap |")]
+        assert len(rows) == len(rec.state["coverage"]) and all("| not assessed |" in r for r in rows)
+    elif stage == "refine":
+        assert [f["title"] for f in report["findings"]] == truncation_controls["unrefined_titles"]
+        assert {f["provenance"]["phase"] for f in report["findings"]} == {"assess"}       # kept, unrefined
+        assert report["verdict"]["label"] != "not_assessed"
+    elif stage == "plan":
+        questions = rec.state["plan"]["questions"]
+        assert questions and all(not q["needs_external"] for q in questions)
+        assert all("truncated twice at the output cap" in q["rationale"] for q in questions)
     else:
-        assert rec.exit_code == 3 and rec.report is None
-        failure = rec.failure
-        assert failure is not None and failure["error"] == "LLMTruncatedError" and failure["phase"] == stage
-        assert failure["resumable"] is True
+        assert rec.state["intent_summary"] is None and report["verdict"]["label"] != "not_assessed"
+
+    llm_before = len(rec.jsonl("llm.jsonl"))
+    report_bytes = rec.run_dir.report_json.read_bytes()
+    again = resume(rec)
+    assert again.raised is None and again.exit_code == 0
+    assert len(rec.jsonl("llm.jsonl")) == llm_before                     # the two truncations are not repeated
+    assert rec.run_dir.report_json.read_bytes() == report_bytes
 
 # ============================================================================= 8. refine (BEH-10)
 

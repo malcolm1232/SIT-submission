@@ -30,7 +30,10 @@ sit-review selftest
 the run jumps to `verify` (or from `research` to `assess`), so a report is still produced and
 the cap is recorded as a degradation. After every completed phase it writes an atomic checkpoint
 (ADR-009) and prints a progress line. Errors are typed, and each maps to an exit code:
-0 ok, 2 usage, 3 LLM unavailable, 4 stage crash, 5 resume drift, 130 interrupted.
+0 ok, 2 usage, 3 LLM unavailable, 4 stage crash, 5 resume drift, 130 interrupted. A run that
+degrades and discloses it (a deadline cut, an answer truncated twice at the output cap, a model
+that declined a stage) still writes its report and exits 0 with manifest outcome
+`completed_degraded`.
 
 ## Module map
 
@@ -53,6 +56,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `llm/prefix.py` | Byte-stable cached prefix: PDF block plus canonical text, one breakpoint | done |
 | `llm/claude_code.py` | `ClaudeCodeGateway`: the `LLMGateway` over headless `claude -p` (subscription / cloud credits, ADR-010); envelope tool loop, forked CLI sessions per call (`--resume --fork-session`), retry policy, `llm.jsonl` logging, `preflight` | done; envelope tool loop UNVERIFIED live on Opus |
 | `llm/backend.py` | `build_llm_gateway` (picks `ClaudeCodeGateway` or `AnthropicGateway` from `llm.backend`), `supports_native_pdf` | done |
+| `llm/usage_budget.py` | `add_usage`: the one way phases add a call's usage to `state.budget` (read by the `budget_tokens` stop rule), for a result (`LLMResult.usage`) and for a failed call (`LLMError.usage`, 2026-10-03) | done |
 | `llm/runtime.py` | Run limits every gateway honours (2026-10-02): `RunDeadline` (attempt timeout = min(`llm.timeout_s`, time left - reserve), LLM-05), `ContextGuard` (pre-send size estimate, LLM-10), `FirstCallNetwork` (NET-02); `attach_runtime`, `build_runtime` | done; live behaviour UNVERIFIED |
 | `tools/gateway.py` | `ToolGateway` protocol, `ToolSpec` / `ToolResult` / `ToolAttempt`, `CallIds`, the layer stack and `build_tool_gateway`: `MCPToolGateway`, `ReplayGateway`, `RecordingGateway`, `FakeToolGateway`, `FaultInjectingGateway`, `SelfReplayGateway`, `PolicyToolGateway`, `LoggingToolGateway` | done (B, C); live MCP behaviour UNVERIFIED (auth header, cold starts) |
 | `tools/mcp_client.py` | Live MCP plumbing for `MCPToolGateway`: httpx2 + streamable-HTTP session factory with an error-status hook, failure classification, one owner task per server session, `find_layer` / `start_warm_up` | done (B) |
@@ -136,6 +140,12 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
 - A frozen interface that has to change needs an "interface change" note in the PR description
   that names every caller. That change is made **alone**, in its own PR, before any work that
   depends on it, and all three workstreams rebase onto it.
+- Interface changes made under this rule (the commit message is the "interface change" note):
+  2026-10-03, `errors.LLMError` gained the keyword `usage` (default `None`), the usage a failed call
+  was billed for. Writers: `AnthropicGateway`, `ClaudeCodeGateway`, `FakeGateway`,
+  `FaultInjectingLLMGateway` (`schema_violation`), `ReplayLLMGateway` (via `llm.gateway.billed`).
+  Readers: `phases/_model_calls.call_model`, `phases/research.py`, `phases/verify.py`,
+  `phases/report.py` (via `llm.usage_budget.add_usage`). Additive: no existing constructor call changes.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are
@@ -200,7 +210,8 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   or retry starts with less than 10 s left. Research ends (`deadline`); a cut or skipped assess gives
   a report that says "out of time before assessment" with no finding and the verdict `not_assessed`
   (confidence 0, shown as "Not assessed (out of time before assessment)" in `report.md`); the same
-  verdict is reported when the model declines the assess call twice (LLM-06). `not_assessed` is set by
+  verdict is reported when the assess answer is truncated twice at the output cap (LLM-07) and when the
+  model declines the assess call twice (LLM-06), each with its own reason. `not_assessed` is set by
   code only: the model's output schema offers `fit`, `fit_with_conditions` and `not_fit`
   (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
 - **A deadline that does not fit its reserves is announced.** `--deadline` and a profile each set one
@@ -214,13 +225,31 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
   page) against 80 % of the context window; over it, `LLMContextTooLongError` (exit 2), never sent.
   Errors raised before an attempt is made are logged to `llm.jsonl` with `sent: false` (for replay).
 - **Logs.** `ClaudeCodeGateway` logs `elapsed_s` and `timeout_s`; tool listings go to `tools_list.jsonl`.
+- **Unknown usage is not zero (2026-10-03).** An attempt that was sent but left no usage report is logged
+  with `usage: null` and `usage_unrecorded` (`deadline_cut`, `timeout_kill`, `process_fault` for a
+  `claude -p` that exited without a JSON result, `connection_lost` for an API stream that failed with no
+  HTTP status, `interrupted`). The manifest lists these attempts in `extra.model.calls_with_unrecorded_usage`
+  (call ID, stage, purpose, attempt, wall seconds, reason) and sets `extra.model.cost_usd_lower_bound`;
+  `report.md` (Tokens row), the run's closing console lines and the `--k` summary (`>=` per run and a
+  note on the total) then call the cost a lower bound. An older `llm.jsonl` entry of a deadline cut or
+  timeout with zero usage is read the same way. A killed `claude -p` call's partial usage is not
+  recovered (see `docs/transcripts/session4/accounting_fixes.md`).
 - **Output cap (2026-10-03).** `config/agent.yaml` `max_tokens` is 128000, the model's maximum and the
   largest value `config.py` accepts. A truncated answer gets one retry: at double the cap when the
-  configured value is below 128000, else at the same cap; a second truncation ends the run with a typed,
-  resumable exit 3 (`failure.json` names the stage; no `report.md`, no partial report), never a repaired
-  object (LLM-07; `tests/robustness/test_robustness_regressions.py`, "truncates twice"). Known limitation:
-  a second truncation is not recovered by splitting the stage, and `sit-review resume` repeats the same
-  call at the same cap. `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
+  configured value is below 128000, else at the same cap. A second truncation is never retried again and
+  never repaired (LLM-07): the stage degrades like a deadline cut (Session 4 ruling). The degradation
+  "the <stage> answer was truncated twice at the output cap" names the cap and both call IDs, and the
+  stage continues with its deadline fallback: understand without intent or registry, plan with one
+  document-only question per criterion, assess with no findings and the verdict `not_assessed` ("Not
+  assessed (answer truncated twice at the output cap)"), refine with the assess findings kept unrefined.
+  The run writes its report and exits 0 (`completed_degraded`); the manifest lists both calls in
+  `extra.model.truncations`, and their tokens and cost are in its totals
+  (`tests/robustness/test_robustness_regressions.py` and `tests/test_truncation_fallback.py`). Research,
+  verify and report make no truncation retry: one truncation already ends research (`error`,
+  `max_tokens`), skips the anchor repair, or gives the verdict by rule. Known limitation: a second
+  truncation is not recovered by splitting the stage, so an assessment that does not fit the cap stays
+  unassessed; `sit-review resume` on such a run serves the finished report and makes no model call, and a
+  rerun is a new run that may or may not fit (answer length varies between calls). `ClaudeCodeGateway` passes the cap as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`
   (checked on Haiku with Claude Code 2.1.287: a cap of 256 was enforced). When the cap is hit, `claude -p`
   does not report `stop_reason: max_tokens`: after its own recovery turns it returns an error result
   ("... exceeded the N output token maximum ..."), which the gateway types as `LLMTruncatedError` and does

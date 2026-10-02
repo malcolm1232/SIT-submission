@@ -46,7 +46,8 @@ The write-up says this plainly: results are statistically reproducible, not bitw
 
 - Every scored output (findings, verdict, triage, coverage map, report fields) is produced through `output_config.format` / `client.messages.parse()` against the versioned schema. The report document itself is rendered from those fields by a Jinja template; the model never writes the report structure.
 - Constraints that structured outputs cannot express (at most 3 locations per finding, quotes of at least 8 tokens, non-empty rationale) are checked in code after parsing.
-- `stop_reason: "max_tokens"` is detected before parsing. Truncated JSON is never repaired into a shorter valid object; the call is retried with a higher `max_tokens` or the work is split (robustness LLM-07).
+- `stop_reason: "max_tokens"` is detected before parsing. Truncated JSON is never repaired into a shorter valid object; the call is retried once, with a higher `max_tokens` when one exists, else at the same cap (robustness LLM-07).
+  A second truncation is not retried and the work is not split: the stage degrades like a deadline cut, the report discloses "the <stage> answer was truncated twice at the output cap", and the manifest lists both calls in `extra.model.truncations` (an unassessed design is `not_assessed`).
 - Native citations are not used for scored outputs because they cannot be combined with `output_config.format`.
 
 ## 6. Recorded calls and strict replay
@@ -56,7 +57,7 @@ Each run directory `runs/<run_id>/` holds:
 | File | Content |
 |---|---|
 | `manifest.json` | Section 8 schema. Written before the first model call, finalised at exit |
-| `llm.jsonl` | Every model request (body hash, plus the body itself minus the PDF bytes, which are referenced by hash) and full response: `model`, `stop_reason`, `stop_details`, `usage` (including `usage.iterations` and cache fields), `request_id`, latency, retries |
+| `llm.jsonl` | Every model request (body hash, plus the body itself minus the PDF bytes, which are referenced by hash) and full response: `model`, `stop_reason`, `stop_details`, `usage` (including `usage.iterations` and cache fields), `request_id`, latency, retries. An attempt that was sent but ended without a usage report (deadline cut, timeout kill, crashed `claude -p`, dropped stream, interrupt) has `usage: null` and `usage_unrecorded: <reason>`, never zeros |
 | `tools.jsonl` | Every MCP call: server, tool, canonical arguments, raw result, `isError`, latency, transport status, cassette key |
 | `ledger.json` | Evidence ledger: stable IDs, source URL, retrieval time, the snippet as the agent saw it, its hash |
 | `snapshots/` | Stored copy of every fetched page or paper the agent read |
@@ -122,6 +123,9 @@ model:
   fallbacks: none | default           # * (eval: none)
   fallback_events: [{call_id, stage, from_model, to_model, category}]
   refusals: [{call_id, stage, category}]
+  truncations: [{call_id, stage, purpose}]
+  calls_with_unrecorded_usage: [{call_id, stage, purpose, attempt, wall_s, reason}]   # sent, usage unknown
+  cost_usd_lower_bound: true | false  # true when the list above is not empty: usage and cost are lower bounds
   sdk_client: {max_retries: 0, timeout_s}
 tools:
   transport: live | record | replay-strict | replay-lenient   # *

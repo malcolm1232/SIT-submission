@@ -280,3 +280,122 @@ So the date alone does not separate them, and each host was judged by the planne
 - `pdpc.gov.sg`: kept. A national regulator qualifies on its own; it sits in `standards` with other regulators (`ico.org.uk`, `cnil.fr`). The clinical item and its key do mention it, so the leakage reviewer should know it is there.
 - `opentelemetry.io`: kept. A standards project, listed with `cloudevents.io` and `spec.openapis.org`; the payments item names OpenTelemetry once.
 - `apache.org`: kept. A major open-source foundation; the lakehouse item names Apache projects, not the host.
+
+## Session 4 second-truncation fallback
+
+Fresh Opus worker, 2026-10-03.
+Planner ruling (final): a stage whose answer is truncated twice at the output cap degrades like a deadline cut.
+Full report: `docs/transcripts/session4/truncation_fallback.md`.
+Commits: `aab35fa` (behaviour and tests), `f6ec4ef` (docs and a `PhaseCall` test), then the results file and this record.
+
+### Reproduced first
+
+Offline fault schedule truncating every call of one stage (`tests/robustness` harness), before the change: understand, plan, assess and refine each made exactly two calls and ended with exit 3, `failure.json` (`LLMTruncatedError`, resumable) and no report.
+Research, verify and report already degraded after one truncation (they make no truncation retry) and were not changed.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/phases/_model_calls.py` | Second truncation: no third call; `other` degradation "the <stage> answer was truncated twice at the output cap (max_tokens=N; the call and its one retry, <call IDs>)", a progress warning, and `PhaseCall(truncated=True)`; the phase continues with its deadline fallback | `test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report` (understand, plan, assess, refine) |
+| `agent/sit_review_agent/llm/runtime.py` | `TRUNCATED_TWICE` and `truncated_twice_event(phase)`, next to `OUT_OF_TIME_BEFORE_ASSESSMENT` | same |
+| `agent/sit_review_agent/phases/assess.py` | Coverage note "not assessed: the assess answer was truncated twice at the output cap" | same, assess case |
+| `agent/sit_review_agent/phases/plan.py` | `build_plan(..., missing=)`: the code-built questions name why there is no model plan (declined, deadline, truncated); before, a deadline cut was also called "declined" | same, plan case |
+| `agent/sit_review_agent/phases/report.py` | Third not-assessed reason `truncated` (`_NOT_ASSESSED_TEXT`, `NOT_ASSESSED_WHY`, `assessment_missing`) | `tests/test_not_assessed_verdict.py` (truncated cases) |
+| `agent/sit_review_agent/report/render.py` | Verdict label "not assessed (answer truncated twice at the output cap)"; coverage cell of an unassessed criterion reads "not assessed", not "not applicable" (also for the deadline and declined paths, as `dra coverage` already did) | regression test, assess case |
+| `agent/sit_review_agent/manifest.py` | `extra.model.truncations` lists every truncated call (`call_id`, `stage`, `purpose`); usage and cost were already summed from `llm.jsonl` | `tests/test_truncation_fallback.py` (billed usage) |
+| `spec/finding.schema.json`, `spec/taxonomy.yaml` | `not_assessed` description and comment name the new reason; no enum value changed | none (text) |
+| `tests/robustness/test_robustness_scenarios.py`, `robustness_coverage.py`, `README.md` | LLM-07 persistent variant | the scenario itself |
+| `tests/robustness/results/robustness_results.csv` | Regenerated with the documented command at `f6ec4ef`: only LLM-07 changed (k 2, passes 2); 81 rows, 49 PASS, 32 BLOCKED | `test_robustness_results_csv.py` |
+| `agent/README.md`, `docs/REPRODUCIBILITY.md` §5 | Exit codes (a disclosed degraded run exits 0); output-cap paragraph and known limitation rewritten | none (text) |
+
+### Correction to the Session 4 verifier record
+
+The known-limitation line "`sit-review resume` repeats the same call at the same cap" no longer holds: the run now finishes with a report, and `resume` on it serves that report and makes no model call (tested).
+The limitation that remains is that a second truncation is not recovered by splitting the stage.
+
+### Mutations (each restored from a `cp` copy, checked with `filecmp` and `git status`)
+
+All 12 caught: second truncation raising again; a third call at the same cap; event without call IDs; assess truncation not a not-assessed reason; truncation typed `budget_or_deadline_hit`; manifest list emptied; plan rationale "declined"; assess coverage note dropped; label without reason; coverage cell back to "not applicable"; rationale reason "deadline"; `PhaseCall.declined` ignoring `truncated` (survived at first, caught after `test_a_call_truncated_twice_is_neither_declined_nor_cut` was added).
+
+## Session 4 accounting fixes
+
+Fresh Opus worker, 2026-10-03.
+Source: the agent observations of the demo measurement run (`SIT-wt/demo/docs/live_runs/demo_profile_measure_1/MEASUREMENT.md`) and the "not verified" list of `docs/transcripts/session4/truncation_fallback.md`.
+Full report: `docs/transcripts/session4/accounting_fixes.md`.
+Commits: `8279338` (branch name), `b93df32` (Located at), `0e14c4c` (failed calls in the budget, interface change), `8ef32d4` (unknown usage), `3a7ee4c` (decision #25 and deviation entry 9), then this record and the report.
+
+### Reproduced first (offline, each as a failing test before the fix)
+
+- Branch: a `.git` whose HEAD is `ref: refs/heads/s4/demo` gave `branch: demo`; a detached HEAD gave `branch: null` and a missing `git` binary gave `dirty: null`, both without a crash (already correct, now pinned).
+- Located at: the live `report.json` holds three different intent quotes, two of them on p.2 §1; the renderer printed page and section only, so the location read twice. The data was not duplicated; the renderer was the cause. A model that repeats one quote exactly would also have printed twice (no dedupe anywhere).
+- Budget: understand truncated twice at 7,500 input tokens per call left `state.budget.input_tokens` at 0, and with a 10,000-token budget the run went on to plan.
+- Unknown usage: a `claude -p` attempt cut by the deadline (fake runner) was logged with zero usage and the manifest summed it as zero.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/manifest.py` | `git_state` keeps the full branch name (strips `refs/heads/` only) | `tests/test_accounting_fixes.py` (slashed branch, packed refs in a linked worktree, detached HEAD, no `git` binary) |
+| `agent/sit_review_agent/report/render.py`, `templates/report.md.j2` | `intent_locations`: each location once, first-seen order, "(N passages)" when a section holds several anchors | `test_located_at_names_each_location_once` |
+| `agent/sit_review_agent/phases/_model_calls.py`, `phases/understand.py` | `unique_anchors`: an exact repeat of an anchor (document, page, section, normalised quote) is dropped for intent, findings and sound areas | `test_understand_keeps_a_repeated_anchor_once`, `test_finding_and_sound_area_anchors_keep_a_repeat_once` |
+| `agent/sit_review_agent/errors.py` | Interface change: `LLMError(..., usage=None)` and `LLMError.usage` (billed usage of the failed call's attempts; `None` = no attempt reported usage) | `tests/test_budget_counts_failed_calls.py` |
+| `agent/sit_review_agent/llm/gateway.py` | `billed(err, usage)`; set by `AnthropicGateway` (a response that arrived and failed), `FakeGateway` (scripted refusal, truncation, schema error), `FaultInjectingLLMGateway` (`schema_violation` keeps the inner call's usage) | same, plus `test_max_tokens_is_truncation_not_retried` |
+| `agent/sit_review_agent/llm/claude_code.py` | Failed attempts with a JSON result summed per call and attached to the raised error | `test_claude_code_error_carries_the_billed_usage_of_every_attempt` |
+| `agent/sit_review_agent/replay.py` | A replayed recorded failure carries the recorded usage, so a replay counts the budget like the live run | `test_replay_counts_a_recorded_failed_call_like_the_live_run` |
+| `agent/sit_review_agent/llm/usage_budget.py` (new) | `add_usage(budget, usage)`, used for results and errors in every phase; `describe_unrecorded`, `cost_lower_bound_line` | all of the above |
+| `phases/_model_calls.py`, `research.py`, `verify.py`, `report.py` | Every handler of a model error adds `exc.usage` to `state.budget` | phase tests in `test_budget_counts_failed_calls.py` |
+| `agent/sit_review_agent/llm/gateway.py` | `USAGE_UNRECORDED_REASONS`, `unrecorded_usage(reason)`; `AnthropicGateway` logs `usage: null` and `usage_unrecorded` for a failure without an HTTP status (`deadline_cut`, `timeout_kill`, `connection_lost`) and for an interrupt; `FakeGateway` for a scripted cut or timeout | `tests/test_unrecorded_usage.py` |
+| `agent/sit_review_agent/llm/claude_code.py` | Same marker for `deadline_cut`, `timeout_kill`, `process_fault` (no JSON result) and `interrupted`; a CLI that never started keeps zero usage | same |
+| `agent/sit_review_agent/manifest.py` | `unrecorded_reason` (also reads older zero-usage cut or timeout entries), `journal_usage()["calls_with_unrecorded_usage"]`, `extra.model.calls_with_unrecorded_usage` and `extra.model.cost_usd_lower_bound` | same |
+| `report/templates/report.md.j2`, `phases/report.py`, `orchestrator.py`, `kruns.py` | Tokens row "a lower bound: N model calls with unrecorded usage (stage, reason)"; a closing console warning for a finished or failed run; `--k` table `>=` per run and a note on the total, `calls_with_unrecorded_usage` and `cost_usd_lower_bound` in the group summary | same |
+| `agent/README.md`, `docs/REPRODUCIBILITY.md` §6 and §8 | Module map row, interface-change note, unknown-usage policy; manifest schema lines | none (text) |
+| `docs/USER_DECISIONS.md` #25, `eval/prereg_deviations.md` entry 9 | Three not-assessed reasons (`deadline`, `truncated`, `declined`), dated amendment | none (text) |
+
+The helper module was first named `llm/accounting.py`; the repository leakage check flagged "Accounting" as a term of a synthetic eval document, so it was renamed `usage_budget.py` rather than allow-listed.
+
+### Mutations (each restored from a `cp` copy; `git status` checked after each batch)
+
+All 33 caught.
+Branch: `rsplit` back (3 tests fail).
+Located at: renderer without grouping; understand without dedupe; findings and sound areas without dedupe.
+Budget (12): `add_usage` removed from each `call_model` handler (truncation, refusal, schema, deadline), from all research handlers, from verify, from report; `billed` made a no-op; the Claude Code per-call sum dropped; `schema_violation` without the inner usage; replay without recorded usage; `add_usage` a no-op.
+Unknown usage (17): each Claude Code reason label dropped (3); the log override; the Claude Code and Anthropic interrupt entries; the Anthropic no-status branch; the fake gateway's killed flag; the explicit marker ignored; the legacy inference; the lower-bound flag; the report.md note; the report and failed-run console lines; the `--k` cell, total note and collector.
+
+## Session 4 hub verification
+
+Hub verifier, 2026-10-03: merged `s4/lc12` (103b8e6) and the demo measurement (feb1d9f) into `s4/integration`, then verified the second-truncation fallback, the accounting fixes, the LC12 guard and the demo measurement on the merged tree.
+Report: `docs/transcripts/session4/hub_verification.md`.
+
+### Merge
+
+| Merge | Conflict | Resolution |
+|---|---|---|
+| `b44a5d9` (`s4/lc12`) | `docs/USER_DECISIONS.md`: row #25 (amended on this branch, unchanged at 2d84f59 on the other) next to the new LC12 section with row #26 | Kept the amended row #25 and appended the LC12 section; the other side's row #25 was byte-identical to 2d84f59 |
+| `8b35dcd` (feb1d9f) | none | none |
+
+### Reproduced first
+
+- `dra replay docs/live_runs/demo_profile_measure_1` on the merged tree: exit 4, `TypeError: unsupported operand type(s) for +: 'dict' and 'Usage'` in assess. The demo branch replayed it with exit 0 before the accounting branch was merged.
+- A confirmatory `sit-eval score --prior-scores <exploratory scores.json>` (fake judge): exit 0, 118 judge calls, output marked confirmatory, no warning naming the prior.
+
+### Edits
+
+| File | Edit | Regression test |
+|---|---|---|
+| `agent/sit_review_agent/replay.py` | `recorded_error` passes `usage=None`: the log entry's `usage` dict never reaches an `LLMError` constructor (classes that inherit `LLMError.__init__`, such as `LLMDeadlineError`, took it since 0e14c4c); `ReplayLLMGateway` still sets the recorded billed usage through `billed` | `tests/test_cli_replay.py`: `test_a_recorded_usage_dict_never_reaches_the_error_constructor`, `test_the_committed_demo_measurement_run_replays_offline` |
+| `harness/sit_eval/lc12.py`, `cli.py`, `scoring.py` | `require_confirmatory_prior`: an exploratory `--prior-scores` (marked, or written before the guard on an unsigned key) is refused without `--exploratory`, in the CLI before any judge is built and at the top of `score_review` | `tests/eval_harness/test_eval_lc12.py`: `test_score_refuses_an_exploratory_prior_scores_without_the_flag`, `test_score_review_refuses_an_exploratory_prior_with_zero_judge_calls` |
+| `docs/USER_DECISIONS.md` | Row #27 (demo latency ruling) | none (text) |
+
+### Mutations
+
+Builders' work, in a scratch copy of the merged tree (`git archive`), each file restored from a `cp` copy: all 15 caught.
+Truncation (3): the second truncation re-raised instead of degrading; `assessment_missing` without the truncated branch; plan's `missing` always "declined".
+Accounting (6): `cost_usd_lower_bound` always false; `report.md` lower-bound clause dropped; `--k` cost cell without `>=`; `add_usage` dropped from the truncation handler of `call_model`; `add_usage` dropped from research's truncation handler; the legacy zero-usage cut reading disabled.
+LC12 (6): `require_signed` never raises; the cache serves exploratory rows to a confirmatory runner; `require_confirmatory_inputs` never raises; a pre-guard scores file never counts as exploratory; `grade_review_async` without `require_signed_key`; a legacy YAML key reported as signed off.
+Own fixes, in place after commit, restored from a `cp` copy: all 4 caught (replay `usage=None` removed; the CLI prior check removed; the library prior check removed; `require_confirmatory_prior` never raises).
+
+### Not changed, reported
+
+- 11 added lines carry U+2014: all are the reviewed PDF's own title, recorded verbatim in `docs/live_runs/demo_profile_measure_1` (report, state, checkpoints). Editing them would falsify a recorded run and break its replay comparison; the earlier committed live run carries the same title. No authored line has one.
+- `docs/live_runs/demo_profile_measure_1/effective_config.json` `config_root` holds a local home-directory path (39 characters); not a credential.

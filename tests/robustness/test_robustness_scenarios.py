@@ -382,14 +382,24 @@ def _once(data: dict[str, Any]) -> None:
     data["llm"][0]["match"]["nth"] = [0]
 
 
+def _persistent_truncation(data: dict[str, Any]) -> None:
+    data["llm"][0]["match"].pop("nth")
+
+
 def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    rec = recs[0]
+    rec, twice = recs
     ok(rec)
     entries = llm_calls(rec, "assess")
     assert [e.get("outcome") for e in entries if e.get("fault")] == ["LLMTruncatedError"]
     retry = [e for e in entries if e.get("outcome") == "ok"]
     assert retry[0]["purpose"] == "assess:max_tokens_retry"
     assert titles(rec) == titles(control)                                   # no truncated object accepted
+    # persistent: truncated on the call and on its one retry -> degrades like a deadline cut (exit 0)
+    r = ok(twice)
+    assert [e.get("outcome") for e in llm_calls(twice, "assess")] == ["LLMTruncatedError"] * 2
+    assert any(d.startswith("the assess answer was truncated twice at the output cap") for d in degs(twice))
+    assert r["verdict"]["label"] == "not_assessed" and r["findings"] == [] and not llm_calls(twice, "report")
+    assert "Not assessed (answer truncated twice at the output cap)" in md(twice)
     return Metric("findings vs fault-free run", len(titles(rec)), f"== {len(titles(control))}")
 
 
@@ -1005,7 +1015,8 @@ CASES: list[Case] = [
     Case("LLM-03", [sc("LLM-03", faults="LLM-03"),
                     sc("LLM-03-persistent", faults="LLM-03", variant=_persistent_529)], check_llm03),
     Case("LLM-06", [sc("LLM-06", faults="LLM-06"), sc("LLM-06-once", faults="LLM-06", variant=_once)], check_llm06),
-    Case("LLM-07", [sc("LLM-07", faults="LLM-07")], check_llm07),
+    Case("LLM-07", [sc("LLM-07", faults="LLM-07"),
+                    sc("LLM-07-persistent", faults="LLM-07", variant=_persistent_truncation)], check_llm07),
     Case("LLM-08", [sc("LLM-08", faults="LLM-08")], check_llm08),
     Case("LLM-09", [sc("LLM-09-hollow", patches={"assess": _hollow, "refine": _hollow}),
                     sc("LLM-09-empty", patches={"assess": _empty, "refine": _empty})], check_llm09),

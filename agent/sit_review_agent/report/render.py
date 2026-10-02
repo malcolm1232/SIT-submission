@@ -23,6 +23,7 @@ from typing import Any
 import jinja2
 
 from sit_review_agent.llm.outputs import CriterionCoverage
+from sit_review_agent.llm.usage_budget import describe_unrecorded
 from sit_review_agent.models import (
     SEVERITY_RANK,
     Disposition,
@@ -117,24 +118,34 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
     }
 
 
+def _coverage_outcome(outcome: str, note: str | None) -> str:
+    """The coverage table's outcome cell. A run with no assessment stores ``not_applicable`` with a
+    note starting "not assessed" (``phases.assess``); the cell says "not assessed", as ``dra
+    coverage`` does, because the criterion was never judged inapplicable."""
+    from sit_review_agent.report.coverage import NOT_ASSESSED_NOTE
+
+    if outcome == "not_applicable" and (note or "").lower().startswith(NOT_ASSESSED_NOTE):
+        return NOT_ASSESSED_NOTE
+    return outcome.replace("_", " ")
+
+
 def not_assessed(review: Review) -> bool:
     """The run produced no assessment: the verdict label is ``not_assessed``
     (``phases.report.not_assessed_verdict``; the deadline stopped the review before assessment,
-    robustness LLM-05, or the model declined the assess call, LLM-06)."""
+    robustness LLM-05, the assess answer was truncated twice at the output cap, LLM-07, or the
+    model declined the assess call, LLM-06)."""
     return review.verdict.label is VerdictLabel.NOT_ASSESSED
 
 
 def verdict_label_text(review: Review) -> str:
     """The verdict label as shown in ``report.md``; a not-assessed verdict names its reason."""
     if not_assessed(review):
-        from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT
+        from sit_review_agent.phases.report import NOT_ASSESSED_WHY, assessment_missing
 
         events = [d.event for d in review.research_log.degradations]
-        if any(e.startswith(OUT_OF_TIME_BEFORE_ASSESSMENT) for e in events):
-            return f"not assessed ({OUT_OF_TIME_BEFORE_ASSESSMENT})"
-        if any(e.startswith("the model declined the assess call") for e in events):
-            return "not assessed (the model declined the assessment)"
-        return "not assessed"
+        declined = ["assess"] if any(e.startswith("the model declined the assess call") for e in events) else []
+        missing = assessment_missing(events, declined)
+        return f"not assessed ({NOT_ASSESSED_WHY[missing]})" if missing else "not assessed"
     return review.verdict.label.value.replace("_", " ")
 
 
@@ -149,6 +160,18 @@ def executive_summary(review: Review, *, max_words: int = EXEC_SUMMARY_MAX_WORDS
     words = " ".join(parts).split()
     return " ".join(words[:max_words]) + (" ..." if len(words) > max_words else "")
 
+
+
+def intent_locations(review: Review) -> list[dict[str, Any]]:
+    """The intent summary's locations for "Located at", each once in first-seen order, with the
+    number of anchored passages there. Two distinct quotes in one section are one location, so the
+    line never repeats itself; ``passages`` keeps it in agreement with ``report.json``."""
+    out: dict[tuple[str, int | None, str], dict[str, Any]] = {}
+    for a in review.intent_summary.doc_anchors:
+        loc = out.setdefault((a.doc_id, a.page, a.section_ref), {"page": a.page, "section": a.section_ref,
+                                                                  "passages": 0})
+        loc["passages"] += 1
+    return list(out.values())
 
 def render_markdown(review: Review, *, template: str = "standard", min_severity: Severity = Severity.LOW,
                     coverage: list[CriterionCoverage] | None = None) -> str:
@@ -207,7 +230,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
                                    for o in review.intent_summary.constraints],
                    "assumptions": [{"ref": o.ref, "text": _one_line(o.text)}
                                    for o in review.intent_summary.key_assumptions],
-                   "anchors": [{"page": a.page, "section": a.section_ref} for a in review.intent_summary.doc_anchors]},
+                   "anchors": intent_locations(review)},
         "verdict": {"label": review.verdict.label.value, "label_text": verdict_label_text(review),
                     "confidence": f"{review.verdict.confidence:.2f}",
                     "band": confidence_band(review.verdict.confidence),
@@ -244,7 +267,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
                       "tool": f"{e.tool.server}/{e.tool.tool_name} {e.tool.call_id}" if e.tool else None,
                       "cited": e.evidence_id in used, "derived_from": e.derived_from}
                      for e in review.evidence_ledger],
-        "coverage": [{"id": c.criterion_id, "outcome": c.outcome.replace("_", " "), "ids": c.finding_ids,
+        "coverage": [{"id": c.criterion_id, "outcome": _coverage_outcome(c.outcome, c.note), "ids": c.finding_ids,
                       "note": _cell(c.note)} for c in cov],
         "appendix": [views[f.id] for f in appendix],
         "appendix_heading": APPENDIX_HEADING,
@@ -261,6 +284,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
             "sources": (f"{review.research_log.sources_cited} cited of "
                         f"{review.research_log.sources_retrieved} retrieved"),
             "usage": m.usage.model_dump(mode="json"),
+            "unrecorded": describe_unrecorded((extra.get("model") or {}).get("calls_with_unrecorded_usage") or []),
             "config_sha256": m.config_sha256, "prompts_sha256": m.prompts_bundle_sha256,
             "git_commit": m.git_commit, "fault_schedule": m.fault_schedule_id,
             "persona": m.review_config.persona, "criteria": ", ".join(m.review_config.criteria),

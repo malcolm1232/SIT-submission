@@ -17,8 +17,9 @@ Implementation notes (workstream A):
   ``criteria_skipped`` entry. A criterion the model left out gets a document-only question added by
   code (its own wording), so ``assess`` still checks it; this is reported as a progress warning;
 * ``ResearchPlan.approved`` is ``False`` when ``plan_approval`` is on (the orchestrator/CLI waits);
-* a persistent refusal produces the same code-built plan: one document-only question per criterion,
-  disclosed as a degradation by the model-call helper.
+* a persistent refusal, a call cut by the run deadline, or an answer truncated twice at the output
+  cap produces the same code-built plan: one document-only question per criterion, disclosed as a
+  degradation by the model-call helper; each question's rationale names which of the three it was.
 """
 
 from __future__ import annotations
@@ -59,9 +60,18 @@ def doc_only_question(ctx: RunContext, criterion_id: str, rationale: str) -> Res
                                  needs_external=False, capability=CAPABILITY_NONE, queries=[], section_refs=[])
 
 
-def build_plan(ctx: RunContext, out: PlanOutput | None) -> tuple[ResearchPlan, list[str]]:
+#: Why there is no model plan -> the rationale of the document-only questions code adds instead.
+NO_PLAN_WHY = {
+    "declined": "the model declined to plan",
+    "deadline": "the plan call was cut by the run deadline",
+    "truncated": "the plan answer was truncated twice at the output cap",
+}
+
+
+def build_plan(ctx: RunContext, out: PlanOutput | None, *, missing: str = "declined") -> tuple[ResearchPlan, list[str]]:
     """Normalise the model's plan (see module docstring). Returns the plan and the criteria for
-    which code added a question."""
+    which code added a question. ``missing`` (a :data:`NO_PLAN_WHY` key) says why ``out`` is
+    ``None``."""
     criteria = known_criteria(ctx)
     caps = set(enabled_capabilities(ctx))
     questions: list[ResearchQuestionDraft] = []
@@ -82,7 +92,7 @@ def build_plan(ctx: RunContext, out: PlanOutput | None) -> tuple[ResearchPlan, l
                 skipped.append(s.model_copy(update={"reason": s.reason.strip() or "not applicable to this design"}))
     covered = {q.criterion_id for q in questions} | {s.criterion_id for s in skipped}
     added = [c for c in criteria if c not in covered]
-    why = ("Added by code: the model declined to plan; this criterion is checked against the document."
+    why = (f"Added by code: {NO_PLAN_WHY[missing]}; this criterion is checked against the document."
            if out is None else
            "Added by code: the plan did not map this criterion to a question or a skip reason.")
     questions += [doc_only_question(ctx, c, why) for c in added]
@@ -113,7 +123,8 @@ class PlanPhase:
 
         call = await call_model(ctx, phase, render, PlanOutput, iteration=0, purpose="plan")
         out = call.result.parsed if call.result is not None and isinstance(call.result.parsed, PlanOutput) else None
-        plan, added = build_plan(ctx, out)
+        missing = "deadline" if call.cut else "truncated" if call.truncated else "declined"
+        plan, added = build_plan(ctx, out, missing=missing)
         ctx.state.plan = plan
         if added and out is not None:
             ctx.emit(f"plan left out {len(added)} criteria; added document-only questions for: {', '.join(added)}",

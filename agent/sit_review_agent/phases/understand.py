@@ -35,6 +35,7 @@ from sit_review_agent.phases._model_calls import (
     fix_anchor,
     spec_anchor,
     summarise,
+    unique_anchors,
 )
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.states import PhaseName
@@ -87,7 +88,8 @@ class UnderstandPhase:
                 "decision-preservation checks (INV-10) cannot reference these entries")
 
         # ---- intent summary
-        anchors = [a for a in (spec_anchor(ctx, x) for x in out.intent_summary.doc_anchors) if a is not None]
+        anchors = unique_anchors(a for a in (spec_anchor(ctx, x) for x in out.intent_summary.doc_anchors)
+                                 if a is not None)
         if not anchors:
             fb = next((e.doc_anchor for e in ctx.registry.entries()), None) or fallback_anchor(ctx)
             if fb is not None:

@@ -56,6 +56,15 @@ MIN_ATTEMPT_S = 10.0
 RESERVE_PHASES = frozenset({PhaseName.VERIFY, PhaseName.REPORT})
 #: Degradation text when the deadline leaves no assessment (the report says so; no finding is made up).
 OUT_OF_TIME_BEFORE_ASSESSMENT = "out of time before assessment"
+#: Degradation text when a stage's answer was cut off at ``max_tokens`` on its call and on the one
+#: retry (robustness LLM-07, persistent variant). The stage then degrades like a deadline cut.
+TRUNCATED_TWICE = "truncated twice at the output cap"
+
+
+def truncated_twice_event(phase: PhaseName | str) -> str:
+    """Start of the degradation event of a stage whose answer was truncated twice (and the text
+    ``phases.report.assessment_missing`` and ``report.render`` look for)."""
+    return f"the {getattr(phase, 'value', phase)} answer was {TRUNCATED_TWICE}"
 
 
 # ------------------------------------------------------------------------------ deadline

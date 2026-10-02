@@ -1,0 +1,845 @@
+{
+ "doc_id": "DOC-design_v1",
+ "pages": [
+  {
+   "char_end": 1909,
+   "char_start": 11,
+   "image_only": false,
+   "number": 1
+  },
+  {
+   "char_end": 5280,
+   "char_start": 1920,
+   "image_only": false,
+   "number": 2
+  },
+  {
+   "char_end": 9435,
+   "char_start": 5291,
+   "image_only": false,
+   "number": 3
+  },
+  {
+   "char_end": 12239,
+   "char_start": 9446,
+   "image_only": false,
+   "number": 4
+  },
+  {
+   "char_end": 14538,
+   "char_start": 12250,
+   "image_only": false,
+   "number": 5
+  },
+  {
+   "char_end": 17065,
+   "char_start": 14549,
+   "image_only": false,
+   "number": 6
+  },
+  {
+   "char_end": 19544,
+   "char_start": 17076,
+   "image_only": false,
+   "number": 7
+  },
+  {
+   "char_end": 22780,
+   "char_start": 19555,
+   "image_only": false,
+   "number": 8
+  },
+  {
+   "char_end": 26074,
+   "char_start": 22791,
+   "image_only": false,
+   "number": 9
+  },
+  {
+   "char_end": 29363,
+   "char_start": 26086,
+   "image_only": false,
+   "number": 10
+  },
+  {
+   "char_end": 31652,
+   "char_start": 29375,
+   "image_only": false,
+   "number": 11
+  },
+  {
+   "char_end": 34611,
+   "char_start": 31664,
+   "image_only": false,
+   "number": 12
+  },
+  {
+   "char_end": 38108,
+   "char_start": 34623,
+   "image_only": false,
+   "number": 13
+  },
+  {
+   "char_end": 40138,
+   "char_start": 38120,
+   "image_only": false,
+   "number": 14
+  },
+  {
+   "char_end": 40923,
+   "char_start": 40150,
+   "image_only": false,
+   "number": 15
+  },
+  {
+   "char_end": 42859,
+   "char_start": 40935,
+   "image_only": false,
+   "number": 16
+  },
+  {
+   "char_end": 45616,
+   "char_start": 42871,
+   "image_only": false,
+   "number": 17
+  },
+  {
+   "char_end": 48730,
+   "char_start": 45628,
+   "image_only": false,
+   "number": 18
+  },
+  {
+   "char_end": 52456,
+   "char_start": 48742,
+   "image_only": false,
+   "number": 19
+  },
+  {
+   "char_end": 55952,
+   "char_start": 52468,
+   "image_only": false,
+   "number": 20
+  },
+  {
+   "char_end": 57504,
+   "char_start": 55964,
+   "image_only": false,
+   "number": 21
+  }
+ ],
+ "sections": [
+  {
+   "char_end": 3443,
+   "char_start": 1237,
+   "heading": "Purpose and Scope",
+   "level": 1,
+   "order": 0,
+   "page_end": 2,
+   "page_start": 1,
+   "section_id": "1"
+  },
+  {
+   "char_end": 3606,
+   "char_start": 3443,
+   "heading": "Requirements",
+   "level": 1,
+   "order": 1,
+   "page_end": 2,
+   "page_start": 2,
+   "section_id": "2"
+  },
+  {
+   "char_end": 6856,
+   "char_start": 3606,
+   "heading": "Functional Requirements",
+   "level": 2,
+   "order": 2,
+   "page_end": 3,
+   "page_start": 2,
+   "section_id": "2.1"
+  },
+  {
+   "char_end": 8953,
+   "char_start": 6856,
+   "heading": "Non-Functional Requirements",
+   "level": 2,
+   "order": 3,
+   "page_end": 3,
+   "page_start": 3,
+   "section_id": "2.2"
+  },
+  {
+   "char_end": 10765,
+   "char_start": 8953,
+   "heading": "Foundational Principles",
+   "level": 1,
+   "order": 4,
+   "page_end": 4,
+   "page_start": 3,
+   "section_id": "3"
+  },
+  {
+   "char_end": 11810,
+   "char_start": 10765,
+   "heading": "Markets and Payment Method Coverage",
+   "level": 1,
+   "order": 5,
+   "page_end": 4,
+   "page_start": 4,
+   "section_id": "4"
+  },
+  {
+   "char_end": 14549,
+   "char_start": 11810,
+   "heading": "Target Architecture",
+   "level": 1,
+   "order": 6,
+   "page_end": 5,
+   "page_start": 4,
+   "section_id": "5"
+  },
+  {
+   "char_end": 15652,
+   "char_start": 14549,
+   "heading": "Merchant and Account Model",
+   "level": 1,
+   "order": 7,
+   "page_end": 6,
+   "page_start": 6,
+   "section_id": "6"
+  },
+  {
+   "char_end": 15839,
+   "char_start": 15652,
+   "heading": "Payment Lifecycle and State Machine",
+   "level": 1,
+   "order": 8,
+   "page_end": 6,
+   "page_start": 6,
+   "section_id": "7"
+  },
+  {
+   "char_end": 16528,
+   "char_start": 15839,
+   "heading": "States",
+   "level": 2,
+   "order": 9,
+   "page_end": 6,
+   "page_start": 6,
+   "section_id": "7.1"
+  },
+  {
+   "char_end": 17421,
+   "char_start": 16528,
+   "heading": "Permitted transitions",
+   "level": 2,
+   "order": 10,
+   "page_end": 7,
+   "page_start": 6,
+   "section_id": "7.2"
+  },
+  {
+   "char_end": 18296,
+   "char_start": 17421,
+   "heading": "Authorization Flow",
+   "level": 1,
+   "order": 11,
+   "page_end": 7,
+   "page_start": 7,
+   "section_id": "8"
+  },
+  {
+   "char_end": 19008,
+   "char_start": 18296,
+   "heading": "Outcome classification (Section 11): approved | final decline | retryable",
+   "level": 1,
+   "order": 12,
+   "page_end": 7,
+   "page_start": 7,
+   "section_id": "9"
+  },
+  {
+   "char_end": 19555,
+   "char_start": 19008,
+   "heading": "Contract",
+   "level": 2,
+   "order": 13,
+   "page_end": 7,
+   "page_start": 7,
+   "section_id": "9.1"
+  },
+  {
+   "char_end": 21181,
+   "char_start": 19555,
+   "heading": "Two-tier implementation",
+   "level": 2,
+   "order": 14,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "9.2"
+  },
+  {
+   "char_end": 21849,
+   "char_start": 21181,
+   "heading": "Capacity",
+   "level": 2,
+   "order": 15,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "9.3"
+  },
+  {
+   "char_end": 21868,
+   "char_start": 21849,
+   "heading": "Routing Engine",
+   "level": 1,
+   "order": 16,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "10"
+  },
+  {
+   "char_end": 22343,
+   "char_start": 21868,
+   "heading": "Eligibility",
+   "level": 2,
+   "order": 17,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "10.1"
+  },
+  {
+   "char_end": 22934,
+   "char_start": 22343,
+   "heading": "Ranking",
+   "level": 2,
+   "order": 18,
+   "page_end": 9,
+   "page_start": 8,
+   "section_id": "10.2"
+  },
+  {
+   "char_end": 23521,
+   "char_start": 22934,
+   "heading": "Cost-approval trade-off",
+   "level": 2,
+   "order": 19,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "10.3"
+  },
+  {
+   "char_end": 23751,
+   "char_start": 23521,
+   "heading": "Health and circuit breaking",
+   "level": 2,
+   "order": 20,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "10.4"
+  },
+  {
+   "char_end": 24101,
+   "char_start": 23751,
+   "heading": "Baseline outcomes",
+   "level": 2,
+   "order": 21,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "10.5"
+  },
+  {
+   "char_end": 24127,
+   "char_start": 24101,
+   "heading": "Retries and Cascading",
+   "level": 1,
+   "order": 22,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "11"
+  },
+  {
+   "char_end": 24728,
+   "char_start": 24127,
+   "heading": "Outcome classification",
+   "level": 2,
+   "order": 23,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "11.1"
+  },
+  {
+   "char_end": 25553,
+   "char_start": 24728,
+   "heading": "Cascade procedure",
+   "level": 2,
+   "order": 24,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "11.2"
+  },
+  {
+   "char_end": 25859,
+   "char_start": 25553,
+   "heading": "Scheme compliance",
+   "level": 2,
+   "order": 25,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "11.3"
+  },
+  {
+   "char_end": 26086,
+   "char_start": 25859,
+   "heading": "Non-card methods",
+   "level": 2,
+   "order": 26,
+   "page_end": 9,
+   "page_start": 9,
+   "section_id": "11.4"
+  },
+  {
+   "char_end": 26121,
+   "char_start": 26086,
+   "heading": "Card Vault and PCI DSS Scoping",
+   "level": 1,
+   "order": 27,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12"
+  },
+  {
+   "char_end": 26989,
+   "char_start": 26121,
+   "heading": "Vault design",
+   "level": 2,
+   "order": 28,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12.1"
+  },
+  {
+   "char_end": 27606,
+   "char_start": 26989,
+   "heading": "CDE scope",
+   "level": 2,
+   "order": 29,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12.2"
+  },
+  {
+   "char_end": 28015,
+   "char_start": 27606,
+   "heading": "HSM topology",
+   "level": 2,
+   "order": 30,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12.3"
+  },
+  {
+   "char_end": 28690,
+   "char_start": 28015,
+   "heading": "Sensitive authentication data",
+   "level": 2,
+   "order": 31,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12.4"
+  },
+  {
+   "char_end": 29182,
+   "char_start": 28690,
+   "heading": "Network tokens",
+   "level": 2,
+   "order": 32,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "12.5"
+  },
+  {
+   "char_end": 29375,
+   "char_start": 29182,
+   "heading": "Fraud Scoring Hook",
+   "level": 1,
+   "order": 33,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "13"
+  },
+  {
+   "char_end": 30188,
+   "char_start": 29375,
+   "heading": "Request payload",
+   "level": 2,
+   "order": 34,
+   "page_end": 11,
+   "page_start": 11,
+   "section_id": "13.1"
+  },
+  {
+   "char_end": 30570,
+   "char_start": 30188,
+   "heading": "Decisions and fallback",
+   "level": 2,
+   "order": 35,
+   "page_end": 11,
+   "page_start": 11,
+   "section_id": "13.2"
+  },
+  {
+   "char_end": 30609,
+   "char_start": 30570,
+   "heading": "Ledger and Double-Entry Accounting",
+   "level": 1,
+   "order": 36,
+   "page_end": 11,
+   "page_start": 11,
+   "section_id": "14"
+  },
+  {
+   "char_end": 31337,
+   "char_start": 30609,
+   "heading": "Model",
+   "level": 2,
+   "order": 37,
+   "page_end": 11,
+   "page_start": 11,
+   "section_id": "14.1"
+  },
+  {
+   "char_end": 31746,
+   "char_start": 31337,
+   "heading": "Example journals (SGD 100.00, MDR 2.80%, acquirer cost 1.90%)",
+   "level": 2,
+   "order": 38,
+   "page_end": 12,
+   "page_start": 11,
+   "section_id": "14.2"
+  },
+  {
+   "char_end": 33089,
+   "char_start": 31746,
+   "heading": "Rules",
+   "level": 2,
+   "order": 39,
+   "page_end": 12,
+   "page_start": 12,
+   "section_id": "14.3"
+  },
+  {
+   "char_end": 34185,
+   "char_start": 33089,
+   "heading": "Amounts, Currencies and FX",
+   "level": 1,
+   "order": 40,
+   "page_end": 12,
+   "page_start": 12,
+   "section_id": "15"
+  },
+  {
+   "char_end": 34228,
+   "char_start": 34185,
+   "heading": "Reconciliation, Settlement and Payouts",
+   "level": 1,
+   "order": 41,
+   "page_end": 12,
+   "page_start": 12,
+   "section_id": "16"
+  },
+  {
+   "char_end": 34727,
+   "char_start": 34228,
+   "heading": "Settlement file intake",
+   "level": 2,
+   "order": 42,
+   "page_end": 13,
+   "page_start": 12,
+   "section_id": "16.1"
+  },
+  {
+   "char_end": 35809,
+   "char_start": 34727,
+   "heading": "Matching",
+   "level": 2,
+   "order": 43,
+   "page_end": 13,
+   "page_start": 13,
+   "section_id": "16.2"
+  },
+  {
+   "char_end": 36207,
+   "char_start": 35809,
+   "heading": "Payouts",
+   "level": 2,
+   "order": 44,
+   "page_end": 13,
+   "page_start": 13,
+   "section_id": "16.3"
+  },
+  {
+   "char_end": 37763,
+   "char_start": 36207,
+   "heading": "Merchant Webhooks",
+   "level": 1,
+   "order": 45,
+   "page_end": 13,
+   "page_start": 13,
+   "section_id": "17"
+  },
+  {
+   "char_end": 37788,
+   "char_start": 37763,
+   "heading": "Merchant Admin Plane",
+   "level": 1,
+   "order": 46,
+   "page_end": 13,
+   "page_start": 13,
+   "section_id": "18"
+  },
+  {
+   "char_end": 38120,
+   "char_start": 37788,
+   "heading": "Components",
+   "level": 2,
+   "order": 47,
+   "page_end": 13,
+   "page_start": 13,
+   "section_id": "18.1"
+  },
+  {
+   "char_end": 38521,
+   "char_start": 38120,
+   "heading": "Roles",
+   "level": 2,
+   "order": 48,
+   "page_end": 14,
+   "page_start": 14,
+   "section_id": "18.2"
+  },
+  {
+   "char_end": 38902,
+   "char_start": 38521,
+   "heading": "Authentication policy",
+   "level": 2,
+   "order": 49,
+   "page_end": 14,
+   "page_start": 14,
+   "section_id": "18.3"
+  },
+  {
+   "char_end": 39167,
+   "char_start": 38902,
+   "heading": "Payout bank account changes",
+   "level": 2,
+   "order": 50,
+   "page_end": 14,
+   "page_start": 14,
+   "section_id": "18.4"
+  },
+  {
+   "char_end": 39484,
+   "char_start": 39167,
+   "heading": "Back-office console",
+   "level": 2,
+   "order": 51,
+   "page_end": 14,
+   "page_start": 14,
+   "section_id": "18.5"
+  },
+  {
+   "char_end": 41589,
+   "char_start": 39484,
+   "heading": "Data Model",
+   "level": 1,
+   "order": 52,
+   "page_end": 16,
+   "page_start": 14,
+   "section_id": "19"
+  },
+  {
+   "char_end": 42004,
+   "char_start": 41589,
+   "heading": "Data placement",
+   "level": 2,
+   "order": 53,
+   "page_end": 16,
+   "page_start": 16,
+   "section_id": "19.1"
+  },
+  {
+   "char_end": 42055,
+   "char_start": 42004,
+   "heading": "Resilience, Availability and Disaster Recovery",
+   "level": 1,
+   "order": 54,
+   "page_end": 16,
+   "page_start": 16,
+   "section_id": "20"
+  },
+  {
+   "char_end": 42568,
+   "char_start": 42055,
+   "heading": "Within-region",
+   "level": 2,
+   "order": 55,
+   "page_end": 16,
+   "page_start": 16,
+   "section_id": "20.1"
+  },
+  {
+   "char_end": 43199,
+   "char_start": 42568,
+   "heading": "Cross-region",
+   "level": 2,
+   "order": 56,
+   "page_end": 17,
+   "page_start": 16,
+   "section_id": "20.2"
+  },
+  {
+   "char_end": 43581,
+   "char_start": 43199,
+   "heading": "Stuck-payment sweeper",
+   "level": 2,
+   "order": 57,
+   "page_end": 17,
+   "page_start": 17,
+   "section_id": "20.3"
+  },
+  {
+   "char_end": 43968,
+   "char_start": 43581,
+   "heading": "Dependency degradation",
+   "level": 2,
+   "order": 58,
+   "page_end": 17,
+   "page_start": 17,
+   "section_id": "20.4"
+  },
+  {
+   "char_end": 44000,
+   "char_start": 43968,
+   "heading": "Latency and Capacity Budget",
+   "level": 1,
+   "order": 59,
+   "page_end": 17,
+   "page_start": 17,
+   "section_id": "21"
+  },
+  {
+   "char_end": 44880,
+   "char_start": 44000,
+   "heading": "Card authorization latency budget (p99)",
+   "level": 2,
+   "order": 60,
+   "page_end": 17,
+   "page_start": 17,
+   "section_id": "21.1"
+  },
+  {
+   "char_end": 45483,
+   "char_start": 44880,
+   "heading": "Capacity",
+   "level": 2,
+   "order": 61,
+   "page_end": 17,
+   "page_start": 17,
+   "section_id": "21.2"
+  },
+  {
+   "char_end": 46060,
+   "char_start": 45483,
+   "heading": "Observability and Audit",
+   "level": 1,
+   "order": 62,
+   "page_end": 18,
+   "page_start": 17,
+   "section_id": "22"
+  },
+  {
+   "char_end": 47570,
+   "char_start": 46060,
+   "heading": "Prior Art and Reference Architecture",
+   "level": 1,
+   "order": 63,
+   "page_end": 18,
+   "page_start": 18,
+   "section_id": "23"
+  },
+  {
+   "char_end": 49222,
+   "char_start": 47570,
+   "heading": "Confirmed Decisions",
+   "level": 1,
+   "order": 64,
+   "page_end": 19,
+   "page_start": 18,
+   "section_id": "24"
+  },
+  {
+   "char_end": 50202,
+   "char_start": 49222,
+   "heading": "Pending Backlog",
+   "level": 1,
+   "order": 65,
+   "page_end": 19,
+   "page_start": 19,
+   "section_id": "25"
+  },
+  {
+   "char_end": 50415,
+   "char_start": 50202,
+   "heading": "Validation and Acceptance Criteria",
+   "level": 1,
+   "order": 66,
+   "page_end": 19,
+   "page_start": 19,
+   "section_id": "26"
+  },
+  {
+   "char_end": 53203,
+   "char_start": 50415,
+   "heading": "Functional requirements",
+   "level": 2,
+   "order": 67,
+   "page_end": 20,
+   "page_start": 19,
+   "section_id": "26.1"
+  },
+  {
+   "char_end": 54879,
+   "char_start": 53203,
+   "heading": "Non-functional requirements",
+   "level": 2,
+   "order": 68,
+   "page_end": 20,
+   "page_start": 20,
+   "section_id": "26.2"
+  },
+  {
+   "char_end": 56464,
+   "char_start": 54879,
+   "heading": "Implementation Readiness Assessment",
+   "level": 1,
+   "order": 69,
+   "page_end": 21,
+   "page_start": 20,
+   "section_id": "27"
+  },
+  {
+   "char_end": 57504,
+   "char_start": 56464,
+   "heading": "Build Phases",
+   "level": 1,
+   "order": 70,
+   "page_end": 21,
+   "page_start": 21,
+   "section_id": "28"
+  }
+ ],
+ "sha256_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+ "warnings": []
+}

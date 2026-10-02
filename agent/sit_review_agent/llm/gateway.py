@@ -47,9 +47,11 @@ from sit_review_agent.config import EffectiveConfig, EffortLevel
 from sit_review_agent.errors import (
     EffortChangedError,
     FakeScriptExhausted,
+    LLMDeadlineError,
     LLMError,
     LLMRefusalError,
     LLMSchemaError,
+    LLMTimeoutError,
     LLMTruncatedError,
 )
 from sit_review_agent.hashing import sha256_json, sha256_text
@@ -274,6 +276,24 @@ class LLMCallLog:
         return self.writer.append(redact_log_entry(entry, self.redactor))
 
 
+#: ``usage_unrecorded`` reasons in ``llm.jsonl``: an attempt was sent (so it may have been billed)
+#: but ended without a usage report. Its entry has ``usage: null``; the manifest lists it in
+#: ``extra.model.calls_with_unrecorded_usage`` and calls its cost total a lower bound.
+USAGE_UNRECORDED_REASONS = {
+    "deadline_cut": "deadline cut",        # the run deadline killed the attempt (LLM-05)
+    "timeout_kill": "timeout kill",        # the attempt hit its timeout and was killed
+    "process_fault": "process fault",      # claude -p exited without a JSON result
+    "connection_lost": "connection lost",  # the API stream failed with no HTTP status (dropped connection)
+    "interrupted": "interrupted",          # Ctrl-C or cancellation during the attempt
+}
+
+
+def unrecorded_usage(reason: str) -> dict[str, Any]:
+    """The ``llm.jsonl`` fields of a sent attempt whose usage is unknown: never a made-up zero."""
+    assert reason in USAGE_UNRECORDED_REASONS, reason
+    return {"usage": None, "usage_unrecorded": reason, "call_cost_usd": None}
+
+
 def log_unsent(log: LLMCallLog | None, request: LLMRequest, call_id: str | None, exc: BaseException, *,
                attempt: int = 0, backend: str | None = None) -> None:
     """Log an error raised before an attempt was made (nothing was sent): a run-limit refusal
@@ -288,6 +308,14 @@ def log_unsent(log: LLMCallLog | None, request: LLMRequest, call_id: str | None,
     if backend is not None:
         entry["backend"] = backend
     log.log(entry)
+
+
+def billed(err: LLMError, usage: Usage | None) -> LLMError:
+    """``err`` with ``usage`` added to what it already carries (``LLMError.usage``): the tokens
+    the failed call was billed for. ``None`` adds nothing (no attempt reported usage)."""
+    if usage is not None:
+        err.usage = usage if err.usage is None else err.usage + usage
+    return err
 
 
 class EffortGuard:
@@ -663,6 +691,11 @@ class AnthropicGateway:
                                                                  timeout_s)
                 else:
                     message, request_id = await self._anthropic_stream(body, phase, call_id)
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                self.log.log({**base, "model": self.model, "stop_reason": None, "outcome": "CancelledError",
+                              "error": "interrupted during the attempt", **unrecorded_usage("interrupted"),
+                              "content": [], "elapsed_s": self.clock.monotonic() - t0})
+                raise
             except Exception as exc:  # noqa: BLE001 - classified below; non-SDK exceptions re-raised
                 import anthropic
 
@@ -678,9 +711,16 @@ class AnthropicGateway:
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
                                            outcome=type(err).__name__, status_code=status, retry_after_s=retry_after))
+                # An HTTP error status means the API answered with an error, which is not billed.
+                # Without one (a cut, a timeout, a dropped stream) the attempt may have been billed
+                # and no usage arrived: unknown, never zero.
+                spent: dict[str, Any] = {"usage": Usage().__dict__}
+                if status is None:
+                    spent = unrecorded_usage("deadline_cut" if isinstance(err, LLMDeadlineError) else
+                                             "timeout_kill" if isinstance(err, LLMTimeoutError) else "connection_lost")
                 self.log.log({**base, "model": self.model, "stop_reason": None, "outcome": type(err).__name__,
                               "error": str(err)[:500], "status_code": status, "retry_after_s": retry_after,
-                              "usage": Usage().__dict__, "content": [], "elapsed_s": elapsed})
+                              **spent, "content": [], "elapsed_s": elapsed})
                 if retry and attempt < self.max_retries:
                     delay = retry_after if retry_after is not None else self._anthropic_backoff(attempt)
                     if first and self._net.give_up(err, self.clock.monotonic() - t_call, delay):
@@ -729,7 +769,7 @@ class AnthropicGateway:
         def fail(err: LLMError, *, keep_content: bool = False) -> LLMError:
             self.log.log({**entry, "outcome": type(err).__name__, "error": str(err)[:500],
                           "content": content if keep_content else []})
-            return err
+            return billed(err, usage)                 # the response arrived, so it was billed
 
         if stop == "refusal":           # partial output discarded, never parsed (REPRODUCIBILITY §3)
             category = _anthropic_get(details, "category")
@@ -916,25 +956,29 @@ class FakeGateway:
         self._usage = self._usage + resp.usage
         self._served.add(served)
 
-        def _log(outcome: str, content: list[dict[str, Any]]) -> None:
+        def _log(outcome: str, content: list[dict[str, Any]], unrecorded: str | None = None) -> None:
             if self.log is not None:
                 self.log.log({"call_id": call_id, "phase": request.phase.value, "purpose": request.purpose,
                               "conversation_id": request.conversation_id, "request_sha256": req_hash,
                               "model": served, "stop_reason": stop, "outcome": outcome, "started_at": started,
-                              "usage": resp.usage.__dict__, "content": content, "fake": True})
+                              "usage": resp.usage.__dict__, "content": content, "fake": True,
+                              **(unrecorded_usage(unrecorded) if unrecorded else {})})
 
         if resp.raises is not None:
-            _log(type(resp.raises).__name__, [])
+            # A scripted cut or timeout stands for a killed attempt: its usage is unknown, as live.
+            killed = isinstance(resp.raises, LLMTimeoutError)
+            _log(type(resp.raises).__name__, [],
+                 ("deadline_cut" if isinstance(resp.raises, LLMDeadlineError) else "timeout_kill") if killed else None)
             raise resp.raises
         if stop == "refusal":
             self._refusals.append({"call_id": call_id, "stage": request.phase.value, "category": resp.refusal_category})
             _log("LLMRefusalError", [])
-            raise LLMRefusalError("model declined", category=resp.refusal_category, call_id=call_id,
-                                  phase=request.phase.value)
+            raise billed(LLMRefusalError("model declined", category=resp.refusal_category, call_id=call_id,
+                                         phase=request.phase.value), resp.usage)
         if stop == "max_tokens":
             _log("LLMTruncatedError", [])
-            raise LLMTruncatedError("output truncated at max_tokens", max_tokens=request.max_tokens,
-                                    call_id=call_id, phase=request.phase.value)
+            raise billed(LLMTruncatedError("output truncated at max_tokens", max_tokens=request.max_tokens,
+                                           call_id=call_id, phase=request.phase.value), resp.usage)
 
         parsed: BaseModel | None = None
         if request.output_schema is not None and resp.parsed is not None:
@@ -945,8 +989,9 @@ class FakeGateway:
                               else resp.parsed))
             except ValidationError as exc:
                 _log("LLMSchemaError", [])
-                raise LLMSchemaError(f"scripted output does not match {request.output_schema.__name__}: {exc}",
-                                     call_id=call_id, phase=request.phase.value) from exc
+                raise billed(LLMSchemaError(f"scripted output does not match {request.output_schema.__name__}: "
+                                            f"{exc}", call_id=call_id, phase=request.phase.value),
+                             resp.usage) from exc
         text = resp.text or (parsed.model_dump_json() if parsed is not None else "")
         content: list[dict[str, Any]] = [{"type": "thinking", "thinking": "", "signature": "fake"}]
         if text:
@@ -1181,7 +1226,7 @@ class FaultInjectingLLMGateway:
                         problem = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or '(root)'}: {e['msg']}"
                                             for e in exc.errors()[:5])
                 err, retry = LLMSchemaError(f"structured output did not validate: {problem} [injected fault]",
-                                            call_id=res.call_id, phase=phase), False
+                                            call_id=res.call_id, phase=phase, usage=res.usage), False
             else:                                   # MCP- or process-level fault types: not for this layer
                 return self._with_injected(await self.inner.call(request), injected)
             final = not retry or attempt >= max_retries

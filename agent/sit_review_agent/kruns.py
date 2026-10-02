@@ -53,6 +53,7 @@ class KRun:
     verdict: str | None = None
     findings: int | None = None
     cost_usd: float | None = None
+    calls_with_unrecorded_usage: int = 0     # > 0: cost_usd is a lower bound (manifest extra.model)
     wall_s: float | None = None
     report_md: str | None = None
     error: str | None = None
@@ -96,6 +97,8 @@ class KGroup:
             "findings_min": min(counts) if counts else None, "findings_max": max(counts) if counts else None,
             "findings_mean": round(sum(counts) / len(counts), 2) if counts else None,
             "cost_usd_total": round(sum(r.cost_usd or 0.0 for r in self.runs), 6),
+            "calls_with_unrecorded_usage": sum(r.calls_with_unrecorded_usage for r in self.runs),
+            "cost_usd_lower_bound": any(r.calls_with_unrecorded_usage for r in self.runs),
             "wall_s_total": round(sum(r.wall_s or 0.0 for r in self.runs), 1),
         }
 
@@ -122,6 +125,8 @@ def collect(run: KRun, run_dir: Path) -> None:
     run.run_dir = str(run_dir)
     run.outcome = man.get("outcome")
     run.cost_usd = ((man.get("usage") or {}).get("cost_usd"))
+    run.calls_with_unrecorded_usage = len(((man.get("extra") or {}).get("model") or {})
+                                          .get("calls_with_unrecorded_usage") or [])
     if rep:
         run.verdict = (rep.get("verdict") or {}).get("label")
         run.findings = len(rep.get("findings") or [])
@@ -226,7 +231,7 @@ def format_group(group: KGroup) -> str:
         outcome = r.outcome or (r.status if r.exit_code in (None, 0) else f"{r.status} (exit {r.exit_code})")
         lines.append(f"{r.k_index:>2}  {r.run_id[:36]:<36} {str(outcome)[:20]:<20} {str(r.verdict or '-')[:22]:<22} "
                      f"{'-' if r.findings is None else r.findings:>8} "
-                     f"{'-' if r.cost_usd is None else f'{r.cost_usd:.2f}':>8} "
+                     f"{_cost_cell(r):>8} "
                      f"{'-' if r.wall_s is None else f'{r.wall_s:.1f}':>8}")
     s = group.summary()
     agree = "-" if s["verdict_agreement"] is None else f"{s['verdict_agreement']:.2f}"
@@ -234,8 +239,20 @@ def format_group(group: KGroup) -> str:
     lines += ["", f"completed {s['completed']}/{s['runs_planned']}{unassessed}, failed {s['failed']}, not started "
                   f"{s['not_started']}; verdict agreement {agree}; findings "
                   f"{s['findings_min']}-{s['findings_max']} (mean {s['findings_mean']}); "
-                  f"cost ${s['cost_usd_total']:.2f}; wall {s['wall_s_total']:.1f} s"]
+                  f"cost ${s['cost_usd_total']:.2f}{_lower_bound_note(s)}; wall {s['wall_s_total']:.1f} s"]
     if group.stopped_early:
         lines.append(f"stopped early: {group.stopped_early}")
     lines.append(f"group manifest: {group.path}")
     return "\n".join(lines)
+
+
+def _cost_cell(r: KRun) -> str:
+    """A run's cost; ``>=`` marks a lower bound (a call of the run has unrecorded usage)."""
+    if r.cost_usd is None:
+        return "-"
+    return f"{'>=' if r.calls_with_unrecorded_usage else ''}{r.cost_usd:.2f}"
+
+
+def _lower_bound_note(summary: dict[str, Any]) -> str:
+    n = summary["calls_with_unrecorded_usage"]
+    return f" (a lower bound: {n} model call{'s' if n != 1 else ''} with unrecorded usage)" if n else ""

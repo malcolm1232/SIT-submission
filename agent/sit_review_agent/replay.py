@@ -475,7 +475,10 @@ def recorded_error(entry: Mapping[str, Any], request: Any, call_id: str) -> Agen
     details = entry.get("stop_details") if isinstance(entry.get("stop_details"), Mapping) else {}
     known = {"call_id": call_id, "phase": phase, "category": details.get("category"),
              "explanation": details.get("explanation"), "max_tokens": entry.get("max_tokens") or request.max_tokens,
-             "retry_after_s": entry.get("retry_after_s")}
+             "retry_after_s": entry.get("retry_after_s"),
+             # LLMError.usage is a Usage, set by ReplayLLMGateway from the recorded attempts (llm.gateway.billed);
+             # the entry's own "usage" is a dict and must never reach the constructor (hub verification, session 4)
+             "usage": None}
     kwargs: dict[str, Any] = {}
     for arg, p in list(params.items())[2:]:                 # after self and the message
         if p.kind not in (p.KEYWORD_ONLY, p.POSITIONAL_OR_KEYWORD):
@@ -561,6 +564,14 @@ class ReplayLLMGateway:
         if not rec.ok:
             err = recorded_error(entry, request, rec.call_id)
             from sit_review_agent.errors import LLMRefusalError
+            from sit_review_agent.llm.gateway import billed
+
+            for e in rec.entries:                     # the recorded failure's billed usage, as the live
+                ru = e.get("usage")                   # gateway reported it (LLMError.usage); none if unknown
+                if isinstance(err, LLMError) and isinstance(ru, Mapping):
+                    billed(err, Usage(int(ru.get("input_tokens") or 0), int(ru.get("output_tokens") or 0),
+                                      int(ru.get("cache_creation_input_tokens") or 0),
+                                      int(ru.get("cache_read_input_tokens") or 0)))
 
             if isinstance(err, LLMRefusalError):
                 self._refusals.append({"call_id": rec.call_id, "stage": rec.phase, "category": err.category})

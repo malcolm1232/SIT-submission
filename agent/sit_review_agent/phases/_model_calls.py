@@ -22,19 +22,23 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   repair call, then propagates; a ``max_tokens`` truncation gets one more call with doubled
   ``max_tokens`` (capped at 128k; with the configured value already at that cap, as in
   ``config/agent.yaml`` since 2026-10-03, the one retry runs at the same cap, because nothing wider
-  exists and output length varies from call to call), then propagates. A call cut by the run deadline
-  (:class:`LLMDeadlineError`, robustness LLM-05) is not retried: it is disclosed as a
-  ``budget_or_deadline_hit`` degradation and the phase continues with its code fallback (assess:
-  "out of time before assessment", no findings; refine: the assess drafts unchanged). Other
-  :class:`LLMError`\\ s propagate.
+  exists and output length varies from call to call). A second truncation is not retried again and
+  never repaired: it is disclosed as an ``other`` degradation "the <phase> answer was truncated
+  twice at the output cap" and the phase continues with the same code fallback as a deadline cut
+  (Session 4 ruling). A call cut by the run deadline (:class:`LLMDeadlineError`, robustness LLM-05)
+  is not retried: it is disclosed as a ``budget_or_deadline_hit`` degradation and the phase
+  continues with its code fallback (understand: no intent or registry; plan: one document-only
+  question per criterion; assess: "out of time before assessment", no findings; refine: the
+  assess drafts unchanged). Other :class:`LLMError`\\ s propagate.
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
   does). The phase adds none of its own: a second heartbeat would advance a ``FakeClock`` in tests.
 * **Bookkeeping per call:** call IDs in ``state.llm_calls[phase]`` (including refused and failed
   calls that have an ID), token counters in ``state.budget`` (read by the ``budget_tokens`` stop
-  rule), refusals in ``state.refusals``, fallbacks in ``state.fallback_events`` plus a
-  ``model_fallback`` degradation (INV-07).
+  rule; a failed call counts with the usage it was billed for, ``LLMError.usage``), refusals in
+  ``state.refusals``, fallbacks in ``state.fallback_events`` plus a ``model_fallback`` degradation
+  (INV-07).
 """
 
 from __future__ import annotations
@@ -44,7 +48,7 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -63,6 +67,7 @@ from sit_review_agent.llm.outputs import (
     SoundAreaDraft,
 )
 from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.llm.usage_budget import add_usage
 from sit_review_agent.models import (
     DegradationType,
     DocAnchor,
@@ -83,6 +88,7 @@ MIN_QUOTE_TOKENS = 8
 EXCERPT_CHARS = 700
 FINDING_ID_RE = re.compile(r"^FND-[0-9]{3,}$")
 _URL_RE = re.compile(r"\S+://\S+")
+_AnchorT = TypeVar("_AnchorT", DocAnchor, DocAnchorDraft)
 
 
 class BriefRenderer(Protocol):
@@ -98,10 +104,11 @@ class PhaseCall:
     brief: RenderedPrompt
     refusal_category: str | None = None
     cut: bool = False                    # the run deadline cut the call (robustness LLM-05)
+    truncated: bool = False              # the answer was cut off at max_tokens twice (LLM-07)
 
     @property
     def declined(self) -> bool:
-        return self.result is None and not self.cut
+        return self.result is None and not self.cut and not self.truncated
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -202,11 +209,7 @@ def _note_call(ctx: RunContext, phase: PhaseName, call_id: str | None) -> None:
 def record_result(ctx: RunContext, phase: PhaseName, result: LLMResult[Any]) -> None:
     """Call ID, token counters, fallback event (with its ``model_fallback`` degradation)."""
     _note_call(ctx, phase, result.call_id)
-    b = ctx.state.budget
-    b.input_tokens += result.usage.total_input_tokens
-    b.output_tokens += result.usage.output_tokens
-    b.cache_read_input_tokens += result.usage.cache_read_input_tokens
-    b.cache_creation_input_tokens += result.usage.cache_creation_input_tokens
+    add_usage(ctx.state.budget, result.usage)
     if result.fallback is not None:
         ctx.state.fallback_events.append(result.fallback)
         ctx.state.add_degradation(DegradationType.MODEL_FALLBACK,
@@ -233,6 +236,26 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
     ctx.emit(f"{phase.value}: model call cut by the run deadline; {impact}", "warn")
 
 
+def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids: Sequence[str | None]) -> None:
+    """Disclose a stage whose answer was cut off at the output cap on its call and on the one retry
+    (robustness LLM-07, persistent variant; INV-07). The stage then continues with the same code
+    fallback as a deadline cut, so the event names the truncation and never the deadline."""
+    from sit_review_agent.llm.runtime import truncated_twice_event
+
+    ids = ", ".join(c for c in call_ids if c) or "no call IDs"
+    event = (f"{truncated_twice_event(phase)} (max_tokens={max_tokens}; the call and its one retry, {ids}); "
+             "the truncated output was discarded, not repaired")
+    if phase is PhaseName.ASSESS:
+        impact = ("the design was not assessed: the report has no findings and its verdict is not a judgement of "
+                  "the design; rerun the review (answer length varies between calls)")
+    elif phase is PhaseName.REFINE:
+        impact = "the assess findings are reported as drafted, without the self-critique pass"
+    else:
+        impact = f"the {phase.value} step was completed by code without model output"
+    ctx.state.add_degradation(DegradationType.OTHER, event, impact)
+    ctx.emit(f"{phase.value}: answer truncated twice at the output cap (max_tokens={max_tokens}); {impact}", "warn")
+
+
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
@@ -250,6 +273,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     refusals_left = ctx.config.agent.llm.refusal_retries
     repaired = widened = False
     k, reason = 0, ""
+    truncated_ids: list[str | None] = []
     while True:
         brief = render(reframed=reframed, schema_error=schema_error)
         messages, bp = start_conversation(docs, brief.text, native_pdf=native)
@@ -266,6 +290,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                                      call_id=result.call_id, phase=phase.value)
         except LLMRefusalError as exc:
             _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             ctx.state.refusals.append({"call_id": exc.call_id, "stage": phase.value, "category": exc.category})
             if refusals_left > 0:
                 refusals_left -= 1
@@ -285,6 +310,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
         except LLMSchemaError as exc:
             if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
                 _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             if repaired:
                 raise
             repaired, schema_error, k, reason = True, _short_error(exc), k + 1, "schema_repair"
@@ -292,12 +318,16 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             continue
         except LLMDeadlineError as exc:
             _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
             deadline_cut(ctx, phase, exc)
             return PhaseCall(result=None, brief=brief, cut=True)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
-            if widened:
-                raise
+            add_usage(ctx.state.budget, exc.usage)
+            truncated_ids.append(exc.call_id)
+            if widened:                     # second truncation: degrade like a deadline cut, no third call
+                truncated_twice(ctx, phase, max_tokens, truncated_ids)
+                return PhaseCall(result=None, brief=brief, truncated=True)
             wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
             how = (f"with max_tokens={wider}" if wider > max_tokens
                    else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")
@@ -374,6 +404,20 @@ def fix_anchor(ctx: RunContext, a: DocAnchorDraft) -> DocAnchorDraft:
                                 "requirement_ids": [r for r in a.requirement_ids if r.strip()]})
 
 
+def unique_anchors(anchors: Iterable[_AnchorT]) -> list[_AnchorT]:
+    """``anchors`` with exact repeats removed (same document, page, section and normalised quote;
+    first kept, order kept). A model that cites one passage twice would otherwise make the report
+    list that location twice."""
+    seen: set[tuple[str, int | None, str, str]] = set()
+    out: list[_AnchorT] = []
+    for a in anchors:
+        key = (a.doc_id, a.page, a.section_ref, normalise_quote(a.quote))
+        if key not in seen:
+            seen.add(key)
+            out.append(a)
+    return out
+
+
 def spec_anchor(ctx: RunContext, a: DocAnchorDraft) -> DocAnchor | None:
     """The fixed draft as a canonical :class:`DocAnchor`, or ``None`` if it still breaks the spec."""
     try:
@@ -426,7 +470,7 @@ def normalise_findings(ctx: RunContext, drafts: Sequence[FindingDraft], *, keep_
       other draft gets the next free number. ``assess`` passes no ``keep_ids``.
     * ``rank`` becomes ``1..n`` ordered by the model's rank, then by output order.
     * ``confidence`` clamped to [0, 1]; ``criterion_ids`` filtered to configured criteria (order kept).
-    * anchors fixed with :func:`fix_anchor`.
+    * anchors fixed with :func:`fix_anchor`; exact repeats removed (:func:`unique_anchors`).
     * ``reassessment``: ``None`` in a full review; in a delta review a missing one becomes
       ``new_in_update`` (the spec requires one on every delta finding).
     """
@@ -455,7 +499,7 @@ def normalise_findings(ctx: RunContext, drafts: Sequence[FindingDraft], *, keep_
         out.append(d.model_copy(update={
             "id": fid, "confidence": _clamp(d.confidence),
             "criterion_ids": [c for c in dict.fromkeys(d.criterion_ids) if c in criteria],
-            "doc_anchors": [fix_anchor(ctx, a) for a in d.doc_anchors],
+            "doc_anchors": unique_anchors(fix_anchor(ctx, a) for a in d.doc_anchors),
             "reassessment": reassessment,
         }))
     order = sorted(range(len(out)), key=lambda i: (drafts[i].rank, i))
@@ -469,7 +513,7 @@ def normalise_sound_areas(ctx: RunContext, areas: Sequence[SoundAreaDraft], id_m
     for a in areas:
         related = [id_map.get(i, i) for i in a.related_finding_ids]
         out.append(a.model_copy(update={
-            "doc_anchors": [fix_anchor(ctx, x) for x in a.doc_anchors],
+            "doc_anchors": unique_anchors(fix_anchor(ctx, x) for x in a.doc_anchors),
             "related_finding_ids": [i for i in dict.fromkeys(related) if i in finding_ids]}))
     return out
 

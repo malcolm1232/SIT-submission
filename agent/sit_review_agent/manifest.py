@@ -11,7 +11,14 @@ Decisions taken here:
 * The manifest written at start has ``outcome: crashed`` and ``end_utc: null``; a run that dies
   without finalising therefore reads as crashed, never as completed.
 * Usage, served models and cost are summed from ``llm.jsonl`` (every attempt, across resumes),
-  not from the in-process gateway, so a resumed run reports the whole run.
+  not from the in-process gateway, so a resumed run reports the whole run. Failed attempts count
+  too: a call truncated at ``max_tokens`` was billed, so its usage and cost are in the totals, and
+  every truncated call is listed in ``extra.model.truncations`` (``call_id``, ``stage``,
+  ``purpose``; robustness LLM-07). An attempt that was sent but left no usage report (cut by the
+  deadline, killed at its timeout, a crashed ``claude -p``, a dropped stream, an interrupt) is
+  never counted as zero: it is listed in ``extra.model.calls_with_unrecorded_usage`` and
+  ``extra.model.cost_usd_lower_bound`` is true, so ``usage.cost_usd`` and the token totals are a
+  lower bound (``report.md``, the console and the ``--k`` summary say so).
 * ``git_dirty`` is ``const false`` in the spec. Outside eval mode the tree is not inspected (no
   ``git`` subprocess): the commit is read from ``.git`` files and ``extra.code.git_dirty`` is
   ``null`` ("not checked"). Eval mode runs ``git status --porcelain`` and refuses a dirty tree.
@@ -73,7 +80,9 @@ UNKNOWN_COMMIT = "0000000"
 
 def git_state(root: Path | None = None, *, check_dirty: bool = False) -> dict[str, Any]:
     """``{commit, branch, dirty}`` from the ``.git`` directory (no subprocess unless
-    ``check_dirty``). ``dirty`` is ``None`` when not checked."""
+    ``check_dirty``). ``branch`` is the full branch name (``s4/demo``), ``None`` on a detached
+    HEAD; ``commit`` is ``None`` without a readable ``.git``. ``dirty`` is ``None`` when not
+    checked or when ``git`` cannot be run (missing binary, not a repository)."""
     root = root or repo_root()
     gitdir = root / ".git"
     out: dict[str, Any] = {"commit": None, "branch": None, "dirty": None}
@@ -83,7 +92,7 @@ def git_state(root: Path | None = None, *, check_dirty: bool = False) -> dict[st
         head = (gitdir / "HEAD").read_text(encoding="utf-8").strip()
         if head.startswith("ref:"):
             ref = head.split(":", 1)[1].strip()
-            out["branch"] = ref.rsplit("/", 1)[-1]
+            out["branch"] = ref.removeprefix("refs/heads/")      # full name: "s4/demo", not "demo"
             common = gitdir
             cd = gitdir / "commondir"
             if cd.is_file():
@@ -124,15 +133,50 @@ def _file_sha(path: Path) -> str | None:
     return sha256_file(path) if path.is_file() else None
 
 
+#: Outcomes of an attempt that was killed before it could report usage, in ``llm.jsonl`` written
+#: before 2026-10-03 (those entries logged zero usage instead of ``usage_unrecorded``).
+_LEGACY_KILLED = {"LLMDeadlineError": "deadline_cut", "LLMTimeoutError": "timeout_kill"}
+
+
+def unrecorded_reason(entry: dict[str, Any]) -> str | None:
+    """Why a sent attempt's usage is unknown, or ``None`` when its usage is known (or nothing was
+    sent). New entries say it (``usage_unrecorded``); an older entry of a deadline cut or timeout
+    with zero usage, no cost and no HTTP status is read the same way. Unsent entries, injected
+    faults and replayed entries spent nothing."""
+    if entry.get("usage_unrecorded"):
+        return str(entry["usage_unrecorded"])
+    if entry.get("sent") is False or "fault" in entry or entry.get("replayed") or entry.get("fake"):
+        return None
+    reason = _LEGACY_KILLED.get(str(entry.get("outcome")))
+    usage = entry.get("usage")
+    if reason and isinstance(usage, dict) and not any(usage.values()) and entry.get("call_cost_usd") is None \
+            and entry.get("status_code") is None:
+        return reason
+    return None
+
+
 def journal_usage(run_dir: RunDir) -> dict[str, Any]:
-    """Usage, served models, refusals and cost summed over every entry of ``llm.jsonl``."""
+    """Usage, served models, truncated calls and cost summed over every entry of ``llm.jsonl``,
+    and the attempts whose usage is unknown (``calls_with_unrecorded_usage``: call ID, stage,
+    purpose, attempt, wall seconds, reason). When any exist, the totals are a lower bound."""
     tot = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
     served: set[str] = set()
     cost_logged = 0.0
     have_cost = False
     calls = 0
+    truncations: list[dict[str, Any]] = []
+    unrecorded: list[dict[str, Any]] = []
     for e in JsonlWriter(run_dir.llm_log).read():
         calls += 1
+        if e.get("outcome") == "LLMTruncatedError":
+            truncations.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose")})
+        reason = unrecorded_reason(e)
+        if reason is not None:
+            wall = e.get("elapsed_s")
+            unrecorded.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose"),
+                               "attempt": e.get("attempt"),
+                               "wall_s": round(float(wall), 3) if isinstance(wall, int | float) else None,
+                               "reason": reason})
         for k in tot:
             tot[k] += int((e.get("usage") or {}).get(k) or 0)
         if e.get("outcome", "ok") == "ok" and e.get("model"):
@@ -144,7 +188,8 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     p = PRICE_TABLE["usd_per_mtok"]
     estimate = (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
                 + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
-    return {**tot, "calls": calls, "served_models": sorted(served),
+    return {**tot, "calls": calls, "served_models": sorted(served), "truncations": truncations,
+            "calls_with_unrecorded_usage": unrecorded,
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
 
@@ -330,7 +375,9 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "betas": betas, "fallbacks": "default" if cfg.agent.allow_fallback else "none",
                "fallback_events": [{"role": f.role, "from_model": f.from_model, "to_model": f.to_model,
                                     "category": f.reason} for f in fallbacks],
-               "refusals": refusals,
+               "refusals": refusals, "truncations": usage["truncations"],
+               "calls_with_unrecorded_usage": usage["calls_with_unrecorded_usage"],
+               "cost_usd_lower_bound": bool(usage["calls_with_unrecorded_usage"]),
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
                "calls_logged": usage["calls"]},

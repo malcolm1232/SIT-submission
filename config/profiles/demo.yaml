@@ -2,10 +2,10 @@
 # Deep-merged over config/agent.yaml and config/stop_rules.yaml (config/profiles/README.md); the
 # pinned lines of those files are unchanged. Decided by the coordinator on 2026-10-02 (owner-delegated).
 #
-# UNMEASURED. No run has used these settings yet. Every timing below is an estimate scaled down from
-# the one measured run at `high` (docs/HANDOVER_FULL.md §8). Rehearse with a stopwatch before the
-# demo (runbook §4 / DEMO-05) and adjust the reserves from what the rehearsal logs (llm.jsonl elapsed_s,
-# state.json budget.phase_seconds).
+# MEASURED ONCE, 2026-10-03 (docs/live_runs/demo_profile_measure_1/MEASUREMENT.md): understand 136 s, plan
+# 102 s, then assess was cut after 179 s at the 420 s limit, so the report said "not assessed". At medium
+# this profile does NOT fit 540 s, and no reserve value fixes that: the stages sum to more than the deadline.
+# Still UNMEASURED at medium: a finished assess, refine, verify and report. Values kept until the planner decides.
 #
 # Why not `high` (USER_DECISIONS #1 allows high but asks that spend be justified): at high the model
 # calls alone took ~16 min in the measured run (understand 158 s, plan 158 s, assess ~520 s, verify
@@ -28,6 +28,6 @@ stop_rules:
   # Reserves (robustness LLM-05; see config/stop_rules.yaml). The defaults (180 s and 600 s) are sized
   # from `high`; at 540 s they would leave research no time at all. Guesses at medium, UNMEASURED:
   report_reserve_seconds: 120   # verify (~20 s) + report (~60 s) at medium, plus margin
-  assess_reserve_seconds: 200   # one assess call at medium (high took ~520 s)
+  assess_reserve_seconds: 200   # a guess: assess at medium was still running at 179 s (high took ~520 s)
   # Resulting budget: every model call before verify ends by 420 s; research ends by 220 s, so it gets
-  # whatever understand and plan leave of the first 220 s (possibly nothing; then the report says so).
+  # whatever understand and plan leave of the first 220 s (measured: nothing, they end at 241 s).

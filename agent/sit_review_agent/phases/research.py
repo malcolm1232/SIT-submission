@@ -88,6 +88,7 @@ from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest, LLMResult, ToolUse
 from sit_review_agent.llm.outputs import ResearchOutput
 from sit_review_agent.llm.prefix import start_conversation
+from sit_review_agent.llm.usage_budget import add_usage
 from sit_review_agent.models import (
     STOP_REASON_GROUP,
     DegradationType,
@@ -286,6 +287,7 @@ class _ResearchRun:
                 async with _beat(ctx, lambda w=waiting: w):
                     res = await ctx.llm.call(self._request(purpose))
             except LLMRefusalError as exc:
+                add_usage(self.state.budget, exc.usage)
                 category = exc.category or "none given"
                 # Every refusal is recorded (as the other phases do), not only the last one, so the
                 # manifest's model.refusals is complete after a resume too (REPRODUCIBILITY §8).
@@ -305,6 +307,7 @@ class _ResearchRun:
                               "research ended early; open questions are reported as unanswered")
                 return None, StopReason.of(StopReasonCode.ERROR, "model_declined")
             except LLMSchemaError as exc:
+                add_usage(self.state.budget, exc.usage)
                 if not repaired:
                     repaired = True
                     ctx.emit("final answer did not match the schema; one repair turn", "warn")
@@ -315,6 +318,7 @@ class _ResearchRun:
                               "answers of this round were discarded; evidence stays in the ledger")
                 return None, StopReason.of(StopReasonCode.ERROR, "schema_error")
             except LLMDeadlineError as exc:
+                add_usage(self.state.budget, exc.usage)
                 if exc.call_id:
                     self.call_ids.append(exc.call_id)
                 self._degrade("deadline", DegradationType.BUDGET_OR_DEADLINE_HIT,
@@ -330,16 +334,13 @@ class _ResearchRun:
                               "research ended early; answers of this round were discarded and open questions "
                               "are reported as unanswered")
                 return None, StopReason.of(StopReasonCode.BUDGET_TOKENS, "context_window")
-            except LLMTruncatedError:
+            except LLMTruncatedError as exc:
+                add_usage(self.state.budget, exc.usage)
                 self._degrade("max_tokens", DegradationType.OTHER, "research answer truncated at max_tokens",
                               "answers of this round were discarded; evidence stays in the ledger")
                 return None, StopReason.of(StopReasonCode.ERROR, "max_tokens")
             self.call_ids.append(res.call_id)
-            b = self.state.budget
-            b.input_tokens += res.usage.total_input_tokens
-            b.output_tokens += res.usage.output_tokens
-            b.cache_read_input_tokens += res.usage.cache_read_input_tokens
-            b.cache_creation_input_tokens += res.usage.cache_creation_input_tokens
+            add_usage(self.state.budget, res.usage)
             if res.fallback is not None:          # disclosed like the other phases do (INV-07, INV-09)
                 self.state.fallback_events.append(res.fallback)
                 self.state.add_degradation(
