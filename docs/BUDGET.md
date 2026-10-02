@@ -1,5 +1,7 @@
 # Project budget
 
+**Note, 2026-10-03 (latency redesign; `docs/DECISIONS.md` ADR-011, `docs/USER_DECISIONS.md` #31).** This budget is redone after the first timed rehearsal of the new design. The predicted per-run figure for a FULL run is about $5.4 (range $5.0 to $5.4, about 165,000 output tokens), against the $2.18 planning figure below; the figures on this page are not updated until the rehearsal measures them (`eval/EVAL_PLAN.md`, "Run-time and cost basis after the latency redesign").
+
 Date: 2026-10-02. Resolves audit P1 item 17 and M12 (`research/audit/research_audit.md`). Every figure comes from `research/models/cost_model.py` (run `python3 research/models/cost_model.py`; the "ALL-OPUS", "Budget matrix" and "Sensitivity" sections print all of them). Reconciled line by line against the script output on 2026-10-02 (`research/audit/verify_docs.md` item 2). Claude prices are from the `claude-api` skill (cached 2026-09-25); non-Claude prices are **UNVERIFIED**. The token base is **UNVERIFIED** until `messages.count_tokens` is run on the SIT PDF on the laptop (audit U3); re-run the script with the measured values and update this page.
 
 ## 1. Per-run cost, all Opus 5.5 (ADR-002)

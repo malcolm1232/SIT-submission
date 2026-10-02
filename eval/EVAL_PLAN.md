@@ -8,6 +8,17 @@ Sources: the scope-cut table in `research/audit/fresh_eyes.md` §2.3 (FE), `rese
 
 **Run time.** Measured on 2026-10-02, not estimated (`docs/HANDOVER_FULL.md` §8 and §10; artefacts under `docs/live_runs/live_cc_opus_payments_v1/`; arithmetic in `research/audit/verify_runtime_cli_editlog.md`). One FULL-shaped run at `high` on a 21-page PDF through the `claude -p` backend, document-only (no research) and without the refine stage, took 959 s (16.0 min) of successful work: ingest 2 s, understand 158 s, plan 158 s, assess 520 s, verify 33 s, report 88 s. Its wall time was 3,372 s (56.2 min), because four assess attempts were killed by a 600 s timeout that has since been raised to 1,800 s. Research and refine have not been timed, so 16.0 min is a floor for a FULL run, and the default deadline of 3,600 s (60 min, `config/stop_rules.yaml`) is the cap. The single-call conditions (B0, B0-$) have not been timed either; the nearest measured analogue is the 520 s (8.7 min) assess call. Scoring one review in the pre-registered setup took 245.6 s (4.1 min: 98 calls at concurrency 4, 943.7 s of call time), and grading one review took 549.3 s (9.2 min: two samples of Pass A and Pass B, run one after another), so the instruments add 794.9 s (13.2 min) per scored and graded run. The earlier estimate of 8-10 minutes per run (BUDGET §4) is withdrawn. Runs go 2-3 in parallel within rate limits (not yet tried on the `claude -p` backend), with conditions interleaved in a seeded order. The cost figures in this plan are still the estimates made before these measurements; `docs/BUDGET.md` is to be redone from the measured runs (`docs/HANDOVER_FULL.md` §10 step 4).
 
+**Run-time and cost basis after the latency redesign (2026-10-03): to be re-measured after the first rehearsal.**
+The two notes above describe the old sequential agent at `high`.
+The evaluated agent is now the demo profile (`medium` on every stage, research `low`, 540 s deadline) with a concurrent first stage (`docs/DECISIONS.md` ADR-011, ADR-012; `docs/USER_DECISIONS.md` #31; prereg deviations entry 11).
+Every figure in this note is a prediction until the first timed rehearsal replaces it.
+Run time: the 132 runs stay 93 FULL-shaped and 39 single-call; FULL runs are capped at 540 s, so run time is at most 93 × 540 s + 39 × 520 s = 70,500 s = 19.6 h (the single-call figure is still the 520 s assess analogue above).
+Predicted FULL run: 443 s document-only, 450 to 499 s with research.
+Cost: about $5.0 to $5.4 per FULL run (about 165,000 output tokens), so the agent budget is about 93 × $5.4 + 39 × $1.6 = $565 before margin, against the $240.12 planned in §1.2; the rise comes from measured prices, not from the design.
+Scheduling: one FULL run at a time until 12 concurrent CLI sessions are measured, because a FULL run holds up to 6 (prereg `runs_per_item.scheduling`).
+Re-pilot before Tier A: three timed rehearsals on payments v1 (two document-only, one with tools, about $15), and one of them scored and graded (about $15).
+The Tier A figures in §1.2 are not recomputed here; `docs/BUDGET.md` is redone after the first rehearsal.
+
 ---
 
 ## 1. Tier A: minimum research-grade core (must finish before submission)
@@ -50,6 +61,7 @@ Scoring against a key that is not signed off (LC12).
 The harness refuses to score, or to run the grader's key-aware diagnostic, on a key whose `scored_run_ready` is false, unless the command is given `--exploratory` (SIT FABLE ruling #26, `docs/USER_DECISIONS.md`; `harness/README.md`, "LC12").
 A pilot scored before the owner signs the S-dev keys (T3) is therefore an exploratory run: it uses `--exploratory`, every artefact it writes is marked exploratory, and it may not be reported as confirmatory.
 The three pilots under `docs/live_runs/live_cc_opus_payments_v1/` (`eval_pilot/`, `eval_pilot2_bounded/`, `grade_pilot/`) predate the guard and are exploratory; a note file in each says so.
+Their numbers (strict recall 11 of 14, adjudicated precision 0.95, severity-weighted recall 0.73, grader S 83.8) describe the old single-call agent at `high` and are stale for the latency design (ADR-011); they are not a baseline for the new agent.
 Lines A-3 to A-7 score only signed keys; `sit-eval aggregate` refuses to put an exploratory score into their analysis.
 
 Instruments:
@@ -72,8 +84,11 @@ Instruments:
 The checkpoint's median is `sit-eval aggregate` `conditions.FULL.cost_usd.median_fully_accounted`, over FULL runs in which every billed model call's usage was recorded (prereg `costs.usage_completeness`; SIT FABLE ruling #28, 2026-10-03).
 A run with a model call that was killed or cut has null cost and tokens with its recorded figures beside them as lower bounds, is excluded from that median and counted; the aggregate's `pilot_checkpoint` is `fail` if the lower-bound median over all FULL runs exceeds $3.24, `pass` only if every FULL run is fully accounted and the median is at or below it, else `not_evaluable`.
 A lower bound can fail the checkpoint but never pass it.
+For the latency design the checkpoint's cost figure is re-based on `docs/BUDGET.md` as redone after the first rehearsal (predicted about $5.4 per FULL run), and its wall-time gate stays the 540 s demo slot (prereg `stop_rule.pilot_checkpoint`, deviations entry 11).
 
 Wall time, from the measurements in the run-time note above: the 132 runs are 93 FULL-shaped runs (84 FULL and 9 A5) and 39 single-call runs (24 B0 and 15 B0-$). Floor: 93 × 959 s + 39 × 520 s = 109,467 s = 30.4 h of run time, which is 10.1-15.2 h of laptop wall time at 2-3 in parallel. Cap: 132 × 3,600 s = 132 h of run time, which is 44-66 h of wall time at 2-3 in parallel. The pilot (A-2) times research and refine and replaces the floor with a measured median. Instruments: scoring 101 matched runs × 245.6 s = 6.9 h, and Opus grading 101 reviews × 549.3 s = 15.4 h; the Sonnet control grader has not been timed. The earlier line (132 runs × 8-10 min ≈ 18-22 h, about 7-11 h of wall time) is withdrawn.
+
+Since the latency redesign (2026-10-03) the floor and cap above describe the old agent; the predicted cap is 19.6 h of run time (the note after "Run time" at the top), to be re-measured after the first rehearsal.
 
 ### 1.3 Grading and human workload (one person, the owner)
 
