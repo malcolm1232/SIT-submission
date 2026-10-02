@@ -7,7 +7,8 @@ entry fields assumed (writers: W1 gateway, W2 orchestrator): ``call_id``, ``phas
 ``attempt``, ``conversation_id``, ``elapsed_s``, ``start_offset_s`` (run clock seconds when the
 attempt started), ``usage`` (``null`` with ``usage_unrecorded`` for a cut), ``estimated_usage`` or
 ``usage_estimate`` (the four ``Usage`` fields as non-negative integers), ``partial`` or
-``salvaged_partial`` (list fields hold the finished items) or ``salvaged_items`` (a count). The run
+``salvaged_partial`` (list fields hold the finished items) or ``salvaged_items`` (a count), ``shard``
+(the assess shard's name or index, on every attempt of that shard; absent in a sequential run). The run
 state fields read: ``budget.phase_seconds`` (wall seconds per member), ``budget.started_monotonic``
 and ``budget.elapsed_s`` (the run clock).
 """
@@ -129,6 +130,7 @@ def test_a_sequential_run_without_estimates_keeps_the_old_model_keys(tmp_path: P
     assert model["calls_with_unrecorded_usage"] == [] and model["cost_usd_lower_bound"] is False
     assert model["estimated_usage_of_unrecorded_calls"] == []
     assert model["estimated_usage_totals"]["calls"] == 0 and model["estimated_usage_totals"]["cost_usd"] == 0.0
+    assert (model["assess_shards"], model["salvaged_calls"], model["salvaged_items"]) == (0, 0, 0)
 
 
 # ------------------------------------------------------------------------- 2. per-stage and wall seconds
@@ -141,10 +143,10 @@ def concurrent_entries() -> list[dict[str, Any]]:
     """Stage 1 starts at 2.0 s: understand, plan and two assess shards together; research after plan."""
     return [ok("llm-0001", "understand", f"{RUN}-understand", start=2.0, wall=38.0, u=usage(100, 10)),
             ok("llm-0002", "plan", f"{RUN}-plan", start=2.0, wall=58.0, u=usage(100, 10)),
-            ok("llm-0003", "assess", f"{RUN}-assess-a", start=2.1, wall=250.0, u=usage(100, 10)),
+            {**ok("llm-0003", "assess", f"{RUN}-assess-a", start=2.1, wall=250.0, u=usage(100, 10)), "shard": "a"},
             ok("llm-0004", "research", f"{RUN}-research-0", start=61.0, wall=40.0, u=usage(100, 10)),
             ok("llm-0005", "research", f"{RUN}-research-1", start=102.0, wall=45.0, u=usage(100, 10)),
-            ok("llm-0006", "assess", f"{RUN}-assess-b", start=2.1, wall=299.9, u=usage(100, 10)),
+            {**ok("llm-0006", "assess", f"{RUN}-assess-b", start=2.1, wall=299.9, u=usage(100, 10)), "shard": "b"},
             ok("llm-0007", "refine", f"{RUN}-refine", start=303.0, wall=48.0, u=usage(100, 10)),
             ok("llm-0008", "report", f"{RUN}-report", start=354.0, wall=18.0, u=usage(100, 10))]
 
@@ -205,3 +207,38 @@ def test_a_bad_start_offset_is_ignored(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path, entries, phase_seconds={"understand": 6.0, "plan": 6.0, "assess": 6.0})
     s1 = build_manifest(ctx, Outcome.COMPLETED_NOMINAL).extra["timing"]["stages"]["stage_1"]
     assert s1["wall_basis"] == "sequential_sum" and s1["wall_s"] == 18.0
+
+
+# ------------------------------------------------------------------------- 3. shard and salvage counts
+
+
+def test_shards_and_salvage_are_counted_from_the_log(tmp_path: Path) -> None:
+    entries = concurrent_entries() + [
+        # the retry of shard "a" (a new conversation, latency W2) is the same shard, not another one
+        {**ok("llm-0009", "assess", f"{RUN}-assess-a-r1", start=252.5, wall=20.0, u=usage(1, 1)), "shard": "a",
+         "attempt": 1},
+        # a shard cut with two finished findings salvaged
+        {**cut("llm-0010", "assess", f"{RUN}-assess-c", start=2.1, wall=299.9, partial={"findings": [{}, {}]}),
+         "shard": 2},
+        # research cut, three items under the other spellings; a non-list field is not an item
+        cut("llm-0011", "research", f"{RUN}-research-2", start=150.0, wall=152.0,
+            salvaged_partial={"answers": [{}], "note": "x"}),
+        cut("llm-0012", "research", f"{RUN}-research-3", start=150.0, wall=152.0, salvaged_items=2),
+        # a cut that salvaged nothing, and malformed counts, add nothing
+        cut("llm-0013", "research", f"{RUN}-research-4", start=150.0, wall=152.0, partial=None),
+        cut("llm-0014", "research", f"{RUN}-research-5", start=150.0, wall=152.0, salvaged_items=True),
+        cut("llm-0015", "research", f"{RUN}-research-6", start=150.0, wall=152.0, partial={"findings": "x"})]
+    model = model_extra(make_ctx(tmp_path, entries, phase_seconds=CONCURRENT_SECONDS, run_clock_s=374.0))
+    assert model["assess_shards"] == 3
+    assert model["salvaged_calls"] == 3 and model["salvaged_items"] == 5
+    # the measured-null record of the cuts is unchanged by the counts
+    assert len(model["calls_with_unrecorded_usage"]) == 6 and model["cost_usd_lower_bound"] is True
+
+
+def test_a_shard_marker_counts_only_on_an_assess_attempt(tmp_path: Path) -> None:
+    entries = [{**ok("llm-0001", "research", f"{RUN}-research-0", start=1.0, wall=5.0, u=usage(1, 1)), "shard": "a"},
+               {**ok("llm-0002", "assess", f"{RUN}-assess-a", start=1.0, wall=5.0, u=usage(1, 1)), "shard": True},
+               {**ok("llm-0003", "assess", f"{RUN}-assess-b", start=1.0, wall=5.0, u=usage(1, 1)), "shard": None},
+               {**ok("llm-0004", "assess", f"{RUN}-assess-c", start=1.0, wall=5.0, u=usage(1, 1)), "shard": 0},
+               {**ok("llm-0005", "assess", f"{RUN}-assess-c", start=1.0, wall=5.0, u=usage(1, 1)), "shard": "0"}]
+    assert model_extra(make_ctx(tmp_path, entries))["assess_shards"] == 1

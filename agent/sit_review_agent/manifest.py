@@ -24,6 +24,11 @@ Decisions taken here:
   per such attempt (``estimated: true``, call ID, stage, purpose, attempt, reason, the four token
   fields) and ``extra.model.estimated_usage_totals`` sums them with a price-table cost. The measured
   totals, ``usage.cost_usd``, the unrecorded list and the lower-bound flag are unchanged by it.
+* Counts of the concurrent phase structure, all read from ``llm.jsonl`` and 0 for a sequential run:
+  ``extra.model.assess_shards`` is the number of distinct ``shard`` markers on assess attempts (the
+  shard's name or index, logged on every attempt of the shard; a sequential run logs none),
+  ``salvaged_calls`` the attempts that kept finished items of a cut answer (:func:`logged_salvage`)
+  and ``salvaged_items`` the sum of those items.
 * Timing: ``extra.timing.wall_clock_s`` is the run clock. ``per_stage_s`` (kept for the harness)
   maps each phase to its own wall seconds; stage 1 members overlap, so it does not sum to the run.
   ``extra.timing.stages`` groups them by stage (:func:`stage_timing`): ``members``, ``wall_s``
@@ -196,6 +201,16 @@ def logged_salvage(entry: dict[str, Any]) -> int:
     return _count(entry.get("salvaged_items")) or 0
 
 
+def logged_shard(entry: dict[str, Any]) -> str | None:
+    """The assess shard an attempt belongs to: the entry's ``shard`` (the group name from
+    ``assess.shards`` or its index, as text), on an attempt whose phase is ``assess``; ``None`` on any
+    other attempt, so a run without shards (sequential) counts none."""
+    raw = entry.get("shard")
+    if entry.get("phase") != "assess" or isinstance(raw, bool) or not isinstance(raw, str | int):
+        return None
+    return str(raw)
+
+
 def _estimate_cost(tot: dict[str, int]) -> float:
     p = PRICE_TABLE["usd_per_mtok"]
     return (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
@@ -211,13 +226,13 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     ``estimated_usage_of_unrecorded_calls`` (``estimated: true``) and summed in ``estimated_totals``,
     never in the measured totals, which sum logged ``usage`` only. ``salvaged_calls`` and
     ``salvaged_items`` count the attempts that kept finished items of a cut answer, and
-    ``assess_shards`` the distinct assess conversations that ran."""
+    ``assess_shards`` the distinct ``shard`` markers of the assess attempts (:func:`logged_shard`)."""
     tot = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
     est_rows: list[dict[str, Any]] = []
     est_tot = dict.fromkeys(USAGE_FIELDS, 0)
     salvaged_calls = 0
     salvaged_items = 0
-    assess_conversations: set[str] = set()
+    shards: set[str] = set()
     served: set[str] = set()
     cost_logged = 0.0
     have_cost = False
@@ -245,8 +260,9 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
         if items:
             salvaged_calls += 1
             salvaged_items += items
-        if e.get("phase") == "assess" and e.get("conversation_id"):
-            assess_conversations.add(str(e["conversation_id"]))
+        shard = logged_shard(e)
+        if shard is not None:
+            shards.add(shard)
         for k in tot:
             tot[k] += int((e.get("usage") or {}).get(k) or 0)
         if e.get("outcome", "ok") == "ok" and e.get("model"):
@@ -262,7 +278,7 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
             "estimated_totals": {"estimated": True, "calls": len(est_rows), **est_tot,
                                  "cost_usd": round(_estimate_cost(est_tot), 6), "cost_source": "price table estimate"},
             "salvaged_calls": salvaged_calls, "salvaged_items": salvaged_items,
-            "assess_shards": len(assess_conversations),
+            "assess_shards": len(shards),
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
 
@@ -519,6 +535,8 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "cost_usd_lower_bound": bool(usage["calls_with_unrecorded_usage"]),
                "estimated_usage_of_unrecorded_calls": usage["estimated_usage_of_unrecorded_calls"],
                "estimated_usage_totals": usage["estimated_totals"],
+               "assess_shards": usage["assess_shards"],
+               "salvaged_calls": usage["salvaged_calls"], "salvaged_items": usage["salvaged_items"],
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
                "calls_logged": usage["calls"]},
