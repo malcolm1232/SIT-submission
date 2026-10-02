@@ -58,6 +58,8 @@ See `docs/DECISIONS.md` and `docs/USER_DECISIONS.md`. Summary: Python; custom lo
 
 ## 4. Money
 
+- **Two separate pools.** Claude Code cloud sessions (the coordinator and every subagent) bill to the account's *cloud session credits*; this session consumed about $214 of a $250 allowance (screenshot 2026-10-02: $36 left, credits expire 5 Nov). The agent we are building calls the Claude API through the `anthropic` SDK and needs `ANTHROPIC_API_KEY`; it bills to that key's Console API credit, NOT to cloud session credits. Verified: the SDK cannot use the sandbox session's own credentials (`Could not resolve authentication method`).
+
 - Tier A core: 132 runs, ~$240 agent API spend, ~$565 all-in Anthropic-only or ~$640 with a second-provider grader (30% margin included). The ~$75 difference is the only money that would go to OpenAI or Google.
 - Full programme (reference only): 442 runs, $1,150-1,800.
 - Per-run ~$2.18 is UNVERIFIED until `count_tokens` is run on the real document on the laptop.
