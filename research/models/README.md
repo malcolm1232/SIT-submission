@@ -68,7 +68,7 @@ Claude feature notes, all from the skill:
 
 **Workload assumption (from the brief):** a 60K-token document, 150K tokens of research material, 15–25 model calls and 20K output tokens. To model the loop, a ~5K system prompt and tool block is added to the document, giving a 65K base. Research and outputs accrue evenly across calls, and each call resends the growing history, so a 20-call run bills about **2.9M cumulative input tokens** (the last call carries about 227K). With prompt caching, about 227K of those are cache writes and the rest are cache reads.
 
-Script: `cost.py`, kept in the session scratchpad, not the repo. The formulas are in the table header.
+Script: [`cost_model.py`](cost_model.py) (`python3 cost_model.py`). Edit the price table or the workload parameters to re-run it.
 
 | Model | Floor: every token billed once (210K in + 20K out) | **20 calls, cached** | 20 calls, no caching | 15 calls, cached | 25 calls, cached | 20 calls, cached, 60K output (heavy thinking) |
 |---|---|---|---|---|---|---|
