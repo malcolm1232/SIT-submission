@@ -1,0 +1,180 @@
+# Demo day runbook (lab §5.4)
+
+Date written: 2026-10-02, before the agent code exists. Commands, file paths and line numbers describe the **planned** layout. They are binding on the build: `tests/test_config_layout.py` must assert that every key named in §4 sits on the line given here, so this runbook cannot drift from the code. Update both together.
+
+The session has four parts (lab §5.4): (a) explain the design; (b) run on a laptop that can be modified; (c) live run on a new SIT artefact; (d) on-the-spot modification. The new artefact is probably an **updated version** of the SIT design (lab §1.5), so a frozen v1 review of the SIT sample is prepared in advance for delta mode.
+
+Unknowns to settle with SIT beforehand: slot length (assumed: 10-minute live run inside a longer interview; audit U4), how the PDF is handed over (USB, email, shared drive), and whether venue Wi-Fi allows outbound HTTPS to `*.azurecontainerapps.io` and `api.anthropic.com`.
+
+Planned CLI (one entry point, `dra`): `dra preflight`, `dra review`, `dra explain`, `dra coverage`, `dra resume`, `dra replay`; `make smoke` runs the offline L0 subset.
+
+---
+
+## 1. The day before (T−1 day)
+
+- [ ] Code freeze: tag `demo-freeze`. After this, only the live modifications in §4 are made, and only during the session.
+- [ ] `make smoke` passes offline in ≤ 60 s (robustness DEMO-13).
+- [ ] Frozen v1 review of the SIT sample by the final agent exists at `runs/sit_v1_frozen/` (needed for `--previous`; audit M9).
+- [ ] Backup recorded runs exist for the offline fallback (§6): `runs/demo_backup_sit_v1/` and `runs/demo_backup_delta/` (a synthetic v1→v2 pair), each with `llm.jsonl` and `tools.jsonl` so `dra replay` works with no network.
+- [ ] Fresh tool cassettes recorded on the laptop within the last 7 days for the SIT sample (`--transport record`, servers warm).
+- [ ] Rehearsal log shows the last 3 rehearsals (robustness DEMO-05 on the rehearsal pool, never on Blind) finished inside 10 minutes, and each §4 modification was timed (≤ 3 min config, ≤ 5 min code; audit C23).
+- [ ] Printed one-page cheat sheet: §4 table, §5 command, §7 drills.
+
+## 2. Environment checklist (laptop)
+
+| Item | Check | Pass |
+|---|---|---|
+| Python and dependencies | `uv sync --frozen --offline` | Succeeds without network (robustness OPS-08) |
+| Secrets | `.env` has `ANTHROPIC_API_KEY` and `SIT_MCP_API_KEY`; nothing printed on screen. Never `cat .env` on the projector | `dra preflight` reports both present by name only |
+| Model | `config/agent.yaml` line 2 is `model: claude-opus-5-5`; line 11 is `allow_fallback: false` | Preflight's 1-token call and `models.retrieve` succeed |
+| MCP servers | Enabled set in `config/tools.yaml`; document intelligence disabled | Preflight table green, or the degraded mode named |
+| Fallback data | `runs/sit_v1_frozen/`, `runs/demo_backup_*`, cassettes present | `dra preflight` checks they exist |
+| Git state | Clean tree at `demo-freeze` | `git status` clean |
+| Disk and power | ≥ 20 GB free; charger; power-saving and sleep disabled | |
+| Network | Venue Wi-Fi plus a phone hotspot as backup | `dra preflight` passes on each |
+| Screen | Terminal font ≥ 18 pt; editor open on `config/`; report viewer ready; notifications off | |
+| Timer | A visible stopwatch | |
+
+## 3. Timeline on the day
+
+| When | Action | Command |
+|---|---|---|
+| T−30 min | Set up laptop and network. Run the checklist in §2. Do not warm servers yet (warming too early risks them scaling back to zero) | `dra preflight --no-warm` |
+| **T−10 min** | **Pre-warm the MCP servers.** Sends `initialize` and `tools/list` to every enabled server in parallel with a 150 s cold-start allowance and one retry, then keeps pinging every 120 s until stopped. The idle timeout of the containers is unknown, so a single warm-up 10 minutes early is not enough on its own | `dra preflight --warm --keep-warm 120` (leave running in a second terminal) |
+| T−3 min | Final status table: each server, the LLM, fallback data. Every dependency green, or the degraded mode named and accepted (robustness DEMO-14) | `dra preflight` |
+| T−0 | Start the walkthrough (part a); the keep-warm loop keeps running | |
+| End of session | Copy the session's run directories into `outputs/lab_session/<date>/` (lab §5.1 requires the outputs generated during the lab session, with evidence) and commit them | |
+
+## 4. On-the-spot modifications (part d)
+
+The four most likely requests, with the exact file and lines each one touches. Every change is followed by `make smoke` (≤ 60 s, offline) and then a demonstration: `dra review <pdf> --plan-only` (prints the plan, zero tool calls) when the change shows in the plan, or a short live rerun (`--deadline 300`) when it shows in behaviour. The new value appears in the run manifest.
+
+### 4.1 Planned config files (line numbers are part of the contract)
+
+`config/agent.yaml`
+```yaml
+ 1  # config/agent.yaml - line numbers pinned by tests/test_config_layout.py
+ 2  model: claude-opus-5-5
+ 3  effort:
+ 4    plan: high
+ 5    research: medium
+ 6    assess: high
+ 7    refine: high
+ 8    verify: high
+ 9    report: high
+10  max_tokens: 64000
+11  allow_fallback: false
+12  persona: generalist_architect
+```
+
+`config/stop_rules.yaml`
+```yaml
+ 1  # config/stop_rules.yaml - line numbers pinned by tests/test_config_layout.py
+ 2  active: [sufficient_evidence, no_marginal_gain, budget_tool_calls, budget_tokens, deadline]
+ 3  max_tool_calls: 30
+ 4  max_research_iterations: 4
+ 5  max_input_tokens: 4000000
+ 6  deadline_seconds: 540
+ 7  no_marginal_gain_window: 2
+ 8  min_independent_sources: 2
+```
+
+`config/tools.yaml` (server URLs live in `config/endpoints.yaml` so these line numbers stay fixed)
+```yaml
+ 1  # config/tools.yaml - line numbers pinned by tests/test_config_layout.py
+ 2  auth_env: SIT_MCP_API_KEY
+ 3  auth_header: X-API-Key            # UNVERIFIED until the laptop probe (audit U1)
+ 4  servers:
+ 5    - name: mcp-internet-search
+ 6      enabled: true
+ 7      allow_tools: ["*"]
+ 8    - name: mcp-research-information
+ 9      enabled: true
+10      allow_tools: ["*"]
+11    - name: mcp-browser-automation-pw
+12      enabled: true
+13      allow_tools: ["*"]
+14    - name: mcp-document-intelligence
+15      enabled: false
+16      allow_tools: []
+17  url_policy: config/url_policy.yaml
+```
+
+`config/criteria.yaml`: a list under `criteria:`; new criteria are always **appended at the end of the file** (each entry is 4 lines: `id`, `description`, `applies_to`, `research_hints`).
+
+`agent/stop_rules.py`: a registry; each rule is a function decorated with `@register("<name>")` that receives the run state and returns `(stop: bool, reason: str)`. New rules are appended at the end of the file.
+
+### 4.2 The requests
+
+| # | Likely request | File and lines | Change | Show it | Target |
+|---|---|---|---|---|---|
+| 1 | "Add a review criterion, e.g. operational cost / accessibility / data residency" (robustness DEMO-01) | `config/criteria.yaml`, append 4 lines at end of file | `- id: operational_cost` / `description: "Is running cost estimated, bounded and monitored?"` / `applies_to: [all]` / `research_hints: ["cost benchmarks for the named services"]` | `--plan-only`: the criterion appears in the plan; full run: it appears in the coverage map and the report (as a finding or "checked, no issue") | ≤ 3 min |
+| 2a | "Stop after at most 5 searches" (DEMO-02) | `config/stop_rules.yaml` line 3 | `max_tool_calls: 5` (or CLI `--max-tool-calls 5`, no edit) | Live rerun: ledger has ≤ 5 tool calls; `stop_reason: budget_tool_calls` in the manifest | ≤ 3 min |
+| 2b | "Stop when two independent sources agree" (a new rule) | `agent/stop_rules.py`, append about 8 lines at end of file; `config/stop_rules.yaml` line 2 | New `@register("two_sources_agree")` function: stop when every high or critical finding that needs external evidence has ≥ `min_independent_sources` distinct-domain ledger entries supporting it. Add `two_sources_agree` to the `active:` list on line 2 | `make smoke` (the L0 stop-rule test runs the new rule against the fake transcript); live rerun shows the new stop reason | ≤ 5 min |
+| 3 | "Disable a tool / run without web search" (DEMO-03) | `config/tools.yaml` line 6 (internet search), 9 (research), 12 (browser) | `enabled: false`; or narrow line 7, 10 or 13 to a list of tool names (`allow_tools: ["search"]`). No edit: `--disable-tool mcp-internet-search` or `--no-tools` | `--plan-only`: the plan no longer uses the tool; report header lists disabled tools; zero calls to it in `tools.jsonl` | ≤ 3 min |
+| 4 | "Change the model / make it think harder or faster" (DEMO-04) | `config/agent.yaml` line 2 (model), lines 4-9 (effort per stage) | Within ADR-002: change effort, e.g. line 5 `research: low` for speed, or line 6 `assess: max` for depth. If the evaluator asks for another model: change line 2 (e.g. `claude-opus-5`); preflight validates it; the manifest records it; say clearly that this deviates from the all-Opus decision | Rerun; manifest `effort_by_stage` / `requested_model` and `served_models` show the change | ≤ 3 min |
+
+Less likely, prepared: change the persona (`config/agent.yaml` line 12 → `security_architect`, defined in `config/persona.yaml`; DEMO-09); add an executive summary of ≤ 150 words (`agent/templates/report.md.j2`, uncomment the `executive_summary` block; the schema field already exists; DEMO-08); show the plan before execution (`--plan-only`; DEMO-12).
+
+**If a live change breaks something:** run `make smoke`; if it fails and the fix is not obvious within a minute, revert the file (`git checkout -- <file>`), rerun `make smoke`, and explain what the change would need.
+
+## 5. The 10-minute live run (part c)
+
+| Clock | Step | What to say and show |
+|---|---|---|
+| 0:00 | Receive the PDF. Save it to `inbox/`. Look at its title page and revision history: is it a new design or an updated version of the SIT sample? | "The agent never saw this file; it only knows its hash once ingested." |
+| 0:30 | Start the run. New design: `dra review inbox/<file>.pdf --deadline 540`. Updated SIT design: add `--previous runs/sit_v1_frozen` | The deadline of 540 s leaves a minute of margin; the planner sizes research to the remaining time and guarantees a report by T−60 s |
+| 0:30-1:30 | **ingest / understand**: page count, sections found, image-only pages flagged, approved decisions and constraints pinned in the registry | "Design content and external research are kept apart: the document is in the cached prefix; research enters only as ledger entries with IDs." |
+| 1:30-6:30 | **plan / research**: the plan prints (questions, chosen tools, budget). Ledger IDs appear as evidence is gathered. A progress line appears at least every 10 s (DEMO-15) | Point at why a tool was chosen and when the stop rule fires; name the stop reason |
+| 6:30-8:00 | **assess / refine / verify**: findings, triage (refinement vs investigation / prototyping / testing / governance), anchor verification counts (resolved / repaired / unresolved) | "Every quote is checked in code against the canonical page text; unresolved anchors are reported, not hidden." |
+| ≤ 8:30 | **report**: `report.md` opens | Verdict and confidence on the first page; for updated designs, the delta section (resolved / open / regressed / new) |
+| 8:30-10:00 | Walk one finding: issue, rationale, evidence, expected benefit, link to the design objective. Then `dra explain <finding-id>` (§5.1) and `dra coverage` (criteria × sections, including "checked, no issue") | Close on the limitations section (degraded tools, unresolved items) |
+
+If the deadline is reached, the run stops itself (`stop_reason: deadline`) and still produces a report with a partial-evidence caveat (robustness BEH-24).
+
+### 5.1 `dra explain <finding-id>` (provenance)
+
+Reads only the run directory (works offline and in replay). Returns in under 5 s (robustness DEMO-06). Default run: the latest; `--run runs/<id>` to pick one. Prints:
+
+1. The finding as reported: ID, kind, severity, triage, verdict impact.
+2. **Document anchors:** for each location, page, section ID and heading, the verbatim quote, the match method (exact or fuzzy and score), and the character span in `doc.pages.txt`.
+3. **External evidence:** for each ledger ID, the tool and server, the query or arguments, the URL, the retrieval time, the snippet as the agent saw it, and the snapshot path.
+4. **Source tag:** `doc`, `external` or `inference`, and for inference, which anchors and ledger entries it rests on.
+5. **History:** the stage that created the finding, every stage that changed it (with a before/after diff of the fields that changed), and the `llm.jsonl` call IDs involved.
+6. **Checks:** anchor status, `read_before_cite`, any conflict with the approved-decision registry and whether it is labelled `challenges_decision`.
+
+Illustrative output (made-up content): `dra explain F-07` → "F-07 (risk, high, triage: prototyping) | p.12 §4.3 'All embeddings are re-generated nightly…' (exact) | E-004 mcp-research-information search_works 'hnsw index rebuild cost' → doi.org/…, retrieved 14:02:11 | created: assess (call 14) | revised: refine (call 17): severity medium→high after E-009 | anchors 1/1 resolved; no registry conflict".
+
+## 6. Offline and degraded fallbacks
+
+| Situation | What still works | Do this |
+|---|---|---|
+| SIT MCP servers down or key revoked, internet and Anthropic fine | Doc-only review of the new PDF, live (robustness INF-24, INF-07) | Run normally; the agent switches to doc-only and the report says "No external research was possible". Narrate it as designed behaviour |
+| Venue network blocks the MCP hosts but not Anthropic | Same as above, or `--transport replay` for the SIT sample only | Prefer the live doc-only run of the new PDF |
+| No internet at all | **Cannot review an unseen PDF** (no local model; robustness NET-02). Can show recorded runs | Switch to the phone hotspot first. If that fails: `dra replay runs/demo_backup_sit_v1` and `dra replay runs/demo_backup_delta` (both stamped "replayed evidence"), walk through `explain` and the coverage map, and offer to run the new PDF as soon as connectivity returns and send the outputs to the SIT officer |
+| Anthropic API down or rate-limited for a long time | Checkpoints up to the last completed stage | `dra resume <run_id>` when it recovers; meanwhile, show the replayed backups |
+
+Replay uses strict cassettes and the recorded `llm.jsonl`; it never calls a network and never invents output.
+
+## 7. Failure drills: top 5 robustness scenarios
+
+Each drill is rehearsed before the day with the fault-injection flag (`--faults <SCENARIO-ID>`, robustness §5) and once for real where possible.
+
+| # | Scenario | How it shows up live | What the agent does (designed) | What you do and say | Rehearse with |
+|---|---|---|---|---|---|
+| 1 | **INF-01 cold start** (a server slept despite the warm-up) | Progress line "waking mcp-research-information (~90 s)" | Warm-ups run in parallel with ingest and understand, which need no tools; 150 s cold-start allowance; the server is not marked dead inside that window | "The containers scale to zero; we warm them in the background while the document is read, so this costs us almost nothing." Keep narrating ingest | `--faults INF-01`; live: leave servers idle ≥ 30 min, then run |
+| 2 | **INF-07 shared-key 401 / INF-24 all tools down** | Preflight or first call reports 401, or every server times out | One confirmation retry, then all four servers are disabled together (they share one key); the run continues doc-only; the message names `SIT_MCP_API_KEY`, never its value; the report header says no external research was possible | Check the key name in `.env` off-screen; if it is right, continue doc-only and explain the degradation in the limitations section | `--faults INF-07`, `--faults INF-24`, `--no-tools` |
+| 3 | **LLM-01/02/03 rate limit, spend cap or overload** | Progress line shows backoff ("429, retry after 15 s" or "529, retry 2/5") | Honour `retry-after`; jittered backoff; SDK retries off so attempts are counted once; **no model switch** (ADR-002). After the budget: checkpoint and exit with the "LLM unavailable" exit code | Wait through short backoffs. If it exits: `dra resume <run_id>` once it recovers; if the cause is the spend cap, raise the limit in the Anthropic Console (off-screen) and resume. Meanwhile show a replayed backup | `--faults LLM-01`, `LLM-02`, `LLM-03` |
+| 4 | **LLM-06 refusal** (a security-heavy section trips a classifier) | Progress line "assess §7: model declined (category: cyber); retrying with review framing" | Checks `stop_reason` before parsing; one retry with professional-review framing; if it persists, marks that section "model declined" and completes every other section. No fallback model in eval mode; on demo day, `--allow-fallback` is available but is recorded in the manifest and the report | "The model's safety classifier declined one section; the agent records it rather than guessing, and the rest of the review is complete." Do not toggle `--allow-fallback` mid-run | `--faults LLM-06`; L1 with the clinical-protocol fixture (INP-14b) |
+| 5 | **NET-01 network lost mid-run** | Tool and LLM calls fail as network errors; progress line "offline, checkpointed at stage research" | Checkpoint after every stage; ledger already holds earlier tool results; tools go doc-only; if the LLM stays unreachable, the run halts with a resumable checkpoint | Switch to the hotspot, then `dra resume <run_id>`: it continues from the last completed stage without repeating completed tool calls | `--faults NET-01`; physical drill: turn Wi-Fi off at about 200 s, back on after 2 min |
+
+Also drilled, lower priority: Ctrl-C then `resume` (OPS-04); `max_tokens` mid-JSON (LLM-07); a broken live code change (DEMO-13, §4).
+
+## 8. Talking points for part (a), in order
+
+1. The problem framed as the lab frames it (lab §1.2-1.4): review against objectives; recommend only when justified; explain "no change" when the design is fine.
+2. Architecture: the state machine diagram printed from `agent/states.py`; the two gateways; the ledger; the registry of approved decisions; checkpoints (`docs/ARCHITECTURE.md`).
+3. Why a custom loop and why all Opus 5.5 (`docs/DECISIONS.md` ADR-001, ADR-002).
+4. How documents are read and quotes anchored (ADR-006, ADR-007).
+5. How it decides to stop researching (`config/stop_rules.yaml`, the stop-reason enum).
+6. How we know it works: judge-free metrics on planted flaws, held-out data sealed, k runs with CIs (`docs/REPRODUCIBILITY.md`, `docs/SEALING.md`), and the limitations we disclose.

@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sit-design-review.invalid/spec/answer_key.schema.json",
+  "title": "Sealed answer key (canonical), schema_version 1.0",
+  "description": "One key per eval item. Shares Kind, Category, Severity and Disposition with finding.schema.json so gold and predicted labels live on the same scales. Resolves research_audit C5, C6, C32, U11, M3 and eval_data_audit Task 4. Enums are copies of spec/taxonomy.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "item", "scoring", "approved_decisions", "flaws", "sound_sections", "still_valid_observations", "v2", "authoring_status"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "item": {"$ref": "#/$defs/ItemMetadata"},
+    "scoring": {"$ref": "#/$defs/Scoring"},
+    "approved_decisions": {"type": "array", "items": {"$ref": "#/$defs/ApprovedDecision"}, "description": "Decisions the document marks confirmed (methodology §1.2); drives the approved-decision violation rate (metrics §6.3)."},
+    "flaws": {"type": "array", "items": {"$ref": "#/$defs/Flaw"}, "description": "All flaws, v1 and v2 (v2-only flaws have introduced_in = v2). Empty for fully sound control docs."},
+    "sound_sections": {"type": "array", "items": {"$ref": "#/$defs/SoundSection"}},
+    "still_valid_observations": {"type": "array", "items": {"$ref": "#/$defs/Observation"}, "description": "Item-level valid observations not tied to one sound section (legacy non_keyed_observations). Same scoring effect as the per-section list."},
+    "v2": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/V2Block"}]},
+    "authoring_status": {"$ref": "#/$defs/AuthoringStatus"}
+  },
+
+  "$defs": {
+    "Kind": {"$ref": "https://sit-design-review.invalid/spec/finding.schema.json#/$defs/Kind"},
+    "Category": {"$ref": "https://sit-design-review.invalid/spec/finding.schema.json#/$defs/Category"},
+    "Severity": {"$ref": "https://sit-design-review.invalid/spec/finding.schema.json#/$defs/Severity"},
+    "Disposition": {"$ref": "https://sit-design-review.invalid/spec/finding.schema.json#/$defs/Disposition"},
+    "Sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "NonEmpty": {"type": "string", "minLength": 1},
+    "FlawId": {"type": "string", "pattern": "^[A-Z]{1,4}-?[0-9]{2,3}$", "description": "Legacy IDs kept verbatim: F01, D01, DEF-01."},
+    "SoundId": {"type": "string", "pattern": "^S[0-9]{2,}$"},
+    "ObservationId": {"type": "string", "pattern": "^O[0-9]{2,}$"},
+    "DecisionId": {"type": "string", "pattern": "^AD-[0-9]{3,}$"},
+
+    "CreditMode": {"enum": ["substance", "all_of", "any_of"]},
+    "V2Status": {"enum": ["fixed", "partially_fixed", "unchanged", "introduced", "not_applicable"]},
+    "Split": {"enum": ["S-dev", "S-heldout", "Blind", "Real-dev", "OOD", "rehearsal"]},
+    "AuthorType": {"enum": ["llm", "human", "mixed", "unknown"]},
+    "SeverityScale": {"enum": ["canonical4", "synthetic3", "blind4", "blind4_capitalised"]},
+    "PendingField": {"enum": ["author_model", "generation_date", "canary_guid", "core_insight", "anchor_quote", "expected_disposition",
+                              "approved_decisions", "key_second_review", "external_fact_verification", "sound_overlap_annotations", "v2_changed_sections", "author_type"]},
+
+    "DocRef": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/NonEmpty"}, "sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]}}
+    },
+
+    "ItemMetadata": {
+      "type": "object", "additionalProperties": false,
+      "required": ["item_id", "split", "domain", "documents", "document_id", "canary_guid", "author_type", "author_model",
+                   "generation_date", "generator_session_ref", "brief_sha256", "key_reviewed_by", "notes", "source_key"],
+      "properties": {
+        "item_id": {"$ref": "#/$defs/NonEmpty"},
+        "split": {"$ref": "#/$defs/Split"},
+        "domain": {"$ref": "#/$defs/NonEmpty"},
+        "documents": {"type": "object", "additionalProperties": false, "required": ["v1", "v2"],
+          "properties": {"v1": {"$ref": "#/$defs/DocRef"}, "v2": {"anyOf": [{"$ref": "#/$defs/DocRef"}, {"type": "null"}]}}},
+        "document_id": {"type": ["string", "null"], "description": "The document's own identifier, e.g. 'FDC-SEMS-DD-001 Rev C'."},
+        "canary_guid": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}], "description": "Per-split canary (methodology §1.1 rule 5). null only while listed in authoring_status.pending."},
+        "author_type": {"$ref": "#/$defs/AuthorType"},
+        "author_model": {"type": ["string", "null"], "description": "Exact model ID that wrote the document and key (audit U11). null only while listed in authoring_status.pending."},
+        "generation_date": {"anyOf": [{"type": "null"}, {"type": "string", "format": "date"}]},
+        "generator_session_ref": {"type": ["string", "null"], "description": "Session log or transcript reference that produced the item."},
+        "brief_sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}], "description": "Hash of the authoring brief."},
+        "key_reviewed_by": {"type": "array", "items": {"type": "string"}, "description": "Second reviewers of core_insight and credit items (audit L12, P1 action 8)."},
+        "notes": {"type": ["string", "null"], "description": "Free text (legacy version_notes)."},
+        "source_key": {"type": "object", "additionalProperties": false, "required": ["path", "format", "sha256"],
+          "properties": {"path": {"type": ["string", "null"]}, "format": {"enum": ["canonical", "synthetic_json_v0", "blind_a_json_v0", "blind_b_json_v0"]},
+                         "sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]}}}
+      }
+    },
+
+    "Scoring": {
+      "type": "object", "additionalProperties": false,
+      "required": ["matching_rule", "default_credit_mode", "severity_mapping", "severity_tolerance", "notes"],
+      "properties": {
+        "matching_rule": {"const": "core_insight_plus_location_v1", "description": "methodology/metrics.md §2: one-to-one, core insight stated, location compatible, labels ignored. credit.mode only says how the core insight is operationalised."},
+        "default_credit_mode": {"$ref": "#/$defs/CreditMode"},
+        "severity_mapping": {"type": "object", "additionalProperties": false, "required": ["source_scale", "variant"],
+          "properties": {"source_scale": {"$ref": "#/$defs/SeverityScale"}, "variant": {"enum": ["primary", "sensitivity"]}}},
+        "severity_tolerance": {"type": ["integer", "null"], "minimum": 0, "description": "Informational for severity-agreement reporting only. Matching never uses severity."},
+        "notes": {"type": ["string", "null"]}
+      }
+    },
+
+    "Location": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sections", "requirement_ids", "decision_ids", "anchor_quote", "page"],
+      "properties": {
+        "sections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NonEmpty"}},
+        "requirement_ids": {"type": "array", "items": {"type": "string"}},
+        "decision_ids": {"type": "array", "items": {"type": "string"}, "description": "The document's own decision IDs (e.g. 'D-15'), if the flaw is anchored on a decision."},
+        "anchor_quote": {"type": ["string", "null"], "description": "Verbatim span locating the flaw (methodology §1.2). null only while pending."},
+        "page": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+
+    "SeveritySource": {
+      "type": "object", "additionalProperties": false, "required": ["scale", "label"],
+      "description": "The author's original label, kept verbatim so the sensitivity mapping (minor -> medium) can be recomputed (eval_data_audit 4.2).",
+      "properties": {"scale": {"$ref": "#/$defs/SeverityScale"}, "label": {"$ref": "#/$defs/NonEmpty"}}
+    },
+
+    "CreditItem": {
+      "type": "object", "additionalProperties": false, "required": ["id", "text", "role"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^c[0-9]+$"},
+        "text": {"$ref": "#/$defs/NonEmpty"},
+        "role": {"enum": ["required", "supporting"], "description": "supporting items (remedies, extra detail) never gate credit (eval_data_audit P0 item 4)."}
+      }
+    },
+
+    "Credit": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "items", "min_required"],
+      "properties": {
+        "mode": {"$ref": "#/$defs/CreditMode"},
+        "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/CreditItem"}},
+        "min_required": {"type": ["integer", "null"], "minimum": 1, "description": "any_of only: how many required items suffice."}
+      },
+      "allOf": [
+        {"if": {"properties": {"mode": {"const": "any_of"}}}, "then": {"properties": {"min_required": {"type": "integer"}}}, "else": {"properties": {"min_required": {"type": "null"}}}},
+        {"if": {"properties": {"mode": {"enum": ["all_of", "any_of"]}}}, "then": {"properties": {"items": {"contains": {"properties": {"role": {"const": "required"}}}}}}}
+      ]
+    },
+
+    "ExternalFact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim", "source", "verified", "verified_source_url", "verified_at", "verification_note"],
+      "properties": {
+        "claim": {"$ref": "#/$defs/NonEmpty", "description": "The true external fact the flaw depends on."},
+        "source": {"$ref": "#/$defs/NonEmpty", "description": "Authoritative source as cited by the author (standard clause, vendor doc page)."},
+        "verified": {"type": "boolean", "description": "true only if an independent checker confirmed the claim against the source."},
+        "verified_source_url": {"type": ["string", "null"]},
+        "verified_at": {"anyOf": [{"type": "null"}, {"type": "string", "format": "date"}]},
+        "verification_note": {"type": ["string", "null"], "description": "Source class (P, P-snippet, S, K per eval_data_audit), caveats, partial-correctness notes."}
+      },
+      "allOf": [
+        {"if": {"properties": {"verified": {"const": true}}}, "then": {"properties": {"verified_source_url": {"type": "string", "minLength": 1}, "verified_at": {"type": "string"}}}}
+      ]
+    },
+
+    "Flaw": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "kind", "acceptable_kinds", "category", "tags", "severity", "severity_source", "planted",
+                   "introduced_in", "introduced_by_fix_of", "v2_status", "caused_regression_flaw_id", "v2_note",
+                   "location", "description", "rationale", "core_insight", "credit", "needs_external_research", "external_fact",
+                   "expected_disposition", "acceptable_dispositions", "affected_decisions", "acceptable_fix", "distractor_notes",
+                   "overlapping_sound_section_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/FlawId"},
+        "title": {"type": ["string", "null"]},
+        "kind": {"$ref": "#/$defs/Kind", "description": "Gold axis-1 kind; never 'strength'."},
+        "acceptable_kinds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/Kind"}, "description": "Kinds a correct finding may use; must include kind."},
+        "category": {"$ref": "#/$defs/Category"},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "Legacy domain labels kept verbatim (e.g. blind A 'Regulatory compliance')."},
+        "severity": {"$ref": "#/$defs/Severity"},
+        "severity_source": {"$ref": "#/$defs/SeveritySource"},
+        "planted": {"type": "boolean", "description": "false = natural flaw found in the base-document audit."},
+        "introduced_in": {"enum": ["v1", "v2"]},
+        "introduced_by_fix_of": {"anyOf": [{"$ref": "#/$defs/FlawId"}, {"type": "null"}]},
+        "v2_status": {"$ref": "#/$defs/V2Status"},
+        "caused_regression_flaw_id": {"anyOf": [{"$ref": "#/$defs/FlawId"}, {"type": "null"}], "description": "On a fixed v1 flaw whose fix introduced a new flaw (legacy status 'regressed')."},
+        "v2_note": {"type": ["string", "null"]},
+        "location": {"$ref": "#/$defs/Location"},
+        "description": {"$ref": "#/$defs/NonEmpty"},
+        "rationale": {"$ref": "#/$defs/NonEmpty", "description": "Why it is a flaw (legacy why_it_is_a_flaw / why_it_matters)."},
+        "core_insight": {"type": ["string", "null"], "description": "The one proposition a finding must state to MATCH (metrics §2.1). null only while pending."},
+        "credit": {"$ref": "#/$defs/Credit"},
+        "needs_external_research": {"type": "boolean"},
+        "external_fact": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/ExternalFact"}]},
+        "expected_disposition": {"anyOf": [{"$ref": "#/$defs/Disposition"}, {"type": "null"}], "description": "Gold triage (audit C8). null only while pending; BEH-16 and action-type accuracy are BLOCKED until set."},
+        "acceptable_dispositions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/Disposition"}},
+        "affected_decisions": {"type": "array", "items": {"$ref": "#/$defs/DecisionId"}, "description": "Approved decisions this flaw is anchored on; challenging them with evidence is a TP, not an ADV violation (metrics §6.3)."},
+        "acceptable_fix": {"type": ["string", "null"]},
+        "distractor_notes": {"type": ["string", "null"]},
+        "overlapping_sound_section_ids": {"type": "array", "items": {"$ref": "#/$defs/SoundId"}, "description": "Sound sections this flaw shares a location with; a finding matched to this flaw is never a sound-section false positive."}
+      },
+      "allOf": [
+        {"properties": {"kind": {"not": {"const": "strength"}}, "expected_disposition": {"not": {"const": "no_change"}}}},
+        {"if": {"properties": {"introduced_in": {"const": "v2"}}}, "then": {"properties": {"v2_status": {"const": "introduced"}}}},
+        {"if": {"properties": {"v2_status": {"const": "introduced"}}}, "then": {"properties": {"introduced_in": {"const": "v2"}}}},
+        {"if": {"properties": {"v2_status": {"enum": ["unchanged", "introduced", "not_applicable"]}}}, "then": {"properties": {"caused_regression_flaw_id": {"type": "null"}}}},
+        {"if": {"properties": {"introduced_in": {"const": "v1"}}}, "then": {"properties": {"introduced_by_fix_of": {"type": "null"}}}},
+        {"if": {"properties": {"needs_external_research": {"const": true}}}, "then": {"properties": {"external_fact": {"type": "object"}}}}
+      ]
+    },
+
+    "Observation": {
+      "type": "object", "additionalProperties": false, "required": ["id", "text", "origin", "related_flaw_ids"],
+      "description": "A valid observation that must NOT count as a false positive. A finding matching it is pre-adjudicated VALID_UNPLANTED: correct for adjudicated precision, not counted in recall, not a sound-section false positive (audit C26).",
+      "properties": {
+        "id": {"$ref": "#/$defs/ObservationId"},
+        "text": {"$ref": "#/$defs/NonEmpty"},
+        "origin": {"enum": ["key_author", "eval_audit", "adjudication"]},
+        "related_flaw_ids": {"type": "array", "items": {"$ref": "#/$defs/FlawId"}}
+      }
+    },
+
+    "SoundSection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "location", "why_sound", "trap", "still_valid_observations", "overlapping_flaw_ids", "applies_to_versions", "bait"],
+      "properties": {
+        "id": {"$ref": "#/$defs/SoundId"},
+        "location": {"$ref": "#/$defs/Location"},
+        "why_sound": {"$ref": "#/$defs/NonEmpty"},
+        "trap": {"$ref": "#/$defs/NonEmpty", "description": "False positives a careless reviewer raises here (legacy trap / careless_flag / likely_false_positive)."},
+        "still_valid_observations": {"type": "array", "items": {"$ref": "#/$defs/Observation"}},
+        "overlapping_flaw_ids": {"type": "array", "items": {"$ref": "#/$defs/FlawId"}, "description": "Flaws whose location intersects this section (eval_data_audit Task 6)."},
+        "applies_to_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["v1", "v2"]}},
+        "bait": {"type": "boolean", "description": "Unusual-looking but justified (methodology §1.2 bait units)."}
+      }
+    },
+
+    "ApprovedDecision": {
+      "type": "object", "additionalProperties": false, "required": ["id", "doc_ref", "statement", "location", "flaw_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/DecisionId"},
+        "doc_ref": {"$ref": "#/$defs/NonEmpty"},
+        "statement": {"$ref": "#/$defs/NonEmpty"},
+        "location": {"$ref": "#/$defs/Location"},
+        "flaw_ids": {"type": "array", "items": {"$ref": "#/$defs/FlawId"}, "description": "Gold flaws anchored on this decision (empty = decision is sound and must be preserved)."}
+      }
+    },
+
+    "V2Block": {
+      "type": "object", "additionalProperties": false, "required": ["changed_sections", "expected_open_flaw_ids", "notes"],
+      "properties": {
+        "changed_sections": {"type": "array", "items": {"type": "string"}},
+        "expected_open_flaw_ids": {"type": "array", "items": {"$ref": "#/$defs/FlawId"}, "description": "Must equal flaws with v2_status in {unchanged, partially_fixed, introduced}."},
+        "notes": {"type": ["string", "null"]}
+      }
+    },
+
+    "AuthoringStatus": {
+      "type": "object", "additionalProperties": false, "required": ["pending", "scored_run_ready"],
+      "properties": {
+        "pending": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/PendingField"}},
+        "scored_run_ready": {"type": "boolean", "description": "true only when pending is empty and every nullable-while-pending field is set."}
+      },
+      "allOf": [{"if": {"properties": {"scored_run_ready": {"const": true}}}, "then": {"properties": {"pending": {"maxItems": 0}}}}]
+    }
+  }
+}

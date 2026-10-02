@@ -1,0 +1,390 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sit-design-review.invalid/spec/finding.schema.json",
+  "title": "Finding (canonical) and Review envelope, schema_version 1.0",
+  "description": "The root validates one hydrated Finding. The Review envelope is #/$defs/Review. Enums are copies of spec/taxonomy.yaml (validate_examples.py checks they match). Properties marked readOnly are filled by the renderer from the evidence ledger and are stripped from the LLM-facing structured-output schema; see spec/README.md section 'LLM-facing schema'.",
+  "$ref": "#/$defs/Finding",
+  "$defs": {
+    "Kind": {"enum": ["strength", "risk", "gap", "ambiguity", "unresolved_assumption", "validation_need"]},
+    "Category": {"enum": ["internal_contradiction", "unsupported_or_incorrect_claim", "external_constraint_violation", "missing_or_unverifiable_requirement", "security_privacy_gap", "scalability_or_failure_mode", "ambiguous_requirement", "acceptance_criterion_cannot_validate", "decision_depends_on_pending_item", "other"]},
+    "Severity": {"enum": ["critical", "high", "medium", "low"]},
+    "Disposition": {"enum": ["refinement_now", "needs_investigation", "needs_prototyping", "needs_testing", "governance_decision", "no_change"]},
+    "VerdictLabel": {"enum": ["fit", "fit_with_conditions", "not_fit"]},
+    "SourceType": {"enum": ["doc", "external", "inference"]},
+    "SourceAuthority": {"enum": ["primary_official", "peer_reviewed", "secondary", "informal"]},
+    "StopReasonCode": {"enum": ["sufficient_evidence", "no_marginal_gain", "budget_tool_calls", "budget_tokens", "deadline", "tool_failure", "error"]},
+    "StopReasonGroup": {"enum": ["decision", "cap", "error"]},
+    "DecisionRelation": {"enum": ["preserves", "refines", "challenges"]},
+    "RegistryEntryType": {"enum": ["approved_decision", "pending_decision", "constraint", "requirement"]},
+    "Phase": {"enum": ["understand", "assess", "research", "verify", "revise", "delta_review"]},
+    "ReassessmentStatus": {"enum": ["new_in_update", "still_open", "partially_addressed", "resolved"]},
+
+    "FindingId": {"type": "string", "pattern": "^FND-[0-9]{3,}$"},
+    "EvidenceId": {"type": "string", "pattern": "^EV-[0-9]{3,}$"},
+    "RegistryId": {"type": "string", "pattern": "^AD-[0-9]{3,}$"},
+    "SoundAreaId": {"type": "string", "pattern": "^SA-[0-9]{3,}$"},
+    "DocId": {"type": "string", "pattern": "^DOC-[A-Za-z0-9_.-]+$"},
+    "Sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "NonEmpty": {"type": "string", "minLength": 1},
+
+    "DocAnchor": {
+      "type": "object",
+      "description": "Traceability to the document under review. The quote must fuzzy-match the canonical page-marked text (ratio >= 0.90) inside section_ref +/- 1 (audit C13, G1-G2, robustness INV-04).",
+      "additionalProperties": false,
+      "required": ["doc_id", "section_ref", "requirement_ids", "quote", "page"],
+      "properties": {
+        "doc_id": {"$ref": "#/$defs/DocId"},
+        "section_ref": {"$ref": "#/$defs/NonEmpty", "description": "Section number or heading as printed, e.g. '9.3' or '25 Confirmed Decisions'."},
+        "requirement_ids": {"type": "array", "items": {"$ref": "#/$defs/NonEmpty"}, "description": "FR/NFR/AC/decision IDs cited at this location; empty if none."},
+        "quote": {"type": "string", "pattern": "^\\s*\\S+(\\s+\\S+){7,}\\s*$", "description": "Verbatim span of at least 8 whitespace-separated tokens (audit G2)."},
+        "page": {"type": ["integer", "null"], "minimum": 1, "description": "1-based page in the canonical page-marked text; null only for inputs without pages (Markdown)."}
+      }
+    },
+
+    "EvidenceItem": {
+      "type": "object",
+      "description": "A citation of one evidence-ledger entry. The LLM emits evidence_id, source_type, quote and supports_claim; url_or_citation and retrieved_at are copied from the ledger by the renderer (audit C11: the LLM never writes URLs).",
+      "additionalProperties": false,
+      "required": ["evidence_id", "source_type", "url_or_citation", "quote", "supports_claim", "retrieved_at", "derived_from"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/EvidenceId"},
+        "source_type": {"$ref": "#/$defs/SourceType"},
+        "url_or_citation": {"type": "string", "readOnly": true, "description": "Rendered from the ledger. external: URL or formal citation; doc: 'doc:<doc_id>#p<page>/s<section>'; inference: 'inference:<evidence_id>'."},
+        "quote": {"type": ["string", "null"], "description": "Passage relied on (verbatim for doc and external)."},
+        "supports_claim": {"type": "boolean", "description": "true if the item supports the finding's statement; false if it is contrary evidence the finding weighs (robustness ADV-14)."},
+        "retrieved_at": {"type": ["string", "null"], "format": "date-time", "readOnly": true, "description": "Ledger retrieval time; required for external, null otherwise."},
+        "derived_from": {"type": "array", "items": {"$ref": "#/$defs/EvidenceId"}, "description": "For inference: the ledger entries the reasoning uses. Empty for doc and external."}
+      },
+      "allOf": [
+        {"if": {"properties": {"source_type": {"const": "external"}}},
+         "then": {"properties": {"retrieved_at": {"type": "string"}, "quote": {"type": "string", "minLength": 1}, "url_or_citation": {"minLength": 1}}}},
+        {"if": {"properties": {"source_type": {"const": "doc"}}},
+         "then": {"properties": {"quote": {"type": "string", "minLength": 1}, "retrieved_at": {"type": "null"}}}},
+        {"if": {"properties": {"source_type": {"const": "inference"}}},
+         "then": {"properties": {"derived_from": {"minItems": 1}, "retrieved_at": {"type": "null"}}}}
+      ]
+    },
+
+    "Recommendation": {
+      "type": "object",
+      "description": "Lab §2.3: issue, rationale, supporting evidence, expected benefit; lab §1.4: how the change better supports the original objectives.",
+      "additionalProperties": false,
+      "required": ["issue", "rationale", "expected_benefit", "change_summary", "objective_refs", "supporting_evidence_ids", "verification"],
+      "properties": {
+        "issue": {"$ref": "#/$defs/NonEmpty"},
+        "rationale": {"$ref": "#/$defs/NonEmpty", "description": "Why the change addresses the issue."},
+        "expected_benefit": {"$ref": "#/$defs/NonEmpty", "description": "Benefit stated against a design objective, requirement or principle."},
+        "change_summary": {"$ref": "#/$defs/NonEmpty", "description": "What to change, where. Bounded: does not rewrite the design."},
+        "objective_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NonEmpty"}, "description": "IDs of doc objectives/requirements/principles the benefit serves (grader D5 objective_link; metrics RJR Q_benefit)."},
+        "supporting_evidence_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/EvidenceId"}, "description": "Subset of the finding's evidence[].evidence_id."},
+        "verification": {"type": ["string", "null"], "description": "How the change will be shown to work (test, metric, review), if known."}
+      }
+    },
+
+    "NextStep": {
+      "type": "object",
+      "description": "Owner and next action for non-refinement dispositions (grader D7).",
+      "additionalProperties": false,
+      "required": ["owner", "action"],
+      "properties": {
+        "owner": {"$ref": "#/$defs/NonEmpty", "description": "Role, not a person's name (e.g. 'Data Protection Officer', 'Build Phase 2 team')."},
+        "action": {"$ref": "#/$defs/NonEmpty"}
+      }
+    },
+
+    "AffectedDecision": {
+      "type": "object",
+      "description": "An approved decision or constraint from the decision registry that the finding touches (lab §1.3; robustness INV-10, BEH-12).",
+      "additionalProperties": false,
+      "required": ["registry_id", "relation", "justification"],
+      "properties": {
+        "registry_id": {"$ref": "#/$defs/RegistryId"},
+        "relation": {"$ref": "#/$defs/DecisionRelation"},
+        "justification": {"$ref": "#/$defs/NonEmpty"}
+      }
+    },
+
+    "Provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "iteration", "model", "prompt_hash"],
+      "properties": {
+        "phase": {"$ref": "#/$defs/Phase"},
+        "iteration": {"type": "integer", "minimum": 0},
+        "model": {"$ref": "#/$defs/NonEmpty", "description": "Model ID actually served for the call that produced the current version of the finding (response.model), not the requested alias (audit C16, C28)."},
+        "prompt_hash": {"$ref": "#/$defs/Sha256"}
+      }
+    },
+
+    "Reassessment": {
+      "type": "object",
+      "description": "Present only in delta reviews of an updated artefact (lab §1.5; grader D11).",
+      "additionalProperties": false,
+      "required": ["prior_finding_id", "status", "note"],
+      "properties": {
+        "prior_finding_id": {"anyOf": [{"$ref": "#/$defs/FindingId"}, {"type": "null"}]},
+        "status": {"$ref": "#/$defs/ReassessmentStatus"},
+        "note": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"enum": ["still_open", "partially_addressed", "resolved"]}}},
+         "then": {"properties": {"prior_finding_id": {"$ref": "#/$defs/FindingId"}}}}
+      ]
+    },
+
+    "Finding": {
+      "type": "object",
+      "title": "Finding",
+      "additionalProperties": false,
+      "required": ["id", "rank", "kind", "category", "severity", "confidence", "disposition", "secondary_dispositions",
+                   "title", "statement", "doc_anchors", "evidence", "recommendation", "no_change_rationale", "next_step",
+                   "affected_decisions", "acknowledged_in_doc", "tags", "reassessment", "provenance"],
+      "properties": {
+        "id": {"$ref": "#/$defs/FindingId"},
+        "rank": {"type": "integer", "minimum": 1, "description": "Agent's priority order (1 = most important); used by ranking metrics (metrics.md §4)."},
+        "kind": {"$ref": "#/$defs/Kind"},
+        "category": {"anyOf": [{"$ref": "#/$defs/Category"}, {"type": "null"}], "description": "Defect mechanism (axis 2); null iff kind = strength."},
+        "severity": {"anyOf": [{"$ref": "#/$defs/Severity"}, {"type": "null"}], "description": "null iff kind = strength."},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "disposition": {"$ref": "#/$defs/Disposition"},
+        "secondary_dispositions": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/Disposition"}, "description": "Replaces grading's 'mixed'. Must not contain the primary disposition or no_change."},
+        "title": {"$ref": "#/$defs/NonEmpty"},
+        "statement": {"$ref": "#/$defs/NonEmpty", "description": "The atomic claim: what is wrong (or right) and why it matters for a stated objective. This is what the matcher compares with the flaw's core_insight."},
+        "doc_anchors": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/DocAnchor"}, "description": "At least one (audit G1), at most three (audit G3)."},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/EvidenceItem"}},
+        "recommendation": {"anyOf": [{"$ref": "#/$defs/Recommendation"}, {"type": "null"}]},
+        "no_change_rationale": {"type": ["string", "null"], "description": "Lab §2.3: why the existing design remains appropriate. Required iff disposition = no_change."},
+        "next_step": {"anyOf": [{"$ref": "#/$defs/NextStep"}, {"type": "null"}]},
+        "affected_decisions": {"type": "array", "items": {"$ref": "#/$defs/AffectedDecision"}},
+        "acknowledged_in_doc": {"type": "boolean", "description": "true if the design itself already lists this issue (backlog, open items, self-assessment); the review must then not present it as a new discovery (grader D1)."},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "Free domain tags (e.g. 'payments', 'safety'). Not a taxonomy."},
+        "reassessment": {"anyOf": [{"$ref": "#/$defs/Reassessment"}, {"type": "null"}]},
+        "provenance": {"$ref": "#/$defs/Provenance"}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "strength"}}, "required": ["kind"]},
+         "then": {"properties": {"category": {"type": "null"}, "severity": {"type": "null"}, "disposition": {"const": "no_change"}}},
+         "else": {"properties": {"category": {"$ref": "#/$defs/Category"}, "severity": {"$ref": "#/$defs/Severity"}}}},
+        {"if": {"properties": {"disposition": {"const": "no_change"}}, "required": ["disposition"]},
+         "then": {"properties": {"recommendation": {"type": "null"}, "no_change_rationale": {"type": "string", "minLength": 1}, "next_step": {"type": "null"}, "secondary_dispositions": {"maxItems": 0}}},
+         "else": {"properties": {"recommendation": {"$ref": "#/$defs/Recommendation"}, "no_change_rationale": {"type": "null"}, "secondary_dispositions": {"items": {"not": {"const": "no_change"}}}}}},
+        {"if": {"properties": {"disposition": {"enum": ["needs_investigation", "needs_prototyping", "needs_testing", "governance_decision"]}}, "required": ["disposition"]},
+         "then": {"properties": {"next_step": {"$ref": "#/$defs/NextStep"}}}},
+        {"if": {"properties": {"affected_decisions": {"contains": {"properties": {"relation": {"const": "challenges"}}, "required": ["relation"]}}}, "required": ["affected_decisions"]},
+         "then": {"properties": {"evidence": {"minItems": 2}, "disposition": {"not": {"const": "no_change"}}}}}
+      ]
+    },
+
+    "LedgerEntry": {
+      "type": "object",
+      "description": "One evidence-ledger record (robustness §10 item 3). External entries come only from real or replayed tool calls in this run.",
+      "additionalProperties": false,
+      "required": ["evidence_id", "source_type", "authority", "tool", "url_or_citation", "title", "retrieved_at", "content_sha256", "snapshot_path", "excerpt", "read_before_cite", "derived_from"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/EvidenceId"},
+        "source_type": {"$ref": "#/$defs/SourceType"},
+        "authority": {"anyOf": [{"$ref": "#/$defs/SourceAuthority"}, {"type": "null"}]},
+        "tool": {"anyOf": [{"type": "null"}, {"type": "object", "additionalProperties": false, "required": ["server", "tool_name", "call_id"],
+                 "properties": {"server": {"type": "string"}, "tool_name": {"type": "string"}, "call_id": {"type": "string"}}}]},
+        "url_or_citation": {"$ref": "#/$defs/NonEmpty"},
+        "title": {"type": ["string", "null"]},
+        "retrieved_at": {"type": ["string", "null"], "format": "date-time"},
+        "content_sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]},
+        "snapshot_path": {"type": ["string", "null"]},
+        "excerpt": {"type": ["string", "null"]},
+        "read_before_cite": {"type": "boolean", "description": "true if the full content was fetched and read before it was cited (audit C11)."},
+        "derived_from": {"type": "array", "items": {"$ref": "#/$defs/EvidenceId"}}
+      },
+      "allOf": [
+        {"if": {"properties": {"source_type": {"const": "external"}}},
+         "then": {"properties": {"tool": {"type": "object"}, "retrieved_at": {"type": "string"}, "content_sha256": {"$ref": "#/$defs/Sha256"}, "authority": {"$ref": "#/$defs/SourceAuthority"}}}}
+      ]
+    },
+
+    "RegistryEntry": {
+      "type": "object",
+      "description": "Decision and constraint registry, extracted once and pinned in state (robustness §10 item 5).",
+      "additionalProperties": false,
+      "required": ["registry_id", "type", "doc_ref", "statement", "doc_anchor"],
+      "properties": {
+        "registry_id": {"$ref": "#/$defs/RegistryId"},
+        "type": {"$ref": "#/$defs/RegistryEntryType"},
+        "doc_ref": {"$ref": "#/$defs/NonEmpty", "description": "The document's own ID for it, e.g. 'D-15' or 'NFR-1'."},
+        "statement": {"$ref": "#/$defs/NonEmpty"},
+        "doc_anchor": {"$ref": "#/$defs/DocAnchor"}
+      }
+    },
+
+    "SoundArea": {
+      "type": "object",
+      "description": "A section or decision the review affirms as fit for purpose (methodology section_verdicts; correctly-declined metrics).",
+      "additionalProperties": false,
+      "required": ["id", "section_refs", "why_sound", "doc_anchors", "evidence_ids", "related_finding_ids"],
+      "properties": {
+        "id": {"$ref": "#/$defs/SoundAreaId"},
+        "section_refs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NonEmpty"}},
+        "why_sound": {"$ref": "#/$defs/NonEmpty"},
+        "doc_anchors": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"$ref": "#/$defs/DocAnchor"}},
+        "evidence_ids": {"type": "array", "items": {"$ref": "#/$defs/EvidenceId"}},
+        "related_finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}, "description": "Usually strength / no_change findings in this area."}
+      }
+    },
+
+    "Verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "rationale", "confidence", "conditions", "per_objective", "what_would_change_it"],
+      "properties": {
+        "label": {"$ref": "#/$defs/VerdictLabel"},
+        "rationale": {"$ref": "#/$defs/NonEmpty"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "conditions": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["text", "finding_ids"],
+          "properties": {"text": {"$ref": "#/$defs/NonEmpty"}, "finding_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/FindingId"}}}}},
+        "per_objective": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["objective_ref", "label", "finding_ids"],
+          "properties": {"objective_ref": {"$ref": "#/$defs/NonEmpty"}, "label": {"$ref": "#/$defs/VerdictLabel"}, "finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}}}}},
+        "what_would_change_it": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"label": {"const": "fit_with_conditions"}}}, "then": {"properties": {"conditions": {"minItems": 1}}}}
+      ]
+    },
+
+    "StopReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "group", "detail"],
+      "properties": {
+        "code": {"$ref": "#/$defs/StopReasonCode"},
+        "group": {"$ref": "#/$defs/StopReasonGroup"},
+        "detail": {"type": ["string", "null"]}
+      }
+    },
+
+    "ResearchLog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["iterations", "tool_calls_by_tool", "queries_issued", "sources_retrieved", "sources_cited", "unanswered_questions", "degradations"],
+      "properties": {
+        "iterations": {"type": "integer", "minimum": 0},
+        "tool_calls_by_tool": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "queries_issued": {"type": "integer", "minimum": 0},
+        "sources_retrieved": {"type": "integer", "minimum": 0},
+        "sources_cited": {"type": "integer", "minimum": 0},
+        "unanswered_questions": {"type": "array", "items": {"type": "string"}},
+        "degradations": {"type": "array", "description": "Fault events that must be disclosed (robustness INV-07).", "items": {"type": "object", "additionalProperties": false, "required": ["event", "impact"],
+          "properties": {"event": {"type": "string"}, "impact": {"type": "string"}}}}
+      }
+    },
+
+    "RunManifest": {
+      "type": "object",
+      "description": "Methodology §7.1 with audit C15/C16 corrections: no temperature/seed for Claude; record thinking/effort/max_tokens/betas and the served model per role.",
+      "additionalProperties": false,
+      "required": ["run_id", "git_commit", "git_dirty", "config_sha256", "prompts_bundle_sha256", "taxonomy_sha256", "schema_version",
+                   "extractor", "models_used", "fallback_events", "tools", "budgets", "usage", "timestamps", "outcome", "prereg_sha256", "split", "condition", "extra"],
+      "properties": {
+        "run_id": {"$ref": "#/$defs/NonEmpty"},
+        "git_commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+        "git_dirty": {"const": false, "description": "A dirty tree must be refused (methodology §7.1)."},
+        "config_sha256": {"$ref": "#/$defs/Sha256"},
+        "prompts_bundle_sha256": {"$ref": "#/$defs/Sha256"},
+        "taxonomy_sha256": {"$ref": "#/$defs/Sha256"},
+        "schema_version": {"const": "1.0"},
+        "prereg_sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]},
+        "split": {"type": ["string", "null"]},
+        "condition": {"type": ["string", "null"]},
+        "extractor": {"type": "object", "additionalProperties": false, "required": ["name", "version", "page_marker"],
+          "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "page_marker": {"type": "string"}}},
+        "models_used": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
+          "required": ["role", "requested_model", "served_models", "thinking", "effort", "max_tokens", "betas", "sampling"],
+          "properties": {
+            "role": {"type": "string", "description": "e.g. orchestrator, reader, verifier."},
+            "requested_model": {"type": "string"},
+            "served_models": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "Every distinct response.model observed for this role."},
+            "thinking": {"type": ["string", "null"]},
+            "effort": {"type": ["string", "null"]},
+            "max_tokens": {"type": "integer", "minimum": 1},
+            "betas": {"type": "array", "items": {"type": "string"}},
+            "sampling": {"type": "string", "description": "'provider-default (not settable)' for Claude; explicit values only for models that accept them."}
+          }}},
+        "fallback_events": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["role", "from_model", "to_model", "reason"],
+          "properties": {"role": {"type": "string"}, "from_model": {"type": "string"}, "to_model": {"type": "string"}, "reason": {"type": "string"}}}},
+        "tools": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["name", "enabled", "server_version", "mode"],
+          "properties": {"name": {"type": "string"}, "enabled": {"type": "boolean"}, "server_version": {"type": ["string", "null"]}, "mode": {"enum": ["live", "record", "replay"]}}}},
+        "budgets": {"type": "object", "additionalProperties": false, "required": ["max_tool_calls", "max_tokens", "deadline_s"],
+          "properties": {"max_tool_calls": {"type": ["integer", "null"]}, "max_tokens": {"type": ["integer", "null"]}, "deadline_s": {"type": ["integer", "null"]}}},
+        "usage": {"type": "object", "additionalProperties": false, "required": ["input_tokens", "output_tokens", "cached_tokens", "tool_calls", "cost_usd", "price_table_date"],
+          "properties": {"input_tokens": {"type": "integer"}, "output_tokens": {"type": "integer"}, "cached_tokens": {"type": "integer"}, "tool_calls": {"type": "integer"},
+                         "cost_usd": {"type": "number"}, "price_table_date": {"type": "string", "format": "date"}}},
+        "timestamps": {"type": "object", "additionalProperties": false, "required": ["start_utc", "end_utc"],
+          "properties": {"start_utc": {"type": "string", "format": "date-time"}, "end_utc": {"type": ["string", "null"], "format": "date-time"}}},
+        "outcome": {"enum": ["completed_nominal", "completed_degraded", "aborted_graceful", "crashed", "timeout", "budget_exceeded"]},
+        "extra": {"type": "object", "description": "Forward-compatible extension point; never read by scorers."}
+      }
+    },
+
+    "Review": {
+      "type": "object",
+      "title": "Review",
+      "additionalProperties": false,
+      "required": ["schema_version", "metadata", "intent_summary", "verdict", "findings", "sound_areas", "unresolved",
+                   "decision_registry", "evidence_ledger", "research_log", "limitations", "stop_reason", "run_manifest"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "metadata": {
+          "type": "object", "additionalProperties": false,
+          "required": ["review_id", "run_id", "created_at", "review_mode", "documents", "prior_review_id", "taxonomy_version"],
+          "properties": {
+            "review_id": {"$ref": "#/$defs/NonEmpty"},
+            "run_id": {"$ref": "#/$defs/NonEmpty"},
+            "created_at": {"type": "string", "format": "date-time"},
+            "review_mode": {"enum": ["full", "delta"], "description": "delta = re-assessment of an updated artefact (lab §1.5)."},
+            "documents": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
+              "required": ["doc_id", "title", "version", "role", "sha256_pdf", "sha256_text", "page_count"],
+              "properties": {
+                "doc_id": {"$ref": "#/$defs/DocId"},
+                "title": {"type": "string"},
+                "version": {"type": ["string", "null"]},
+                "role": {"enum": ["under_review", "prior_version", "companion"]},
+                "sha256_pdf": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]},
+                "sha256_text": {"$ref": "#/$defs/Sha256", "description": "Hash of the canonical page-marked text every verifier reads (audit C14)."},
+                "page_count": {"type": ["integer", "null"], "minimum": 1}
+              }}},
+            "prior_review_id": {"type": ["string", "null"]},
+            "taxonomy_version": {"const": "1.0"}
+          }
+        },
+        "intent_summary": {
+          "type": "object", "additionalProperties": false,
+          "description": "Lab §2.3 'explains the design intent'; grader D1.",
+          "required": ["statement", "objectives", "constraints", "key_assumptions", "doc_anchors"],
+          "properties": {
+            "statement": {"$ref": "#/$defs/NonEmpty"},
+            "objectives": {"type": "array", "items": {"$ref": "#/$defs/RefText"}},
+            "constraints": {"type": "array", "items": {"$ref": "#/$defs/RefText"}},
+            "key_assumptions": {"type": "array", "items": {"$ref": "#/$defs/RefText"}},
+            "doc_anchors": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/DocAnchor"}}
+          }
+        },
+        "verdict": {"$ref": "#/$defs/Verdict"},
+        "findings": {"type": "array", "items": {"$ref": "#/$defs/Finding"}},
+        "sound_areas": {"type": "array", "items": {"$ref": "#/$defs/SoundArea"}},
+        "unresolved": {"type": "array", "description": "Lab §2.4: unresolved issues clearly stated.", "items": {"type": "object", "additionalProperties": false,
+          "required": ["text", "finding_ids", "next_step"],
+          "properties": {"text": {"$ref": "#/$defs/NonEmpty"}, "finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}},
+                         "next_step": {"anyOf": [{"$ref": "#/$defs/NextStep"}, {"type": "null"}]}}}},
+        "decision_registry": {"type": "array", "items": {"$ref": "#/$defs/RegistryEntry"}},
+        "evidence_ledger": {"type": "array", "items": {"$ref": "#/$defs/LedgerEntry"}},
+        "research_log": {"$ref": "#/$defs/ResearchLog"},
+        "limitations": {"type": "array", "items": {"type": "string"}},
+        "stop_reason": {"$ref": "#/$defs/StopReason"},
+        "run_manifest": {"$ref": "#/$defs/RunManifest"}
+      }
+    },
+
+    "RefText": {
+      "type": "object", "additionalProperties": false, "required": ["ref", "text"],
+      "properties": {"ref": {"type": ["string", "null"], "description": "Doc ID such as 'O-2', 'NFR-1', 'C-3'; null if the doc has none."}, "text": {"$ref": "#/$defs/NonEmpty"}}
+    }
+  }
+}

@@ -424,7 +424,7 @@ v2_statuses:
   - {id: introduced, definition: "New in v2; `introduced_by_fix_of` names the v1 flaw whose fix caused it, if any."}
   - {id: not_applicable, definition: "Item has no v2."}
 splits: [S-dev, S-heldout, Blind, Real-dev, OOD, rehearsal]
-author_types: [llm, human, mixed]
+author_types: [llm, human, mixed, unknown]   # unknown only while authoring_status.pending lists author_type
 
 # Matcher / adjudicator labels (methodology metrics.md §2.2, §2.3 step 4), listed so every
 # instrument uses the same strings.
