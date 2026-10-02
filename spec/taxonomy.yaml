@@ -395,6 +395,17 @@ decision_relations:           # finding.affected_decisions[].relation; robustnes
 
 registry_entry_types: [approved_decision, pending_decision, constraint, requirement]
 
+degradation_types:            # research_log.degradations[].type; robustness INV-07 (verify_spec edit E7)
+  - {id: tool_unavailable, definition: "An MCP server or tool was down, unreachable, disabled by a breaker or by auth failure."}
+  - {id: tool_error, definition: "Individual tool calls failed or returned unusable content."}
+  - {id: model_fallback, definition: "A model call was served by a different model than requested (one per run_manifest.fallback_events entry)."}
+  - {id: ocr_used, definition: "Text came from OCR rather than the text layer, so anchors are less reliable."}
+  - {id: input_degraded, definition: "The input was repaired, truncated, partly unreadable or a companion document was missing."}
+  - {id: budget_or_deadline_hit, definition: "A tool-call, token or wall-clock cap stopped research (stop_reason group cap or error)."}
+  - {id: other, definition: "Any other fault event in the run log."}
+
+tool_call_statuses: [ok, error, timeout, blocked]   # research_log.tool_calls[].status; blocked = refused by the gateway policy
+
 phases:                       # finding.provenance.phase
   - {id: understand, definition: "Intent, objective, constraint and decision extraction."}
   - {id: assess, definition: "Initial analysis that raises the finding."}
@@ -541,10 +552,10 @@ legacy_mappings:
     needs_governance_decision: governance_decision
     none: no_change
     mixed: "primary disposition + secondary_dispositions[] (no single value)"
-  verdict:
-    yes: fit
+  verdict:                    # keys quoted: unquoted yes/no parse as booleans in YAML 1.1 (verify_spec edit E1)
+    "yes": fit
     partly: fit_with_conditions
-    no: not_fit
+    "no": not_fit
     fit_with_refinements: fit_with_conditions
   provenance:
     DOC: doc
@@ -558,4 +569,5 @@ legacy_mappings:
   v2_status:
     fixed: fixed
     unchanged: unchanged
-    regressed: "fixed + caused_regression_flaw_id = new_flaw_id"
+    regressed: "fixed + caused_regression_flaw_id = new_flaw_id"   # pre-2026-10-02 keys
+    fixed_with_introduced_new_flaw_id: "fixed + caused_regression_flaw_id = introduced_new_flaw_id"   # current keys (eval_fixes_applied.md decision 2)

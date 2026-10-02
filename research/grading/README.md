@@ -101,6 +101,17 @@ score (strict marking). "Material" means it changes the fitness verdict, a requi
 risk to learners, data or cost. Within D3–D7, judge mainly on material findings, so low-materiality padding
 cannot raise a score.
 
+> **Reconciled (2026-10-02): vocabulary.** The 0–4 scale per dimension stays: it is the grader's scale (audit C1). Every
+> mention of a *flaw* severity or category below uses `spec/taxonomy.yaml`: the six D3 categories are the spec `kind`
+> axis (`strength`, `risk`, `gap`, `ambiguity`, `unresolved_assumption`, `validation_need`); defect mechanisms are the
+> spec `category` axis; severity is `critical | high | medium | low` (strengths: `null`); the D7 triage labels are the spec
+> `disposition` enum (`refinement_now`, `needs_investigation`, `needs_prototyping`, `needs_testing`, `governance_decision`,
+> `no_change`), with a mixed case expressed as one primary disposition plus `secondary_dispositions[]`, not as "mixed"
+> (spec/README.md §3 C7, C8, C6). **Materiality** (high / medium / low) remains a grader-only concept; for reporting it
+> corresponds approximately to severity as high → {critical, high}, medium → medium, low → low
+> (`legacy_mappings.severity.grading_materiality`). The hallucination types in §4.3 (e.g. `unsupported_quantitative_claim`)
+> are grader error types, not spec defect categories.
+
 #### D1 Design-intent understanding (10)
 | Score | Descriptor |
 |---|---|
@@ -123,7 +134,7 @@ cannot raise a score.
 Categories: strengths, risks, gaps, ambiguities, unresolved assumptions, validation needs (Lab p.5 §2.3).
 | Score | Descriptor |
 |---|---|
-| 4 | All six categories are present. Each has at least one material, document-anchored item. Covers the most material issues in the document (key-aware: ≥ 80 % of key items rated *high*; key-blind: the grader's independent pre-read list). Contains no padding. |
+| 4 | All six categories are present. Each has at least one material, document-anchored item. Covers the most material issues in the document (judged against the grader's independent pre-read list; *reconciled 2026-10-02: the key-aware "≥ 80 % of key items" clause is removed, because recall comes only from the methodology matcher, `spec/README.md` §3 C4*). Contains no padding. |
 | 3 | All six present (or five, with the sixth genuinely not applicable and so stated). Covers most high-materiality issues. |
 | 2 | Four or five categories present, or several high-materiality issues missed. |
 | 1 | Three or fewer categories, or mostly low-materiality or generic items. |
@@ -259,13 +270,18 @@ Suspected items do not trigger caps. They are sent to the verification step (§6
 **Pass** requires S ≥ 60 **and** all gates passing. Our internal target for the agent is **≥ 80 key-blind,
 with zero material hallucinations**, on both the sample artefact and held-out artefacts.
 
+> **Superseded (reconciliation 2026-10-02):** this target is checked on S-dev and the SIT sample during development. Held-out artefacts are not graded
+repeatedly: S-heldout (the current `eval/blind`, sealed, not blind) allows ≤ 3 logged evaluations in total and the
+commissioned Blind set exactly one, after `prereg.yaml` is frozen (`docs/DECISIONS.md` ADR-004; audit C19). Iterating
+prompts on grader scores risks Goodhart effects, so headline claims rest on judge-free metrics (audit G5).
+
 ---
 
 ## 5. Inputs and modes
 
 | Input | Required | Notes |
 |---|:---:|---|
-| `design_doc` | yes | Page-marked text (e.g. `pdftotext -layout`, with `[[PAGE n]]` inserted at each form feed). The grader needs page numbers to verify citations. |
+| `design_doc` | yes | Page-marked text: the run's canonical `doc.pages.txt` (pinned pdfplumber, `[[PAGE n]]` markers, normalised), the same text every other verifier reads (*reconciled 2026-10-02: replaces `pdftotext -layout`; `docs/DECISIONS.md` ADR-006, audit C14*). The grader needs page numbers to verify citations. |
 | `review` | yes | The agent's final review exactly as produced. Metadata (team, model, prompt, run config) is stripped. |
 | `evidence_register` | optional | The agent's list of sources with excerpts. It is a submitted output (Lab p.7 §5.1), so the grader may see it. It is used to check that external claims are traceable. |
 | `answer_key` | optional | Key items, traps and "no change" areas (format in `grader_prompt.md` §6). Used in key-aware mode only. |
@@ -280,6 +296,15 @@ with zero material hallucinations**, on both the sample artefact and held-out ar
   assumed complete. Key-aware dimension scores are reported separately and never averaged with key-blind ones.
 
 Always run key-blind first and key-aware second, in separate contexts, so the key cannot leak into the blind score.
+
+> **Superseded (reconciliation 2026-10-02):** (1) Key-aware mode is **diagnostic only**. Its key-item alignment (full / partial / none, `recall_high`,
+`recall_all`) is never reported as recall; recall, precision and SWR come only from the matcher in
+`research/methodology/metrics.md` §2 (`spec/README.md` §3 C4). (2) Any finding-to-flaw matching follows that one rule
+(core insight + compatible location, one-to-one), with the core insight checked by each flaw's `credit.mode`
+(`substance | all_of | any_of`, `spec/taxonomy.yaml` `credit_modes`; C5). (3) "Valid findings not in the key" are
+adjudicated as VALID_UNPLANTED and count as correct for adjudicated precision (`metrics.md` §2.3 step 4, §3; C26).
+(4) The answer key itself is `spec/answer_key.schema.json`; the YAML in `grader_prompt.md` §6 is a legacy format mapped
+by `spec/README.md` §2.3 (C32).
 
 ---
 
@@ -303,25 +328,27 @@ Always run key-blind first and key-aware second, in separate contexts, so the ke
 7. Key-aware    (optional) repeat steps 4–6 with the answer key → recall / traps / extras
 ```
 
+> **Superseded (reconciliation 2026-10-02):** step 7's "recall" is a diagnostic key alignment, never reported as recall (see §5 note; `spec/README.md` §3 C4). Step 0's page-marked design doc is the canonical `doc.pages.txt` and step 3's string verification uses the same quote-matching function as the agent's verify stage (`docs/DECISIONS.md` ADR-006, ADR-007; C14).
+
 ### 6.2 Bias controls
 | Bias | Control |
 |---|---|
 | Knowing the agent's design | The grader **never** sees agent system prompts, tool traces, model name, team name or config. It sees the review, the design doc and the evidence register. |
-| Self-preference | The grader model family differs from the agent's model family where possible (see `research/models/`). If it cannot, run a paraphrase test (§8, V9). |
+| Self-preference | The grader model is chosen by `docs/DECISIONS.md` ADR-003 (*reconciled 2026-10-02; Pending on which API keys exist*): branch A a different family; branch B Claude, disclosed as same-family, with blinding, template normalisation and the paraphrase test (§8, V9), and its numbers labelled tentative (audit C3). |
 | Position / order | Findings are shuffled per sample in Pass A; the two samples use different seeds. Prioritisation, which depends on order, is judged only in Pass B on the intact review. |
-| Relative / anchoring drift | Absolute scoring against fixed anchors. One review per call; never pairwise. Anchor texts are embedded verbatim in the system prompt. |
+| Relative / anchoring drift | Absolute scoring against fixed anchors; headline scores stay absolute. One review per call. Pairwise only for A/B ablations, run in both orders, with a win counted only if both orders agree, else a tie (*reconciled 2026-10-02, audit C27; `research/models/README.md` §4 item 5*). Anchor texts are embedded verbatim in the system prompt. |
 | Verbosity | Explicit instruction that length earns nothing; padding flag per finding; D3 credits only material, anchored items; validation tests V1–V3. |
 | Authority / confident tone | Every external citation is checked for support; confident, unsourced claims are treated as unsupported. |
 | Framing by the review | The independent pre-read in Pass B is written before the review is read. |
 | Grader hallucination | A grader that flags a hallucination must give the conflicting doc text or explicit reasoning. Flags that cannot be verified are `suspected`, never cap-triggering. Harness-side string verification (step 3). |
 | Prompt injection | The review is wrapped in delimiters and declared to be data. Embedded instructions are flagged (G5). |
-| Sampling noise | Two samples at temperature ≥ 0.3 (or the model default), reporting per-dimension disagreement and a third sample when needed. |
+| Sampling noise | Two samples at the provider's default sampling (*reconciled 2026-10-02: Claude takes no `temperature`; set one only for a non-Claude grader that accepts it; `spec/README.md` §3 C15, `docs/REPRODUCIBILITY.md`*), reporting per-dimension disagreement and a third sample when needed. |
 | Answer-key leakage | Key-blind and key-aware runs use separate contexts; key-blind is the headline score. |
 
 ### 6.3 Outputs
 For each review, the harness stores both samples' raw JSON (schemas in `grader_prompt.md` §5), the merged
 hallucination list with verification status, per-dimension median scores, S, the grade, gate results, the
-disagreement table, and (in key-aware mode) key recall, trap hits and valid extras.
+disagreement table, and (in key-aware mode) key alignment (diagnostic, not recall; reconciled, C4), trap hits and valid extras.
 
 ---
 
@@ -361,6 +388,11 @@ disagreement table, and (in key-aware mode) key recall, trap hits and valid extr
 7. **Caveat.** With n = 5 the confidence intervals are wide. Treat this as a smoke calibration. When time
    allows, extend to 15–20 items. Add a second human to measure human–human κ, which is the ceiling the
    grader can reasonably reach.
+
+> **Superseded (reconciliation 2026-10-02):** these targets define only the **smoke** tier. Claims are tied to the tier reached: smoke (n = 5,
+the targets above), tentative (n ≥ 20 reviews, ordinal Krippendorff's α ≥ 0.667 with bootstrap CI), primary
+(methodology §8). Report ordinal α and QWK together. One person labels (audit §4.6), so human–human κ needs a peer
+grading a subset. Tiers are frozen in `prereg.yaml` (not yet written). Audit C2.
 
 ---
 
@@ -416,12 +448,12 @@ will probably probe and what earns marks when they do.
 ### (a) Explain the agent design (§5.4a; documentation bullets in §5.3)
 | Likely probe | Behaviour that earns marks | Behaviour that loses marks |
 |---|---|---|
-| "Walk us through the architecture." | One diagram covering planner → reader → researcher → assessor → writer → verifier, with the reason for each part and the alternative rejected | Framework name-dropping; no rationale |
-| "How does the agent keep design content separate from research?" (§4.2) | Show the evidence store with a `source_type: design \| external` field, and how the writer cites each | "The LLM knows" |
+| "Walk us through the architecture." | One diagram covering the state machine `ingest → understand → plan → research → assess → refine → verify → report` (*reconciled 2026-10-02: `docs/DECISIONS.md` ADR-001; no reader sub-agents, ADR-002, audit C29*), with the reason for each part and the alternative rejected | Framework name-dropping; no rationale |
+| "How does the agent keep design content separate from research?" (§4.2) | Show the evidence ledger with a `source_type: doc \| external \| inference` field (*reconciled 2026-10-02: was `design \| external`; `spec/README.md` §3 C10*), cited by ledger ID, and how the writer cites each | "The LLM knows" |
 | "How does it decide when to stop researching?" (§3.2, §4.5) | Explicit stopping rule (e.g. every material claim supported or marked unresolved; budget; diminishing new evidence), shown in a log | Fixed number of searches |
 | "How do you stop it recommending changes for their own sake?" (§1.2) | Justification gate: each recommendation must carry issue / rationale / evidence / benefit / objective link, or it is dropped or turned into a "no change" note | No mechanism |
 | "How do you validate its output?" (§2.4) | A verifier step that checks quotes against the document and that cited sources support claims; this grader used as the offline eval; key-blind scores reported | "We read it" |
-| "Context and memory management?" (§4.2, §5.3) | How the document is chunked and indexed; what persists between steps; how approved decisions are pinned so they are preserved | Whole PDF pasted into one prompt with no plan for long documents |
+| "Context and memory management?" (§4.2, §5.3) | How the document is held (*reconciled 2026-10-02: native PDF block plus canonical page-marked text in a cached prefix, text-only fallback over 600 pages / 32 MB; `docs/DECISIONS.md` ADR-006*); what persists between steps (per-stage checkpoints, evidence ledger); how approved decisions are pinned in `decision_registry[]` so they are preserved | Whole PDF pasted into one prompt with no plan for long documents |
 
 ### (b) Runs on a laptop and can be modified live (§5.4b)
 - The agent starts from a clean clone with one command. Secrets come from env or `.env` and are not committed (Lab p.8 §5.2).
@@ -450,6 +482,11 @@ Likely requests and what to show:
 - **"Disable a tool"** (e.g. no web search): the agent degrades gracefully and marks claims as unverified.
 - **"Swap the model"**: model choice is a config value. Show the run still completing.
 - Marks come from: the change lands in under 5 minutes, the effect is visible in the next run, and nothing else breaks.
+
+> **Superseded (reconciliation 2026-10-02):** targets are **≤ 3 min for a config change and ≤ 5 min for a code change** (`docs/DEMO_DAY_RUNBOOK.md` §4;
+audit C23). "Swap the model" means a change within the Opus line or an effort change; a swap to another model is
+possible but a disclosed deviation from `docs/DECISIONS.md` ADR-002, and cross-vendor swap is not a live-demo feature
+(ADR-001; audit C24).
 
 ### Live scoring sheet (for our own rehearsal)
 | # | Item | Observed? |

@@ -18,12 +18,15 @@
     "RegistryEntryType": {"enum": ["approved_decision", "pending_decision", "constraint", "requirement"]},
     "Phase": {"enum": ["understand", "assess", "research", "verify", "revise", "delta_review"]},
     "ReassessmentStatus": {"enum": ["new_in_update", "still_open", "partially_addressed", "resolved"]},
+    "DegradationType": {"enum": ["tool_unavailable", "tool_error", "model_fallback", "ocr_used", "input_degraded", "budget_or_deadline_hit", "other"]},
+    "ToolCallStatus": {"enum": ["ok", "error", "timeout", "blocked"]},
 
     "FindingId": {"type": "string", "pattern": "^FND-[0-9]{3,}$"},
     "EvidenceId": {"type": "string", "pattern": "^EV-[0-9]{3,}$"},
     "RegistryId": {"type": "string", "pattern": "^AD-[0-9]{3,}$"},
     "SoundAreaId": {"type": "string", "pattern": "^SA-[0-9]{3,}$"},
     "DocId": {"type": "string", "pattern": "^DOC-[A-Za-z0-9_.-]+$"},
+    "DegradationId": {"type": "string", "pattern": "^DEG-[0-9]{3,}$"},
     "Sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "NonEmpty": {"type": "string", "minLength": 1},
 
@@ -34,7 +37,7 @@
       "required": ["doc_id", "section_ref", "requirement_ids", "quote", "page"],
       "properties": {
         "doc_id": {"$ref": "#/$defs/DocId"},
-        "section_ref": {"$ref": "#/$defs/NonEmpty", "description": "Section number or heading as printed, e.g. '9.3' or '25 Confirmed Decisions'."},
+        "section_ref": {"$ref": "#/$defs/NonEmpty", "description": "Section number or heading as printed, e.g. '6.2' or '20 Decisions'."},
         "requirement_ids": {"type": "array", "items": {"$ref": "#/$defs/NonEmpty"}, "description": "FR/NFR/AC/decision IDs cited at this location; empty if none."},
         "quote": {"type": "string", "pattern": "^\\s*\\S+(\\s+\\S+){7,}\\s*$", "description": "Verbatim span of at least 8 whitespace-separated tokens (audit G2)."},
         "page": {"type": ["integer", "null"], "minimum": 1, "description": "1-based page in the canonical page-marked text; null only for inputs without pages (Markdown)."}
@@ -171,7 +174,13 @@
         {"if": {"properties": {"disposition": {"enum": ["needs_investigation", "needs_prototyping", "needs_testing", "governance_decision"]}}, "required": ["disposition"]},
          "then": {"properties": {"next_step": {"$ref": "#/$defs/NextStep"}}}},
         {"if": {"properties": {"affected_decisions": {"contains": {"properties": {"relation": {"const": "challenges"}}, "required": ["relation"]}}}, "required": ["affected_decisions"]},
-         "then": {"properties": {"evidence": {"minItems": 2}, "disposition": {"not": {"const": "no_change"}}}}}
+         "then": {"properties": {"evidence": {"minItems": 2}, "disposition": {"not": {"const": "no_change"}}}}},
+        {"$comment": "secondary_dispositions must not repeat the primary disposition (verify_spec edit E3).",
+         "if": {"properties": {"disposition": {"const": "refinement_now"}}, "required": ["disposition"]}, "then": {"properties": {"secondary_dispositions": {"not": {"contains": {"const": "refinement_now"}}}}}},
+        {"if": {"properties": {"disposition": {"const": "needs_investigation"}}, "required": ["disposition"]}, "then": {"properties": {"secondary_dispositions": {"not": {"contains": {"const": "needs_investigation"}}}}}},
+        {"if": {"properties": {"disposition": {"const": "needs_prototyping"}}, "required": ["disposition"]}, "then": {"properties": {"secondary_dispositions": {"not": {"contains": {"const": "needs_prototyping"}}}}}},
+        {"if": {"properties": {"disposition": {"const": "needs_testing"}}, "required": ["disposition"]}, "then": {"properties": {"secondary_dispositions": {"not": {"contains": {"const": "needs_testing"}}}}}},
+        {"if": {"properties": {"disposition": {"const": "governance_decision"}}, "required": ["disposition"]}, "then": {"properties": {"secondary_dispositions": {"not": {"contains": {"const": "governance_decision"}}}}}}
       ]
     },
 
@@ -209,7 +218,7 @@
       "properties": {
         "registry_id": {"$ref": "#/$defs/RegistryId"},
         "type": {"$ref": "#/$defs/RegistryEntryType"},
-        "doc_ref": {"$ref": "#/$defs/NonEmpty", "description": "The document's own ID for it, e.g. 'D-15' or 'NFR-1'."},
+        "doc_ref": {"$ref": "#/$defs/NonEmpty", "description": "The document's own ID for it, e.g. 'D-3' or 'NFR-7'."},
         "statement": {"$ref": "#/$defs/NonEmpty"},
         "doc_anchor": {"$ref": "#/$defs/DocAnchor"}
       }
@@ -263,16 +272,23 @@
     "ResearchLog": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["iterations", "tool_calls_by_tool", "queries_issued", "sources_retrieved", "sources_cited", "unanswered_questions", "degradations"],
+      "required": ["iterations", "tool_calls_by_tool", "tool_calls", "queries_issued", "sources_retrieved", "sources_cited", "unanswered_questions", "degradations", "registry_sha256_by_iteration"],
       "properties": {
         "iterations": {"type": "integer", "minimum": 0},
-        "tool_calls_by_tool": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "tool_calls_by_tool": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}, "description": "Must equal the per-server count of tool_calls[]."},
+        "tool_calls": {"type": "array", "description": "Every tool call made (or replayed) in this run; external ledger entries must resolve to an ok call here (robustness INV-05).",
+          "items": {"type": "object", "additionalProperties": false, "required": ["call_id", "server", "tool_name", "status", "started_at"],
+            "properties": {"call_id": {"$ref": "#/$defs/NonEmpty"}, "server": {"$ref": "#/$defs/NonEmpty"}, "tool_name": {"$ref": "#/$defs/NonEmpty"},
+                           "status": {"$ref": "#/$defs/ToolCallStatus"}, "started_at": {"type": "string", "format": "date-time"}}}},
+        "registry_sha256_by_iteration": {"type": "array", "minItems": 1, "description": "sha256 of the canonical JSON of decision_registry at the end of each iteration; all equal and equal to the final registry's hash (robustness INV-10).",
+          "items": {"type": "object", "additionalProperties": false, "required": ["iteration", "sha256"],
+            "properties": {"iteration": {"type": "integer", "minimum": 0}, "sha256": {"$ref": "#/$defs/Sha256"}}}},
         "queries_issued": {"type": "integer", "minimum": 0},
         "sources_retrieved": {"type": "integer", "minimum": 0},
         "sources_cited": {"type": "integer", "minimum": 0},
         "unanswered_questions": {"type": "array", "items": {"type": "string"}},
-        "degradations": {"type": "array", "description": "Fault events that must be disclosed (robustness INV-07).", "items": {"type": "object", "additionalProperties": false, "required": ["event", "impact"],
-          "properties": {"event": {"type": "string"}, "impact": {"type": "string"}}}}
+        "degradations": {"type": "array", "description": "Fault events that must be disclosed (robustness INV-07). Each id must appear in some limitations[].degradation_ids.", "items": {"type": "object", "additionalProperties": false, "required": ["id", "type", "event", "impact"],
+          "properties": {"id": {"$ref": "#/$defs/DegradationId"}, "type": {"$ref": "#/$defs/DegradationType"}, "event": {"$ref": "#/$defs/NonEmpty"}, "impact": {"$ref": "#/$defs/NonEmpty"}}}}
       }
     },
 
@@ -281,7 +297,8 @@
       "description": "Methodology §7.1 with audit C15/C16 corrections: no temperature/seed for Claude; record thinking/effort/max_tokens/betas and the served model per role.",
       "additionalProperties": false,
       "required": ["run_id", "git_commit", "git_dirty", "config_sha256", "prompts_bundle_sha256", "taxonomy_sha256", "schema_version",
-                   "extractor", "models_used", "fallback_events", "tools", "budgets", "usage", "timestamps", "outcome", "prereg_sha256", "split", "condition", "extra"],
+                   "extractor", "models_used", "fallback_events", "tools", "budgets", "usage", "timestamps", "outcome", "prereg_sha256", "split", "condition",
+                   "review_config", "fault_schedule_id", "extra"],
       "properties": {
         "run_id": {"$ref": "#/$defs/NonEmpty"},
         "git_commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
@@ -293,6 +310,12 @@
         "prereg_sha256": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]},
         "split": {"type": ["string", "null"]},
         "condition": {"type": ["string", "null"]},
+        "review_config": {"type": "object", "additionalProperties": false, "required": ["criteria", "stop_rule", "persona"],
+          "description": "Echo of the config-driven criteria, stop rule and persona (robustness §10 item 7, INV-09).",
+          "properties": {"criteria": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NonEmpty"}},
+                         "stop_rule": {"type": "object", "description": "As configured, e.g. {min_confidence, max_iterations, marginal_gain_threshold}."},
+                         "persona": {"type": ["string", "null"]}}},
+        "fault_schedule_id": {"type": ["string", "null"], "description": "Robustness fault-schedule ID when run under the fault harness; null otherwise (INV-09)."},
         "extractor": {"type": "object", "additionalProperties": false, "required": ["name", "version", "page_marker"],
           "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "page_marker": {"type": "string"}}},
         "models_used": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
@@ -340,7 +363,7 @@
             "created_at": {"type": "string", "format": "date-time"},
             "review_mode": {"enum": ["full", "delta"], "description": "delta = re-assessment of an updated artefact (lab §1.5)."},
             "documents": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false,
-              "required": ["doc_id", "title", "version", "role", "sha256_pdf", "sha256_text", "page_count"],
+              "required": ["doc_id", "title", "version", "role", "sha256_pdf", "sha256_text", "text_path", "page_count"],
               "properties": {
                 "doc_id": {"$ref": "#/$defs/DocId"},
                 "title": {"type": "string"},
@@ -348,6 +371,7 @@
                 "role": {"enum": ["under_review", "prior_version", "companion"]},
                 "sha256_pdf": {"anyOf": [{"$ref": "#/$defs/Sha256"}, {"type": "null"}]},
                 "sha256_text": {"$ref": "#/$defs/Sha256", "description": "Hash of the canonical page-marked text every verifier reads (audit C14)."},
+                "text_path": {"$ref": "#/$defs/NonEmpty", "description": "Run-relative path of that canonical page-marked text, so INV-04 can resolve anchors from the Review alone."},
                 "page_count": {"type": ["integer", "null"], "minimum": 1}
               }}},
             "prior_review_id": {"type": ["string", "null"]},
@@ -376,15 +400,29 @@
         "decision_registry": {"type": "array", "items": {"$ref": "#/$defs/RegistryEntry"}},
         "evidence_ledger": {"type": "array", "items": {"$ref": "#/$defs/LedgerEntry"}},
         "research_log": {"$ref": "#/$defs/ResearchLog"},
-        "limitations": {"type": "array", "items": {"type": "string"}},
+        "limitations": {"type": "array", "description": "Evidence limitations shown in the report. Every research_log.degradations[].id must be cited by one (INV-07).",
+          "items": {"type": "object", "additionalProperties": false, "required": ["text", "degradation_ids"],
+            "properties": {"text": {"$ref": "#/$defs/NonEmpty"}, "degradation_ids": {"type": "array", "items": {"$ref": "#/$defs/DegradationId"}}}}},
         "stop_reason": {"$ref": "#/$defs/StopReason"},
         "run_manifest": {"$ref": "#/$defs/RunManifest"}
-      }
+      },
+      "allOf": [
+        {"$comment": "Delta reviews (lab §1.5) need the prior review, the prior document and a reassessment on every finding; full reviews have none (verify_spec edit E6).",
+         "if": {"properties": {"metadata": {"properties": {"review_mode": {"const": "delta"}}}}},
+         "then": {"properties": {
+           "metadata": {"properties": {"prior_review_id": {"type": "string", "minLength": 1},
+                                       "documents": {"contains": {"properties": {"role": {"const": "prior_version"}}, "required": ["role"]}}}},
+           "findings": {"items": {"properties": {"reassessment": {"$ref": "#/$defs/Reassessment"}}}}}},
+         "else": {"properties": {
+           "metadata": {"properties": {"prior_review_id": {"type": "null"},
+                                       "documents": {"not": {"contains": {"properties": {"role": {"const": "prior_version"}}, "required": ["role"]}}}}},
+           "findings": {"items": {"properties": {"reassessment": {"type": "null"}}}}}}}
+      ]
     },
 
     "RefText": {
       "type": "object", "additionalProperties": false, "required": ["ref", "text"],
-      "properties": {"ref": {"type": ["string", "null"], "description": "Doc ID such as 'O-2', 'NFR-1', 'C-3'; null if the doc has none."}, "text": {"$ref": "#/$defs/NonEmpty"}}
+      "properties": {"ref": {"type": ["string", "null"], "description": "Doc ID such as 'O-2', 'NFR-7', 'C-3'; null if the doc has none."}, "text": {"$ref": "#/$defs/NonEmpty"}}
     }
   }
 }

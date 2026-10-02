@@ -66,8 +66,10 @@ Prices are USD per 1M tokens (input / output). Cached-read prices are in the cos
 
 Claude feature notes, all from the skill:
 
-- Claude 4.7 and later use a tokenizer that produces **about 30% more tokens for the same text**. If the 60K-token figure for the document came from a different tokenizer, scale it up. Measure the real count with `messages.count_tokens`.
+- Claude 4.7 and later use a tokenizer that produces **about 30% more tokens for the same text**. If the 60K-token planning assumption for the document (section 3; it is **not** a figure from the lab brief, audit C30) came from a different tokenizer, scale it up. Measure the real count with `messages.count_tokens`.
 - Citations (`citations: {enabled: true}` on the document block) return `page_location` page numbers for PDFs. That suits SIT's "traceable" requirement. Citations **cannot be combined with structured outputs** in the same call (400). Use citations in the analysis calls and structured output in the final assembly call.
+
+  > **Superseded (reconciliation 2026-10-02):** scored findings carry `{page, section_ref, quote}` anchors **inside** the structured output, verified in code against the canonical page-marked text; native citations are never part of the scored output and may be used only in an unscored analysis call. See `docs/DECISIONS.md` ADR-006, ADR-007 and `spec/README.md` §3 C13.
 - Assistant-turn prefill is rejected on every 4.6+ model. Use `output_config.format` instead.
 - The SIT MCP servers are remote HTTPS endpoints that scale to zero, with a 1–2 minute cold start. Calling them from your own harness (client-side MCP) with retries and a warm-up ping is more controllable live than Anthropic's server-side MCP connector. That is a harness choice, but it drives tool-use reliability more than model choice does.
 
@@ -114,9 +116,9 @@ The earlier single-call estimate ($0.35 per review) understated the grader by ab
 
 The rationale and citations are in `judge-bias-evidence.md`. The design:
 
-1. **Judge family is not the agent's family.** The primary judge is GPT-6.1 Sol or Gemini 3.1 Pro. Same-family judges show a +3.4 to +8.4 pp lift for their own family (Awuni et al. 2026), and judges favour models they are related to (Li et al., ICLR 2026).
+1. **Judge family is not the agent's family.** The primary judge is GPT-6.1 Sol or Gemini 3.1 Pro. *(Superseded, reconciliation 2026-10-02: this is branch A of `docs/DECISIONS.md` ADR-003, which is **Pending** until the user confirms which API keys exist; branch B is section 1's table row and section 5. Audit C3.)* Same-family judges show a +3.4 to +8.4 pp lift for their own family (Awuni et al. 2026), and judges favour models they are related to (Li et al., ICLR 2026).
 2. **Panel, reported per judge.** Use a cross-family judge (headline score), a second cross-family judge if a third key exists, and **Claude Sonnet 5.5 as an in-family control**. The control is not there to score. It exists so you can *measure* self-preference (section 6, E1). Panels reduce intra-model bias (Verga et al. 2024), but they do not eliminate self-preference bias (SPB) ("SPB in rubric-based evaluation", arXiv 2604.06996, 2026).
-3. **Absolute, analytic rubric for headline scores.** Score each criterion on a 0–3 scale. Every level has a written anchor plus one short exemplar. Where possible, split a criterion into binary, checkable items. For example: "every refinement states issue, rationale, evidence and expected benefit" (SIT §2.3). Rubric anchoring and reference material are what made Prometheus match human scores. arXiv 2604.06996 shows SPB survives even in binary rubrics, so do not stop here.
+3. **Absolute, analytic rubric for headline scores.** Score each criterion on a 0–3 scale. *(Superseded, reconciliation 2026-10-02: the grader's scale is **0–4 per dimension**, the anchored rubric in `research/grading/README.md` §3.2. The binary checkable items below are the Pass A per-finding booleans (`issue`, `rationale`, `evidence`, `expected_benefit`, `objective_link`); no second rubric. Audit C1.)* Every level has a written anchor plus one short exemplar. Where possible, split a criterion into binary, checkable items. For example: "every refinement states issue, rationale, evidence and expected benefit" (SIT §2.3). Rubric anchoring and reference material are what made Prometheus match human scores. arXiv 2604.06996 shows SPB survives even in binary rubrics, so do not stop here.
 4. **Evidence first, score last.** The judge must quote the review span that justifies each score before giving it, and output strict JSON (structured outputs). Longer reasoning before the verdict reduces *harmful* self-preference (Chen et al. 2025). Set judge reasoning effort to high.
 5. **Pairwise only for A/B ablations** (agent v1 against v2). Run every pair in **both orders**, and count a win only if the two orders agree; otherwise score a tie. Report the position-consistency rate. Swapping can raise verbosity bias and can hurt on clear-cut cases ("Judging the Judges: bias-mitigation strategies", arXiv 2604.23178, 2026), so pair it with the length control below.
 6. **Length control.** The rubric states that length is not quality. Report the score–length correlation. Run the padding perturbation (E3). Verbosity bias is documented for GPT-4-class judges (Saito et al. 2023, Zheng et al. 2023).
@@ -137,7 +139,7 @@ Partial mitigations, in order of value:
 1. Put the claims on judge-free metrics: planted-flaw recall and precision on `eval/synthetic/`, citation validity, and the completeness checks in section 4.9.
 2. Use a *different model and configuration* as judge: Sonnet 5.5 at effort high judging Opus 5.5 output, with blinding and normalisation. Say clearly in the write-up that it is the same family.
 3. Add a **local open-weight judge** as a zero-API-cost cross-family check. Prometheus 2 (7B or 8x7B, Apache-2.0) or a Qwen or Llama instruct model via Ollama on the laptop. Whether it is good enough for 10K-token design reviews is **UNVERIFIED**, so calibrate it on the human anchor set before trusting it.
-4. Build a **human anchor set**: 10–15 reviews scored blind by 2 team members. Report judge–human agreement (weighted κ) next to human–human agreement as the ceiling. "Judging LLM-as-a-judge" set this standard of comparison.
+4. Build a **human anchor set**: 10–15 reviews scored blind by 2 team members. *(Superseded, reconciliation 2026-10-02: one person is available. Grader validity is reported in named tiers (smoke n = 5, grading §7; tentative n ≥ 20 with ordinal α ≥ 0.667 and bootstrap CI; primary per methodology §8), with ordinal α and QWK reported together; the one-person labelling plan is audit §4.6 and is budgeted in `docs/BUDGET.md`. Tiers are frozen in `prereg.yaml` (not yet written). Audit C2.)* Report judge–human agreement (weighted κ) next to human–human agreement as the ceiling. "Judging LLM-as-a-judge" set this standard of comparison.
 
 ## 6. How to check each claim on your own data
 
@@ -146,7 +148,7 @@ Log `response.usage`, `stop_reason`, `stop_details`, wall-clock time and tool-ca
 | Claim | Experiment | Metric and decision rule |
 |---|---|---|
 | Cost per run is $2–3 on Opus 5.5 | Run the agent 5 times on the SIT sample artefact | Sum of `usage` × price per run; median and max. Cache hit ratio = `cache_read_input_tokens` / total input. If the hit ratio is below 0.7, find what is invalidating the cache |
-| The document is about 60K tokens | `messages.count_tokens` on the PDF, per model | Actual tokens; rescale the cost table |
+| The document is about 60K tokens on the native-PDF path (a planning assumption, not from the brief; the SIT sample is 30 pages, ~7.6K words, ~10-13K text tokens; audit C30) | `messages.count_tokens` on the PDF, per model, for the native-PDF block **and** the canonical text | Actual tokens; rescale the cost table |
 | Context and PDF limits hold | `client.models.retrieve(id)` → `max_input_tokens`, `capabilities`; send the real PDF | No 400s; page count under the limit |
 | Tool use is reliable | 10 full runs per candidate model (Opus 5.5, Sonnet 5.5, plus the non-Claude option if used) | Turns with a malformed or invalid tool call; unknown-tool-name rate; runs that finish without manual intervention (target ≥ 9/10); MCP timeout rate (warm the containers first) |
 | Refusals will not hit live | Run on the sample artefact, plus a security-heavy and an AI-training-heavy design document | Count of `stop_reason == "refusal"` by `stop_details.category`. Any non-zero count on Sonnet 5.5 `frontier_llm` means keep Opus 5.5 as the orchestrator |
@@ -155,7 +157,7 @@ Log `response.usage`, `stop_reason`, `stop_details`, wall-clock time and tool-ca
 | E2: position bias (pairwise) | Run every A/B pair in both orders | Consistency rate (target ≥ 0.8); first-position win rate (should be about 0.5) |
 | E3: verbosity bias | Add ~30% plausible but irrelevant text to 10 reviews; delete redundant sentences from 10 others | Mean score change (should be ≤ 0 for padding); score–length Spearman across all reviews |
 | E4: judge stability | 3 samples per item | Per-criterion SD; share of items with spread > 1 level |
-| E5: human validity | 10–15 reviews graded blind by 2 humans | Judge–human quadratic-weighted κ compared with human–human κ. Report both |
+| E5: human validity | 10–15 reviews graded blind by 2 humans *(reconciled 2026-10-02: one rater; ≥ 20 reviews for the tentative tier, audit C2 and §4.6)* | Judge–human ordinal Krippendorff's α **and** quadratic-weighted κ, with bootstrap CI; human–human only if a peer grades a subset |
 | E6: style-driven self-preference | Have model B rewrite model A's review sentence by sentence with the content unchanged, and the reverse (the "equal-quality pair" idea from Yang et al. 2026). Check by diff and human spot-check that content is preserved | Score change when only the authoring style changes |
 | Judge-free validity | `eval/synthetic/` planted flaws | Recall and precision of planted flaws. Correlate with judge scores (a judge that does not track planted-flaw recall is suspect) |
 

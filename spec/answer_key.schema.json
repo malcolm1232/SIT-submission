@@ -17,6 +17,14 @@
     "v2": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/V2Block"}]},
     "authoring_status": {"$ref": "#/$defs/AuthoringStatus"}
   },
+  "allOf": [
+    {"$comment": "An item has a v2 block iff it has a v2 document; without one every flaw is not_applicable, with one none is (verify_spec edit E8).",
+     "if": {"properties": {"v2": {"type": "null"}}, "required": ["v2"]},
+     "then": {"properties": {"item": {"properties": {"documents": {"properties": {"v2": {"type": "null"}}}}},
+                             "flaws": {"items": {"properties": {"v2_status": {"const": "not_applicable"}}}}}},
+     "else": {"properties": {"item": {"properties": {"documents": {"properties": {"v2": {"$ref": "#/$defs/DocRef"}}}}},
+                             "flaws": {"items": {"properties": {"v2_status": {"not": {"const": "not_applicable"}}}}}}}}
+  ],
 
   "$defs": {
     "Kind": {"$ref": "https://sit-design-review.invalid/spec/finding.schema.json#/$defs/Kind"},
@@ -53,7 +61,7 @@
         "domain": {"$ref": "#/$defs/NonEmpty"},
         "documents": {"type": "object", "additionalProperties": false, "required": ["v1", "v2"],
           "properties": {"v1": {"$ref": "#/$defs/DocRef"}, "v2": {"anyOf": [{"$ref": "#/$defs/DocRef"}, {"type": "null"}]}}},
-        "document_id": {"type": ["string", "null"], "description": "The document's own identifier, e.g. 'FDC-SEMS-DD-001 Rev C'."},
+        "document_id": {"type": ["string", "null"], "description": "The document's own identifier, e.g. 'BKG-DD-001 Rev A'."},
         "canary_guid": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}], "description": "Per-split canary (methodology §1.1 rule 5). null only while listed in authoring_status.pending."},
         "author_type": {"$ref": "#/$defs/AuthorType"},
         "author_model": {"type": ["string", "null"], "description": "Exact model ID that wrote the document and key (audit U11). null only while listed in authoring_status.pending."},
@@ -87,7 +95,7 @@
       "properties": {
         "sections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/NonEmpty"}},
         "requirement_ids": {"type": "array", "items": {"type": "string"}},
-        "decision_ids": {"type": "array", "items": {"type": "string"}, "description": "The document's own decision IDs (e.g. 'D-15'), if the flaw is anchored on a decision."},
+        "decision_ids": {"type": "array", "items": {"type": "string"}, "description": "The document's own decision IDs (e.g. 'D-3'), if the flaw is anchored on a decision."},
         "anchor_quote": {"type": ["string", "null"], "description": "Verbatim span locating the flaw (methodology §1.2). null only while pending."},
         "page": {"type": ["integer", "null"], "minimum": 1}
       }
@@ -143,7 +151,7 @@
                    "introduced_in", "introduced_by_fix_of", "v2_status", "caused_regression_flaw_id", "v2_note",
                    "location", "description", "rationale", "core_insight", "credit", "needs_external_research", "external_fact",
                    "expected_disposition", "acceptable_dispositions", "affected_decisions", "acceptable_fix", "distractor_notes",
-                   "overlapping_sound_section_ids"],
+                   "overlapping_sound_section_ids", "disambiguation"],
       "properties": {
         "id": {"$ref": "#/$defs/FlawId"},
         "title": {"type": ["string", "null"]},
@@ -171,7 +179,8 @@
         "affected_decisions": {"type": "array", "items": {"$ref": "#/$defs/DecisionId"}, "description": "Approved decisions this flaw is anchored on; challenging them with evidence is a TP, not an ADV violation (metrics §6.3)."},
         "acceptable_fix": {"type": ["string", "null"]},
         "distractor_notes": {"type": ["string", "null"]},
-        "overlapping_sound_section_ids": {"type": "array", "items": {"$ref": "#/$defs/SoundId"}, "description": "Sound sections this flaw shares a location with; a finding matched to this flaw is never a sound-section false positive."}
+        "overlapping_sound_section_ids": {"type": "array", "items": {"$ref": "#/$defs/SoundId"}, "description": "Sound sections this flaw shares a location with; a finding matched to this flaw is never a sound-section false positive."},
+        "disambiguation": {"type": ["string", "null"], "description": "Free text telling a matcher how to separate this flaw from an overlapping sound section (legacy `disambiguation`, eval_fixes_applied.md decision 3)."}
       },
       "allOf": [
         {"properties": {"kind": {"not": {"const": "strength"}}, "expected_disposition": {"not": {"const": "no_change"}}}},
@@ -196,7 +205,7 @@
 
     "SoundSection": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "location", "why_sound", "trap", "still_valid_observations", "overlapping_flaw_ids", "applies_to_versions", "bait"],
+      "required": ["id", "location", "why_sound", "trap", "still_valid_observations", "overlapping_flaw_ids", "applies_to_versions", "bait", "disambiguation"],
       "properties": {
         "id": {"$ref": "#/$defs/SoundId"},
         "location": {"$ref": "#/$defs/Location"},
@@ -205,7 +214,8 @@
         "still_valid_observations": {"type": "array", "items": {"$ref": "#/$defs/Observation"}},
         "overlapping_flaw_ids": {"type": "array", "items": {"$ref": "#/$defs/FlawId"}, "description": "Flaws whose location intersects this section (eval_data_audit Task 6)."},
         "applies_to_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["v1", "v2"]}},
-        "bait": {"type": "boolean", "description": "Unusual-looking but justified (methodology §1.2 bait units)."}
+        "bait": {"type": "boolean", "description": "Unusual-looking but justified (methodology §1.2 bait units)."},
+        "disambiguation": {"type": ["string", "null"], "description": "Free text separating this sound section from an overlapping flaw (legacy `disambiguation`)."}
       }
     },
 

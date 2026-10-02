@@ -8,7 +8,11 @@ Checked on 2026-10-02. The verified facts, with sources, are in [`comparison.md`
 
 1. **A direct MCP client, not the server-side MCP connector.** Use `mcp==2.2.0` `streamable_http_client` with an `httpx2.AsyncClient(headers={...})`, then `anthropic.lib.tools.mcp.async_mcp_tool` to turn each MCP tool into a runnable tool. The connector only accepts an OAuth `authorization_token`, with no arbitrary headers. It is beta, it supports MCP tools only, and its behaviour on a 1-2 min cold start is unknown. It also gives us no hook to degrade gracefully. *(Correction to "MCP connector **or** direct client".)*
 2. **Own the tool loop for the research step (about 40 lines). Do not lean on `tool_runner`.** The tool runner is **beta** (`client.beta.messages.tool_runner`). Anthropic's own docs say to use the manual loop "when you need ... custom logging, or conditional execution". Our stopping rule, budget, per-tool timeouts and evidence logging are exactly that. The runner stays an acceptable shortcut for a self-contained sub-step. *(Correction to "tool runner for tool loops".)*
+
+   > **Superseded (reconciliation 2026-10-02):** the research loop is model-driven only within fixed action *types*: queries and follow-up questions adapt, but the URL policy does not (fetch only URLs from search results or doc references), so tool content cannot add new kinds of action. See `docs/DECISIONS.md` ADR-001 (audit C18).
 3. **The SDK does have hidden retries.** `DEFAULT_MAX_RETRIES = 2` and `DEFAULT_TIMEOUT = 600 s`. Set both explicitly in one place and log every retry. *(Correction to "no hidden retries".)*
+
+   > **Superseded (reconciliation 2026-10-02):** the SDK runs with `max_retries=0`; one `LLMGateway` and one `ToolGateway` own retries, backoff, timeouts, breakers and budgets. See `docs/DECISIONS.md` ADR-001 (audit §1.2 item 1).
 4. **There is no temperature knob.** SDK 1.x removed `temperature/top_p/top_k` ("Current models do not use these sampling parameters"). Reproducibility therefore has to come from pinned model IDs, frozen prompts, structured outputs and recorded tool responses (see level 6). *(This applies to every framework, not only ours.)*
 
 Structured outputs are **GA** (`client.messages.parse(output_format=Finding)` / `output_config.format`), so typed findings need no beta. The "one-file provider adapter" is real but **not free**: tool schemas and structured outputs are Anthropic-shaped, so a non-Claude adapter is an estimated 150-250 LOC (UNVERIFIED). Treat model swap *within Claude* as one line, and model swap *across vendors* as a prepared fallback, not a live-demo trick.
@@ -46,6 +50,8 @@ With the custom loop, the walkthrough is one file per stage plus `states.py`, wh
 ### 3. Live modifiability: what "change it on the spot" costs
 The design rule that makes this cheap under *any* framework is: **review criteria, stopping thresholds, tool allowlists and the model ID live in `config/*.yaml`, not in code.** The frameworks then differ only on control-flow changes. The estimates below are for our planned layout, not measured on finished code.
 
+> **Superseded (reconciliation 2026-10-02):** the line counts below are to be replaced by stopwatch rehearsal timings (robustness DEMO-01 to 04, 08). Targets: ≤ 3 min for a config change, ≤ 5 min for a code change; the exact files and lines per modification are in `docs/DEMO_DAY_RUNBOOK.md` §4 (audit C23). A model swap means a change *within the Opus line* or an effort change (`docs/DECISIONS.md` ADR-002; audit C24).
+
 | Request | Custom loop | LangGraph | PydanticAI | Claude Agent SDK | CrewAI |
 |---|---|---|---|---|---|
 | Add a review criterion (e.g. "security and privacy") | 1 file (`config/criteria.yaml`), +3-5 lines | same | same, plus a field on the output model if typed (2 files, ~5 lines) | 1 file (prompt), +3 lines; the model decides whether to honour it | 1 file (`tasks.yaml`), +3 lines |
@@ -60,11 +66,13 @@ The custom loop wins on the changes evaluators most likely ask for (stopping rul
 ### 4. Robustness to tool failure
 The tools fail in three ways: a 1-2 min cold start, a server that rejects everything (document intelligence), and ordinary search or browser errors. The plan:
 
-- **Pre-warm** all four servers concurrently in `ingest`, using `asyncio.gather` with a 150 s budget and one retry after the first timeout. The smoke test showed a cold start surfaces as an `ExceptionGroup` wrapping `httpx2.ReadTimeout`, and the immediate retry succeeds once the server is warm.
+- **Pre-warm** all four servers concurrently in `ingest`, using `asyncio.gather` with a 150 s budget and one retry after the first timeout. *(Superseded, reconciliation 2026-10-02: warm only the **enabled** servers; `mcp-document-intelligence` is disabled by default, so normally three. See `docs/DECISIONS.md` ADR-001 and ADR-006 item 4; audit §1.2 item 2.)* The smoke test showed a cold start surfaces as an `ExceptionGroup` wrapping `httpx2.ReadTimeout`, and the immediate retry succeeds once the server is warm.
 - **Keep per-server health state** (`ok / degraded / down`). Only tools from healthy servers are offered to the model.
 - **Return tool errors to the model** as `is_error` tool results so it can re-plan.
 - **Record each failure** in the report's "Limitations / unverified" section.
 - **Read the PDF locally.** The document server is skipped on purpose, and the PDF goes to Claude as a native document block, with pypdf text as a fallback.
+
+> **Superseded (reconciliation 2026-10-02):** the model receives the native PDF block **and** one canonical page-marked text (`runs/<id>/doc.pages.txt`) produced by a single pinned extractor, **pdfplumber** (not pypdf). Every verifier (verify stage, matcher, grader, robustness oracles) reads that same text. Text-only is the fallback over 600 pages / 32 MB or if the native block is rejected. See `docs/DECISIONS.md` ADR-006 (audit C14).
 
 How each framework surfaces the same failures (verified in source):
 
@@ -80,7 +88,7 @@ Graceful degradation is possible everywhere. Only the custom loop makes it *visi
 ### 5. Overfitting risk
 This is mostly architecture, not framework, but a thin loop makes the controls trivial to put in place:
 
-- **A pure entry point** `review(pdf_path, config) -> Report`, called both by the CLI and by the eval harness on `eval/synthetic` (in-distribution) and `eval/blind` (held out). Results go in a per-run JSONL.
+- **A pure entry point** `review(pdf_path, config) -> Report`, called both by the CLI and by the eval harness on `eval/synthetic` (in-distribution) and `eval/blind` (held out). *(Superseded, reconciliation 2026-10-02: `eval/blind` is **not** blind; it is the sealed **S-heldout** set, renamed `eval/heldout/` on sealing, ≤ 3 logged evaluations. A true Blind set is still to be commissioned. See `docs/DECISIONS.md` ADR-004.)* Results go in a per-run JSONL.
 - **A lint test** that fails if any prompt or config contains document-specific tokens (titles, component names from the sample artefact).
 - **Generic criteria** in `config/criteria.yaml`, reviewed against the SIT success criteria and not against the sample PDF.
 - **A frozen prompt hash** recorded in every run log, so a score cannot be quietly tuned between runs.
@@ -90,6 +98,8 @@ Frameworks with hidden prompts (CrewAI, the Claude Agent SDK preset, smolagents)
 ### 6. Reproducibility
 - **Pin everything:** a lock file (recommend `uv lock`, or `pip-compile` with hashes), with `anthropic==1.11.0` and `mcp==2.2.0` pinned exactly, plus `.python-version` (3.11 or 3.12).
 - **Use a dated model snapshot ID** from config. Never use an alias.
+
+  > **Superseded (reconciliation 2026-10-02):** `claude-opus-5-5` has no dated snapshot ID; the bare ID is the most specific pin available. Log `response.model` for every call and reject an eval run whose `served_models` is not `{"claude-opus-5-5"}`. See `docs/DECISIONS.md` ADR-002 and `docs/REPRODUCIBILITY.md` §2 (audit C28, U5).
 - **No sampling knobs exist**, so determinism comes from structured outputs (schema-constrained), frozen prompts, and a **record/replay mode**: every MCP call and response is written to `runs/<id>/tools.jsonl` and can be replayed offline. That also protects a live demo against cold starts.
 - **Log every model request and response, with usage and `request_id`,** to `runs/<id>/llm.jsonl`.
 
@@ -119,10 +129,10 @@ Build on the **official Anthropic Python SDK 1.11.0 with mcp 2.2.0**, using:
 
 - a hand-written state machine;
 - a hand-written research tool loop;
-- `messages.parse()` for typed findings;
+- `messages.parse()` for typed findings, each carrying 1-3 `{page, section, quote}` anchors verified in code against the canonical text (*reconciled 2026-10-02: `docs/DECISIONS.md` ADR-007, audit C13*);
 - direct MCP sessions with a header-carrying `httpx2` client;
 - explicit retries and timeouts, plus pre-warm and per-server health;
-- a native PDF document block instead of the document-intelligence server;
+- a native PDF document block **plus one canonical page-marked text from pinned pdfplumber**, instead of the document-intelligence server (*reconciled 2026-10-02: `docs/DECISIONS.md` ADR-006, audit C14*);
 - JSONL run logs with record/replay;
 - a provider adapter interface with only the Anthropic implementation built up front.
 
@@ -131,7 +141,7 @@ Build on the **official Anthropic Python SDK 1.11.0 with mcp 2.2.0**, using:
 | If... | Switch to |
 |---|---|
 | The model must be swappable *across vendors* live, or we cannot keep using Claude | **PydanticAI 2.x** (raise `init_timeout` to ≥150 s, set `retries` explicitly) |
-| We need pause/resume across processes, or human-in-the-loop interrupts, or the team is already fluent in LangGraph | **LangGraph 1.2.x** (pin `mcp<2`, wrap MCP transport errors, set `handle_tool_errors`) |
+| We need **durable human-in-the-loop interrupts**, or the team is already fluent in LangGraph. *(Reconciled 2026-10-02: the earlier trigger "pause/resume across processes" is removed. Resume is a P0 robustness requirement (OPS-04, NET-01, BEH-25) and is met inside the custom loop by a JSON checkpoint after every stage plus `resume <run_id>` and distinct exit codes, about 60 LOC. See `docs/DECISIONS.md` ADR-001 and ADR-009 (the ADR on checkpointing: durable resume, and what would still justify a switch), audit C17.)* | **LangGraph 1.2.x** (pin `mcp<2`, wrap MCP transport errors, set `handle_tool_errors`) |
 | Build time collapses to under 2 days, Claude-only is acceptable, and explainability can be argued at the level of hooks | **Claude Agent SDK** (custom `system_prompt`, `setting_sources=[]`, `MCP_TIMEOUT≥150000`, explicit `allowed_tools`) |
 | The SIT servers turn out to use `Authorization: Bearer`, stay warm, and we want fewer moving parts | Use the **MCP connector** for search and scholarly tools only, keeping the direct client as fallback |
 | Anthropic ships a breaking change to `messages.parse` or structured outputs before the demo | Stay on the pinned version. Do not upgrade after a code freeze one week before the demo. |

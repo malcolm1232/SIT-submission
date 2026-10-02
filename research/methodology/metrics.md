@@ -15,8 +15,8 @@ Anything marked **PROPOSED DEFAULT** is our choice, to be re-tuned on S-dev only
 | A_d | approved (confirmed) decisions in d |
 | F_dj | atomic findings the agent emitted in run j on doc d, in the agent's priority order |
 | Rec_dj | recommendations in run j (each linked to ≥ 1 finding) |
-| s(g) ∈ {critical, high, medium, low} | gold severity; w(s) its weight |
-| w | **PROPOSED DEFAULT** geometric weights {critical: 8, high: 4, medium: 2, low: 1}; sensitivity variant linear {4, 3, 2, 1} |
+| s(g) ∈ {critical, high, medium, low} | gold severity, the `severities` enum of `spec/taxonomy.yaml` (`Severity` in both spec schemas); w(s) its weight. Legacy key labels are mapped by `legacy_mappings.severity`: synthetic major → high, minor → low (sensitivity variant minor → medium); blind-A capitalised labels → lower case. The key stores the mapped value in `severity` and the verbatim label in `severity_source` *(reconciled 2026-10-02, spec/README.md §3 C6)* |
+| w | Geometric weights {critical: 8, high: 4, medium: 2, low: 1} = `severities[].weight_primary`; sensitivity variant linear {4, 3, 2, 1} = `severities[].weight_sensitivity` (`spec/taxonomy.yaml`; adopted, no longer only a proposed default). Report SWR under both weight schemes and both legacy mappings (L14) |
 | M_dj ⊆ F_dj × G_d | one-to-one match set produced by §2 |
 | cat(g), cat̂(f) | gold category, agent-assigned category |
 | c_f ∈ [0,1] | agent-stated confidence for finding f |
@@ -51,11 +51,16 @@ The agent MUST emit, in addition to its human-readable review, a machine-readabl
 ```
 Strengths (`kind = strength`) are excluded from defect matching. They are scored only by the rubric grader. `action_type` reflects lab §3.2: the agent must tell design refinements apart from issues that need investigation, prototyping, testing or a governance decision.
 
+> **Superseded (reconciliation 2026-10-02):** the output contract above is replaced by **`spec/finding.schema.json`** (`Finding`, `#/$defs/Review`); the field-by-field mapping is `spec/README.md` §2.3. In short: `category` codes and `kind` → spec `kind` + `category` (two axes, `spec/taxonomy.yaml`); `claim` → `statement`; `location[]` → `doc_anchors[]` (1-3 anchors, each `{doc_id, section_ref, requirement_ids, quote ≥ 8 tokens, page}`); `evidence[].ref` → `evidence[].evidence_id` (evidence-ledger IDs only; the renderer writes URLs) with `source_type: doc | external | inference`; `action_type` → `disposition` (`refinement_now | needs_investigation | needs_prototyping | needs_testing | governance_decision | no_change`, so **testing** is included) plus `secondary_dispositions[]`; `doc_verdict.fit_for_purpose yes/partly/no` → `verdict.label fit / fit_with_conditions / not_fit`; `section_verdicts` → `sound_areas[]`; separate `recommendations[]` → one `recommendation` embedded in its finding; `stop_reason` → `{code, group}` from the union enum (`sufficient_evidence, no_marginal_gain, budget_tool_calls, budget_tokens, deadline, tool_failure, error`; groups decision / cap / error). Audit C7-C13.
+
 ---
 
 ## 2. Matching findings to ground-truth flaws
 
 ### 2.1 Principles
+
+> **Superseded (reconciliation 2026-10-02):** this section is the **only** source of recall (the grader's key-aware Pass B alignment is diagnostic and is never reported as recall; `spec/README.md` §3 C4). It is the one matching rule for every item; the per-item rules in the eval READMEs are superseded (C5). Rule 2's "states the core insight" is operationalised per flaw by the answer key's **`credit.mode`** (`spec/taxonomy.yaml` `credit_modes`): `substance`, the finding states the flaw's `core_insight` in substance at a compatible location (credit items are guidance only); `all_of`, every credit item with `role: required` is stated; `any_of`, at least `credit.min_required` of the required items are stated. `credit.mode` does not create a second rule; it only says how the core insight is checked (`spec/README.md` §3 C5, deviation D4). Location compatibility uses the finding's `doc_anchors[]` (1-3 per finding, which also caps location spraying, G3) against the flaw's `location`. Score labels are `spec/taxonomy.yaml` `match_scores` (MATCH / PARTIAL / RELATED / UNRELATED) and adjudication labels are `adjudication_classes`. A finding that matches a key's `still_valid_observations` entry is pre-adjudicated VALID_UNPLANTED (C26).
+
 1. **One-to-one.** A gold flaw can be credited at most once per run, and a finding can match at most one flaw. Extra findings for the same flaw are **duplicates**.
 2. **Core-insight rule.** A finding matches a flaw only if it states the flaw's `core_insight` (e.g. "the 7 policy dimensions have no precedence rule, so conflicting outcomes are undefined"), not merely its topic ("the policy engine needs more detail").
 3. **Location compatibility.** The finding's location must overlap the flaw's anchor section(s) or requirement id(s), or a section that explicitly cross-references them. A finding with no location can at most be PARTIAL.
@@ -80,7 +85,7 @@ Strengths (`kind = strength`) are excluded from defect matching. They are scored
    b. Embedding similarity between `claim` and `description + core_insight`: top-3 findings per flaw, plus every pair with cosine ≥ τ_pre. Calibrate τ_pre on S-dev so that **≥ 0.98 of human-confirmed matches survive the prefilter** (PROPOSED DEFAULT; any embedding model, recorded in the manifest).
    c. Listwise LLM shortlist: one call per flaw that sees all findings and returns up to 3 candidate ids or "none".
    The candidate set is the union of a, b and c. Pairs outside it score 0.
-2. **Pairwise scoring.** An LLM matcher (from a model family **different** from the agent's) scores each candidate pair on the 0–3 scale. It returns JSON `{score, core_insight_present, location_ok, rationale}`. Use 3 samples, or a deterministic call plus a re-ask with the two texts in swapped order, and take the **median** score.
+2. **Pairwise scoring.** An LLM matcher (from a model family **different** from the agent's) scores each candidate pair on the 0–3 scale. *(Superseded, reconciliation 2026-10-02: the matcher's model is set by `docs/DECISIONS.md` ADR-003, Pending; branch B uses a local open-weight model validated against the user's 150 labelled S-dev pairs, else Claude in batch disclosed as same-family. The same applies to the adjudicator, G3 judge and citation judge. Audit C3.)* It returns JSON `{score, core_insight_present, location_ok, rationale}`. Use 3 samples, or a deterministic call plus a re-ask with the two texts in swapped order, and take the **median** score.
 3. **Assignment.** Solve a maximum-weight bipartite assignment (Hungarian algorithm, e.g. `scipy.optimize.linear_sum_assignment`) on weight = score + ε·w(s(g)), with ε = 0.01 to break ties toward more severe flaws. Ineligible pairs get weight 0. Drop assigned pairs below the eligibility threshold.
 4. **Adjudication of unmatched findings.** Each unmatched finding gets exactly one class:
 
@@ -114,6 +119,9 @@ For one run (d, j): let TP = |M_dj| (strict), N = |F_dj \ strengths|, V = #VALID
 | Non-specific rate | #NON_SPECIFIC / N | Shotgun indicator (L16) |
 
 ### 3.1 Per category
+
+> **Superseded (reconciliation 2026-10-02):** "category" here is the `category` axis of `spec/taxonomy.yaml` (defect mechanism: 9 codes plus `other`), which drives the per-category recall table and the taxonomy-dependence check; the lab §2.3 `kind` axis drives grader D3. Audit C7.
+
 - Per-category **recall** uses the **gold** category: R_c = |{g ∈ M : cat(g) = c}| / |{g ∈ G : cat(g) = c}|.
 - Per-category **precision** uses the **agent's** category: P_c = |{f matched or VALID_UNPLANTED : cat̂(f) = c}| / |{f : cat̂(f) = c}|.
 - F1_c = harmonic mean of P_c and R_c.
@@ -149,7 +157,7 @@ The agent's findings are ordered by `rank` (ties broken by output order). For po
 ## 5. Grounding: hallucinated findings and citation faithfulness
 
 ### 5.1 Grounding checks (run on **every** finding, matched or not)
-- **G1 Quote existence.** Normalise both the quote and the doc text (Unicode NFKC, lowercase, collapse whitespace, undo PDF hyphenation and ligatures). Pass if the best token-level partial-match ratio is ≥ θ_q. **PROPOSED DEFAULT θ_q = 0.90**, calibrated on S-dev against human judgements because PDF extraction adds noise. This step is deterministic.
+- **G1 Quote existence.** *(Superseded, reconciliation 2026-10-02: "the doc text" is the canonical page-marked text `doc.pages.txt` produced once by the pinned pdfplumber extractor and read by every verifier; G1 and G2 share one function with the agent's verify stage; quotes must be ≥ 8 tokens and match inside the cited section ±1 page. `docs/DECISIONS.md` ADR-006, ADR-007; audit C14, G1-G3.)* Normalise both the quote and the doc text (Unicode NFKC, lowercase, collapse whitespace, undo PDF hyphenation and ligatures). Pass if the best token-level partial-match ratio is ≥ θ_q. **PROPOSED DEFAULT θ_q = 0.90**, calibrated on S-dev against human judgements because PDF extraction adds noise. This step is deterministic.
 - **G2 Location validity.** The cited section or req id exists in the doc, and the quote lies in that location or ±1 adjacent section.
 - **G3 Premise faithfulness.** An LLM judge (different family) gets the claim and the cited location text. It labels the claim's premise about the doc SUPPORTED, CONTRADICTED or NOT_FOUND. For **absence claims** ("the doc never defines X"), the judge gets retrieval over the whole doc for X and its synonyms. If X is present, the claim is a **false-absence** hallucination. This is the most common grounding error for document reviewers (**UNVERIFIED** generalisation; it should be measured).
 
@@ -168,7 +176,7 @@ Unit = a (claim, citation) pair, taken from finding evidence and recommendation 
 
 **Step 1: existence and provenance (deterministic).**
 - DOC citations: G1 + G2.
-- EXTERNAL citations: (i) is the URL or DOI in the run's **fetched-content snapshot store**? If yes, label **READ**. (ii) If not, resolve it live: DOI via doi.org or Crossref, title via OpenAlex or Crossref with fuzzy title match ≥ 0.9, URL with HTTP 200. If it resolves, label **EXISTS_NOT_READ** (cited without being read in this run); if not, label **FABRICATED**. Record **UNREACHABLE** separately for transient failures.
+- EXTERNAL citations: *(Superseded, reconciliation 2026-10-02: the model cites **evidence-ledger IDs** only (`evidence_id`); `url_or_citation` and `retrieved_at` are read-only and filled by the renderer, and the ledger records `read_before_cite`. The existence checks below are kept to catch renderer bugs and free-text URLs. `spec/README.md` §3 C11.)* (i) is the URL or DOI in the run's **fetched-content snapshot store**? If yes, label **READ**. (ii) If not, resolve it live: DOI via doi.org or Crossref, title via OpenAlex or Crossref with fuzzy title match ≥ 0.9, URL with HTTP 200. If it resolves, label **EXISTS_NOT_READ** (cited without being read in this run); if not, label **FABRICATED**. Record **UNREACHABLE** separately for transient failures.
 
 **Step 2: support (judged against the snapshot the agent actually saw).** An entailment judge (different family) labels each pair FULL, PARTIAL or NONE: "According to the source passage, is the claim true?" (AIS framing [40]). ALCE used an NLI model for this step [10]. We use an LLM judge, validated with weighted κ ≥ 0.70 against humans on at least 100 pairs (PROPOSED DEFAULT).
 
@@ -179,7 +187,7 @@ Unit = a (claim, citation) pair, taken from finding evidence and recommendation 
 | Citation recall | CR = #claims needing support whose citation set contains ≥ 1 FULL / #claims needing support. "Claims needing support" = each finding's claim, each recommendation's evidence field, and each atomic external assertion |
 | Fabricated-citation rate | FCR = #FABRICATED / #external citations |
 | Read-before-cite rate | #READ / #external citations |
-| Source-type accuracy | share of evidence items whose `source_type` is correct (DOC items resolve in the doc, EXTERNAL items resolve outside it). Measures lab §4.2, "distinguish design content from researched content" |
+| Source-type accuracy | share of evidence items whose `source_type` (`doc \| external \| inference`; reconciled 2026-10-02, spec C10) is correct: `doc` items resolve in the doc, `external` items resolve to a ledger entry from a real tool call, `inference` items list `derived_from`. Measures lab §4.2, "distinguish design content from researched content" |
 
 ---
 
@@ -198,7 +206,7 @@ For each recommendation r:
 | RJR_struct | mean_r S(r) |
 | RJR_subst (primary) | mean_r [S ∧ Q_issue ∧ Q_evid ∧ Q_benefit ∧ Q_rat] |
 | Unjustified-recommendation rate | share of r whose linked findings are all FP (HALLUCINATED, INVALID_OPINION, NON_SPECIFIC) |
-| Action-type accuracy | on matched flaws whose key gives an expected action type: share where `action_type` agrees |
+| Action-type accuracy | on matched flaws whose key gives an `expected_disposition`: share where the finding's primary `disposition` agrees (spec enum; reconciled 2026-10-02, spec C8). **BLOCKED** until a person authors `expected_disposition` in the keys |
 
 ### 6.2 Correctly declined on sound units
 Map each finding to units by location overlap. For u ∈ S_d, let FP_u be the findings located in u that (a) have severity ≥ medium **or** carry a recommendation, and (b) are **not** TP and **not** VALID_UNPLANTED. If a VALID_UNPLANTED finding lands in u, the key was wrong: remove u from S_d and log it.
@@ -207,7 +215,7 @@ Map each finding to units by location overlap. For u ∈ S_d, let FP_u be the fi
 - **CDR** = Σ_u declined(u) / |S_d| (pooled over docs for micro; per doc for macro)
 - **Bait resistance** = CDR restricted to bait units B_d
 - **Justified-decline rate** JDR = Σ_u [declined(u) ∧ the section verdict for u is "sound" with a justification that passes G1/G3] / |S_d|. Report N/A if the agent emits no section verdicts.
-- **Fully-sound doc accuracy** = share of runs on G_d = ∅ docs where doc_verdict = "yes" and no recommendation of severity ≥ medium is made.
+- **Fully-sound doc accuracy** = share of runs on G_d = ∅ docs where `verdict.label = fit` (was doc_verdict = "yes"; reconciled, spec C9) and no recommendation of severity ≥ medium is made.
 - **Balanced unit accuracy** = ½ · (unit detection rate + CDR), where unit detection rate = share of flawed units (units containing ≥ 1 gold flaw) with ≥ 1 matched flaw. This guards against the "never recommend" strategy (L18).
 
 ### 6.3 Approved-decision violation rate (lab §1.3: keep approved decisions)
@@ -268,14 +276,14 @@ From the transcript and manifest:
 - Cost (USD at a dated price table), input/output/cached tokens, number of tool calls by tool, wall time. Report median and IQR [2], [28].
 - **Research yield** = #unique external sources cited in the final output / #unique external sources retrieved.
 - **Overrun** = #tool calls made after step t*, where t* is the step at which the **last** finding that survives into the final output (TP or VALID_UNPLANTED) first appears in the agent's working state or findings ledger. A high overrun means the agent kept researching after it stopped learning anything it used. (Our operationalisation; **UNVERIFIED** as an established metric.)
-- **Stop-reason distribution:** agent decision vs budget cap vs tool failure (L40).
+- **Stop-reason distribution:** agent decision vs budget cap vs tool failure (L40), i.e. the `group` (decision / cap / error) of `spec/taxonomy.yaml` `stop_reasons` (reconciled, spec C12).
 - **Cost-normalised quality:** report the Pareto frontier of (cost, SWR) across conditions. Do not divide accuracy by cost into one number [2].
 
 ---
 
 ## 11. Grader reliability (rubric scores)
 
-Items are reviews (one run's output). Each rubric criterion r is ordinal, 1..K. Compare LLM grader vs human (at least one human; independent of the agent authors), LLM grader A vs LLM grader B (different model families), and human vs human (at least 30 items, as a ceiling; PROPOSED DEFAULT).
+Items are reviews (one run's output). Each rubric criterion r is ordinal, 1..K. *(Superseded, reconciliation 2026-10-02: the lecturer rubric is **0-4 per dimension** (K = 5 levels), `research/grading/README.md` §3.2; there is no second rubric (audit C1). The human comparisons below assume more raters than exist: with one person, grader validity is tiered smoke / tentative / primary, ordinal α and QWK are reported together, and human–human agreement is available only if a peer grades a subset (audit C2, §4.6). The "different families" comparison depends on `docs/DECISIONS.md` ADR-003, Pending (C3).)* Compare LLM grader vs human (at least one human; independent of the agent authors), LLM grader A vs LLM grader B (different model families), and human vs human (at least 30 items, as a ceiling; PROPOSED DEFAULT).
 
 - **Cohen's κ** (nominal) = (p_o − p_e) / (1 − p_e), with p_o = observed agreement and p_e = Σ_q p_{1q} p_{2q}.
 - **Quadratic-weighted κ** [41] = 1 − (Σ_{q,q'} v_{qq'} o_{qq'}) / (Σ_{q,q'} v_{qq'} e_{qq'}), with disagreement weights v_{qq'} = (q − q')² / (K − 1)², observed proportions o and expected proportions e = row marginal × column marginal. Implementation: `sklearn.metrics.cohen_kappa_score(a, b, weights="quadratic")`.
@@ -349,7 +357,7 @@ def benjamini_hochberg(pvals, q=0.10):
     reject = np.zeros(m, bool); reject[order[:k]] = True
     return reject
 ```
-Primary family = {FULL vs each of B0, B0-$, A1, A2, A3, A4, A5} on the pre-registered primary metric → Holm. Per-category and per-split breakdowns → BH, labelled exploratory [19].
+Primary family = {FULL vs each of B0, B0-$, A1, A2, A3, A4e, A5} (A4e replaces A4, `docs/DECISIONS.md` ADR-002) on the pre-registered primary metric → Holm. Per-category and per-split breakdowns → BH, labelled exploratory [19].
 
 ### 12.5 Power
 Paired proportions (Connor [21]): n = [z_{1−α/2}·√ψ + z_{1−β}·√(ψ − δ²)]² / δ², multiplied by DEFF = 1 + (m − 1)ρ. Doc-level paired means: n_docs = ((z_{1−α/2} + z_{1−β})·σ_d / δ)². README §4b has the worked table. Report the **minimum detectable effect** at the achieved n for every non-significant comparison.
@@ -359,7 +367,7 @@ Paired proportions (Connor [21]): n = [z_{1−α/2}·√ψ + z_{1−β}·√(ψ 
 ## 13. Consolidated scoring pseudo-code
 
 ```python
-W = {"critical": 8, "high": 4, "medium": 2, "low": 1}          # PROPOSED DEFAULT
+W = {"critical": 8, "high": 4, "medium": 2, "low": 1}          # = spec/taxonomy.yaml severities[].weight_primary
 
 def score_run(doc, key, out, matcher, adjudicator, judge, strict=True):
     F = [f for f in out.findings if f.kind != "strength"]

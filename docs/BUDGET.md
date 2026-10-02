@@ -1,6 +1,6 @@
 # Project budget
 
-Date: 2026-10-02. Resolves audit P1 item 17 and M12 (`research/audit/research_audit.md`). Every figure comes from `research/models/cost_model.py` (run `python3 research/models/cost_model.py`; the "ALL-OPUS" section prints all of them). Claude prices are from the `claude-api` skill (cached 2026-09-25); non-Claude prices are **UNVERIFIED**. The token base is **UNVERIFIED** until `messages.count_tokens` is run on the SIT PDF on the laptop (audit U3); re-run the script with the measured values and update this page.
+Date: 2026-10-02. Resolves audit P1 item 17 and M12 (`research/audit/research_audit.md`). Every figure comes from `research/models/cost_model.py` (run `python3 research/models/cost_model.py`; the "ALL-OPUS", "Budget matrix" and "Sensitivity" sections print all of them). Reconciled line by line against the script output on 2026-10-02 (`research/audit/verify_docs.md` item 2). Claude prices are from the `claude-api` skill (cached 2026-09-25); non-Claude prices are **UNVERIFIED**. The token base is **UNVERIFIED** until `messages.count_tokens` is run on the SIT PDF on the laptop (audit U3); re-run the script with the measured values and update this page.
 
 ## 1. Per-run cost, all Opus 5.5 (ADR-002)
 
@@ -19,7 +19,9 @@ Per methodology condition (same base): FULL $2.18, B0 $0.63, B0-$ $2.18, A1 $1.0
 
 ## 2. Runs implied by the methodology
 
-k runs × items × conditions, from `research/methodology/README.md` §4 and §4b, the audit's reclassified tiers (ADR-004) and the robustness gate. Docs counted for the primary comparison: 3 S-dev + 2 S-heldout + 4 Blind (assumed size of the commissioned set) + 1 OOD + 2 sound controls = 12.
+k runs × items × conditions, from `research/methodology/README.md` §4, §4b and §5, the audit's reclassified tiers (ADR-004) and the robustness gate. The script prints two matrices: **PLANNED**, which assumes the commissioned sets exist, and **CURRENT ITEMS**, which uses only what is in the repo today.
+
+Docs counted for the planned primary comparison: 3 S-dev + 2 S-heldout + 4 Blind (assumed size of the commissioned set) + 1 OOD + 2 sound controls = 12. **Seven of these twelve do not exist yet** (Blind, OOD, sound controls; ADR-004).
 
 | # | Line item | Runs | Agent USD |
 |---|---|---|---|
@@ -27,41 +29,59 @@ k runs × items × conditions, from `research/methodology/README.md` §4 and §4
 | 2 | S-dev pilot: FULL vs B0, k = 3, 3 docs (audit P1 item 10) | 18 | 25 |
 | 3 | Primary comparison: FULL and B0, k = 5, 12 docs | 120 | 169 |
 | 4 | Ablations: B0-$, A1, A2, A3, A4e, A5; k = 3; 6 held-out and Blind docs | 108 | 174 |
-| 5 | v2 re-review: FULL, k = 3, 3 synthetic v2 + SIT v2 | 12 | 26 |
+| 5 | v2 re-review: FULL, k = 3, 3 synthetic v2 docs × **2 variants** (fresh session; v1 review supplied as context; methodology §5) | 18 | 39 |
 | 6 | S-heldout milestone checks: 2 further accesses × 2 docs × k = 3 | 12 | 26 |
 | 7 | Overfitting probes: paraphrase and reorder of 3 S-dev docs, k = 3 | 18 | 39 |
 | 8 | Robustness L1 (minimum gate subset): about 15 LLM-dependent scenarios × k ≈ 4 | 60 | 131 |
-| 9 | L2 rehearsals, cassette recording, fresh-clone check, demo day | 25 | 55 |
-| | **Agent subtotal** | **433** | **777** |
+| 9 | L2 rehearsals, cassette recording, fresh-clone check, demo day (the SIT v2 artefact arrives here) | 25 | 55 |
+| 10 | Real-dev: SIT sample v1, FULL, k = 3 (rubric-graded only, no key; methodology §1.1) | 3 | 7 |
+| | **Agent subtotal (planned)** | **442** | **796** |
 
 B-gen needs no model calls. H (human expert) is dropped per the audit's one-person plan (§4.6).
+
+**Corrections made on verification (2026-10-02, `research/audit/verify_docs.md` item 2).** The previous version listed 433 runs / $777. Line 5 counted one v2 run per (doc, k), but methodology §5 requires a fresh-session run **and** a with-v1-context run (the copy-through rate in `metrics.md` §8 needs the second); and it counted an "SIT v2" doc that only arrives on demo day, has no key, and is therefore line 9 work. Line 10 makes the Real-dev SIT runs explicit (they were implicit before). Net: 433 → 442 runs, $777 → $796.
+
+### 2a. At the current item count
+
+Today the repo holds 9 items: 3 synthetic docs × 2 versions, 2 S-heldout docs and the SIT sample. With those only, the same formula gives:
+
+| # | Line item (current items) | Runs | Agent USD |
+|---|---|---|---|
+| 3 | Primary: FULL and B0, k = 5, **5 docs** (3 S-dev + 2 S-heldout) | 50 | 70 |
+| 4 | Ablations: 6 conditions, k = 3, **2 S-heldout docs** | 36 | 58 |
+| 1, 2, 5-10 | Unchanged from the table above | 214 | 454 |
+| | **Agent subtotal (current items)** | **300** | **582** |
+
+So **142 of the 442 planned runs ($214 of agent spend) depend on docs that have to be commissioned first.** With only 5 keyed docs the primary comparison is underpowered by methodology §4b's own numbers (a 0.10 macro-F1 difference at σ_d = 0.10 needs 8 docs at 80 % power); report it as exploratory until the Blind set exists.
 
 ## 3. Grading, matching and judging
 
 Recomputed per audit C25: the grader is the full pipeline in `research/grading/README.md` §6.1 (segment, 2 × Pass A, 2 × Pass B, a third sample 30 % of the time; key-aware mode excluded); the matcher and judges follow `research/methodology/metrics.md` §2.3 and §5 (listwise shortlist, 3 candidates × 3 pairwise samples per flaw, adjudication, G3 and citation judge).
 
-- **Graded reviews: 282** (lines 3-6, plus about 30 grader meta-validation grades for V1-V13).
-- **Matched runs: 408** (lines 2-8; the matcher is on the critical path for the robustness thresholds, audit C31).
+- **Graded reviews: 291** (lines 3-6 and 10, plus about 30 grader meta-validation grades for V1-V13). Current items: 149.
+- **Matched runs: 414** (lines **1-8**; the matcher is on the critical path for the robustness thresholds, audit C31). Current items: 272. (The previous text said "lines 2-8"; the script has always included line 1.)
 
 | Branch (ADR-003) | Grader | Matcher + judges | Instruments total |
 |---|---|---|---|
-| A: cross-family key (GPT-6.1 Sol rates, UNVERIFIED; no batch assumed) | $0.57 / review → $160 | $1.05 / run → $427 | **$587** |
-| B1: Anthropic only; Sonnet 5.5 grader in batch; matcher and judges on a local open-weight model | $0.30 → $83 | $0 API | $83 |
-| B2: as B1 with an Opus 5.5 grader (all-Opus extended to instruments) | $0.57 → $160 | $0 API | $160 |
-| B3: as B2, and the local model fails validation (audit U8), so matcher and judges run on Opus 5.5 in batch | $160 | $1.05 / run → $427 | $587 |
+| A: cross-family key (GPT-6.1 Sol rates, UNVERIFIED; no batch assumed) | $0.57 / review → $165 | $1.05 / run → $433 | **$598** |
+| B1: Anthropic only; Sonnet 5.5 grader in batch; matcher and judges on a local open-weight model | $0.30 → $86 | $0 API | $86 |
+| B2: as B1 with an Opus 5.5 grader (all-Opus extended to instruments) | $0.57 → $165 | $0 API | $165 |
+| B3: as B2, and the local model fails validation (audit U8), so matcher and judges run on Opus 5.5 in batch | $165 | $1.05 / run → $433 | $598 |
 
 ## 4. Total with a 30 % margin
 
-| Branch | Agent | Instruments | Subtotal | **× 1.3** |
-|---|---|---|---|---|
-| A (cross-family) | $777 | $587 | $1,363 | **$1,772** |
-| B1 (Anthropic only, Sonnet grader, local matcher) | $777 | $83 | $860 | $1,118 |
-| B2 (Anthropic only, Opus grader, local matcher) | $777 | $160 | $936 | $1,217 |
-| B3 (Anthropic only, worst case) | $777 | $587 | $1,363 | $1,772 |
+| Branch | Agent | Instruments | Subtotal | **× 1.3** | Current items only (× 1.3) |
+|---|---|---|---|---|---|
+| A (cross-family) | $796 | $598 | $1,394 | **$1,812** | $1,236 |
+| B1 (Anthropic only, Sonnet grader, local matcher) | $796 | $86 | $882 | $1,147 | $814 |
+| B2 (Anthropic only, Opus grader, local matcher) | $796 | $165 | $961 | $1,249 | $866 |
+| B3 (Anthropic only, worst case) | $796 | $598 | $1,394 | $1,812 | $1,236 |
 
-**Budget to approve: $1,772 (call it $1,800).** It covers every judge branch, so it does not depend on ADR-003. If the user confirms branch B1 or B2, the expected spend falls to about $1,100-1,200. Anthropic's share of the agent spend alone is $1,010 with margin; set the Anthropic Console spend limit for this project's workspace to the Anthropic portion of the chosen branch (for example $1,010 + Claude instrument spend).
+**Budget to approve: $1,812 (call it $1,850).** It covers every judge branch, so it does not depend on ADR-003. If the user confirms branch B1 or B2, the expected spend falls to about $1,150-1,250. Until the Blind, OOD and sound-control docs are commissioned, the spend that can actually be incurred is the current-items column (at most $1,236). Anthropic's share of the agent spend alone is $1,035 with margin; set the Anthropic Console spend limit for this project's workspace to the Anthropic portion of the chosen branch (for example $1,035 + Claude instrument spend).
 
-Not in USD, but budgeted: about 20-25 person-hours of human labelling (audit §4.6 one-person plan), about 4 hours of laptop sessions for MCP probing and cassette recording, and about 430 agent runs × 8-10 minutes ≈ 60-70 hours of wall-clock run time on the laptop (2-3 runs can run in parallel within rate limits; interleave conditions in time).
+**Unbudgeted risk: effort switches.** `config/agent.yaml` (runbook §4.1) runs `plan` at `high`, `research` at `medium` and the later stages at `high`. A top-level `effort` change invalidates the messages-tier prompt cache (claude-api skill, prompt caching "Invalidation hierarchy"), and the PDF and canonical text sit in `messages`, so each switch rewrites the whole context at the cache-write price. Two switches per run cost about **+$1.20 per FULL run** (`cost_model.py`, "Sensitivity"; $3.38 instead of $2.18), about $500 over the planned matrix, which is more than the 30 % margin on the agent line. The figures above assume this is avoided (ADR-002: one effort level per conversation, or the per-message effort beta). Confirm on the laptop from `cache_creation_input_tokens` at stage boundaries before the pilot.
+
+Not in USD, but budgeted: about 20-25 person-hours of human labelling (audit §4.6 one-person plan), about 4 hours of laptop sessions for MCP probing and cassette recording, and about 440 agent runs × 8-10 minutes ≈ 60-75 hours of wall-clock run time on the laptop (2-3 runs can run in parallel within rate limits; interleave conditions in time).
 
 ## 5. Stop-loss and cut order
 

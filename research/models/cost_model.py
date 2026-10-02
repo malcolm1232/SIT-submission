@@ -130,37 +130,85 @@ for m in ["gpt-6.1-sol", "gemini-3.1-pro-preview", "claude-sonnet-5-5", OP]:
     print(f"  {m}: grade {grade_pipeline(m):.2f} (batch {grade_pipeline(m, batch=True) if b else float('nan'):.2f}); "
           f"matcher+judges {matcher_judges(m):.2f} (batch {matcher_judges(m, batch=True) if b else float('nan'):.2f})")
 
-# Budget matrix (docs/BUDGET.md). Run counts per line item.
+# Budget matrix (docs/BUDGET.md). Run counts per line item, built from the methodology
+# formula k x docs x conditions (research/methodology/README.md §4, §4b, §5).
+# Verified 2026-10-02 (research/audit/verify_docs.md item 2):
+#  - v2 re-review needs TWO variants per v2 doc (fresh session, and v1 review supplied as
+#    context; methodology §5), so line 5 is docs x 2 x k, not docs x k.
+#  - SIT v2 is not a pre-demo item (it arrives on demo day, Real-dev, no key) -> covered by line 9.
+#  - Real-dev SIT v1 gets FULL k=3, rubric-graded only (methodology §1.1), line 10.
 FULL, B0 = COND["FULL"], COND["B0 (single call, ~15K out)"]
 ABL = ["B0-$ (cost-matched to FULL)", "A1 no research (12 calls)", "A2 no iteration (12 calls, 100K research)",
        "A3 no verification (17 calls)", "A4e effort low (FULL shape, ~12K out)", "A5 tools disabled (= A1 shape)"]
-items = [
-    ("1 development iteration on S-dev (FULL)", 60 * FULL, 60),
-    ("2 S-dev pilot: FULL vs B0, k=3, 3 docs", 9 * FULL + 9 * B0, 18),
-    ("3 primary: FULL + B0, k=5, 12 docs", 60 * FULL + 60 * B0, 120),
-    ("4 ablations: 6 conditions, k=3, 6 held-out/blind docs", sum(COND[a] for a in ABL) * 18, 108),
-    ("5 v2 re-review: FULL, k=3, 4 v2 docs", 12 * FULL, 12),
-    ("6 S-heldout milestone checks: 2 extra accesses x 2 docs x k=3", 12 * FULL, 12),
-    ("7 overfitting probes: paraphrase+reorder, 3 docs, k=3", 18 * FULL, 18),
-    ("8 robustness L1 (gate subset): ~15 scenarios x k~4", 60 * FULL, 60),
-    ("9 L2 rehearsals + cassette recording + fresh clone", 25 * FULL, 25),
-]
-agent_total = sum(c for _, c, _ in items)
-graded_reviews = 120 + 108 + 12 + 12 + 30  # eval-matrix reviews graded once (3 samples inside pipeline) + ~30 grader meta-validation (V1-V13) grades
-matched_runs = 120 + 108 + 12 + 12 + 18 + 18 + 60 + 60  # eval matrix + pilot + overfitting probes + dev iteration + robustness L1 (C31)
-print("\n== Budget matrix, all-Opus agent (USD) ==")
-for name, c, n in items:
-    print(f"  {name}: runs={n} cost={c:.0f}")
-print(f"  agent subtotal: runs={sum(n for *_, n in items)} cost={agent_total:.0f}")
-print(f"  graded reviews={graded_reviews}, matched runs={matched_runs}")
+
+def matrix(primary_docs, ablation_docs, v2_docs, k_primary=5, k=3):
+    """Agent runs per line item. primary_docs: keyed v1 docs in the FULL-vs-B0 comparison;
+    ablation_docs: held-out (+Blind) docs carrying the ablations; v2_docs: keyed v2 docs."""
+    return [
+        ("1 development iteration on S-dev (FULL)", 60 * FULL, 60),
+        ("2 S-dev pilot: FULL vs B0, k=3, 3 docs", 3 * k * (FULL + B0), 3 * k * 2),
+        (f"3 primary: FULL + B0, k={k_primary}, {primary_docs} docs", primary_docs * k_primary * (FULL + B0), primary_docs * k_primary * 2),
+        (f"4 ablations: 6 conditions, k={k}, {ablation_docs} held-out/blind docs", sum(COND[a] for a in ABL) * k * ablation_docs, 6 * k * ablation_docs),
+        (f"5 v2 re-review: FULL, 2 variants (fresh, with v1 review), k={k}, {v2_docs} v2 docs", v2_docs * 2 * k * FULL, v2_docs * 2 * k),
+        ("6 S-heldout milestone checks: 2 extra accesses x 2 docs x k=3", 12 * FULL, 12),
+        ("7 overfitting probes: paraphrase+reorder, 3 docs, k=3", 18 * FULL, 18),
+        ("8 robustness L1 (gate subset): ~15 scenarios x k~4", 60 * FULL, 60),
+        ("9 L2 rehearsals + cassette recording + fresh clone + demo day (incl. SIT v2)", 25 * FULL, 25),
+        ("10 Real-dev: SIT sample v1, FULL, k=3 (rubric-graded, no key)", 3 * FULL, 3),
+    ]
+
+def counts(items):
+    n = {i + 1: r for i, (_, _, r) in enumerate(items)}
+    graded = n[3] + n[4] + n[5] + n[6] + n[10] + 30   # eval-matrix reviews + Real-dev + ~30 grader meta-validation (V1-V13)
+    matched = sum(n[i] for i in range(1, 9))          # lines 1-8 (no key for lines 9-10); audit C31
+    return graded, matched
+
 branches = [
     ("A  cross-family key: grader + matcher + judges on gpt-6.1-sol (UNVERIFIED price)", "gpt-6.1-sol", False, "gpt-6.1-sol", False),
     ("B1 Anthropic-only: Sonnet 5.5 grader (batch), matcher+judges local open-weight ($0 API)", "claude-sonnet-5-5", True, None, False),
     ("B2 Anthropic-only: Opus 5.5 grader (batch), matcher+judges local ($0 API)", OP, True, None, False),
     ("B3 worst case: Opus 5.5 grader + local model fails U8, matcher+judges on Opus 5.5 (batch)", OP, True, OP, True),
 ]
-for label, gm, gb, mm, mb in branches:
-    g = graded_reviews * grade_pipeline(gm, batch=gb)
-    mj = matched_runs * matcher_judges(mm, batch=mb) if mm else 0.0
-    tot = agent_total + g + mj
-    print(f"  [{label}] grader {g:.0f} + matcher/judges {mj:.0f}; total {tot:.0f}; x1.3 = {tot * 1.3:.0f}")
+
+def report(title, items):
+    agent_total = sum(c for _, c, _ in items)
+    graded_reviews, matched_runs = counts(items)
+    print(f"\n== Budget matrix, all-Opus agent (USD): {title} ==")
+    for name, c, n in items:
+        print(f"  {name}: runs={n} cost={c:.0f}")
+    print(f"  agent subtotal: runs={sum(n for *_, n in items)} cost={agent_total:.0f}; x1.3 = {agent_total * 1.3:.0f}")
+    print(f"  graded reviews={graded_reviews}, matched runs={matched_runs}")
+    for label, gm, gb, mm, mb in branches:
+        g = graded_reviews * grade_pipeline(gm, batch=gb)
+        mj = matched_runs * matcher_judges(mm, batch=mb) if mm else 0.0
+        tot = agent_total + g + mj
+        print(f"  [{label}] grader {g:.0f} + matcher/judges {mj:.0f}; total {tot:.0f}; x1.3 = {tot * 1.3:.0f}")
+
+# PLANNED: 12 primary docs = 3 S-dev + 2 S-heldout + 4 Blind (assumed size, to be commissioned)
+# + 1 OOD + 2 sound controls; ablations on 2 S-heldout + 4 Blind; v2 on 3 synthetic v2.
+report("PLANNED (needs 7 commissioned docs)", matrix(primary_docs=12, ablation_docs=6, v2_docs=3))
+# CURRENT ITEMS (2026-10-02): 3 synthetic x 2 versions + 2 held-out + the SIT doc = 9 items.
+# Keyed v1 docs = 3 S-dev + 2 S-heldout = 5; ablations on the 2 S-heldout; v2 on 3 synthetic v2.
+report("CURRENT ITEMS (9 items: 3 synthetic x v1/v2, 2 S-heldout, SIT)", matrix(primary_docs=5, ablation_docs=2, v2_docs=3))
+
+# Sensitivity: a top-level effort change between calls invalidates the messages-tier cache
+# (claude-api skill, prompt-caching.md "Invalidation hierarchy": thinking/effort change ->
+# messages cache not kept). The PDF block and canonical text sit in `messages`, so each
+# switch rewrites the whole context at the cache-write price. config/agent.yaml (runbook
+# §4.1) has plan=high, research=medium, assess..report=high -> 2 switches per run
+# (assumed at call 2 and call 13 of 20). Avoided by the per-message effort beta
+# (mid-conversation-output-config-2026-07-01) or by one effort level for the whole run.
+def opus_run_switches(N=20, base=78e3, research=150e3, out=20e3, switch_calls=(1, 12)):
+    inn, w, r, o = P[OP][:4]
+    per_new = (research + out) / N
+    cost = 0.0
+    for i in range(N):
+        ctx = base + i * per_new
+        new = base if i == 0 else per_new
+        old = ctx - new
+        cost += (ctx * w / 1e6) if i in switch_calls else (new * w / 1e6 + old * r / 1e6)
+        cost += (out / N) * o / 1e6
+    return cost
+sw = opus_run_switches()
+print("\n== Sensitivity: per-stage effort switches without the per-message effort beta ==")
+print(f"  FULL with 2 effort switches (calls 2 and 13): {sw:.2f} (vs {FULL:.2f}; +{sw - FULL:.2f} per run)")
