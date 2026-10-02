@@ -19,6 +19,20 @@ Decisions taken here:
   never counted as zero: it is listed in ``extra.model.calls_with_unrecorded_usage`` and
   ``extra.model.cost_usd_lower_bound`` is true, so ``usage.cost_usd`` and the token totals are a
   lower bound (``report.md``, the console and the ``--k`` summary say so).
+* A cut attempt may log an estimate of its usage (latency redesign). The estimate sits beside the
+  measured-null record, never in it: ``extra.model.estimated_usage_of_unrecorded_calls`` has one row
+  per such attempt (``estimated: true``, call ID, stage, purpose, attempt, reason, the four token
+  fields) and ``extra.model.estimated_usage_totals`` sums them with a price-table cost. The measured
+  totals, ``usage.cost_usd``, the unrecorded list and the lower-bound flag are unchanged by it.
+* Counts of the concurrent phase structure, all read from ``llm.jsonl`` and 0 for a sequential run:
+  ``extra.model.assess_shards`` is the number of distinct ``shard`` markers on assess attempts (the
+  shard's name or index, logged on every attempt of the shard; a sequential run logs none),
+  ``salvaged_calls`` the attempts that kept finished items of a cut answer (:func:`logged_salvage`)
+  and ``salvaged_items`` the sum of those items.
+* Timing: ``extra.timing.wall_clock_s`` is the run clock. ``per_stage_s`` (kept for the harness)
+  maps each phase to its own wall seconds; stage 1 members overlap, so it does not sum to the run.
+  ``extra.timing.stages`` groups them by stage (:func:`stage_timing`): ``members``, ``wall_s``
+  (the stage's span, never the members' sum when they overlapped) and ``sum_of_member_s``.
 * ``git_dirty`` is ``const false`` in the spec. Outside eval mode the tree is not inspected (no
   ``git`` subprocess): the commit is read from ``.git`` files and ``extra.code.git_dirty`` is
   ``null`` ("not checked"). Eval mode runs ``git status --porcelain`` and refuses a dirty tree.
@@ -64,7 +78,7 @@ from sit_review_agent.models import (
 )
 from sit_review_agent.paths import repo_root, taxonomy_path
 from sit_review_agent.rundir import JsonlWriter, RunDir, write_json_atomic
-from sit_review_agent.states import EFFORT_KEY, PHASE_ORDER
+from sit_review_agent.states import EFFORT_KEY, PHASE_ORDER, STAGE_MEMBERS, STAGE_ORDER
 
 SAMPLING = "provider-default (not settable)"
 #: Opus 5.5 list prices per million tokens (docs/BUDGET.md, claude-api skill cached 2026-09-25).
@@ -155,11 +169,70 @@ def unrecorded_reason(entry: dict[str, Any]) -> str | None:
     return None
 
 
+USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _count(value: Any) -> int | None:
+    """A non-negative integer count, or ``None`` (bools, floats, negatives and text are not counts)."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def logged_estimate(entry: dict[str, Any]) -> dict[str, int] | None:
+    """The estimated usage logged for a cut attempt, or ``None``. Read under ``estimated_usage`` (the
+    key ``replay.recorded_error`` maps, commit 87a0634) or ``usage_estimate`` (the key the streaming
+    gateway logs, latency W1); every ``Usage`` field present must be a non-negative integer."""
+    for key in ("estimated_usage", "usage_estimate"):
+        raw = entry.get(key)
+        if isinstance(raw, dict):
+            counts = {k: _count(raw.get(k, 0)) for k in USAGE_FIELDS}
+            if all(v is not None for v in counts.values()):
+                return {k: int(v or 0) for k, v in counts.items()}
+    return None
+
+
+def logged_salvage(entry: dict[str, Any]) -> int:
+    """Finished items an attempt salvaged before its cut: the list fields of ``partial`` (or
+    ``salvaged_partial``), as ``LLMDeadlineError.salvaged_items`` counts them, else a logged
+    ``salvaged_items`` count; 0 when nothing was salvaged."""
+    for key in ("partial", "salvaged_partial"):
+        raw = entry.get(key)
+        if isinstance(raw, dict):
+            return sum(len(v) for v in raw.values() if isinstance(v, list))
+    return _count(entry.get("salvaged_items")) or 0
+
+
+def logged_shard(entry: dict[str, Any]) -> str | None:
+    """The assess shard an attempt belongs to: the entry's ``shard`` (the group name from
+    ``assess.shards`` or its index, as text), on an attempt whose phase is ``assess``; ``None`` on any
+    other attempt, so a run without shards (sequential) counts none."""
+    raw = entry.get("shard")
+    if entry.get("phase") != "assess" or isinstance(raw, bool) or not isinstance(raw, str | int):
+        return None
+    return str(raw)
+
+
+def _estimate_cost(tot: dict[str, int]) -> float:
+    p = PRICE_TABLE["usd_per_mtok"]
+    return (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
+            + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
+
+
 def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     """Usage, served models, truncated calls and cost summed over every entry of ``llm.jsonl``,
     and the attempts whose usage is unknown (``calls_with_unrecorded_usage``: call ID, stage,
-    purpose, attempt, wall seconds, reason). When any exist, the totals are a lower bound."""
+    purpose, attempt, wall seconds, reason). When any exist, the totals are a lower bound.
+
+    Latency redesign: a cut attempt may log an estimate of its usage. Each one is listed in
+    ``estimated_usage_of_unrecorded_calls`` (``estimated: true``) and summed in ``estimated_totals``,
+    never in the measured totals, which sum logged ``usage`` only. ``salvaged_calls`` and
+    ``salvaged_items`` count the attempts that kept finished items of a cut answer, and
+    ``assess_shards`` the distinct ``shard`` markers of the assess attempts (:func:`logged_shard`)."""
     tot = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    est_rows: list[dict[str, Any]] = []
+    est_tot = dict.fromkeys(USAGE_FIELDS, 0)
+    salvaged_calls = 0
+    salvaged_items = 0
+    shards: set[str] = set()
     served: set[str] = set()
     cost_logged = 0.0
     have_cost = False
@@ -177,6 +250,19 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
                                "attempt": e.get("attempt"),
                                "wall_s": round(float(wall), 3) if isinstance(wall, int | float) else None,
                                "reason": reason})
+            est = logged_estimate(e)
+            if est is not None:
+                est_rows.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose"),
+                                 "attempt": e.get("attempt"), "reason": reason, "estimated": True, **est})
+                for k in USAGE_FIELDS:
+                    est_tot[k] += est[k]
+        items = logged_salvage(e)
+        if items:
+            salvaged_calls += 1
+            salvaged_items += items
+        shard = logged_shard(e)
+        if shard is not None:
+            shards.add(shard)
         for k in tot:
             tot[k] += int((e.get("usage") or {}).get(k) or 0)
         if e.get("outcome", "ok") == "ok" and e.get("model"):
@@ -185,13 +271,82 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
         if isinstance(c, int | float):
             cost_logged += float(c)
             have_cost = True
-    p = PRICE_TABLE["usd_per_mtok"]
-    estimate = (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
-                + tot["cache_read_input_tokens"] * p["cache_read"] + tot["output_tokens"] * p["output"]) / 1e6
+    estimate = _estimate_cost(tot)
     return {**tot, "calls": calls, "served_models": sorted(served), "truncations": truncations,
             "calls_with_unrecorded_usage": unrecorded,
+            "estimated_usage_of_unrecorded_calls": est_rows,
+            "estimated_totals": {"estimated": True, "calls": len(est_rows), **est_tot,
+                                 "cost_usd": round(_estimate_cost(est_tot), 6), "cost_source": "price table estimate"},
+            "salvaged_calls": salvaged_calls, "salvaged_items": salvaged_items,
+            "assess_shards": len(shards),
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
             "cost_source": "llm.jsonl call_cost_usd (client-side estimate)" if have_cost else "price table estimate"}
+
+
+def _offset(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) and value >= 0 else None
+
+
+def call_spans(run_dir: RunDir) -> dict[str, tuple[float, float]]:
+    """Per phase, the run-clock span of its model attempts: from the earliest ``start_offset_s`` to
+    the latest ``start_offset_s + elapsed_s``. Attempts without a start offset (a log written before
+    the latency redesign) are left out, so a sequential run's log gives no spans."""
+    spans: dict[str, tuple[float, float]] = {}
+    for e in JsonlWriter(run_dir.llm_log).read():
+        start = _offset(e.get("start_offset_s"))
+        if start is None or not e.get("phase"):
+            continue
+        end = start + (_offset(e.get("elapsed_s")) or 0.0)
+        phase = str(e["phase"])
+        lo, hi = spans.get(phase, (start, end))
+        spans[phase] = (min(lo, start), max(hi, end))
+    return spans
+
+
+def stage_timing(phase_seconds: dict[str, float], spans: dict[str, tuple[float, float]]) -> dict[str, Any]:
+    """``extra.timing.stages``: per stage that ran, its members' own wall seconds (``members``), their
+    plain sum (``sum_of_member_s``) and the stage's wall time (``wall_s``), which is never the sum
+    when members overlapped. ``wall_basis`` says how ``wall_s`` was reached:
+
+    * ``single_member``: the one member's seconds;
+    * ``member_spans``: the span from the earliest member start to the latest member end on the run
+      clock, read from the members' model attempts (``call_spans``), and at least the longest member;
+      a lower bound of the stage's wall time (code work before a member's first call is not seen);
+    * ``sequential_sum``: the log has no start offsets (a run before the latency redesign, whose
+      members ran one after another), so the sum is the wall time.
+
+    A member's row carries ``start_offset_s`` and ``end_offset_s`` of its model attempts, or ``null``."""
+    out: dict[str, Any] = {}
+    for stage in STAGE_ORDER:
+        ran = [p.value for p in STAGE_MEMBERS[stage] if p.value in phase_seconds]
+        if not ran:
+            continue
+        members = {}
+        for p in ran:
+            span = spans.get(p)
+            members[p] = {"seconds": round(float(phase_seconds[p]), 3),
+                          "start_offset_s": round(span[0], 3) if span else None,
+                          "end_offset_s": round(span[1], 3) if span else None}
+        total = round(sum(m["seconds"] for m in members.values()), 3)
+        seen = [spans[p] for p in ran if p in spans]
+        if len(ran) == 1:
+            wall, basis = members[ran[0]]["seconds"], "single_member"
+        elif seen:
+            span_s = max(hi for _, hi in seen) - min(lo for lo, _ in seen)
+            wall, basis = round(max(span_s, *(m["seconds"] for m in members.values())), 3), "member_spans"
+        else:
+            wall, basis = total, "sequential_sum"
+        out[stage.value] = {"members": members, "wall_s": wall, "sum_of_member_s": total, "wall_basis": basis}
+    return out
+
+
+def run_clock_s(ctx: RunContext) -> float:
+    """The run's wall total: the live run clock, else the clock recorded at the last checkpoint
+    (``budget.elapsed_s``), else 0.0."""
+    b = ctx.state.budget
+    if b.started_monotonic:
+        return round(max(0.0, ctx.elapsed_s()), 3)
+    return round(b.elapsed_s, 3)
 
 
 def merged_refusals(ctx: RunContext) -> list[dict[str, Any]]:
@@ -378,6 +533,10 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "refusals": refusals, "truncations": usage["truncations"],
                "calls_with_unrecorded_usage": usage["calls_with_unrecorded_usage"],
                "cost_usd_lower_bound": bool(usage["calls_with_unrecorded_usage"]),
+               "estimated_usage_of_unrecorded_calls": usage["estimated_usage_of_unrecorded_calls"],
+               "estimated_usage_totals": usage["estimated_totals"],
+               "assess_shards": usage["assess_shards"],
+               "salvaged_calls": usage["salvaged_calls"], "salvaged_items": usage["salvaged_items"],
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
                "calls_logged": usage["calls"]},
@@ -391,8 +550,9 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
         stop={"active_rules": list(cfg.stop_rules.active), "params": cfg.stop_rules.model_dump(mode="json"),
               "stop_reason": st.stop_reason.model_dump(mode="json") if st.stop_reason else None},
         fault_injection={"profile": sched_id or "none", "schedule_sha256": sched_sha},
-        timing={"wall_clock_s": round(max(0.0, ctx.elapsed_s()), 3) if st.budget.started_monotonic else 0.0,
-                "per_stage_s": dict(st.budget.phase_seconds)},
+        timing={"wall_clock_s": run_clock_s(ctx),
+                "per_stage_s": dict(st.budget.phase_seconds),
+                "stages": stage_timing(st.budget.phase_seconds, call_spans(rd))},
         outputs=dict(outputs) if outputs else {},
         deviations=devs,
     )
