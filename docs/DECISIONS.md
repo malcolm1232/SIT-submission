@@ -191,3 +191,26 @@ Status values: **Accepted** (build on it), **Pending** (blocked on a named input
 **Consequences.** About 60 LOC of stage checkpointing plus about 40 LOC of replay-from-self in the ToolGateway. Resume granularity is "stage, with completed tool calls reused"; a model call that was in flight is paid for twice. `research/frameworks/README.md`'s conditions table already points here; its trigger wording matches (a).
 
 **Status.** Accepted (resolves audit C17).
+
+## ADR-010: Dual LLM backend — Claude Code headless (subscription / cloud credits) or Anthropic API key
+
+**Status:** Proposed, awaiting owner confirmation (2026-10-02).
+
+**Context.** The owner prefers the agent's model calls to bill to Claude subscription usage (laptop) or Claude Code cloud credits (claude.ai/code sessions) rather than a separate Console API key. Measured in a cloud session on 2026-10-02:
+
+| Call | Input overhead | Est. cost | Structured output |
+|---|---|---|---|
+| `claude -p` default | ~31,500 tokens (Claude Code system prompt + tools) | $0.069 for a 2-word reply | n/a |
+| `claude -p --system-prompt ... --tools "" --strict-mcp-config --disallowedTools "mcp__*" --no-session-persistence --json-schema ... --effort high` with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1 CLAUDE_CODE_DISABLE_ATTACHMENTS=1` | ~1,550 tokens | $0.015 | `structured_output` field, schema-valid, 2 internal turns |
+
+The Anthropic Python SDK cannot use the session's credentials; it requires `ANTHROPIC_API_KEY`.
+
+**Decision (proposed).** Keep the custom loop (ADR-001). Implement `ClaudeCodeGateway` alongside `AnthropicGateway` behind the existing `LLMGateway` protocol, selected by `config/agent.yaml: llm.backend: claude_code | anthropic_api`. Default `claude_code` for development, evaluation and demo; `anthropic_api` remains for evaluators who hold an API key and for the native-PDF path.
+
+**Consequences.**
+- No Console API credit needed to build, evaluate or demo.
+- PDF input via the CLI is extracted text (pdfplumber, ADR-006), not the native document block; figures are not seen unless the Read tool is enabled for specific pages. Disclose.
+- Subscription usage limits (session and weekly windows, Opus family limit) bound the evaluation rate; Tier A must be spread across resets. Cache TTL is 1 h on a subscription.
+- Policy: Anthropic's terms say subscription OAuth supports "ordinary, individual usage of Claude Code and the Agent SDK" and that developers building products for others must use API keys. Personal use for the owner's own lab work is the intended reading; the submission must not ship with subscription auth as the only option, hence the dual backend. Source: https://code.claude.com/docs/en/legal-and-compliance.md
+- Billing of nested `claude -p` inside a cloud session against cloud credits is UNVERIFIED in docs; confirm by checking the credit meter before and after a known run.
+- `total_cost_usd` is a client-side estimate, not the bill.
