@@ -317,6 +317,16 @@ async def test_anthropic_announces_its_bound(tmp_path: Path, base: EffectiveConf
     assert any("bounded at 0 s by the stage 1 limit" in e.message for e in gw.progress.events)
 
 
+def test_demo_reserves_match_its_stage_limits() -> None:
+    """Design section 5: the demo profile keeps 200 s for refine and 75 s for verify and the verdict,
+    the same split its stage limits encode (265 = 540 - 75 - 200, 465 = 540 - 75)."""
+    sr = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    assert (sr.refine_reserve_seconds, sr.report_reserve_seconds) == (200, 75)
+    lim = sr.stage_limits_s
+    assert lim.stage_1_end == sr.deadline_seconds - sr.report_reserve_seconds - sr.refine_reserve_seconds
+    assert lim.refine_end == sr.deadline_seconds - sr.report_reserve_seconds
+
+
 def test_runs_without_a_deadline_rule_keep_the_full_timeout(base: EffectiveConfig) -> None:
     stop = base.stop_rules.model_copy(update={"active": [r for r in base.stop_rules.active if r != "deadline"]})
     lim = build_runtime(base.model_copy(update={"stop_rules": stop}), lambda: 99_999.0)
@@ -471,14 +481,14 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     report with no assessment; the run now says so at the start. The shipped default and the demo
     profile fit their reserves and stay quiet."""
     from sit_review_agent.config import ConfigOverrides
-    from sit_review_agent.llm.runtime import deadline_warnings
+    from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
 
     def rules(**kw: Any) -> Any:
         return base.stop_rules.model_copy(update=kw)
 
     assert deadline_warnings(base.stop_rules) == []
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (540, 120, 200)
+    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (540, 75, 200)
     assert deadline_warnings(demo) == []
     # A deadline below the stage limits is announced first (the limits are scaled), then the reserves.
     short = deadline_warnings(rules(deadline_seconds=300))
@@ -486,8 +496,10 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     assert "leaves research no time" in short[1] and "share 120 s" in short[1]
     none = deadline_warnings(rules(deadline_seconds=185))
     assert len(none) == 2 and "no model call can run before verify" in none[1] and "not assessed" in none[1]
+    # The runbook's rerun: the limits are scaled and the demo reserves (75 s + 200 s) still leave research 25 s.
     demo_short = deadline_warnings(demo.model_copy(update={"deadline_seconds": 300}))
-    assert len(demo_short) == 2 and "scaled by 300/" in demo_short[0] and "share 180 s" in demo_short[1]
+    assert demo_short == [effective_stage_limits(demo.model_copy(update={"deadline_seconds": 300}))[1]]
+    assert "scaled by 300/540 to 147 / 258 / 294 s" in demo_short[0]
     assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
 
 
