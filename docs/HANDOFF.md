@@ -5,7 +5,7 @@ malcolm1232/SIT) can continue without the original conversation.
 
 ## Where everything is
 
-Branch: `claude/eloquent-sagan-ah5ttk`. All work is committed and pushed; nothing
+Branch: `claude/great-hopper-hbx7h0` (continues `claude/eloquent-sagan-ah5ttk`). All work is committed and pushed; nothing
 lives only in the original cloud session.
 
 Read in this order (about 30 minutes):
@@ -25,23 +25,24 @@ Read in this order (about 30 minutes):
   high plus a different-provider judge if a key exists (pending the key report).
 - Repo is private. Answer keys are still plaintext; `docs/SEALING.md` is the plan.
 - Secrets: never commit the SIT MCP key or any API key. `scripts/probe_mcp_servers.py`
-  reads `SIT_MCP_API_KEY`; the agent reads `ANTHROPIC_API_KEY`.
+  reads `SIT_MCP_API_KEY`; the agent reads `ANTHROPIC_API_KEY` only with `llm.backend: anthropic_api`.
 
-## State of the agent code
+## State of the agent code (updated 2026-10-02, second session, branch `claude/great-hopper-hbx7h0`)
 
-- `agent/`, `config/`, `prompts/`, `tests/`, `pyproject.toml`: skeleton with frozen
-  interfaces (if present when you read this; otherwise the skeleton build was
-  interrupted and should be re-run from the brief in `agent/README.md` or the
-  fresh-eyes "minimum viable agent" section).
-- Next build steps, in order, each as its own subagent with disjoint module ownership:
-  1. `llm/gateway.py` (AnthropicGateway with structured outputs, caching, typed errors)
-     and `ingest/pdf.py`.
-  2. `tools/gateway.py` (direct MCP client, fault injection, record/replay) using the
-     verified pattern in `scripts/probe_mcp_servers.py`.
-  3. `phases/*` and `orchestrator.py` (the state machine), `report/`, `cli.py`.
-  4. Eval harness: matcher + metrics from `research/methodology/metrics.md`, grader
-     from `research/grading/grader_prompt.md`, using `spec/` schemas.
-  5. Robustness tests from `research/robustness/scenarios.md` P0 list (81 scenarios).
+- The agent is implemented end to end: `agent/README.md` module map has no stubs left.
+  `ruff check agent tests` clean; `pytest -q` = 444 passed, 0 skipped (~25 s);
+  `sit-review selftest` passes offline in under 1 s on the bundled fixture.
+- Two LLM backends behind one protocol (ADR-010): `claude_code` (default; headless `claude -p`,
+  bills to the Claude Code login) and `anthropic_api` (`ANTHROPIC_API_KEY`). Switch with
+  `config/agent.yaml: llm.backend`. The Claude Code backend was live-checked on Haiku and Opus
+  (single calls, resume, and the envelope tool loop on Haiku); the Anthropic backend has NOT
+  been run against the real API yet.
+- Verification trail: `research/audit/verify_agent_integration_editlog.md` and the subagent
+  reports in `docs/transcripts/` (second session).
+- Not yet built: the eval harness (matcher, metrics, grader), the robustness P0 suite as
+  runnable scenarios (the fault-injection machinery and 26 fault tests exist), the `--k`,
+  `dra replay` and `dra coverage` commands from the runbook.
+- First live run through the Claude Code backend: see `docs/HANDOVER_FULL.md` §8.
 
 ## Owner tasks on the critical path (cannot be delegated)
 
