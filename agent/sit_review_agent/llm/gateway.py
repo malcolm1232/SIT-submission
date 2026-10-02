@@ -960,7 +960,8 @@ class FaultInjectingLLMGateway:
                         else:
                             request.output_schema.model_validate(payload)
                     except ValidationError as exc:
-                        problem = str(exc).splitlines()[0]
+                        problem = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or '(root)'}: {e['msg']}"
+                                            for e in exc.errors()[:5])
                 err, retry = LLMSchemaError(f"structured output did not validate: {problem} [injected fault]",
                                             call_id=res.call_id, phase=phase), False
             else:                                   # MCP- or process-level fault types: not for this layer

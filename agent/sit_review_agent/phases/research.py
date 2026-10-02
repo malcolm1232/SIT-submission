@@ -404,8 +404,11 @@ class _ResearchRun:
         """Account for one result (state, ledger, degradations) and build its ``tool_result``."""
         state = self.state
         state.tool_calls.append(res.research_log_entry())
-        issued = res.status is not ToolCallStatus.BLOCKED
-        if issued:
+        # Refusals by the policy layer (blocked, breaker open, servers disabled after an auth
+        # failure) never reached a server and do not spend the tool-call budget.
+        refused = (res.status is ToolCallStatus.BLOCKED or res.error_class is ToolErrorClass.SERVER_DOWN
+                   or (res.error_class is ToolErrorClass.AUTH and not res.attempts))
+        if not refused:
             state.budget.tool_calls += 1
             self.calls_this_phase += 1
             if any(k in QUERY_ARG_KEYS for k in res.args):

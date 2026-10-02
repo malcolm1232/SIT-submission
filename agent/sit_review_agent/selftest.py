@@ -28,6 +28,9 @@ FIXTURE_DOC_ID = "DOC-design"
 #: The one search the scripted research turn issues; its cassette is under ``cassettes/tools/``.
 FIXTURE_QUERY = "transactional e-mail service plan daily sending limit"
 FIXTURE_TOOL = "mcp-internet-search__search"
+#: The page the scripted research turn then fetches (a search snippet may not be cited unread).
+FIXTURE_FETCH_TOOL = "mcp-internet-search__fetch"
+FIXTURE_URL = "https://docs.example-mail.invalid/plans"
 #: Selftest wall-time budget (``make smoke`` allows 60 s for everything).
 SELFTEST_MAX_S = 60.0
 
@@ -134,14 +137,22 @@ def _findings(ev: str, *, refined: bool) -> list[dict[str, object]]:
 def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
     """The scripted model responses for every phase of the selftest run (the "fixture script").
 
+    Research searches once, fetches the hit (only a page read in full may be cited, ADR-007
+    ``read_before_cite``) and answers; assess and refine cite the fetched page's ledger entry.
+
     Entries are ``FakeResponse`` objects, or callables ``(ledger_entries, request) -> FakeResponse``
     resolved at call time so findings cite the ``EV-`` IDs research actually created (the model
     may only cite what is in the ledger)."""
     from sit_review_agent.llm.gateway import FakeResponse, ToolUse
 
-    def final_research(ledger: list[dict[str, object]], _req: object) -> FakeResponse:
+    def final_research(ledger: list[dict[str, object]], req: object) -> FakeResponse:
+        import json
+        import re
+
         ids = _external_ids(ledger)
-        return FakeResponse(parsed={"answers": [{"question_id": "RQ-001", "status": "answered",
+        found = re.search(r"RQ-\d{3,}", json.dumps(getattr(req, "messages", [])))   # the plan's own question ID
+        qid = found.group(0) if found else "RQ-001"
+        return FakeResponse(parsed={"answers": [{"question_id": qid, "status": "answered",
                                                  "summary": "The published plan allows 2,000 messages a day.",
                                                  "evidence_ids": ids[:1]}],
                                     "stop_requested": True, "stop_rationale": "The one external premise is resolved."})
@@ -192,8 +203,10 @@ def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
                        "needs_external": True, "capability": "search", "queries": [FIXTURE_QUERY],
                        "section_refs": ["6.2"]}],
         "criteria_skipped": []})
-    research_tool = FakeResponse(tool_uses=[ToolUse(id="toolu_selftest_1", name=FIXTURE_TOOL,
-                                                    input={"query": FIXTURE_QUERY})])
+    research_search = FakeResponse(tool_uses=[ToolUse(id="toolu_selftest_1", name=FIXTURE_TOOL,
+                                                      input={"query": FIXTURE_QUERY})])
+    research_fetch = FakeResponse(tool_uses=[ToolUse(id="toolu_selftest_2", name=FIXTURE_FETCH_TOOL,
+                                                     input={"url": FIXTURE_URL})])
     verify = FakeResponse(parsed={"repairs": [{"owner_id": "FND-001", "anchor_index": 1,
                                                "doc_anchor": _anchor("4.1", 6, _Q_LOAD)}]})
     report = FakeResponse(parsed={
@@ -212,7 +225,7 @@ def fixture_script(criteria_ids: list[str]) -> dict[str, list[object]]:
                         "next_step": {"owner": "Test lead", "action": "Run the peak-day reminder load test."}}],
         "limitations": []})
     return {"understand": [understand], "plan": [plan],
-            "research": [research_tool, *research_final(6)],
+            "research": [research_search, research_fetch, *research_final(6)],
             "assess": [assess, assess], "refine": [refine, refine], "verify": [verify], "report": [report, report]}
 
 

@@ -478,3 +478,73 @@ def test_policy_module_has_no_secret_values(tmp_path: Path) -> None:
     import sit_review_agent.tools.policy as pol
 
     assert KEY not in Path(pol.__file__).read_text(encoding="utf-8")
+
+
+# =============================================================================== preflight
+
+
+class FakeLLM:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+
+    async def preflight(self) -> None:
+        if self.error is not None:
+            raise self.error
+
+
+async def test_preflight_all_green(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from sit_review_agent.selftest import run_preflight
+
+    monkeypatch.setenv("SIT_MCP_API_KEY", KEY)
+    out = io.StringIO()
+    gw, _, _ = mcp_gateway({"mcp-internet-search": {}, "mcp-research-information": {"tools": ["search_works"]}},
+                           FakeClock())
+    ok = await run_preflight(cfg(), mcp=gw, llm=FakeLLM(), stream=out)
+    text = out.getvalue()
+    key_row = next(line for line in text.splitlines() if line.startswith("MCP key SIT_MCP_API_KEY"))
+    assert ok and " OK " in key_row and "value not shown" in key_row
+    assert "mcp-internet-search" in text and "1 tools, protocol 2025-11-25" in text
+    assert "LLM backend claude_code" in text and KEY not in text and "preflight: OK" in text
+
+
+async def test_preflight_missing_key_names_the_variable_and_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from sit_review_agent.selftest import run_preflight
+
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    out = io.StringIO()
+    ok = await run_preflight(cfg(), llm=FakeLLM(), stream=out)
+    assert not ok and "SIT_MCP_API_KEY" in out.getvalue() and "--no-tools" in out.getvalue()
+
+
+async def test_preflight_unreachable_servers_and_llm_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    import httpx2 as hx
+
+    from sit_review_agent.errors import LLMAuthError
+    from sit_review_agent.selftest import run_preflight
+
+    monkeypatch.setenv("SIT_MCP_API_KEY", KEY)
+    scripts = {s: {"init": [hx.ConnectError("refused")] * 3}
+               for s in ("mcp-internet-search", "mcp-research-information")}
+    gw, _, _ = mcp_gateway(scripts, FakeClock())
+    out = io.StringIO()
+    ok = await run_preflight(cfg(), mcp=gw, llm=FakeLLM(LLMAuthError("check the Claude Code login")), stream=out)
+    text = out.getvalue()
+    assert not ok and "WARN" in text and "no server reachable" in text and "check the Claude Code login" in text
+    assert KEY not in text
+
+
+async def test_preflight_doc_only_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    from sit_review_agent.selftest import run_preflight
+
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    out = io.StringIO()
+    assert await run_preflight(cfg(no_tools=True), llm=FakeLLM(), stream=out)
+    assert "SKIP" in out.getvalue()
