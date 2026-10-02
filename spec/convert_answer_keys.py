@@ -143,10 +143,18 @@ def split_ids(ids: list[str]) -> tuple[list[str], list[str]]:
     return [i for i in ids if not DECISION_RE.match(i)], [i for i in ids if DECISION_RE.match(i)]
 
 
-def role_of(item: str, idx: int, text: str) -> str:
+# README §2.6: single credit items made supporting by an owner-level decision, as (item, flaw id) -> 0-based indexes.
+# Lakehouse F05 c2 (the HNSW memory formula) and F06 c2 (naming 3.13.16 / 3.13.11): SIT FABLE for the owner,
+# 2026-10-02 (docs/USER_DECISIONS.md #19).
+SUPPORTING_OVERRIDES = {("research_lakehouse", "F05"): {1}, ("research_lakehouse", "F06"): {1}}
+
+
+def role_of(item: str, idx: int, text: str, flaw_id: str | None = None) -> str:
     if text.lstrip().lower().startswith("(supporting"):
         return "supporting"
     if item == "research_lakehouse" and idx >= 2:  # legacy "first two must_mention items" rule (README §2.6)
+        return "supporting"
+    if idx in SUPPORTING_OVERRIDES.get((item, flaw_id), set()):
         return "supporting"
     return "required"
 
@@ -249,7 +257,7 @@ def convert(tier: str, item: str, fmt: str) -> tuple[dict, dict]:
             texts = [f["credit_requires"]]
         else:
             texts = f["credit_requires"]
-        items = [{"id": f"c{i + 1}", "text": t, "role": role_of(item, i, t)} for i, t in enumerate(texts)]
+        items = [{"id": f"c{i + 1}", "text": t, "role": role_of(item, i, t, f["id"])} for i, t in enumerate(texts)]
         # external fact
         if synthetic:
             needs_ext = f["id"] in NEEDS_EXTERNAL[item]

@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/payments_orchestration/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "eb211e586b89743bd2cbddef9cee9f563b8441884b3a6f3ee4f699c48ebec951"
+      "sha256": "b9ba2b5d7adcc92c7e849d5bef31cd0e2d4fbeecd7c4b8a47c37c30a89db811d"
     }
   },
   "scoring": {
@@ -101,7 +101,8 @@
         "page": 18
       },
       "flaw_ids": [
-        "F03"
+        "F03",
+        "F15"
       ]
     },
     {
@@ -422,7 +423,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class K/S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class K/S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -625,7 +626,7 @@
       },
       "description": "Section 9.3 says a single DynamoDB partition sustains up to 10,000 WCU/s. On that basis it keys the idempotency table by `merchant_id`, so all of marketplace M-0001's peak traffic (~900 TPS) goes to one partition key. It also counts each request as 2 WCU (lock plus completion), even though the completion item carries a response body of up to 4 KB, and the table has an LSI.",
       "rationale": "Per AWS DynamoDB documentation, one partition is limited to 1,000 WCU and 3,000 RCU per second. The claimed 10,000 WCU is off by 10x, and on-demand mode does not lift per-partition limits. Writes cost 1 WCU per KB of item size, so the completion update is ~4-5 WCU, and LSI maintenance consumes further write capacity, giving at least 4,500 WCU on one partition key. With an LSI, DynamoDB cannot split an item collection across partitions (no split-for-heat), and item collections are capped at 10 GB. Twenty-four hours of M-0001 records at ~4 KB each is tens of GB. The largest merchant would be throttled or rejected during campaign peaks, which breaks NFR-1, FR-5 and NFR-9.",
-      "core_insight": "Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU (and 3,000 RCU), so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS (at least 1,800 WCU even on the document's own two-writes count) on one partition key that will be throttled.",
+      "core_insight": "Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU, so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS on one partition key that will be throttled.",
       "credit": {
         "mode": "substance",
         "items": [
@@ -654,7 +655,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (awsdocs GitHub mirror, archived 2023) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (awsdocs GitHub mirror, archived 2023) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -809,7 +810,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. v4.0.1 adds an issuer carve-out that does not apply here."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. v4.0.1 adds an issuer carve-out that does not apply here. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -891,7 +892,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (hedged wording appropriate), source class P-snippet/S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (hedged wording appropriate), source class P-snippet/S (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "needs_investigation",
       "acceptable_dispositions": [
@@ -1164,7 +1165,7 @@
       },
       "description": "All KEKs live in an AWS CloudHSM cluster with a single HSM in ap-southeast-1a. Every detokenise unwraps a DEK in the HSM, with no caching, and every card authorization needs detokenise. A second HSM is deferred until card volume passes 1,500 TPS, which the design peak never reaches (55% of 2,000 = 1,100 TPS).",
       "rationale": "One HSM, or the loss of one AZ, stops all card payments (~55% of volume). Recovery means creating a new HSM from a backup, which takes minutes to tens of minutes. This contradicts NFR-3 (99.95%) and the three-AZ posture everywhere else. AWS recommends at least two HSMs in different AZs for production clusters. The scaling trigger is set where it will never fire.",
-      "core_insight": "Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3 and the three-AZ posture elsewhere; the 1,500 TPS trigger for a second HSM is above the design peak and never fires.",
+      "core_insight": "Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3.",
       "credit": {
         "mode": "substance",
         "items": [
@@ -1193,7 +1194,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (awsdocs GitHub mirror, archived 2023) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (awsdocs GitHub mirror, archived 2023) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1493,7 +1494,7 @@
         "verified": false,
         "verified_source_url": null,
         "verified_at": null,
-        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (LWW, local-Region conditions) and P-snippet (MRSC) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. MRSC is not offered for the ap-southeast-1/ap-southeast-3 pair in the GA Region sets."
+        "verification_note": "Drafted from research/audit/eval_data_audit.md Task 1.1: verdict C (key correct), source class P (LWW, local-Region conditions) and P-snippet (MRSC) (P primary mirror, P-snippet search extract, S secondary, K known/not fetched). Not re-verified in the W3 drafting pass (no network). verified stays false until someone checks the source and records verified_source_url and verified_at. MRSC is not offered for the ap-southeast-1/ap-southeast-3 pair in the GA Region sets. Accepted as the S-dev verification (SIT FABLE for the owner, 2026-10-02; applied 2026-10-03; docs/USER_DECISIONS.md #18): research/audit/eval_data_audit.md is the verification for this S-dev fact and verified stays false. An owner re-check with network access is required only for held-out keys and, before Tier A, if a graded finding's credit turns on this fact."
       },
       "expected_disposition": "refinement_now",
       "acceptable_dispositions": [
@@ -1501,6 +1502,7 @@
         "needs_investigation"
       ],
       "affected_decisions": [
+        "AD-004",
         "AD-006"
       ],
       "acceptable_fix": "Make one region the home for idempotency lock acquisition (the region that holds the Aurora writer) and route all lock writes there. Or enforce a unique constraint on (merchant_account_id, idempotency_key) in the authoritative Aurora payment table as the final arbiter. Or use DynamoDB multi-Region strong consistency (MRSC) only if it is available for this region set. Keep the replica for read and recovery only.",
@@ -1687,7 +1689,7 @@
         "sound_overlap_annotations",
         "v2_changed_sections"
       ],
-      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest."
+      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Drafted only from design_v1.md/design_v2.md, the legacy key fields and research/audit/eval_data_audit.md; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest. SIT FABLE decisions for the owner (2026-10-02, docs/USER_DECISIONS.md #17-#20) applied 2026-10-03: canary_guid is key-only for S-dev (not embedded in design_v*.md or the PDFs; record for the LC10/LC11 canary scans); the eval-data audit is accepted as the external-fact verification for S-dev; core insights follow the substance-mode rule in eval/KEY_SIGNOFF.md item 10. These are decisions on the drafts, not the owner's signature; signoff is still empty."
     }
   }
 }

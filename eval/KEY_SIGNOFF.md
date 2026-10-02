@@ -4,19 +4,28 @@ Date drafted: 2026-10-02. Drafted by: an agent session on `claude-opus-5-5` (wor
 
 **Status: nothing on this sheet is signed.** Every value below is an agent draft. All three keys stay at `scored_run_ready: false` (prereg check LC12) until you sign them with the steps in section 4.
 
+**Decisions taken for you (2026-10-02, applied 2026-10-03).** The SIT FABLE session decided the open questions on this sheet on your behalf (`docs/USER_DECISIONS.md` #17-#20; verbatim in `docs/transcripts/session3_coordinator.md`, "SIT FABLE decisions"). They are applied to the drafts and marked "SIT FABLE" below:
+
+- #17 canary: key-only for the three S-dev items (section 4, step 5).
+- #18 external facts: the eval-data audit is accepted as the S-dev verification; `verified` stays false (section 4, step 4).
+- #19 core insights: the substance-mode rule (item 10) is applied: payments F04 and F11 trimmed, clinical F09 replaced with the item-12 text, lakehouse F01 trimmed, lakehouse F05 and F06 c2 made `supporting` in `role_of()`; clinical F03 and F05 and lakehouse F04 accepted as drafted; all drafted dispositions accepted; items 7 and 8 left as they are; item 9 (`v2.changed_sections`) accepted.
+- #20 payments F15 is linked to AD-004 (rule under item 7).
+
+SIT FABLE's instruction was that, after these, only your signature remains: rows it did not name stay as drafted and are covered by your signature (section 4, step 3). These are decisions on the drafts, not your signature. The `signoff` block in each key is still empty.
+
 ## 1. What was drafted, and what is still yours
 
 | Field | State in all three keys | What you do |
 |---|---|---|
-| `core_insight` (45 flaws) | Drafted | Accept, edit or reject each one (section 5) |
+| `core_insight` (45 flaws) | Drafted; four edited by SIT FABLE decision #19 under the substance-mode rule (item 10) | Accept, edit or reject each one (section 5) |
 | `anchor_quote` + `page` (45 flaws) | Drafted and machine-checked (section 3) | Look at the quote and confirm it locates the flaw |
 | `expected_disposition` + `acceptable_dispositions` (45 flaws) | Drafted | Accept or change |
 | `approved_decisions[]` (19 + 20 + 18 = 57 rows) | Drafted from the "Confirmed Decisions" tables | Check the `flaw_ids` links (section 6) |
-| `external_fact` claim, source and audit note (6 + 9 + 5 = 20 flaws) | Claim restated from the eval-data audit; `verified: false` everywhere | Decide whether the audit's check is enough (section 4, step 4) |
+| `external_fact` claim, source and audit note (6 + 9 + 5 = 20 flaws) | Claim restated from the eval-data audit; `verified: false` everywhere; audit accepted as the S-dev verification (SIT FABLE #18, note added to each entry) | Decided: option (b) (section 4, step 4) |
 | `sound_overlap_annotations` | Overlaps rechecked; 2 sound sections split into sub-locations | Accept or change (section 7) |
 | `v2.changed_sections` | Drafted from a section-level diff of v1 against v2 | Accept or change (section 7) |
 | `author_type`, `author_model`, `generation_date`, `generator_session_ref`, `brief_sha256` | Filled from the session record; no longer pending | Spot-check the evidence below |
-| `canary_guid` | One S-dev GUID assigned (`95c1d956-49fe-4e5a-af8d-91ae7333ac1d`), **not** embedded in any document | Decide (section 4, step 5); stays pending until then |
+| `canary_guid` | One S-dev GUID assigned (`95c1d956-49fe-4e5a-af8d-91ae7333ac1d`), **not** embedded in any document | Decided: key-only for S-dev (SIT FABLE #17, section 4, step 5); stays pending until you sign |
 | `key_second_review` | Pending | Your signature is the second review (RA L12, protocol T3) |
 
 **Provenance evidence.** `docs/transcripts/README.md` lists the generator subagents (model O = Claude Opus 5.5): payments `agent-aad4920f0c3541cf7`, clinical `agent-ac521bf703f699435`, lakehouse `agent-a21d102fbd2aa1f49`. In each transcript (`docs/transcripts/subagents/<id>.jsonl.gz`) every assistant message has `model: claude-opus-5-5`, and the timestamps run 2026-10-02 06:48-07:06 UTC. `brief_sha256` is the sha256 of the UTF-8 text of the first non-meta user message in that transcript. The keys were later edited by other Opus 5.5 agents (`research/audit/eval_fixes_applied.md`, `research/audit/verify_eval.md`), so `author_type` is `llm` for both the documents and the keys. If you edit core insights, the keys become partly human-written; you may then set `author_type` to `mixed` in the `authoring_drafts.item` block.
@@ -56,27 +65,42 @@ The 42 v1 flaws alone take about 2.1 h. The protocol's T3 line budgets 1.5 h for
 These are the flaws where the core insight was hard to state, or where the existing key looks off:
 
 1. **research_lakehouse F05.** The legacy "first two must-mention items" rule makes c2 (the exact OpenSearch HNSW formula) required. The eval-data audit (Task 5) called that item supporting. A reviewer who says "float32 is 4 bytes per dimension, so memory is about 4 times understated and the domain is several times too small" has plainly found the flaw. Consider making c2 supporting, or reading it as "the formula *or* an equivalent overhead estimate". The drafted core insight mentions the formula only as "about".
+   - **SIT FABLE (#19):** c2 made `supporting` in `role_of()`. Required: memory is understated about 4 times because float32 is 4 bytes per dimension, so the domain is too small.
 2. **research_lakehouse F06.** c2 requires naming the correct controls (3.13.16 and/or 3.13.11). This is strict in the same way as F05: a finding that says "3.1.1 is access control, not encryption" may be enough for you.
+   - **SIT FABLE (#19):** c2 made `supporting` in `role_of()`. Required: 3.1.1 is an access-control requirement, not encryption, so the citation does not support the claim.
 3. **research_lakehouse F04.** The required items are about tier behaviour only (opt-in, restore needed). The NFR-9 cost breach is c3, which is supporting. So the draft leaves cost out. Decide whether the cost breach belongs in the core insight.
+   - **SIT FABLE (#19):** accepted as drafted; the NFR-9 cost breach stays supporting (c3), not in the core insight.
 4. **clinical_rpm F05.** The audit (Task 5) calls F05 arguable: IEC 60601-1-8 separates alarm-condition delay from alarm-signal delay, so whether the 10-second window counts against NFR-2 depends on where NFR-2 starts. The draft says "up to" and does not require a 15-second worst case.
+   - **SIT FABLE (#19):** accepted as drafted; "up to" stands and c4 (push latency) is not required (see item 11).
 5. **clinical_rpm F03 and F12, payments F04 and F12.** The drafts drop a must-mention item that is phrased as "or", "and/or" or "at least one of": clinical F03 drops the MIC@Home / residency item (c4), payments F04 drops the item-size / LSI detail (c3), clinical F12 no longer names the window and clock, and payments F12 accepts either of its two ambiguities. Under `substance` mode that keeps the core insight to the essential defect. Check you agree. (Clinical F12 and payments F12 were edited by the verifier; see their entries in section 5.)
+   - **SIT FABLE (#19):** clinical F03 accepted as drafted (dropping c4 is right).
 6. **The three `decision_depends_on_pending_item` flaws** (payments F14, clinical F14, lakehouse F14) were drafted as `governance_decision`, with `refinement_now` acceptable. That is a policy choice for the action-type metric. Other borderline dispositions: payments F03 (`governance_decision`), payments F07 and clinical F07 (`needs_investigation`), and payments F13, clinical F13 and lakehouse F13 (`needs_testing`).
+   - **SIT FABLE (#19):** all drafted dispositions accepted, including `governance_decision` for the three pending-item flaws with `refinement_now` acceptable.
 7. **Approved-decision links that were left out on purpose:**
    - lakehouse "Catalog" is not linked to F10, and "Primary storage class" is not linked to F04: neither flaw cites §20 in the legacy key.
    - payments "Fraud" is not linked to F01: the Fraud row says nothing about the PAN.
 
    If you link them, a correct finding that challenges those rows can no longer count as an approved-decision violation.
+
+   - **SIT FABLE (#19, #20):** these three non-links are left as they are.
+   - **Linking rule (SIT FABLE #20), for all three keys alike:** a decision row is linked to a flaw when the flaw's location cites the section that row governs. Only F15/AD-004 was changed under it; the other drafted links were not re-derived from the rule. Under it, payments F15 (location §9.4; 20.2; 24) cites §20.2, which the "Disaster recovery" row (AD-004) governs, so F15 is linked to AD-004 as well as AD-006 (item 13).
 8. **payments F05 severity.** It is still `minor` (low), although audit P2-13 suggests major. This was not changed: severity is outside this sheet.
+   - **SIT FABLE (#19):** left as it is.
 9. **The v2 revision logs are incomplete.** Payments v2 also changed §10.3 and §19.1, clinical v2 also changed §14.5, §17.1 and §23, and lakehouse v2 also changed §20 and the NFR-9 criterion in §22.2. The logs do not name these. They are included in `v2.changed_sections`.
+   - **SIT FABLE (#19):** the `v2.changed_sections` additions are accepted.
 
 #### Added by the verification pass (2026-10-02)
 
 A second agent checked these drafts against the design documents and the legacy keys. It edited three core insights (payments F03 and F12, clinical F12; marked "Edited by the verifier" in section 5; log in `research/audit/verify_key_drafts_editlog.md`). These points are left for you:
 
 10. **How strict a core insight is.** In `substance` mode (payments and clinical) the matcher is told the finding "must state the core insight as a whole". So every clause in a draft is a requirement, including clauses after a semicolon and lists in brackets. If a clause is only supporting detail, delete it. Examples to look at: payments F04 ("(and 3,000 RCU)", "at least 1,800 WCU"), payments F11 (the 1,500 TPS trigger clause), lakehouse F01 (the zero-data-retention clause, which is a supporting item).
+    - **Rule for `substance` mode (SIT FABLE #19):** the core insight states the defect and why it is a defect, nothing else. Numbers, parentheticals and secondary consequences are supporting detail and come out unless a credit item requires them. Applied: payments F04 and F11 trimmed, clinical F09 replaced (item 12), lakehouse F01 trimmed; clinical F03 and F05 and lakehouse F04 accepted as drafted. The same rule applies to any later edit of a core insight.
 11. **clinical_rpm F05 also drops c4.** Besides the "up to" wording (item 4), the draft leaves out c4 (APNs/FCM push has no latency guarantee), which the legacy key lists as a must-mention item. The distractor note treats the push figure as secondary, so this looks right, but it is looser than the legacy list.
+    - **SIT FABLE (#19):** accepted; c4 is not required.
 12. **clinical_rpm F09 lists every quasi-identifier but omits c2.** The draft names the postal code, timestamps, ward and bed, age, sex and ethnicity, so a strict matcher may want all of them. It does not say why the postal code matters (c2: a 6-digit Singapore postal code usually identifies one building). A possible text: "The 'anonymised' extracts remove only direct identifiers and keep strong quasi-identifiers, notably the full 6-digit home postal code, which in Singapore usually identifies a single building, together with demographics or exact timestamps, so patients remain re-identifiable and the data is still personal data; the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, is therefore unjustified."
+    - **SIT FABLE (#19):** F09 now uses this text. The full list of quasi-identifiers is not required.
 13. **payments F15 and the "Disaster recovery" row (AD-004).** F15 is linked only to "Idempotency store" (AD-006). The v2 "Disaster recovery" row adds the warm API cell in ap-southeast-3, which is what sends a retry to the second region. Linking AD-004 to F15 is defensible; leaving it is also defensible, because the defect is the global-table lock. Lakehouse F15, by contrast, is linked to both rows its v2 change touched.
+    - **SIT FABLE (#20):** linked. F15 cites §20.2, the section the DR row governs, and the fix for F15 can change the two-region write topology, so a finding that challenges AD-004 is a legitimate affected decision.
 14. **Sign last.** The sign-off is not tied to the draft text. If you edit `authoring_drafts` after signing, the key stays signed. Make all edits first, then sign; after any later edit, sign again with a new `signed_on`.
 15. **Sound-section sub-locations are text only.** Clinical §4 and lakehouse §16 are split into sub-locations, but the harness reads only the section number (for example "16 Audit Plane (Content boundaries)" is section 16), so the split guides the matcher and the human rater, not the location arithmetic.
 
@@ -131,7 +155,11 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 4. **External facts.** All 20 `external_fact` entries have `verified: false`. The claim, source and note were restated from the eval-data audit (2026-10-02). That audit labelled its sources P (primary mirror), P-snippet, S or K, and found every flaw-level fact correct. You have two options:
    - (a) Re-check each source with network access. In `authoring_drafts.flaws.<Fxx>.external_fact`, add `"verified": true`, `"verified_source_url"` and `"verified_at"` (YYYY-MM-DD). The converter copies them, and the schema requires the URL and date whenever `verified` is true. You still list `external_fact_verification` in `accepted` (step 3); the converter does not clear it on its own.
    - (b) Accept the audit's check as sufficient, and include `external_fact_verification` in `accepted`. The converter then prints a note that you accepted audit-level verification. Under (b) the key stays honest: `verified` remains false and the note says why.
+   - **Decided (SIT FABLE #18): option (b).** `research/audit/eval_data_audit.md` is the verification for all 20 S-dev entries. `verified` stays false, and each entry's `verification_note` now says the audit was accepted. List `external_fact_verification` in `accepted` when you sign.
+   - **Rule going forward (SIT FABLE #18):** an owner re-check with network access (option (a)) is required only for held-out keys, and, before Tier A, for any S-dev fact that a graded finding's credit turns on (the harness can list those from the pilot).
 5. **Canary.** Methodology §1.1 rule 5 wants the per-split canary in every document and key. The GUID is in the keys only. Embedding it in `design_v*.md` and rebuilding the PDFs (`eval/build_pdfs.py`) would change the document hashes and the page text, so it was not done here. Either embed it, then set `authoring_drafts.item.canary_embedded_in_documents: true`; or accept a key-only canary by listing `canary_guid` in `accepted`, and record that choice for the LC10/LC11 canary scans.
+   - **Decided (SIT FABLE #17): key-only for S-dev.** `design_v*.md` and the PDFs are not touched (the live run and the pilots cite their hashes and anchor pages, and S-dev is the open development set, so an embedded canary there protects nothing). `canary_embedded_in_documents` stays false; list `canary_guid` in `accepted` when you sign. The choice is recorded for the scans in `eval/prereg.yaml` LC10 and LC11 (`eval/prereg_deviations.md` entry 8).
+   - **Rule going forward (SIT FABLE #17):** every future held-out item gets its split's canary embedded in its documents (and key) before its first run (`docs/SEALING.md` §3).
 6. **Regenerate and check.** Run this from the repository root with the venv active:
 
    ```bash
@@ -171,11 +199,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F04 · high (legacy major) · unsupported_or_incorrect_claim
 - Location: §9.2; 9.3; 24 (NFR-1, NFR-9, FR-5)
-- **Core insight (draft):** Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU (and 3,000 RCU), so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS (at least 1,800 WCU even on the document's own two-writes count) on one partition key that will be throttled.
+- **Core insight (draft, edited by SIT FABLE decision #19):** Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU, so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS on one partition key that will be throttled.
+  - Before: Section 9.3 assumes a DynamoDB partition sustains 10,000 WCU/s, but the per-partition limit is 1,000 WCU (and 3,000 RCU), so keying the idempotency table by merchant_id puts the largest merchant's ~900 TPS (at least 1,800 WCU even on the document's own two-writes count) on one partition key that will be throttled.
 - **Anchor** (design_v1.pdf p. 8): "DynamoDB serves each partition key value from a single partition, and a single partition sustains up to 10,000 write capacity units per second."
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_testing`)
 - Linked approved decisions: AD-006
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted "(and 3,000 RCU)", "at least 1,800 WCU" and "even on the document's own two-writes count" (and the parentheses they leave empty). "~900 TPS" is kept because credit item c2 names it.
 
 #### F05 · low (legacy minor) · unsupported_or_incorrect_claim
 - Location: §21.1; 10.5; 11.2; 2.2 (NFR-2)
@@ -226,11 +255,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F11 · high (legacy major) · scalability_or_failure_mode
 - Location: §12.1; 12.3; 24; 20.1 (NFR-3)
-- **Core insight (draft):** Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3 and the three-AZ posture elsewhere; the 1,500 TPS trigger for a second HSM is above the design peak and never fires.
+- **Core insight (draft, edited by SIT FABLE decision #19):** Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3.
+  - Before: Every card authorization needs an HSM unwrap (no DEK caching) and the CloudHSM cluster has a single HSM in one AZ, so losing that HSM or AZ stops all card payments, contrary to NFR-3 and the three-AZ posture elsewhere; the 1,500 TPS trigger for a second HSM is above the design peak and never fires.
 - **Anchor** (design_v1.pdf p. 10): "The Vault's KEKs are held in an AWS CloudHSM cluster with one HSM in ap-southeast-1a."
 - **Expected disposition:** `refinement_now`
 - Linked approved decisions: AD-008
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted the 1,500 TPS trigger clause and the secondary "three-AZ posture elsewhere" contradiction, which no credit item requires.
 
 #### F12 · low (legacy minor) · ambiguous_requirement
 - Location: §2.1; 10.3; 24; 26.1 (FR-8)
@@ -260,8 +290,8 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Core insight (draft):** v2 makes the idempotency table a DynamoDB global table writable in both regions in multi-Region eventual consistency mode and claims the conditional put gives exactly one lock winner whichever region receives the request, but such conditional writes are checked only against the local replica and conflicts resolve last-writer-wins, so duplicates arriving in different regions can both acquire the lock and cause duplicate authorizations.
 - **Anchor** (design_v2.pdf p. 8): "exactly one request can acquire the lock for a given merchant and key regardless of which region receives it"
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_investigation`)
-- Linked approved decisions: AD-006
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- Linked approved decisions: AD-004, AD-006
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#20, for the owner): linked to AD-004 (item 7 linking rule: F15 cites §20.2, which the DR row governs).
 
 ### 5.2 Clinical remote patient monitoring (HPHC RPM-P): `synthetic-clinical-rpm-001` (15 flaws, credit mode `substance`)
 
@@ -287,7 +317,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Anchor** (design_v1.pdf p. 17): "Platform recovery: redeploy from infrastructure-as-code and restore from zone-redundant backups when the region returns; estimated 4–8 hours after region availability."
 - **Expected disposition:** `governance_decision` (also acceptable: `needs_investigation`)
 - Linked approved decisions: AD-001
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☒ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): accepted as drafted (dropping c4 is right).
 
 #### F04 · critical (legacy critical) · unsupported_or_incorrect_claim
 - Location: §7.3; 20; 2.2 (NFR-1, D-2)
@@ -302,7 +332,7 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Core insight (draft):** The Section 10.4 budget concludes NFR-2 (10 s at p95) is met with 50% headroom, but it omits delays the design itself imposes, up to 5 s of on-device batching before publish and up to 10 s waiting for the 10-second tumbling window to close, so the headroom claim is unsupported and the target is unlikely to be met.
 - **Anchor** (design_v1.pdf p. 10): "NFR-2 (≤ 10 s at p95) is therefore met with 5 s (50%) headroom."
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_testing`)
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☒ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): accepted as drafted; "up to" stands and c4 (push latency) is not required.
 
 #### F06 · low (legacy minor) · missing_or_unverifiable_requirement
 - Location: §2.1; 20 (FR-8, D-12)
@@ -329,11 +359,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 
 #### F09 · high (legacy major) · security_privacy_gap
 - Location: §17.4; 17.2; 20; 22.1 (FR-15, P8, D-19)
-- **Core insight (draft):** The 'anonymised' extracts keep strong quasi-identifiers (full 6-digit home postal code, exact timestamps, ward and bed, age, sex, ethnicity), so patients remain re-identifiable and the data is still personal data, which makes the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, unjustified.
+- **Core insight (draft, edited by SIT FABLE decision #19):** The 'anonymised' extracts remove only direct identifiers and keep strong quasi-identifiers, notably the full 6-digit home postal code, which in Singapore usually identifies a single building, together with demographics or exact timestamps, so patients remain re-identifiable and the data is still personal data; the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, is therefore unjustified.
+  - Before: The 'anonymised' extracts keep strong quasi-identifiers (full 6-digit home postal code, exact timestamps, ward and bed, age, sex, ethnicity), so patients remain re-identifiable and the data is still personal data, which makes the claim that the extracts fall outside the PDPA, and their sharing to partner tenancies without per-extract approval, unjustified.
 - **Anchor** (design_v1.pdf p. 17): "Because direct identifiers are removed, extracts are anonymised data and fall outside the PDPA's obligations."
 - **Expected disposition:** `refinement_now` (also acceptable: `governance_decision`)
 - Linked approved decisions: AD-019
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): replaced with the verifier's proposed text in item 12; the full list of quasi-identifiers is not required.
 
 #### F10 · critical (legacy critical) · scalability_or_failure_mode
 - Location: §10.3; 18.1; 20; 2.2 (NFR-3, NFR-4, FR-8, D-10)
@@ -387,11 +418,12 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 #### F01 · critical (legacy critical) · internal_contradiction
 - Location: §2.2; 4; 14.4; 20 (NFR-5, FR-8)
 - Required credit items: c1 "NFR-5 forbids processing Restricted content outside Westmoor AWS accounts"; c2 "generation model / external vendor API is used for Restricted tier (Section 14.4 / Section 20)"
-- **Core insight (draft):** NFR-5 forbids processing Restricted content outside Westmoor-controlled AWS accounts, yet Section 14.4 and the 'Generation model' decision send Restricted-tier chunks to a commercial LLM on the vendor's public endpoint; zero-data-retention terms do not make that endpoint a Westmoor account.
+- **Core insight (draft, edited by SIT FABLE decision #19):** NFR-5 forbids processing Restricted content outside Westmoor-controlled AWS accounts, yet Section 14.4 and the 'Generation model' decision send Restricted-tier chunks to a commercial LLM on the vendor's public endpoint.
+  - Before: NFR-5 forbids processing Restricted content outside Westmoor-controlled AWS accounts, yet Section 14.4 and the 'Generation model' decision send Restricted-tier chunks to a commercial LLM on the vendor's public endpoint; zero-data-retention terms do not make that endpoint a Westmoor account.
 - **Anchor** (design_v1.pdf p. 13): "The same model serves all eligible tiers (Public, Internal and Restricted); Controlled content is never indexed and so never reaches the model."
 - **Expected disposition:** `refinement_now` (also acceptable: `governance_decision`)
 - Linked approved decisions: AD-011
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☒ edit ☐ reject - SIT FABLE (#19, for the owner): deleted the zero-data-retention clause (a supporting item, c4).
 
 #### F02 · high (legacy major) · internal_contradiction
 - Location: §2.1; 3; 8.3; 20 (FR-5, FR-10)
@@ -417,24 +449,24 @@ All edits go in the legacy key, `eval/synthetic/<item>/answer_key.json`, inside 
 - **Core insight (draft):** The storage estimate assumes S3 Intelligent-Tiering moves 60% of bytes into the Deep Archive Access tier 'with no change in access latency', but that tier is opt-in and its objects must be restored, taking hours, before they can be read, so the claim is false and the tier cannot serve interactive queries or reproducibility.
 - **Anchor** (design_v1.pdf p. 15): "with no retrieval charges and no change in access latency for the query engines."
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_investigation`)
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☒ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): accepted as drafted; the NFR-9 cost breach stays supporting (c3).
 
 #### F05 · high (legacy major) · unsupported_or_incorrect_claim
 - Location: §15; 17.1; 20 (NFR-1, NFR-3, NFR-9)
-- Required credit items: c1 "float32 = 4 bytes per dimension (memory understated ~4x)"; c2 "HNSW memory formula / overhead ~1.1x(4d+8M)"
+- Required credit items: c1 "float32 = 4 bytes per dimension (memory understated ~4x)" (c2 "HNSW memory formula / overhead ~1.1x(4d+8M)" is `supporting` since SIT FABLE #19)
 - **Core insight (draft):** Section 15 sizes vector memory at 1 byte per dimension (180M x 1,024 = 184 GB), but float32 vectors take 4 bytes per dimension and faiss HNSW needs about 1.1 x (4d + 8M) bytes per vector, roughly 836 GB per copy, so the three-node OpenSearch domain is several times too small.
 - **Anchor** (design_v1.pdf p. 14): "Vector data (180M × 1,024 dimensions) ≈ 184 GB"
 - **Expected disposition:** `refinement_now` (also acceptable: `needs_prototyping`)
 - Linked approved decisions: AD-010
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 1); the core insight was not ruled on and is unchanged.
 
 #### F06 · low (legacy minor) · missing_or_unverifiable_requirement
 - Location: §2.2; 22.2 (NFR-6)
-- Required credit items: c1 "3.1.1 is an access-control requirement, not encryption"; c2 "correct controls are 3.13.16 (CUI at rest) and/or 3.13.11 (FIPS-validated crypto)"
+- Required credit items: c1 "3.1.1 is an access-control requirement, not encryption" (c2 "correct controls are 3.13.16 (CUI at rest) and/or 3.13.11 (FIPS-validated crypto)" is `supporting` since SIT FABLE #19)
 - **Core insight (draft):** NFR-6 cites NIST SP 800-171 requirement 3.1.1 for customer-managed-key encryption with 90-day rotation, but 3.1.1 is an access-control requirement; protection of CUI at rest is 3.13.16 and FIPS-validated cryptography is 3.13.11, so the requirement is traced to the wrong control.
 - **Anchor** (design_v1.pdf p. 3): "Datasets tagged CUI shall be encrypted at rest with customer-managed AWS KMS keys rotated every 90 days, as required by NIST"
 - **Expected disposition:** `refinement_now`
-- ☐ accept ☐ edit ☐ reject — new text / note: ____________________
+- ☐ accept ☐ edit ☐ reject - SIT FABLE (#19, for the owner): c2 made `supporting` in `role_of()` (item 2); the core insight was not ruled on and is unchanged.
 
 #### F07 · high (legacy major) · missing_or_unverifiable_requirement
 - Location: §1; 2.1; 12.2; 22.1 (FR-7)
@@ -524,7 +556,7 @@ Each row is a Confirmed Decisions table row from design_v1. `statement` is the r
 | AD-001 | Cloud and primary region | Cloud and primary region: AWS, ap-southeast-1 (Singapore), three AZs | 18 | F07 | ☐ |
 | AD-002 | Compute | Compute: Amazon EKS; CDE on a separate EKS cluster in a separate AWS account | 18 | — (sound) | ☐ |
 | AD-003 | Payments and ledger store | Payments and ledger store: Aurora PostgreSQL 16, db.r7g.12xlarge, writer + 2 readers | 18 | — (sound) | ☐ |
-| AD-004 | Disaster recovery | Disaster recovery: Aurora Global Database secondary in ap-southeast-3; runbook failover, 30-minute target | 18 | F03 | ☐ |
+| AD-004 | Disaster recovery | Disaster recovery: Aurora Global Database secondary in ap-southeast-3; runbook failover, 30-minute target | 18 | F03, F15 (F15 linked by SIT FABLE #20) | ☐ |
 | AD-005 | Event bus | Event bus: Amazon MSK, 3 brokers, RF 3 | 18 | — (sound) | ☐ |
 | AD-006 | Idempotency store | Idempotency store: Redis fast path (idem:resp:{key}) + DynamoDB payments-idempotency (PK merchant_id, SK idempotency_key, LSI on created_at) | 18 | F04, F09, F15 | ☐ |
 | AD-007 | Idempotency retention | Idempotency retention: 24 hours | 18 | — (sound) | ☐ |
@@ -626,6 +658,8 @@ Each row is a Confirmed Decisions table row from design_v1. `statement` is the r
 
 ## 8. External facts (restated claims; all `verified: false`)
 
+SIT FABLE (#18, for the owner) accepted `research/audit/eval_data_audit.md` as the verification for all 20 rows below (section 4, step 4); `verified` stays false and each entry's note says so.
+
 | Item | Flaw | Claim (draft) | Audit verdict and source class | Accept? |
 |---|---|---|---|---|
 | payments_orchestration | F01 | Under PCI DSS v4.0 any system component that stores, processes or transmits PAN is part of the cardholder data environment, and a third party that receives PAN is a third-party service provider that must be managed under Requirement 12.8 (with its own Attestation of Compliance). BIN8 plus last 4 is acceptable truncation outside the CDE. | verdict C (key correct), source class K/S | ☐ |
@@ -649,6 +683,20 @@ Each row is a Confirmed Decisions table row from design_v1. `statement` is the r
 | research_lakehouse | F10 | The Amazon RDS service level agreement commits to 99.95% monthly uptime for Multi-AZ DB instances but only 99.5% for Single-AZ (single-instance) deployments, below a 99.9% target. | verdict C (key correct), source class P-snippet | ☐ |
 | research_lakehouse | F15 | Apache Iceberg makes commits safe through optimistic concurrency: a commit succeeds only by atomically swapping the table's current metadata pointer in one catalog (compare-and-swap); two catalogs that each accept commits and replicate asynchronously with last-writer-wins cannot provide that guarantee. | verdict C (reasoning), source class K | ☐ |
 
-## 9. Signature
+## 9. Files this sheet describes (sha256 after the SIT FABLE decisions were applied, 2026-10-03)
+
+| File | sha256 |
+|---|---|
+| `eval/synthetic/payments_orchestration/answer_key.json` | `b9ba2b5d7adcc92c7e849d5bef31cd0e2d4fbeecd7c4b8a47c37c30a89db811d` |
+| `eval/synthetic/clinical_rpm/answer_key.json` | `64c71a6de410a544c89ac3fc8899c2ad129823140ed1e6388f9798c3631ebb54` |
+| `eval/synthetic/research_lakehouse/answer_key.json` | `56ca982cdf4b136af1ddbcf2a1386d512dac9198687c8a6ccfa8043dccca2a51` |
+| `eval/synthetic/payments_orchestration/answer_key.canonical.json` | `51ca4fbf508efa78e1d870264a7ef581d777f86083dc88fe464679d59442c219` |
+| `eval/synthetic/clinical_rpm/answer_key.canonical.json` | `44833c1c01d8e89918c67991910ae583d6efc4aa22cdea8d20e4a436e7878735` |
+| `eval/synthetic/research_lakehouse/answer_key.canonical.json` | `7c92bf91252858da076636b9e70bf4623fe049df4ab3a4e894e42c591bcce52a` |
+| `spec/convert_answer_keys.py` (sets the credit-item roles) | `7986801c9b7b0f1476c93a96842287caa261016b04e3819dccfca5e6ad3e26a8` |
+
+Check with `shasum -a 256 <file>` (or `sha256sum`). Signing changes the three `answer_key.json` (the `signoff` block) and the canonical keys, so after you sign these values describe the reviewed, unsigned state. This sheet's own hash cannot be written inside it; it is recorded in the commit that applied the decisions and in `docs/transcripts/session4/keys_builder.md`.
+
+## 10. Signature
 
 Signed (name, date): ______________________ Sheet sha256: ______________________

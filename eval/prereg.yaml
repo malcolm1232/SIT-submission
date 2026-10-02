@@ -653,6 +653,10 @@ leakage_controls:   # all must pass before scoring; results go in the leakage ta
       check: "`sit-eval score` reproduces the MM §14 worked example exactly (unit test tests/eval_harness/test_eval_worked_example.py)"
   before_unsealing_s_heldout:
     - id: LC10
+      # Scan note (UD #17, eval/prereg_deviations.md entry 8): the S-dev canary is key-only. The three S-dev
+      # items carry their canary GUID in answer_key.json only, not in design_v*.md or the PDFs, so a canary scan
+      # of S-dev documents is expected to find nothing; record "key-only canary, S-dev". Every held-out item
+      # gets its canary embedded in its documents before its first run (SEALING.md §3).
       check: >-
         Static leakage audit inside the unseal session by script (MR §3.2 steps 1-3) -
         distinctive-term grep (top 200 TF-IDF terms per sealed document plus all
@@ -662,6 +666,8 @@ leakage_controls:   # all must pass before scoring; results go in the leakage ta
         record that the canary control was unavailable)
   after_runs_before_scoring:
     - id: LC11
+      # Scan note (UD #17, eval/prereg_deviations.md entry 8): key-only canary, S-dev. An S-dev document read by
+      # a run carries no canary, so for S-dev items this scan detects key content only.
       check: Runtime access scan of tools.jsonl and llm.jsonl - 0 reads of eval/ paths, 0 own-repository URLs, 0 canary strings in tool results. A run that fails is invalid, stays in the ITT table as a failure, and is reported.
     - id: LC12
       check: Every key used for scoring has scored_run_ready = true; for S-heldout this is set in the access-1 session after the runs and before matching

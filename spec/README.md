@@ -75,7 +75,7 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `item.canary_guid` | `null` + pending (assigned per split when the canary is embedded in the documents) | same | same | same | same |
 | `item.author_type / author_model / generation_date` | `unknown` / `null` / `null` + pending (U11) | same | same | same | same |
 | `item.source_key` | `{path, format: synthetic_json_v0, sha256}` | same | same | `blind_a_json_v0` | `blind_b_json_v0` |
-| `scoring.default_credit_mode` | `substance` | `substance` | `all_of` (items 1-2 `required`, the legacy "first two" rule) | `all_of` | `all_of` |
+| `scoring.default_credit_mode` | `substance` | `substance` | `all_of` (items 1-2 `required`, the legacy "first two" rule; F05 and F06 item 1 only, §2.6) | `all_of` | `all_of` |
 | `scoring.severity_mapping.source_scale` | `synthetic3` | `synthetic3` | `synthetic3` | `blind4_capitalised` | `blind4` |
 | `scoring.severity_tolerance` | `null` | `null` | `null` | `null` | `1` |
 | `scoring.notes` | README "by substance" rule (superseded) | `scoring_guidance` | `version_notes` "first two" rule (superseded) | "Scoring guidance" section of `readme_notes_moved_at_sealing` | `scoring_guidance` |
@@ -111,7 +111,7 @@ The verify stage then hydrates evidence from the ledger and validates the result
 | `rationale` | `why_it_is_a_flaw` | `why_it_matters` | `why_it_matters` |
 | `core_insight` | pending (derive from required credit items; second reviewer, L12) | pending | pending |
 | `credit.mode` | payments, clinical `substance`; lakehouse `all_of` | `all_of` | `all_of` |
-| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required`, except text starting "(supporting" and lakehouse items 3+ → `supporting` | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` |
+| `credit.items` | `what_a_correct_finding_must_mention[i]` → `c{i+1}`, role `required`, except text starting "(supporting", lakehouse items 3+ and lakehouse F05/F06 item 2 → `supporting` | `credit_requires` (string) → one item `c1`, `required` | `credit_requires[i]` → `c{i+1}`, `required` |
 | `credit.min_required` | `null` | `null` | `null` |
 | `needs_external_research` | `true` for the flaws eval_data_audit Task 1 checked as external facts (payments F01 F04 F06 F07 F11 F15; clinical F01 F03 F04 F06 F07 F08 F09 F11 F15; lakehouse F04 F05 F06 F10 F15), else `false` | `requires_external_fact` | `external_fact` not null/"None" |
 | `external_fact` | when needed: `claim` = `why_it_is_a_flaw` (placeholder: restate as the external fact during verification), `source` = URLs in `distractor_notes` or "unspecified in legacy key", `verified: false`, pending `external_fact_verification` | split `external_fact` at the first ": " → `source`, `claim` when the head is ≤ 150 characters; otherwise `claim` = whole string and `source` = "unspecified in legacy key (citation embedded in claim)"; `verified: false` + pending | same as item_a |
@@ -191,7 +191,7 @@ The key stores the **primary** value in `severity` and the verbatim label in `se
 
 ### 2.6 Credit-item role overrides (content fixes from eval_data_audit P0 #4)
 
-`research/audit/eval_fixes_applied.md` has since applied the four flaw-level rows below to the legacy keys themselves (clinical F06 remedy removed, F11 item 4 prefixed "(supporting, not required)", F04 merged, item_b DEF-12 remedy removed). The converter therefore applies only the lakehouse rule and the "(supporting" prefix rule; the rows are kept as history.
+`research/audit/eval_fixes_applied.md` has since applied the four flaw-level rows below to the legacy keys themselves (clinical F06 remedy removed, F11 item 4 prefixed "(supporting, not required)", F04 merged, item_b DEF-12 remedy removed). The converter therefore applies only the lakehouse rule, the "(supporting" prefix rule and the owner-level overrides in `SUPPORTING_OVERRIDES` (last row); the other rows are kept as history.
 
 | Item / flaw | Change |
 |---|---|
@@ -200,6 +200,7 @@ The key stores the **primary** value in `severity` and the verbatim label in `se
 | clinical_rpm F11 | item 4 ("silent: data still appears in ADX") → `supporting` |
 | clinical_rpm F04 | merge the "claim is false" and "consequence" items into one `required` item (manual edit) |
 | blind/item_b DEF-12 | item 2 (must recommend GNSS/PTP/IRIG-B) → `supporting` |
+| research_lakehouse F05, F06 | item 2 → `supporting` (F05: the HNSW memory formula; F06: naming 3.13.16 / 3.13.11). SIT FABLE for the owner, 2026-10-02 (`docs/USER_DECISIONS.md` #19; `eval/prereg_deviations.md` entry 8); set by `SUPPORTING_OVERRIDES` in the converter |
 
 Other content fixes the eval audit requires are **not** mechanical and need a second reviewer: item_a D01 `external_fact` and credit (UK reg. 34(5) vs 34(6)); lakehouse sound §16 `why_sound` and trap; item_b DEF-03 tolerance ("2 s unless otherwise agreed with the utility"); optional payments F05 minor → major.
 
