@@ -71,6 +71,7 @@ ul { padding-left: 18px; margin: 0; }
 .dropzone .chosen { margin-top: 12px; font-weight: 500; }
 .field { margin: 0 0 20px; }
 .field label, .field .label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.field label.btn { display: inline-flex; margin: 0; font-size: 14px; }
 .field .help { font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-top: 6px; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .start-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
