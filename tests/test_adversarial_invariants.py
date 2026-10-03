@@ -313,6 +313,8 @@ def _instance(cls: type) -> AgentError:
         return cls(["effective_config"])
     if cls is errors_mod.StageCrash:
         return cls("assess", RuntimeError("inner"))
+    if cls is errors_mod.AssessShardsFailed:
+        return cls([(1, "a", errors_mod.LLMOverloadedError("529", phase="assess"))])
     if cls is errors_mod.LLMTruncatedError:
         return cls("cut", max_tokens=10)
     if cls is errors_mod.LLMRateLimitError:

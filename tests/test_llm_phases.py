@@ -23,7 +23,13 @@ import pytest
 from sit_review_agent.clock import FakeClock, isoformat_z
 from sit_review_agent.config import AssessSettings, AssessShard, EffectiveConfig, load_config
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMDeadlineError, LLMOverloadedError, LLMSchemaError, RegistryFrozenError
+from sit_review_agent.errors import (
+    AssessShardsFailed,
+    LLMDeadlineError,
+    LLMOverloadedError,
+    LLMSchemaError,
+    RegistryFrozenError,
+)
 from sit_review_agent.hashing import sha256_text
 from sit_review_agent.ingest.pdf import Document
 from sit_review_agent.ingest.text import flatten_for_match
@@ -544,11 +550,16 @@ async def test_one_failed_shard_leaves_a_partial_review(tmp_path: Path, cfg: Eff
     groups = {"a": ["claims_and_external_constraints", "verifiability"], "b": ["design_intent"],
               "c": ["internal_consistency"], "d": ["security_and_privacy"]}
     c2 = shard_cfg(cfg, groups)
+    # consumed in the stage's logical call order: the four shards' first calls in launch order
+    # (call_model yields once before every call), then shard 2's reframed retry and shard 3's
+    # truncation retry
     script = {PhaseName.ASSESS: [
         FakeResponse(parsed=assess_output()),
-        FakeResponse(stop_reason="refusal"), FakeResponse(stop_reason="refusal"),
-        FakeResponse(stop_reason="max_tokens"), FakeResponse(stop_reason="max_tokens"),
-        FakeResponse(raises=LLMOverloadedError("529 after retries"))]}
+        FakeResponse(stop_reason="refusal"),
+        FakeResponse(stop_reason="max_tokens"),
+        FakeResponse(raises=LLMOverloadedError("529 after retries")),
+        FakeResponse(stop_reason="refusal"),
+        FakeResponse(stop_reason="max_tokens")]}
     ctx = make_ctx(tmp_path, c2, script)
     await AssessPhase().run(ctx)
     s = ctx.state
@@ -623,11 +634,17 @@ async def test_one_assessed_shard_is_enough_to_assess(tmp_path: Path, cfg: Effec
 
 
 async def test_every_shard_failing_with_a_model_error_stops_the_run(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """AssessShardsFailed: an LLMError with the first shard's exit code (3) and cause, naming every
+    shard; the orchestrator writes the partial run record for it (robustness LLM-03, persistent)."""
     c2 = shard_cfg(cfg, {"a": ["design_intent"], "b": ["verifiability"]})
     ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(raises=LLMOverloadedError("529")),
                                                      FakeResponse(raises=LLMOverloadedError("529"))]})
-    with pytest.raises(LLMOverloadedError):
+    with pytest.raises(AssessShardsFailed) as info:
         await AssessPhase().run(ctx)
+    exc = info.value
+    assert int(exc.exit_code) == 3 and isinstance(exc.cause, LLMOverloadedError) and exc.phase == "assess"
+    assert [(i, name) for i, name, _ in exc.shards] == [(1, "a"), (2, "b")]
+    assert str(exc).startswith("every assess shard failed (2 of 2)") and "LLMOverloadedError" in str(exc)
 
 
 async def test_delta_mode_sets_reassessment(tmp_path: Path, cfg: EffectiveConfig) -> None:

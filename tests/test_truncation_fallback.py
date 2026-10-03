@@ -28,11 +28,28 @@ from sit_review_agent.selftest import FIXTURE_DIR, fixture_gateway, selftest_con
 BILLED = Usage(input_tokens=7_000, output_tokens=128_000)
 
 
+class _TruncateShard1:
+    """The fixture gateway with assess shard 1's call and its one retry truncated at the output cap.
+    Targeted by conversation (``assess-0-s1``, ``assess-0-s1-r1``): the four shards' first calls
+    are consumed in launch order before any retry, so a prepended script could not hit one shard
+    twice."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.left = 2
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    async def call(self, request: LLMRequest) -> Any:
+        if self.left and (request.conversation_id or "").startswith("assess-0-s1"):
+            self.left -= 1
+            self.inner.script["assess"].appendleft(FakeResponse(stop_reason="max_tokens", usage=BILLED))
+        return await self.inner.call(request)
+
+
 def _truncating_gateway(rd: Any, clock: Any, progress: Any) -> Any:
-    gw = fixture_gateway(rd, clock=clock)
-    for _ in range(2):
-        gw.script["assess"].appendleft(FakeResponse(stop_reason="max_tokens", usage=BILLED))  # type: ignore[attr-defined]
-    return gw
+    return _TruncateShard1(fixture_gateway(rd, clock=clock))
 
 
 class _NoModel:
