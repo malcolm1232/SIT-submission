@@ -1,9 +1,26 @@
-# SIT planner - handover, written 03 Oct 2026 18:15 +08 by the "SIT FABLE on the Mac" session
+# SIT planner - handover, written 03 Oct 2026 18:15 +08 by the "SIT FABLE on the Mac" session, section 0 added 22:50
 
-START HERE. This file is self-contained: a new session needs nothing else to continue.
+START HERE. This file is self-contained: a new session needs nothing else to continue; section 0 is the newest state and overrides the sections below where they differ.
 This file is committed and pushed on the truth branch; `~/Desktop/SIT` itself is checked out on an older branch, so read it with `git -C ~/Desktop/SIT show origin/claude/happy-darwin-d0bl94:docs/HANDOVER_261003_PLANNER.md` or from any worktree at the tip.
 To start the next session say: "Read ~/Desktop/SIT/docs/HANDOVER_261003_PLANNER.md on branch claude/happy-darwin-d0bl94 and continue as the SIT planner; you spawn Opus workers and make the calls; the answer-key signature, the evaluation plan letter and anything that needs the SIT MCP key stay Malcolm's."
 Supersedes: the 14:40 version of this file (same path), `docs/HANDOVER_FULL.md` section 10 and `docs/HANDOVER_FABLE.md` (both carry a SUPERSEDED line).
+
+## 0. UPDATE 03 Oct 2026 22:50 (the evening session, written by the planner; read before section 2)
+
+Item 1 is done: the LangGraph verifier pushed before the shutdown, `docs/COMPARISON_LANGGRAPH.md` is on the tip, and decision #42 is in the file.
+Item 2 is done: the refine fallback was finished by a worker and pushed by a fresh verifier as 8d5be75 at 22:45 (1902 tests, every gate of section 7 green, the guard check fails 6 of the 8 new tests when the fallback is removed; reports in `docs/transcripts/session5/refine_fallback_worker.md` and `refine_fallback_verifier.md`).
+The merge of the tip into `s4/refinefix` conflicted in `phases/refine.py` (the re-assessment fix of 1905eed touched the same lines) and was resolved keeping both; the prior-status filter now runs only when the refine call returned a parsed answer, so a call that ended early marks every prior finding "not re-examined".
+Not verified: the fallback on a real call that ended early; item 4's rehearsal is where it shows.
+Item 3 is NOT done: the worker was stopped by the safeguard while grepping `docs/USER_DECISIONS.md` and `tests/test_config_layout.py` for part A, after reading the "Defects" section of `docs/live_runs/sit_sample_ui_1/MEASUREMENT.md` (lines 116 to 126).
+`s4/runfix2` stands at a3ee771: the merge of 481cedb (clean) and decision row #40, written by the planner, so the worktree is 2 commits behind the tip (merge the tip first, no conflict expected: the branch touches `config/agent.yaml` and `docs/USER_DECISIONS.md` only).
+The next brief for item 3 carries every fact inline and forbids the Defects section and `docs/USER_DECISIONS.md` (row #40 exists; a worker must not grep that file).
+The mapping the stopped worker left, so no reader needs the section: part B is defect 7 (the two "waking" status records in `progress.jsonl` carry a null `run_s`); part C is defect 3 (the report header lists `mcp-research-information`, which received 0 calls, while the run details row is right); part D is defect 4 (the session reopen appears only in `progress.jsonl` and in one `tools.jsonl` attempt message, and the manifest and the report carry no session event); part E is defect 2 (research stopped on `sufficient_evidence` with 1 of 6 questions answered, and the run-level `stop_reason` repeats it); part F is defect 5 (the estimate for a call that ended early, streamed characters over 3.3 plus thinking, gives 58 and 66 tokens per second, while the recorded calls ran at 96 to 140); defect 8 (shard pressure) is the six groups already on the branch; defect 1 is item 2, done; defect 6 (the UI launch record writes absolute home paths) is a seventh small fix to add to the brief.
+Split part F into its own worker: its vocabulary (a call that ended early, output rate, thinking) is the kind that trips the safeguard, so the other five parts must not wait on it.
+Three workers were stopped on item 3 on 3 Oct (two in the day session, one in the evening): per section 8 the next try is on 4 Oct, not a fourth on the same day.
+The Mac load condition from the QM orchestrator stands while QM chains run: a worker reads `uptime` and `memory_pressure` before every test run and tests only under a 5-minute load of 10 with free memory over 35 percent; at most two SIT workers at a time.
+The verifier found `tests/robustness/robustness_results.py` writes nothing when run directly; the README's command regenerates the CSV: `ROBUSTNESS_RESULTS_CSV=tests/robustness/results/robustness_results.csv .venv/bin/pytest tests/robustness -q`.
+Section 3's expected values are now: tip 8d5be75; `s4/refinefix` merged (its worktree may be removed); `s4/runfix2` at a3ee771; the decision-row grep prints 3 (rows #40, #41, #42).
+Transcript of the evening: `~/Desktop/conversation_history/SIT/conversation_verbatim_261003.md` and its agents folder.
 
 ## 1. Goal and where it stands
 
