@@ -186,6 +186,14 @@ FND-001 (risk, severity high, disposition: refinement_now, rank 1, confidence 0.
 
 An ID that is not in the report exits 2 with `error: FND-099 not in <run_dir>/report.json`.
 
+### 5.2 Handing the review over from `dra ui`
+
+The finished-review page has three actions above the verdict, in this order.
+**Download** saves the review as one HTML file (the run's `report.md` shown as HTML, no script, nothing loaded from the network, the chat transcript appended as "not part of the review"), with `report.md` and `report.json` beside it; a replayed run keeps its "replayed evidence" stamp.
+**Email** sends the HTML file and `report.md` to one typed address through the SMTP server in `config/ui.yaml`; set `host`, `username` and `from` there the day before, and `export SIT_UI_SMTP_PASSWORD=...` in the shell that starts `dra ui` (the password is never written to a file). Without both, the button is disabled and says "Email is not configured: see config/ui.yaml". Each send is logged to `runs/<id>/ui/outbox.jsonl` without the content.
+**Share** shows the page's address on the laptop's network only when the server was started with `dra ui --host 0.0.0.0 --allow-remote`; anyone on that network can open it while the laptop serves it, with no login. A loopback server shows the restart line instead.
+On the drop screen, a pasted https link to a PDF is fetched by the server when the review starts (URL policy checks, public hosts only, at most 50 MB) and saved under `runs/<id>/ui/input/`, so the command shown names the saved file.
+
 ## 6. Offline and degraded fallbacks
 
 | Situation | What still works | Do this |
