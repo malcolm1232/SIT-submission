@@ -8,7 +8,7 @@
 [00:00] assess     | started
 [00:00] understand | reading the design: intent, objectives, constraints and the decision registry
 [00:00] plan       | planning the review over 11 criteria (capabilities: search)
-[00:00] assess     | assessing 11 criteria in 4 concurrent shard(s)
+[00:00] assess     | assessing 11 criteria in 6 concurrent shard(s)
 [00:00] understand | OK intent: 2 objectives, 1 constraints; registry: 1 approved_decision (frozen, sha256 857bd91b5f47)
 [00:00] plan       | WARN plan left out 10 criteria; added document-only questions for: design_intent, fitness_for_objectives, requirement_completeness, internal_consistency, security_and_privacy, scalability_and_failure_modes, assumptions_and_dependencies, verifiability, decision_preservation, operability_and_governance
 [00:00] plan       | OK plan: 11 questions (1 need external research), 0 criteria skipped
@@ -23,14 +23,18 @@
 [00:00] plan       | RQ-009 [none] verifiability: Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?
 [00:00] plan       | RQ-010 [none] decision_preservation: Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?
 [00:00] plan       | RQ-011 [none] operability_and_governance: Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?
-[00:00] assess     | assess shard 1/4 (intent_and_fitness): design_intent, fitness_for_objectives, decision_preservation
-[00:00] assess     | assess shard 2/4 (requirements_and_consistency): requirement_completeness, internal_consistency, verifiability
-[00:00] assess     | assess shard 3/4 (claims_and_assumptions): claims_and_external_constraints, assumptions_and_dependencies
-[00:00] assess     | assess shard 4/4 (risk_and_operations): security_and_privacy, scalability_and_failure_modes, operability_and_governance
-[00:00] assess     | OK assess shard 1/4 (intent_and_fitness): 1 draft finding(s) (1 strength), unverified
-[00:00] assess     | WARN assess shard 2/4 (requirements_and_consistency) cut by the stage 1 limit; 1 finished finding(s) kept
-[00:00] assess     | OK assess shard 3/4 (claims_and_assumptions): 1 draft finding(s) (1 risk), unverified
-[00:00] assess     | OK assess shard 4/4 (risk_and_operations): 0 draft finding(s) (none), unverified
+[00:00] assess     | assess shard 1/6 (intent_and_fitness): design_intent, fitness_for_objectives
+[00:00] assess     | assess shard 2/6 (decisions_and_governance): decision_preservation, operability_and_governance
+[00:00] assess     | assess shard 3/6 (requirements_and_consistency): requirement_completeness, internal_consistency
+[00:00] assess     | assess shard 4/6 (verifiability): verifiability
+[00:00] assess     | assess shard 5/6 (claims_and_assumptions): claims_and_external_constraints, assumptions_and_dependencies
+[00:00] assess     | assess shard 6/6 (security_and_failure): security_and_privacy, scalability_and_failure_modes
+[00:00] assess     | OK assess shard 1/6 (intent_and_fitness): 1 draft finding(s) (1 strength), unverified
+[00:00] assess     | OK assess shard 2/6 (decisions_and_governance): 0 draft finding(s) (none), unverified
+[00:00] assess     | OK assess shard 3/6 (requirements_and_consistency): 1 draft finding(s) (1 gap), unverified
+[00:00] assess     | OK assess shard 4/6 (verifiability): 1 draft finding(s) (1 validation_need), unverified
+[00:00] assess     | WARN assess shard 5/6 (claims_and_assumptions) cut by the stage 1 limit; 1 finished finding(s) kept
+[00:00] assess     | OK assess shard 6/6 (security_and_failure): 0 draft finding(s) (none), unverified
 [00:00] understand | OK done in 0.0s
 [00:00] understand | OK milestone intent: intent ready, registry 1 entries
 [00:00] plan       | OK done in 0.0s
@@ -39,24 +43,24 @@
 [00:00] research   | 1 question(s) need external evidence; 2 tool(s) offered
 [00:00] research   | iteration 1/4: 1 open question(s), 30 tool call(s) left
 [00:00] research   | tool round: 1 call(s) (mcp-internet-search__search)
-[00:00] assess     | 4 shard(s) ended in 0.0s; merged when stage 1 closes
+[00:00] assess     | 6 shard(s) ended in 0.0s; merged when stage 1 closes
 [00:00] research   | tool round: 1 call(s) (mcp-internet-search__fetch)
 [00:00] research   | OK research stopped: sufficient_evidence (sufficient_evidence); 1/1 answered, 2 tool call(s), 2 ledger entr(y/ies)
 [00:00] research   | OK done in 0.0s
-[00:00] assess     | OK merged 4 shard(s): 3 findings (1 risk, 1 strength, 1 validation_need); 1 sound areas; coverage: 3 findings, 6 no_issue, 2 not_applicable; evidence: 2 doc and 0 inference entries added to the ledger; 1 shard(s) degraded
+[00:00] assess     | OK merged 6 shard(s): 4 findings (1 gap, 1 risk, 1 strength, 1 validation_need); 1 sound areas; coverage: 4 findings, 6 no_issue, 1 not_applicable; evidence: 3 doc and 0 inference entries added to the ledger; 1 shard(s) degraded
 [00:00] assess     | OK done in 0.0s; stage 1 closed, merged in 0.0s
-[00:00] refine     | OK milestone merged: merged list ready, 3 findings from 4 shards
+[00:00] refine     | OK milestone merged: merged list ready, 4 findings from 6 shards
 [00:00] refine     | started
-[00:00] refine     | refining 3 merged findings as one global reviewer (revisions only)
-[00:00] refine     | OK refined: 3 revised, 0 unchanged, 0 merged, 0 withdrawn; 3 findings
+[00:00] refine     | refining 4 merged findings as one global reviewer (revisions only)
+[00:00] refine     | OK refined: 3 revised, 1 unchanged, 0 merged, 0 withdrawn; 4 findings
 [00:00] refine     | OK done in 0.0s
 [00:00] verify     | started
-[00:00] verify     | 1 anchor(s) unresolved; one repair turn
-[00:00] verify     | anchors: 6 resolved, 0 repaired, 1 unresolved; 3 findings verified, 0 unverified
+[00:00] verify     | 2 anchor(s) unresolved; one repair turn
+[00:00] verify     | anchors: 6 resolved, 1 repaired, 1 unresolved; 3 findings verified, 1 unverified
 [00:00] verify     | OK done in 0.0s
 [00:00] report     | started
-[00:00] report     | verdict fit_with_conditions; 3 findings, 1 unresolved, 1 limitations; invariants INV-03..10, INV-12 and INV-13 pass; wrote report.md
-[00:00] report     | WARN cost ~$0.09 is a lower bound: 1 model call with unrecorded usage (assess, deadline cut); their tokens and cost are not in the totals
+[00:00] report     | verdict fit_with_conditions; 3 findings, 2 unresolved, 2 limitations; invariants INV-03..10, INV-12 and INV-13 pass; wrote report.md
+[00:00] report     | WARN cost ~$0.10 is a lower bound: 1 model call with unrecorded usage (assess, deadline cut); their tokens and cost are not in the totals
 [00:00] report     | OK done in 0.0s
 [00:00] report     | OK milestone verified: verified report ready, 3 findings
 [00:00] run        | OK report: <tmp>/pc-cut/report.md

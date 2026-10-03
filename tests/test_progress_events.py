@@ -44,7 +44,7 @@ from sit_review_agent.progress import (
 )
 from sit_review_agent.rundir import JsonlWriter
 from sit_review_agent.selftest import FIXTURE_DIR, fixture_gateway, selftest_config
-from test_progress_console import CUT_KEPT, CUT_SHARD, cut_factory, scenario
+from test_progress_console import CUT_KEPT, CUT_SHARD, SHARD_COUNT, cut_factory, scenario
 
 SCHEMA = json.loads((repo_root() / "spec" / "progress_event.schema.json").read_text(encoding="utf-8"))
 #: Event types that come from code this workstream does not own (plain lines, typed by the adapter).
@@ -210,7 +210,7 @@ async def test_every_model_call_opens_once_and_closes_once(tmp_path: Path) -> No
     assert all(pos[("call_opened", c)] < pos[("call_closed", c)] for c in logged)
     shards = sorted((r["fields"]["shard"], r["fields"]["shard_name"]) for r in opened if r["phase"] == "assess")
     groups = [(s["index"], s["name"]) for s in records[0]["fields"]["shards"]]
-    assert shards == groups and len(groups) == 4
+    assert shards == groups and len(groups) == SHARD_COUNT
     for r in closed:
         f = r["fields"]
         assert f["outcome"] == "ok" and f["usage_status"] == "measured" and f["usage"]["input_tokens"] > 0
@@ -367,7 +367,7 @@ def held_factory(cut: bool = False) -> Any:
     inner_factory = cut_factory() if cut else (lambda rd, clk, prog: fixture_gateway(rd, clock=clk))
 
     def factory(rd: Any, clk: Any, prog: Any) -> Any:
-        return HoldStage1(inner_factory(rd, clk, prog), expected=2 + 4)   # understand, plan, four shards
+        return HoldStage1(inner_factory(rd, clk, prog), expected=2 + SHARD_COUNT)   # understand, plan, the shards
     return factory
 
 
@@ -390,10 +390,11 @@ async def test_concurrent_fixture_run_streams_the_design_order(tmp_path: Path) -
     assert records[0]["type"] == "run_started"
     first_close = first_index(records, lambda r: r["type"] == "call_closed")
     opened_before = [r for r in records[:first_close] if r["type"] == "call_opened"]
-    assert sorted(r["fields"]["shard"] for r in opened_before if r["phase"] == "assess") == [1, 2, 3, 4]
+    assert sorted(r["fields"]["shard"] for r in opened_before if r["phase"] == "assess") == list(
+        range(1, SHARD_COUNT + 1))
     assert {r["phase"] for r in opened_before} == {"understand", "plan", "assess"}
     drafted = [r for r in records if r["type"] == "shard_drafted"]
-    assert sorted(r["fields"]["shard"] for r in drafted) == [1, 2, 3, 4]
+    assert sorted(r["fields"]["shard"] for r in drafted) == list(range(1, SHARD_COUNT + 1))
     assert all(d["severity"] is not None or d["kind"] == "strength" for r in drafted for d in r["fields"]["drafts"])
     assert any(d["severity"] for r in drafted for d in r["fields"]["drafts"])
     order = [r["fields"]["name"] for r in records if r["type"] == "milestone"]

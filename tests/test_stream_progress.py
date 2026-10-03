@@ -117,11 +117,13 @@ async def test_a_run_shows_the_four_milestones_in_stage_order(tmp_path: Path) ->
     from sit_review_agent.selftest import FIXTURE_DIR, selftest_config
 
     sink = NullProgress()
-    out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=selftest_config(tmp_path),
+    cfg = selftest_config(tmp_path)
+    k = len(cfg.agent.assess.shards_for(cfg.criteria.ids()))                  # the configured groups
+    out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=cfg,
                                       run_id="ms"), clock=FakeClock(), progress=sink)
     assert out.exit_code == 0
     lines = [(e.phase, e.message) for e in sink.events if e.message.startswith("milestone ")]
     assert lines == [("understand", "milestone intent: intent ready, registry 1 entries"),
                      ("plan", "milestone plan: plan ready, 11 research questions"),
-                     ("refine", "milestone merged: merged list ready, 4 findings from 4 shards"),
+                     ("refine", f"milestone merged: merged list ready, 4 findings from {k} shards"),
                      ("report", "milestone verified: verified report ready, 3 findings")]

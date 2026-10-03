@@ -42,6 +42,8 @@ from sit_review_agent.states import STAGE_MEMBERS, PhaseName, Stage  # noqa: E40
 from test_cli_replay import cfgdir, no_network  # noqa: E402,F401 - fixtures used by name
 
 ORCHESTRATORS = ("custom", "langgraph")
+#: The assess shards a fixture run launches under the committed config (four before decision #40).
+K = tpc.SHARD_COUNT
 STAGE_1 = {p.value for p in STAGE_MEMBERS[Stage.STAGE_1]}
 
 
@@ -89,8 +91,9 @@ class _DelayedShards(trr.ShardScript):
 
 async def test_finding_ids_do_not_depend_on_the_completion_order(tmp_path: Path, orch: str) -> None:
     cfg = trr.config(tmp_path)
+    k = len(cfg.agent.assess.shards_for(cfg.criteria.ids()))
     reports = []
-    for n, delays in enumerate(({1: 0, 2: 3, 3: 6, 4: 9}, {1: 9, 2: 6, 3: 3, 4: 0})):
+    for n, delays in enumerate(({i: 3 * (i - 1) for i in range(1, k + 1)}, {i: 3 * (k - i) for i in range(1, k + 1)})):
         script = _DelayedShards(cfg, delays)
         out = await run_review(RunRequest(pdf=trr.PDF, config=cfg, run_id=f"order{n}"), phases=trr.shard_phases(),
                                llm_factory=script, tools_factory=trr.tools_factory, clock=FakeClock(),
@@ -102,8 +105,8 @@ async def test_finding_ids_do_not_depend_on_the_completion_order(tmp_path: Path,
         reports.append((trr.comparable(out.run_dir), drafts, state["finding_ids"]["shards"]))
     assert reports[0] == reports[1]
     _, drafts, _ = reports[0]
-    assert [t for _, t in drafts] == [f"Shard {i} finding" for i in (1, 2, 3, 4)]
-    assert [i for i, _ in drafts] == [f"FND-{n:03d}" for n in (1, 2, 3, 4)]
+    assert [t for _, t in drafts] == [f"Shard {i} finding" for i in range(1, k + 1)]
+    assert [i for i, _ in drafts] == [f"FND-{n:03d}" for n in range(1, k + 1)]
 
 
 # ------------------------------------------------------------------ 2 and 9. a shard cut at the stage limit
@@ -152,7 +155,7 @@ def test_two_truncations_end_in_a_disclosed_report(stage: str, tmp_path: Path, o
     manifest = json.loads(rec.run_dir.manifest.read_text(encoding="utf-8"))
     assert manifest["outcome"] == "completed_degraded"
     calls = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == stage]
-    assert len(calls) == (8 if stage == "assess" else 2)
+    assert len(calls) == (2 * K if stage == "assess" else 2)
     assert len(manifest["extra"]["model"]["truncations"]) == len(calls)
     prefix = f"the {stage} answer was truncated twice at the output cap"
     assert any(d["event"].startswith(prefix) for d in report["research_log"]["degradations"])
@@ -174,7 +177,7 @@ def test_a_declined_assess_gives_not_assessed(tmp_path: Path, orch: str) -> None
     assert report["verdict"]["label"] == "not_assessed" and report["findings"] == []
     assert not [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == "report"]      # no verdict call
     assess = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == "assess"]
-    assert sorted(e.get("shard") for e in assess) == [1, 1, 2, 2, 3, 3, 4, 4]          # one reframed retry each
+    assert sorted(e.get("shard") for e in assess) == sorted(2 * list(range(1, K + 1)))   # one reframed retry each
     assert "Not assessed (the model declined the assessment)" in rec.run_dir.report_md.read_text(encoding="utf-8")
 
 
@@ -227,7 +230,7 @@ def test_replay_of_a_recorded_run_is_byte_equal(cfgdir: Path, no_network: None, 
     src = tcr.record(cfgdir, f"rec-{orch}", "--disable-tool", "mcp-research-information", *flag)
     recorded = JsonlWriter(src / "llm.jsonl").read()
     assert sorted({e["conversation_id"] for e in recorded if e.get("phase") == "assess"}) == [
-        f"assess-0-s{k}" for k in range(1, 5)]
+        f"assess-0-s{k}" for k in range(1, tcr.recorded_shard_count(src) + 1)]
     res = tcr.replay(cfgdir, src, f"rp-{orch}")
     assert res.exit_code == 0, res.output
     assert "matches the recording" in res.output
@@ -244,7 +247,7 @@ def test_replay_of_a_recorded_run_is_byte_equal(cfgdir: Path, no_network: None, 
 
 
 def test_a_process_fault_on_one_shard_ends_that_shard_only(tmp_path: Path, orch: str) -> None:
-    """BEH-29 through ``faults_concurrent``: ``shard: 3`` raises at the shard's start; the other
+    """BEH-29 through ``faults_concurrent``: its shard (``shard_of``) raises at the start; the other
     shards' findings survive, the shard is disclosed by name, no crash."""
     cs = load_concurrent_schedule(schedule_path("BEH-29"))
     resolved = tmp_path / "BEH-29.resolved.yaml"
@@ -255,7 +258,7 @@ def test_a_process_fault_on_one_shard_ends_that_shard_only(tmp_path: Path, orch:
     assert report is not None and report["findings"]
     [(index, name)] = [(t.index + 1, t.name) for t in cs.targets]           # schedules count shards from 0
     degs = [d["event"] for d in report["research_log"]["degradations"]]
-    assert any(d.startswith(f"assess shard {index}/4 ({name}) failed (RuntimeError") for d in degs), degs
+    assert any(d.startswith(f"assess shard {index}/{len(cs.shards)} ({name}) failed (RuntimeError") for d in degs), degs
     lost = next(s.criteria for s in cs.shards if s.name == name)
     rows = {c["criterion_id"]: c for c in rec.state["coverage"]}
     assert all(rows[c]["outcome"] == "not_applicable" and rows[c]["note"].startswith("not assessed") for c in lost)
@@ -276,7 +279,7 @@ def test_an_llm_fault_by_nth_hits_the_shard_in_launch_order(tmp_path: Path, orch
     assess = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == "assess"]
     refused = [e for e in assess if e.get("outcome") == "LLMRefusalError"]
     assert [e.get("shard") for e in refused] == [2] and refused[0]["purpose"] == "assess"
-    assert len([e for e in assess if e.get("shard") == 2]) == 2 and len(assess) == 5
+    assert len([e for e in assess if e.get("shard") == 2]) == 2 and len(assess) == K + 1
 
 
 # ------------------------------------------------------------------ 10. progress events

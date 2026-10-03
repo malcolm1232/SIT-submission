@@ -49,19 +49,21 @@ def test_the_log_adds_the_shard_and_the_start_offset(tmp_path: Path) -> None:
 
 
 async def test_a_concurrent_fake_run_logs_both_and_the_manifest_reads_them(tmp_path: Path) -> None:
-    out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=selftest_config(tmp_path),
+    cfg = selftest_config(tmp_path)
+    out = await run_review(RunRequest(pdf=FIXTURE_DIR / "design.pages.txt", config=cfg,
                                       run_id="fields"), clock=FakeClock(), progress=NullProgress())
     assert out.exit_code == 0
     rd = RunDir(out.run_dir)
     entries = JsonlWriter(rd.llm_log).read()
     assess = [e for e in entries if e["phase"] == "assess"]
-    assert sorted(e["shard"] for e in assess) == [1, 2, 3, 4]
+    k = len(cfg.agent.assess.shards_for(cfg.criteria.ids()))                  # the configured groups
+    assert sorted(e["shard"] for e in assess) == list(range(1, k + 1))
     assert all(e["conversation_id"] == f"assess-0-s{e['shard']}" for e in assess)
     assert not [e for e in entries if e["phase"] != "assess" and "shard" in e]
     assert all(isinstance(e["start_offset_s"], float) and e["start_offset_s"] >= 0 for e in entries)
     manifest = json.loads(rd.manifest.read_text(encoding="utf-8"))
     model = manifest["extra"]["model"]
-    assert (model["assess_shards"], model["salvaged_calls"], model["salvaged_items"]) == (4, 0, 0)
+    assert (model["assess_shards"], model["salvaged_calls"], model["salvaged_items"]) == (k, 0, 0)
     members = manifest["extra"]["timing"]["stages"]["stage_1"]["members"]
     assert {p: (m["start_offset_s"] is not None, m["end_offset_s"] is not None) for p, m in members.items()} == {
         p: (True, True) for p in ("understand", "plan", "research", "assess")}

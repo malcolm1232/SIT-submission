@@ -70,6 +70,16 @@ def record(cfgdir: Path, run_id: str, *extra: str, pdf: Path = PDF) -> Path:
     return cfgdir.parent / "runs" / run_id
 
 
+def recorded_shard_count(src: Path) -> int:
+    """The assess shards the recorded run ``src`` launched, read from its own effective config (a
+    recording keeps the grouping it was made with, whatever the live config says now)."""
+    from sit_review_agent.config import AssessSettings
+
+    data = json.loads(RunDir(src).effective_config.read_text(encoding="utf-8"))
+    criteria = [c["id"] for c in data["criteria"]["criteria"]]
+    return len(AssessSettings.model_validate(data["agent"]["assess"]).shards_for(criteria))
+
+
 def replay(cfgdir: Path, src: Path, run_id: str, *extra: str) -> Any:
     return invoke(["replay", str(src), "--config", str(cfgdir), "--run-id", run_id, *extra])
 
@@ -78,8 +88,11 @@ def test_replay_reproduces_the_recorded_report_offline(cfgdir: Path, no_network:
     src = record(cfgdir, "rec", "--disable-tool", "mcp-research-information")
     res = replay(cfgdir, src, "rec-rp")
     assert res.exit_code == 0, res.output
-    # understand, plan, four assess shards, research (search, fetch, answer), refine, verify's repair, report
-    assert "replayed 12 model call(s) and 2 tool call(s)" in res.output
+    # understand, plan, the K assess shards, research (search, fetch, answer), refine, verify's repair, report
+    k = recorded_shard_count(src)
+    assert len({e["conversation_id"] for e in JsonlWriter(src / "llm.jsonl").read()
+                if e.get("phase") == "assess"}) == k
+    assert f"replayed {k + 8} model call(s) and 2 tool call(s)" in res.output
     assert "matches the recording" in res.output
     rd = src.parent / "rec-rp"
     assert (rd / "report.md").read_text(encoding="utf-8").startswith(BANNER_PREFIX)
@@ -92,12 +105,12 @@ def test_replay_reproduces_the_recorded_report_offline(cfgdir: Path, no_network:
     assert any(d.startswith("replayed evidence") for d in man["extra"]["deviations"])
     assert man["usage"]["cost_usd"] == 0.0                         # nothing was spent
     llm = JsonlWriter(rd / "llm.jsonl").read()
-    assert len(llm) == 12 and all(e["replayed"] and e["replayed_from"].startswith("rec/") for e in llm)
+    assert len(llm) == k + 8 and all(e["replayed"] and e["replayed_from"].startswith("rec/") for e in llm)
     tools = JsonlWriter(rd / "tools.jsonl").read()
     assert [e["call_id"] for e in tools] == ["call-0001", "call-0002"] and all(e["replayed"] for e in tools)
     rec = json.loads((rd / "replay.json").read_text(encoding="utf-8"))
     assert rec["replayed_evidence"] and rec["matches_recording"] and rec["source_run_id"] == "rec"
-    assert rec["model_calls_replayed"] == rec["model_calls_recorded"] == 12
+    assert rec["model_calls_replayed"] == rec["model_calls_recorded"] == k + 8
     # explain and coverage work on the replayed run (runbook §6: walk explain and the coverage map)
     fid = b["findings"][0]["id"]
     assert invoke(["explain", str(rd), fid]).exit_code == 0
@@ -633,7 +646,7 @@ def test_replay_of_a_record_logged_in_completion_order_is_byte_equal(cfgdir: Pat
 
 def test_replay_of_a_concurrent_fake_run_is_byte_equal(cfgdir: Path, no_network: None) -> None:
     """The live form left for the integration pass (design section 7, W3 row): a real concurrent run
-    with the fake gateway (four assess shards beside understand, plan and research) replays to the
+    with the fake gateway (K assess shards beside understand, plan and research) replays to the
     same review. The replay runs the shards as a stage 1 member and merges them when the stage
     closes, as the recorded run did, so the merge's doc entries follow research's in the ledger and
     every request research sends is the recorded one (before the fix the replay wrapper hid the
@@ -641,7 +654,7 @@ def test_replay_of_a_concurrent_fake_run_is_byte_equal(cfgdir: Path, no_network:
     src = record(cfgdir, "live", "--disable-tool", "mcp-research-information")
     recorded = JsonlWriter(src / "llm.jsonl").read()
     shards = sorted({e["conversation_id"] for e in recorded if e.get("phase") == "assess"})
-    assert shards == [f"assess-0-s{k}" for k in range(1, 5)]
+    assert shards == [f"assess-0-s{k}" for k in range(1, recorded_shard_count(src) + 1)]
     res = replay(cfgdir, src, "live-rp")
     assert res.exit_code == 0, res.output
     assert "matches the recording" in res.output

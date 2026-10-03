@@ -3,9 +3,11 @@ events were added (UI design note section 5: "all additive and all keeping the c
 
 ``tests/fixtures/progress/console_<scenario>.txt`` were written by this module's ``--write`` mode on
 the code of commit 70bd658, before ``ProgressEvent`` gained its fields, from fixture runs on the fake
-gateway: the selftest run, a run whose assess shard 2 is cut by the stage 1 limit with one finished
-finding, and a run whose understand call fails (exit 3) followed by its resume. The run directory is
-written as ``<tmp>``. Regenerate only when a console line is meant to change:
+gateway: the selftest run, a run whose assess shard of ``claims_and_external_constraints`` is cut by
+the stage 1 limit with one finished finding, and a run whose understand call fails (exit 3) followed
+by its resume. The run directory is written as ``<tmp>``. Regenerated for the six assess shard groups
+of USER_DECISIONS #40 (only the shard lines and the cut scenario's counts changed). Regenerate only
+when a console line is meant to change:
 
     python tests/test_progress_console.py --write
 """
@@ -37,8 +39,28 @@ from sit_review_agent.selftest import (
 
 BASELINE = repo_root() / "tests" / "fixtures" / "progress"
 SCENARIOS = ("selftest", "shard_cut", "fail_resume")
-#: The shard the cut scenario cuts, and the findings its cut stream had finished.
-CUT_SHARD, CUT_KEPT = 2, 1
+#: The criterion whose shard the cut scenario cuts. Its group holds one fixture finding (the e-mail
+#: quota risk, which verify confirms, so the salvaged draft reaches the report) and a criterion with
+#: none (assumptions_and_dependencies, which the cut leaves not assessed), in the four- and the
+#: six-group configs alike.
+CUT_CRITERION = "claims_and_external_constraints"
+
+
+def configured_shards() -> list[Any]:
+    """The assess shard groups of the repo config (what the fixture runs launch), in launch order."""
+    from sit_review_agent.config import load_config
+
+    cfg = load_config()
+    return list(cfg.agent.assess.shards_for(cfg.criteria.ids()))
+
+
+#: The number of assess shards a fixture run launches (four before decision #40, six since).
+SHARD_COUNT = len(configured_shards())
+#: The (1-based) shard the cut scenario cuts: the group of :data:`CUT_CRITERION`, so the scenario
+#: follows any regrouping (shard 3 of the four-group config, shard 5 of the six-group one).
+[CUT_SHARD] = [k for k, s in enumerate(configured_shards(), 1) if CUT_CRITERION in s.criteria]
+#: The findings the cut stream had finished.
+CUT_KEPT = 1
 
 
 def console(clock: FakeClock, out: io.StringIO) -> ConsoleProgress:

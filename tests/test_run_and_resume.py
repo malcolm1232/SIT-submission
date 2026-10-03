@@ -616,26 +616,31 @@ def shard_phases() -> dict[PhaseName, Any]:
 
 
 async def test_resume_after_two_of_four_shards_runs_exactly_the_other_two(tmp_path: Path) -> None:
+    """Named for the four-group config it was written for; it runs on any configured group count K:
+    the first K // 2 shards finish, the others are interrupted, and resume runs exactly those."""
     cfg = config(tmp_path)
-    assert len(cfg.agent.assess.shards_for(cfg.criteria.ids())) == 4
+    shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
+    k = len(shards)
+    assert k >= 2
+    done, rest = list(range(1, k // 2 + 1)), list(range(k // 2 + 1, k + 1))
     ref_script = ShardScript(cfg)
     ref = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="ref4"), phases=shard_phases(),
                            llm_factory=ref_script, tools_factory=tools_factory, clock=FakeClock(),
                            progress=NullProgress())
-    assert ref.exit_code == 0 and ref_script.assess_calls == [f"assess-0-s{i}" for i in range(1, 5)]
+    assert ref.exit_code == 0 and ref_script.assess_calls == [f"assess-0-s{i}" for i in range(1, k + 1)]
 
-    cut = ShardScript(cfg, interrupt={"assess-0-s3", "assess-0-s4"})
+    cut = ShardScript(cfg, interrupt={f"assess-0-s{i}" for i in rest})
     out = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="cut4"), phases=shard_phases(), llm_factory=cut,
                            tools_factory=tools_factory, clock=FakeClock(), progress=NullProgress())
     assert out.exit_code == int(ExitCode.SIGINT)
     stored = sorted(p.name for p in (out.run_dir / "shards").iterdir())
-    assert stored == ["01-intent_and_fitness.json", "02-requirements_and_consistency.json"]
+    assert stored == [f"{i:02d}-{shards[i - 1].name}.json" for i in done]
 
     again = ShardScript(cfg)
     res = await resume_run(out.run_dir, cfg, phases=shard_phases(), llm_factory=again, tools_factory=tools_factory,
                            clock=FakeClock(), progress=NullProgress())
     assert res.exit_code == 0
-    assert again.assess_calls == ["assess-0-s3", "assess-0-s4"]             # exactly the unfinished shards
+    assert again.assess_calls == [f"assess-0-s{i}" for i in rest]           # exactly the unfinished shards
     assert comparable(out.run_dir) == comparable(ref.run_dir)              # same IDs, ledger and report
     entries = JsonlWriter(RunDir(out.run_dir).llm_log).read()
     assert not [e for e in entries if e.get("phase") in ("understand", "plan") and e.get("resumed")]
