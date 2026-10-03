@@ -106,8 +106,10 @@ class LangGraphOrchestrator(Orchestrator):
         app = graph.compile(checkpointer=self.saver)
         self._write_variant_files(ctx, app)
         ended = {p.value: "done" for p in STAGE_1 if p in ctx.state.completed_phases}
-        emit_event(ctx.progress, "run", "orchestrator: langgraph variant (same phases, gateways and writers)",
-                   event="orchestrator", name="langgraph", start_at=start_at.value)
+        # A plain ``status`` line: the event schema's type list is a contract (spec/progress_event.schema.json),
+        # so the variant adds no type; ``<run>/langgraph/variant.json`` names it for readers.
+        emit_event(ctx.progress, "run", "orchestrator: langgraph variant (the same phases, gateways and writers)",
+                   event="status")
         try:
             await app.ainvoke({"ended": ended, "shards": [], "stop": []},
                               config={"configurable": {"thread_id": ctx.state.run_id}})
