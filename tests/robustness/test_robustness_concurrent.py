@@ -154,6 +154,19 @@ def _check(sid: str, fixture: ConcurrentRun, control: RunRecord, cs: ConcurrentS
 # ============================================================================= schedules and registry
 
 
+def test_not_assessed_is_the_orchestrators_form_and_not_a_model_verdict() -> None:
+    """The contract (concurrent_oracles docstring): outcome ``not_applicable`` with a note starting
+    "not assessed" is a criterion no shard assessed; a criterion the model itself reported not
+    applicable (any other note) is an assessment and never counts as lost."""
+    row: dict[str, Any] = {"criterion_id": "x", "outcome": "no_issue", "finding_ids": [], "note": "checked"}
+    mark_not_assessed(row, "the shard was cut")
+    assert row["outcome"] == "not_applicable" and row["note"].startswith("not assessed") and is_not_assessed(row)
+    assert not is_not_assessed({"outcome": "not_applicable", "note": "not applicable: no external API in scope"})
+    assert not is_not_assessed({"outcome": "not_applicable", "note": ""})
+    assert not is_not_assessed({"outcome": "no_issue", "note": "not assessed: fixture"})
+    assert is_not_assessed(("not_applicable", "Not assessed: out of time")) and not is_not_assessed(("findings", ""))
+
+
 def test_every_concurrent_schedule_is_registered_and_checked() -> None:
     assert concurrent_files() == set(CONCURRENT) == set(CHECKS) == set(TARGETS)
     assert not set(CONCURRENT) & set(COVERAGE)                           # new IDs, not scenarios.md P0 rows
