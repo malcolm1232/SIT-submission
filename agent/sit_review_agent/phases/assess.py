@@ -9,16 +9,19 @@ it starts; refine links decisions and attaches research evidence later).
 Reads: documents, criteria, review mode, prior findings (delta mode).
 Writes (at :meth:`AssessPhase.merge`, once stage 1 has closed): ``state.finding_drafts``
 (``FND-nnn`` numbered in shard order, each with ``criterion_ids``), ``state.finding_meta``
-(created_phase=assess, the shard's call ID, model and brief hash), ``state.sound_area_drafts``,
+(created_phase=assess, the shard's call ID, model and brief hash), ``state.finding_ids`` (each shard's
+own IDs to the merged ones, the prior review's IDs), ``state.sound_area_drafts``,
 ``state.coverage`` (every criterion: findings / no_issue / not_applicable), ledger entries for the
 shards' new ``doc`` and ``inference`` evidence (written in shard order), and each shard's
 bookkeeping (call IDs, usage, refusals, degradations), also in shard order.
 
 Determinism: finding IDs and evidence IDs do not depend on which shard finished first. Shards only
 return their answer (:class:`ShardResult`); :meth:`AssessPhase.merge` renumbers the findings in
-shard order (each shard's findings in its own rank order) and writes the shards' evidence to the
-ledger in shard order, after research has stopped writing to it. The merged findings are ranked by
-severity, then confidence (the order the report keeps when refine does not run or is cut).
+shard order (each shard's findings in its own rank order), records each shard's own IDs against the
+merged ones in ``state.finding_ids.shards`` (the text cites the shard's own IDs; ``finding_refs``) and
+writes the shards' evidence to the ledger in shard order, after research has stopped writing to it.
+The merged findings are ranked by severity, then confidence (the order the report keeps when refine
+does not run or is cut).
 
 Per shard (``assess-0-s<k>``, ``k`` = launch order, 1-based; retries ``assess-0-s<k>-r<j>``; the
 research iteration is always 0, since a shard sees no research):
@@ -60,6 +63,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sit_review_agent.config import AssessShard
 from sit_review_agent.context import RunContext
 from sit_review_agent.errors import AssessShardsFailed, ExitCode, LLMError, LLMSchemaError, StageCrash
+from sit_review_agent.finding_refs import IdChain, rewrite_tree
 from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage, FindingDraft, SoundAreaDraft
 from sit_review_agent.llm.runtime import (
     DECLINED_EVERY_ASSESS_SHARD,
@@ -89,7 +93,7 @@ from sit_review_agent.phases._model_calls import (
 )
 from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
-from sit_review_agent.state.run_state import FindingMeta
+from sit_review_agent.state.run_state import FindingIdMap, FindingMeta
 from sit_review_agent.states import PhaseName
 
 ShardOutcome = Literal["done", "cut", "truncated", "declined", "error"]
@@ -375,6 +379,8 @@ class AssessPhase:
         reserved: set[str] = set(ctx.state.finding_meta)
         next_n = 1
         doc_added = inference_added = dropped = 0
+        prior = [p["id"] for p in prior_finding_vars(ctx) if p["id"]]
+        own_ids: dict[str, dict[str, str]] = {}
         for r in ordered:
             out = r.output
             if out is None:
@@ -394,9 +400,16 @@ class AssessPhase:
                 id_map.setdefault(d.id, new)
                 renamed.append(d.model_copy(update={"id": new}))
             new_ids = [f.id for f in renamed]
+            own_ids[r.name] = dict(id_map)
+            # The shard's text cites its own IDs. Sound areas and coverage notes are read by no later
+            # model call, so they move to the merged IDs here, the only place their shard is known; the
+            # findings' text is in refine's and the verdict's briefs and moves when the report is
+            # assembled (finding_refs).
+            to_draft = IdChain(shards={r.name: id_map}, prior=frozenset(prior)).shard_to_draft(r.name)
             shard_findings, _ = normalise_findings(ctx, renamed, keep_ids=new_ids, reserved=reserved)
             ids = set(new_ids)
             shard_areas = normalise_sound_areas(ctx, out.sound_areas, id_map, ids)
+            shard_areas = [a.model_copy(update={"why_sound": rewrite_tree(a.why_sound, to_draft)}) for a in shard_areas]
             shard_findings, shard_areas, stats = resolve_evidence(ctx, shard_findings, shard_areas, shown=())
             doc_added, inference_added = doc_added + stats.doc_added, inference_added + stats.inference_added
             dropped += stats.dropped
@@ -406,7 +419,7 @@ class AssessPhase:
                 rows = [row if row.finding_ids else row.model_copy(update={
                     "outcome": "not_applicable", "note": NOT_ASSESSED_NOTE["cut"]}) for row in rows]
             for row in rows:
-                coverage[row.criterion_id] = row
+                coverage[row.criterion_id] = row.model_copy(update={"note": rewrite_tree(row.note, to_draft)})
             for f in shard_findings:
                 meta[f.id] = FindingMeta(finding_id=f.id, criterion_ids=list(f.criterion_ids),
                                          created_phase=self.name, created_call_id=r.call_id, last_phase=self.name,
@@ -417,6 +430,7 @@ class AssessPhase:
         findings = sorted(rank_by_severity(findings), key=lambda f: f.rank)    # rank order, IDs in shard order
         ctx.state.finding_drafts = findings
         ctx.state.finding_meta = meta
+        ctx.state.finding_ids = FindingIdMap(shards=own_ids, prior=prior)
         ctx.state.sound_area_drafts = areas
         # One row per criterion in config order; a finding that cites a criterion of another shard's
         # group is credited there too.

@@ -58,6 +58,7 @@ from sit_review_agent.clock import isoformat_z
 from sit_review_agent.config import EffectiveConfig, Transport
 from sit_review_agent.context import RunContext
 from sit_review_agent.errors import ConfigError, PromptError
+from sit_review_agent.finding_refs import manifest_record
 from sit_review_agent.hashing import bundle_sha256, sha256_file, sha256_json, sha256_text
 from sit_review_agent.ingest.text import NORMALISATION_VERSION, PAGE_MARKER_LABEL
 from sit_review_agent.llm.gateway import FALLBACK_BETA
@@ -555,6 +556,7 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                 "stages": stage_timing(st.budget.phase_seconds, call_spans(rd))},
         outputs=dict(outputs) if outputs else {},
         deviations=devs,
+        finding_ids=manifest_record(st.finding_ids, [f.id for f in st.findings]),
     )
     return RunManifest(
         run_id=st.run_id,

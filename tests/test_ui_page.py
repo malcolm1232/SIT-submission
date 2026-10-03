@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import socket
 import threading
@@ -47,7 +48,11 @@ def replayed(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     root = tmp_path_factory.mktemp("replay_root")
     out = asyncio.run(replay_run(REHEARSAL, run_root=str(root), run_id="rehearsal_replay", pdf=REHEARSAL_PDF))
-    assert out.exit_code == 0, out.message
+    # A record replays exactly at its own commit; later code that rewrites merged-away finding IDs in
+    # report text (finding_refs.py) may change those text fields and nothing else.
+    assert out.report_md is not None and not out.message.startswith("replay failed"), out.message
+    assert all(re.fullmatch(r"\$\.(findings|sound_areas)\[\d+\]\.(statement|why_sound)", d)
+               for d in out.differences), out.differences
     return Path(out.run_dir)
 
 

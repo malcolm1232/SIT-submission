@@ -20,7 +20,11 @@ correction, then the fallback below, disclosed.
 Writes: ``state.finding_drafts`` (the kept findings in rank order), a ``FindingRevision`` per
 changed, merged or withdrawn finding in ``state.finding_meta[...].history`` (phase refine ->
 provenance ``revise``), ``state.coverage`` and ``state.sound_area_drafts`` (merged IDs point at
-their target, withdrawn IDs are dropped).
+their target, withdrawn IDs are dropped), and ``state.finding_ids``: ``refine`` (each merged ID to its
+kept ID, each withdrawn ID to null) and ``refine_fields`` (the fields refine wrote into each kept
+finding, whose text cites merged IDs, not a shard's own). The text of findings, sound areas and
+coverage notes is rewritten through that map when the report is assembled (``finding_refs``), never
+in a model brief.
 
 Rules kept from the earlier refine:
 
@@ -201,6 +205,11 @@ class RefinePhase:
             add_history(fid, FindingRevision(phase=phase, call_id=result.call_id, note=note))
 
         kept = {f.id for f in revised}
+        ctx.state.finding_ids = ctx.state.finding_ids.model_copy(update={
+            "refine": {fid: (revs[fid].merge_into if revs[fid].action is RevisionAction.MERGE else None)
+                       for fid in ids if revs[fid].action is not RevisionAction.KEEP},
+            "refine_fields": {fid: ["affected_decisions", *(["next_step"] if revs[fid].next_step is not None else [])]
+                              for fid in kept}})
         ctx.state.finding_drafts = revised
         ctx.state.finding_meta = meta
         ctx.state.coverage = reconcile_coverage(ctx, ctx.state.coverage, revised, target)

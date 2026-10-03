@@ -121,6 +121,29 @@ class Budget(_State):
         return self.elapsed_s if self.elapsed_s > 0.0 else sum(self.phase_seconds.values())
 
 
+class FindingIdMap(_State):
+    """Where each finding ID of the run went (merged-ID traceability, 2026-10-03). An assess shard
+    numbers its own findings ``FND-001..`` and cites them in its text; the merge renumbers them in
+    shard order; refine merges duplicates into kept findings and withdraws others; verify renumbers
+    invalid IDs and drops findings it cannot keep. The report rewrites the ID references in its text
+    through this map (``finding_refs``) and the manifest carries it (``extra.finding_ids``), so a
+    reader of the shards' drafts can follow each ID to the finding it became."""
+
+    shards: dict[str, dict[str, str]] = Field(default_factory=dict,
+                                              description="assess shard name -> {the shard's own ID: merged draft ID}")
+    refine: dict[str, str | None] = Field(default_factory=dict,
+                                          description="draft ID -> kept ID it was merged into, or null (withdrawn)")
+    refine_fields: dict[str, list[str]] = Field(
+        default_factory=dict, description="kept ID -> finding fields refine wrote (their text cites merged draft IDs)")
+    verify: dict[str, str | None] = Field(
+        default_factory=dict, description="draft ID -> new ID (renumbered) or null (dropped, or moved to unresolved)")
+    unverified: list[str] = Field(default_factory=list,
+                                  description="draft IDs of verify's unverified items, in state.unresolved order")
+    prior: list[str] = Field(default_factory=list, description="delta mode: the finding IDs of the prior review")
+    rewrites: dict[str, int] = Field(default_factory=dict,
+                                     description="report text: references remapped, removed and marked as drafts")
+
+
 class RunState(_State):
     run_id: str
     mode: RunMode = "dev"
@@ -146,6 +169,7 @@ class RunState(_State):
     finding_meta: dict[str, FindingMeta] = Field(default_factory=dict)
     sound_area_drafts: list[SoundAreaDraft] = Field(default_factory=list)
     coverage: list[CriterionCoverage] = Field(default_factory=list)
+    finding_ids: FindingIdMap = Field(default_factory=FindingIdMap)   # merged-ID traceability
 
     findings: list[Finding] = Field(default_factory=list)          # hydrated by verify
     sound_areas: list[SoundArea] = Field(default_factory=list)

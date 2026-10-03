@@ -55,7 +55,7 @@
 [00:00] verify     | anchors: 6 resolved, 1 repaired, 1 unresolved; 3 findings verified, 1 unverified
 [00:00] verify     | OK done in 0.0s
 [00:00] report     | started
-[00:00] report     | verdict fit_with_conditions; 3 findings, 2 unresolved, 1 limitations; invariants INV-03..10 pass; wrote report.md
+[00:00] report     | verdict fit_with_conditions; 3 findings, 2 unresolved, 1 limitations; invariants INV-03..10 and INV-12 pass; wrote report.md
 [00:00] report     | OK done in 0.0s
 [00:00] report     | OK milestone verified: verified report ready, 3 findings
 [00:00] run        | OK report: <tmp>/pc-selftest/report.md

@@ -4,7 +4,7 @@ Each case runs the real orchestrator (``run_review``, every real phase) on the s
 document with ``transport: fake`` (strict cassette replay of ``fixtures/cassettes``), a scripted
 model, a virtual clock, canary keys in the environment and the scenario's own
 ``faults/<ID>.yaml`` (loaded by the agent's loader, as ``sit-review run --faults <ID>`` does). It
-then runs every oracle in ``oracles.py`` (INV-01..INV-11, OPS-10, BEH-23, BEH-28, DEMO-06) on the
+then runs every oracle in ``oracles.py`` (INV-01..INV-12, OPS-10, BEH-23, BEH-28, DEMO-06) on the
 run directory and asserts the scenario's own pass criterion. A scenario with several variants
 (``malformed_body`` kinds, ``flaky`` seeds, once / persistent faults) runs each of them.
 
