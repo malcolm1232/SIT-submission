@@ -176,3 +176,11 @@ Row 36 covers the three outputs of a finished review only; this row covers the i
 | # | Question | Decision | Consequence |
 |---|---|---|---|
 | 39 | How does the day's artefact reach the agent when SIT hands it over as a link rather than a file? | SIT FABLE for the owner, 2026-10-03: a pasted https link on the `dra ui` drop screen is the hand-over path for the day's artefact (the owner's words on 3 Oct 2026: "download link"). The server fetches it before the run starts, with these guards: https only, no user name or password in the link, a host whose every address is public (checked again on each redirect), the URL policy of `config/url_policy.yaml`, at most 50 MB, and a body that must be a PDF (`%PDF-`). | Built in `agent/sit_review_agent/ui/fetch.py` (`MAX_BYTES`, `MAX_REDIRECTS`), which now cites this row; the file is saved under `runs/<id>/ui/input/`, so the command the page shows names it. Known limit, from the module: DNS rebinding between the check and the fetch is not caught. A file dropped or given by USB stays the first path; `docs/DEMO_DAY_SCRIPT.md` names both. |
+
+## 2026-10-03 (the owner, the LangGraph comparison)
+
+Recorded by the verifier of the LangGraph variant from the planner's brief.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 42 | Should the agent's orchestrator also be built on LangGraph, to compare it with the custom loop? | The owner, 2026-10-03, his words: "can we spawn another fable agent to work on langraph? ... let it run and compare it" and "no need to budget . and just work normally, no rush to complete, just make sure its a job well done. then we can effectively compare both custom and langraph". | The variant lives behind `--orchestrator langgraph` (`agent/sit_review_agent/orchestrator_langgraph/`, optional extra `[langgraph]`); the custom loop stays the product; the comparison is `docs/COMPARISON_LANGGRAPH.md` on one paired document (payments). The five further paired runs (the custom loop on payments again, both arms on clinical and on lakehouse) were refused to the worker by the permission classifier and are for the owner or the next session to run (`docs/transcripts/session4/langgraph_verifier.md`). |

@@ -38,7 +38,7 @@ The custom loop's column is the concurrent `medium` row of `docs/live_runs/QUALI
 
 Per flaw, the variant's run matched the same 13 flaws the custom loop's run did except F07 (high), which it matched partially where the custom loop's run matched it strictly, and F04 (high) stayed partial in both; that one flaw is the whole of the strict-recall and severity-weighted differences, and the scored finding counts, the adjudicated precision, the critical recall and the hallucination rate are equal.
 The shard cut is the one visible difference in the agent's behaviour, and it is not the framework's doing: the cut is made by the runtime inside the model call (`llm/runtime.py` `RunDeadline`) in both orchestrators, and on this run shard 2 needed 263 s where the custom loop's run had its longest shard at 230 s, under a Mac load average of 15.8 against about 5 (`docs/live_runs/langgraph_payments_v1_1/MEASUREMENT.md`, `rehearsal_concurrent_1/MEASUREMENT.md`).
-The stage 1 members started within 0.2 s of each other in both runs, at about 2 s into the run, so the framework's fan-out cost nothing measurable.
+The stage 1 members started straight after ingest in both runs, at 1.9 s to 2.1 s into the variant's run and at about 2.3 s into the custom loop's (ingest checkpointed at 1.894 s and 2.228 s, `checkpoints/01-ingest.json` of each run), so the framework's fan-out cost nothing measurable.
 
 ## The parity checklist
 

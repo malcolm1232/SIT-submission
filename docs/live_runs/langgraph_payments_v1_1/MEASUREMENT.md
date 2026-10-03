@@ -30,7 +30,8 @@ Refine (129.6 s) and the verdict call (29.8 s) ran in full.
 | verdict call | 29.8 s | 28.0 s |
 | total | 424.7 s | 382.3 s |
 
-The stage 1 members started at 1.9 s to 2.1 s into the run in both runs: the framework's fan-out added no measurable start-up over the custom loop's task creation.
+The stage 1 members started at 1.9 s to 2.1 s into this run (ingest checkpointed at 1.894 s); in `rehearsal_concurrent_1` ingest checkpointed at 2.228 s and its `MEASUREMENT.md` puts the shards' start at about 2.3 s.
+So both orchestrators started stage 1 straight after ingest: the framework's fan-out added no measurable start-up over the custom loop's task creation.
 The first assess draft item reached the stream at 75.7 s (77 s on the custom loop's run).
 
 ## Shards

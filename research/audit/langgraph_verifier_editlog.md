@@ -32,3 +32,11 @@ No model calls; nothing against the SIT MCP hosts.
 - By script against `scores.json`: strict recall 12 of 14, lenient 14 of 14, adjudicated precision 0.944, severity-weighted recall 0.867, critical recall 1.0, strict precision 0.667 (12 of 18), PARTIAL_KEY_MATCH 2, VALID_UNPLANTED 3, INVALID_OPINION 1, 86 judge calls at 9.45 USD; all as in `docs/COMPARISON_LANGGRAPH.md`.
 - Per flaw: strict matches cover 12 flaws, lenient 14; partial only F04 and F07 (the custom loop's run: F04 only), as the note says.
 - The custom column against `docs/live_runs/QUALITY_COMPARISON.md` (concurrent `medium`) and `rehearsal_concurrent_1`'s own files: 382.274 s, 5.735748 USD, 18 scored, 13 of 14, 14 of 14, 0.944, 0.933, 4 of 4, PARTIAL_KEY_MATCH 1, VALID_UNPLANTED 3, DUPLICATE 1, 95 calls at 9.54 USD, strict precision 0.722, `not_fit` at 0.78; all match.
+
+## 5. The note and the section 12 row
+
+- Every file and line the note cites exists and names what it says (graph.py lines 18 to 21, 67, 98, 101, 136, 154, 180, 183, 191, 208, 225, 230, 339, 403 to 437, 465; `saver.py` line 30; `__init__.py` line 33; `orchestrator.py` lines 279 to 337, 319, 338 to 347).
+- Lines of code recounted by script (no blanks, comments or docstrings): `graph.py` 365, `saver.py` 42, `__init__.py` 29 (436); the replaced `run` 12 + `_stage_1` 98 + `_member_end` 39 + `_StageFailure` 4 = 153.
+- The conclusion names one document and one run per arm, the heavier Mac load (15.8 against about 5) and the exploratory status; the section 12 row of `docs/ARCHITECTURE.md` carries the same numbers. No em dash in the note, the row, the measurement, the builder's edit log or report.
+- FIXED: the note said the stage 1 members "started within 0.2 s of each other in both runs, at about 2 s", and `MEASUREMENT.md` said "1.9 s to 2.1 s into the run in both runs"; the custom loop's run checkpointed ingest at 2.228 s and its own `MEASUREMENT.md` says about 2.3 s, so no committed file supports 1.9 s to 2.1 s for it. Both now give each run's own figure with its source.
+- Added decision #42 to `docs/USER_DECISIONS.md` (the owner's words, the consequence, the five refused runs) and the comparison to row 8 (framework) of `docs/SUBMISSION_GAPS.md`.
