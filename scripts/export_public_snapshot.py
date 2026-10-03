@@ -61,7 +61,7 @@ KEY_FIELDS = re.compile(rb"core_insight|scored_run_ready")
 #: tests, and documents that describe the schema or the sign-off process without quoting a key's
 #: content. A NEW file that names a key field is excluded until it is reviewed and added here.
 KEY_FIELD_REVIEWED = (
-    "harness/**", "spec/**", "tests/**",
+    "harness/**", "spec/**", "tests/**", "scripts/export_public_snapshot.py", "scripts/README.md",
     "docs/HANDOVER_FULL.md", "docs/USER_DECISIONS.md", "docs/live_runs/QUALITY_COMPARISON.md",
     "eval/EVAL_PLAN.md", "eval/human_labelling_protocol.md", "eval/prereg.yaml", "eval/prereg_deviations.md",
     "research/audit/fresh_eyes.md", "research/audit/lc12_guard_editlog.md", "research/audit/research_audit.md",

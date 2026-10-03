@@ -117,7 +117,7 @@ def _fixture_files() -> dict[str, str]:
 def _run(repo: Path, target: Path, **kw) -> tuple[int, list[str]]:
     lines: list[str] = []
     kw.setdefault("user", "nobodyuser")
-    kw.setdefault("home", "/nonexistent/home/nobodyuser")
+    kw.setdefault("home", "/nonexistent/nobodyhome")
     kw.setdefault("today", "2026-10-03")
     rc = eps.export(repo, target, out=lines.append, **kw)
     return rc, lines
@@ -236,3 +236,9 @@ def test_main_exit_code_on_dirty_worktree(tmp_path: Path) -> None:
     repo = _make_repo(tmp_path / "repo", {"README.md": "x\n"})
     (repo / "new.txt").write_text("untracked\n", encoding="utf-8")
     assert eps.main(["--repo", str(repo), "--target", str(tmp_path / "out")]) == 2
+
+
+def test_the_exporter_and_its_docs_survive_their_own_rules() -> None:
+    root = SCRIPT.parents[1]
+    for rel in ("scripts/export_public_snapshot.py", "scripts/README.md", "tests/test_export_public_snapshot.py"):
+        assert eps.classify(rel, (root / rel).read_bytes()) is None, rel
