@@ -1,4 +1,4 @@
-"""A pasted ``https://`` link to a PDF on the drop screen (decision #36, 2026-10-03).
+"""A pasted ``https://`` link to a PDF on the drop screen (decision #39, 2026-10-03).
 
 The server downloads the PDF before it starts the run, with the URL policy's checks
 (``config/url_policy.yaml``: deny or allow domains, through ``tools.policy.check_urls``; the link the
