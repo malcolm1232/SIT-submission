@@ -26,7 +26,8 @@ The export is rendered from `report.md`, the output of the one review renderer, 
 ## For the verifier
 
 Read `research/audit/ui_outputs_editlog.md` for every edit, the mutation table and the gates.
-Run `pytest -q tests/test_ui_outputs.py` (43 tests; the two Chromium tests skip without Playwright).
+Run `pytest -q tests/test_ui_outputs.py` (39 tests; the two Chromium tests skip without Playwright).
+Corrected 2026-10-03 from 43: `pytest --collect-only -q tests/test_ui_outputs.py` collects 39 (24 test functions, some parametrised) on the merged tree, so 43 was a miscount, not a lost test.
 Look at `docs/design/ui_mockup/for_him_ui_outputs.png` (1440 px wide): tab 1 is the page served by `dra ui` on the committed run, tab 2 is the export opened from it.
 No real mail was sent: the email tests use a fake SMTP server inside the test file.
 Not verified: a real SMTP provider with STARTTLS, a real download over the internet, and the share link opened from a second device.
