@@ -47,3 +47,6 @@ The fetch itself had already failed on the credential helper (`git: 'credential-
   (3) See D: the validator refuses a move across `no_change`, `prompts/refine.md` rule 3 says to keep the drafted disposition, and `agent/README.md` now labels it a known limitation.
 - L (records): `docs/USER_DECISIONS.md` rows 27 to 31 once each and in order; ADR-011 and ADR-012 Proposed with the ADR-002 amendment note; `eval/prereg_deviations.md` entry 11 covers the A4b rename.
   `agent/README.md` module map: the new `phases/_isolation.py` was not listed and now has a row; `llm/partial.py` still said "pending integration (W1)" and now says done; every listed module exists, and `states.TRANSITIONS` and `ON_CAP` appear only as a note that they were deleted.
+- K (gates): all exit 0 on the verifier's commits (ruff; pytest from the repo root and from `/Users/malco`, 1557 passed each; selftest; `make smoke` 238; `make test` 1557; robustness 159 with the CSV equal but for commit and duration; answer keys; prompt locks; leakage; spec validator), no em dash, no secret.
+  One line fails: commit `87a0634` carries a `Co-Authored-By` line.
+  The message rewrite of `7be556d..HEAD` that would remove it was refused by the permission classifier and not retried; it is left to the owner, so nothing was pushed.
