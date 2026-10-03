@@ -30,8 +30,13 @@ research iteration is always 0, since a shard sees no research):
 * answer truncated twice at the output cap, declined after the reframed retry, or failed with a
   model error (rate limit, overload, timeout, a second schema error): no findings from the shard,
   its criteria not assessed, disclosed; the other shards still make a partial review. When every
-  shard failed with a model error the first error is raised (the run stops, resumable), as a single
-  assess call did before.
+  shard failed with a model error :class:`AssessShardsFailed` is raised (the run stops with the
+  first error's exit code, resumable, and writes the partial run record), as a single assess call's
+  failure stopped the run before;
+* crashed (an exception inside the shard that is not a model error or an interruption; robustness
+  BEH-29): the same partial review, the shard disclosed by name and exception class; when every
+  shard crashed the member crashes (:class:`StageCrash`, exit 4). Model errors that mean a defect
+  (a bad request, an exhausted fake script, a strict-replay miss) propagate as before.
 
 ``not_assessed`` (``phases.report``) remains only for a run in which no shard produced an
 assessment (a complete answer or at least one finished finding): the merge then records the
@@ -54,7 +59,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sit_review_agent.config import AssessShard
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import AssessShardsFailed, ExitCode, LLMError, LLMSchemaError
+from sit_review_agent.errors import AssessShardsFailed, ExitCode, LLMError, LLMSchemaError, StageCrash
 from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage, FindingDraft, SoundAreaDraft
 from sit_review_agent.llm.runtime import (
     DECLINED_EVERY_ASSESS_SHARD,
@@ -62,7 +67,14 @@ from sit_review_agent.llm.runtime import (
     truncated_twice_event,
 )
 from sit_review_agent.models import SEVERITY_RANK, DegradationType, finding_id
-from sit_review_agent.phases._isolation import StateDelta, apply_delta, guarded, isolate, state_delta
+from sit_review_agent.phases._isolation import (
+    MemberInterrupted,
+    StateDelta,
+    apply_delta,
+    guarded,
+    isolate,
+    state_delta,
+)
 from sit_review_agent.phases._model_calls import (
     call_model,
     criteria_vars,
@@ -160,6 +172,8 @@ class AssessPhase:
     def __init__(self) -> None:
         #: The error of each shard whose call failed (raised when every shard failed).
         self._errors: dict[int, LLMError] = {}
+        #: The exception of each shard that crashed (BEH-29; a stage crash when every shard did).
+        self._crashes: dict[int, Exception] = {}
 
     @staticmethod
     def shards(ctx: RunContext) -> list[AssessShard]:
@@ -189,8 +203,8 @@ class AssessPhase:
                                            name=f"assess-shard-{i}")
         try:
             if tasks:
-                # A model failure ends a shard normally (outcome "error"); an exception here is a
-                # defect or an interruption, which stops the other shards too.
+                # A model failure or a crash ends a shard normally (outcome "error"); an exception
+                # here is a request defect or an interruption, which stops the other shards too.
                 await asyncio.wait(tasks.values(), return_when=asyncio.FIRST_EXCEPTION)
         finally:
             pending = [t for t in tasks.values() if not t.done()]
@@ -207,18 +221,38 @@ class AssessPhase:
         ordered = [results[i] for i in sorted(results)]
         errors = [r for r in ordered if r.outcome == "error"]
         if ordered and len(errors) == len(ordered):
-            failed = [(r.index, r.name, self._errors[r.index]) for r in errors if r.index in self._errors]
-            if len(failed) != len(errors):
-                raise RuntimeError(errors[0].detail)
-            raise AssessShardsFailed(failed)
+            crashed = [r for r in errors if r.index in self._crashes]
+            if crashed:                                  # every shard failed and one of them crashed
+                raise StageCrash(self.name.value, self._crashes[crashed[0].index])
+            raise AssessShardsFailed([(r.index, r.name, self._errors[r.index]) for r in errors])
         return ordered
 
     async def _shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int,
                      on_end: Callable[[ShardResult], None] | None) -> ShardResult:
-        result = await self.run_shard(ctx, shard, index, count)
+        try:
+            result = await self.run_shard(ctx, shard, index, count)
+        except (LLMError, asyncio.CancelledError, KeyboardInterrupt, MemberInterrupted):
+            raise                           # a defect in the request or the harness, or an interruption
+        except Exception as exc:  # noqa: BLE001 - a crash inside one shard (robustness BEH-29)
+            result = self._crashed(ctx, shard, index, count, exc)
         if on_end is not None and result.outcome != "error":
             on_end(result)                  # a failed call is re-run on resume, never stored
         return result
+
+    def _crashed(self, ctx: RunContext, shard: AssessShard, index: int, count: int,
+                 exc: Exception) -> ShardResult:
+        """An exception inside one shard (robustness BEH-29): the shard ends with outcome ``error``,
+        disclosed by name and class, its criteria not assessed; the other shards still make a
+        partial review. When every shard crashed the member crashes (:class:`StageCrash`, exit 4)."""
+        label = f"assess shard {index}/{count} ({shard.name})"
+        self._crashes[index] = exc
+        iso = isolate(ctx, PhaseName.ASSESS)        # the disclosure travels in the result's delta, like any shard's
+        iso.ctx.state.add_degradation(DegradationType.OTHER, f"{label} failed ({type(exc).__name__}: "
+                                      f"{str(exc)[:200]})", _not_assessed_impact(shard.criteria))
+        iso.ctx.emit(f"{label} failed ({type(exc).__name__}); its criteria are not assessed", "warn")
+        return ShardResult(index=index, name=shard.name, criteria=list(shard.criteria), iteration=SHARD_ITERATION,
+                           outcome="error", detail=f"{type(exc).__name__}: {str(exc)[:500]}",
+                           delta=state_delta(iso.base, iso.ctx.state))
 
     async def run_shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int) -> ShardResult:
         """One shard on an isolated copy of the run state."""

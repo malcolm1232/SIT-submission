@@ -835,10 +835,28 @@ class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule
         self.inner = inner
         self.name = inner.name
         self.spec = spec
-        if callable(getattr(inner, "run_shards", None)):            # assess: the fault wraps all its shards
-            self.run_shards = self._run_shards
+        if callable(getattr(inner, "run_shards", None)):
             self.merge = inner.merge  # type: ignore[attr-defined]
             self.shards = inner.shards  # type: ignore[attr-defined]
+            shard = (getattr(spec, "model_extra", None) or {}).get("shard")
+            if shard is None:                                       # assess: the fault wraps all its shards
+                self.run_shards = self._run_shards
+            else:                                                   # one shard (BEH-29): the others run as they are
+                self.run_shards = inner.run_shards  # type: ignore[attr-defined]
+                self._wrap_shard(inner, int(shard) + 1)             # schedules count shards from 0, launch order from 1
+
+    def _wrap_shard(self, inner: Any, target: int) -> None:
+        """Apply the fault around ``run_shard`` of the shard with launch index ``target`` only (the
+        shard's own task: an exception there ends that shard, not the member)."""
+        orig = inner.run_shard
+
+        async def run_shard(ctx: RunContext, shard: Any, index: int, count: int) -> Any:
+            if index != target:
+                return await orig(ctx, shard, index, count)
+            return await self._around(ctx, lambda: orig(ctx, shard, index, count),
+                                      where=f"assess shard {index}/{count} ({shard.name})")
+
+        inner.run_shard = run_shard
 
     async def run(self, ctx: RunContext) -> RunContext:
         return await self._around(ctx, lambda: self.inner.run(ctx))
@@ -846,7 +864,7 @@ class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule
     async def _run_shards(self, ctx: RunContext, **kw: Any) -> Any:
         return await self._around(ctx, lambda: self.inner.run_shards(ctx, **kw))  # type: ignore[attr-defined]
 
-    async def _around(self, ctx: RunContext, work: Any) -> Any:
+    async def _around(self, ctx: RunContext, work: Any, *, where: str | None = None) -> Any:
         from sit_review_agent.tools.faults import FaultType
 
         extra = getattr(self.spec, "model_extra", None) or {}
@@ -863,11 +881,12 @@ class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule
         out = None
         if str(extra.get("at", "end")) == "end":
             out = await work()
-        ctx.emit(f"injected fault: {kind.value} in {self.name.value}", "warn")
+        where = where or self.name.value
+        ctx.emit(f"injected fault: {kind.value} in {where}", "warn")
         if kind is FaultType.SIGINT_IN_STAGE:
             raise KeyboardInterrupt
         del out
-        raise RuntimeError(f"injected fault: raise_in_stage {self.name.value}")
+        raise RuntimeError(f"injected fault: raise_in_stage {where}")
 
 
 def _run_process_faults(ctx: RunContext, sched: object,

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -274,3 +275,56 @@ async def test_plan_only_starts_neither_research_nor_assess(tmp_path: Path) -> N
     await Orchestrator(phases(log)).run(ctx)
     assert log == ["ingest", "understand", "plan"]
     assert latest_checkpoint(ctx.run_dir).phase is PhaseName.PLAN
+
+
+# ============================================================================= a crash inside one assess shard
+
+
+def _shard_phase(crash: set[int]) -> Any:
+    """An AssessPhase whose shards answer with no finding, except the launch indexes in ``crash``,
+    which raise at their start (what a ``process:`` fault with ``shard`` does; robustness BEH-29)."""
+    from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage
+    from sit_review_agent.phases.assess import AssessPhase, ShardResult
+
+    phase = AssessPhase()
+
+    async def run_shard(ctx: RunContext, shard: object, index: int, count: int) -> ShardResult:
+        if index in crash:
+            raise RuntimeError(f"injected fault: raise_in_stage assess shard {index}/{count}")
+        criteria = list(shard.criteria)  # type: ignore[attr-defined]
+        out = AssessOutput(findings=[], sound_areas=[], coverage=[
+            CriterionCoverage(criterion_id=c, outcome="no_issue", finding_ids=[], note="checked: no issue")
+            for c in criteria])
+        return ShardResult(index=index, name=shard.name, criteria=criteria, outcome="done", output=out,  # type: ignore[attr-defined]
+                           call_id=f"llm-{index}", model="fake", prompt_hash="x")
+
+    phase.run_shard = run_shard  # type: ignore[method-assign]
+    return phase
+
+
+async def test_a_crash_inside_one_shard_ends_that_shard_only(tmp_path: Path) -> None:
+    """BEH-29: the shard ends with outcome ``error``, disclosed by name and class with its criteria
+    not assessed; the other shards' results stand and nothing is raised."""
+    ctx = make_ctx(tmp_path, FakeClock())
+    phase = _shard_phase({4})
+    results = await phase.run_shards(ctx)
+    assert [r.outcome for r in results] == ["done", "done", "done", "error"]
+    crashed = results[3]
+    assert crashed.detail.startswith("RuntimeError: injected fault") and crashed.output is None
+    events = [d.event for d in crashed.delta.degradations]
+    assert len(events) == 1 and events[0].startswith(f"assess shard 4/4 ({crashed.name}) failed (RuntimeError")
+    assert all(not r.delta.degradations for r in results[:3])
+    phase.merge(ctx, results)
+    rows = {c.criterion_id: c for c in ctx.state.coverage}
+    lost = crashed.criteria
+    assert all(rows[c].outcome == "not_applicable" and rows[c].note.startswith("not assessed") for c in lost)
+    assert all(rows[c].outcome == "no_issue" for r in results[:3] for c in r.criteria)
+    assert any(d.event.startswith("assess shard 4/4") for d in ctx.state.degradations)
+
+
+async def test_every_shard_crashing_is_a_stage_crash(tmp_path: Path) -> None:
+    ctx = make_ctx(tmp_path, FakeClock())
+    with pytest.raises(StageCrash) as info:
+        await _shard_phase({1, 2, 3, 4}).run_shards(ctx)
+    assert info.value.phase == "assess" and int(info.value.exit_code) == 4
+    assert isinstance(info.value.cause, RuntimeError) and "shard 1/4" in str(info.value.cause)
