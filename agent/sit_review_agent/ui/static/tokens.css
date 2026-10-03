@@ -1,0 +1,29 @@
+/* Tokens for the SIT review UI (dra ui), copied from docs/design/ui_mockup/tokens.css.
+   Radix gray 12-step semantics (research_anti_slop_craft.md 3.1, 7.6), light theme only in this
+   mockup and page; dark would be authored separately (3.3), never inverted.
+   No hex outside this file (rule 8.1). */
+:root {
+  --bg-app: #fcfcfc;        /* 1 */
+  --bg-subtle: #f9f9f9;     /* 2 */
+  --bg-surface: #ffffff;
+  --bg-control: #f0f0f0;    /* 3 */
+  --bg-hover: #e8e8e8;      /* 4 */
+  --bg-active: #e0e0e0;     /* 5 */
+  --border-subtle: #d9d9d9; /* 6 */
+  --border-control: #cecece;/* 7 */
+  --border-hover: #bbbbbb;  /* 8 */
+  --fg-disabled: #8d8d8d;   /* 9 */
+  --fg-muted: #646464;      /* 11 */
+  --fg: #202020;            /* 12 */
+  --solid-ink: #202020;
+  --solid-ink-fg: #fcfcfc;
+  --focus: #0090ff;         /* blue 9: focus, links, selection only */
+  --link: #0d74ce;          /* blue 11 */
+  /* semantic, used as content only (severity, state) */
+  --red-3: #feebec;  --red-9: #e5484d;  --red-11: #ce2c31;
+  --amber-3: #fff7c2; --amber-11: #ab6400;
+  --green-3: #e6f6eb; --green-11: #218358;
+  --blue-3: #e6f4fe;  --blue-11: #0d74ce;
+  --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: Inter, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+}
