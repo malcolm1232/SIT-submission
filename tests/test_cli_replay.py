@@ -499,6 +499,24 @@ async def test_a_changed_request_in_a_recorded_conversation_still_diverges(tmp_p
     assert gw.served == 0                                   # nothing was consumed by the failed requests
 
 
+async def test_a_hash_match_with_another_purpose_diverges(tmp_path: Path) -> None:
+    """The request hash leaves the purpose out, so a body that matches a recorded call of another
+    purpose (a retry asked as a first call, say) is a divergence that names both, not a silent serve."""
+    from dataclasses import replace
+
+    from sit_review_agent.replay import ReplayDivergence, ReplayLLMGateway
+
+    cfg = load_config()
+    rd = RunDir(tmp_path / "hash")
+    req = _stage_request(PhaseName.ASSESS, "assess-0-s1", "brief for assess-0-s1")
+    source = _source(tmp_path, [_recorded(cfg, rd, "llm-0003", req, start=3.6, elapsed=200.0, purpose="assess")])
+    gw = ReplayLLMGateway(source, RunDir(tmp_path / "rp").create(), cfg)
+    with pytest.raises(ReplayDivergence, match=r"asked for assess/assess:refusal_retry, the recording has assess/assess"):
+        await gw.call(replace(req, purpose="assess:refusal_retry"))
+    assert gw.served == 0
+    assert (await gw.call(replace(req, purpose="assess"))).call_id == "llm-0003"
+
+
 async def test_identical_requests_of_one_conversation_are_served_in_log_order(tmp_path: Path) -> None:
     from sit_review_agent.replay import ReplayLLMGateway
 
