@@ -4,7 +4,7 @@ The one live run of the LangGraph orchestrator variant (`docs/COMPARISON_LANGGRA
 
 ## Result
 
-The run completed in 424.7 s with a full review: verdict `not_fit` at confidence 0.75, 21 findings (1 critical, 10 high, 7 medium) plus 3 strengths, outcome `completed_degraded` with four disclosed limitations.
+The run completed in 424.7 s with a full review: verdict `not_fit` at confidence 0.75, 18 findings (1 critical, 10 high, 7 medium) plus 3 strengths, outcome `completed_degraded` with four disclosed limitations.
 Assess shard 2 (`requirements_and_consistency`) was cut by the runtime at the stage 1 limit (265 s on the run clock) after 263.2 s, with 14 finished findings salvaged from its stream; the other three shards ended at 183.8 s, 193.0 s and 215.7 s.
 Refine (129.6 s) and the verdict call (29.8 s) ran in full.
 
