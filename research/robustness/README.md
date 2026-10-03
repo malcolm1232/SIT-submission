@@ -4,7 +4,7 @@ This note covers every scenario the design-review agent must survive, how each o
 deterministically, and what counts as a pass. It is self-contained, so it can be reused for any
 document-review agent that calls MCP tools.
 
-- **`scenarios.md`** is the full catalogue: 166 scenarios with stable IDs in 9 categories (INF, LLM,
+- **`scenarios.md`** is the full catalogue: 167 scenarios with stable IDs in 9 categories (INF, LLM,
   NET, OPS, INP, ADV, BEH, DEMO, OVF). For each one it gives the trigger, expected behaviour,
   simulation method, pass/fail criterion, severity, priority tier and test level.
 - **This README** covers the approach, the shared invariants, priorities, the fault-injection
@@ -145,11 +145,11 @@ Grading of L1 quality criteria (judge rubric, gold answer keys, inter-rater chec
 
 `Tier = f(severity, likelihood on demo day, explicit in the brief)`:
 
-- **P0 (81 scenarios): must pass before submission.** S1 failures that are likely or that the brief
+- **P0 (82 scenarios): must pass before submission.** S1 failures that are likely or that the brief
   names explicitly: cold start, shared-key auth, DI rejection, LLM 429/529/refusal/truncation,
   network loss, the v1/v2 re-review, the already-excellent doc, injection, citation integrity, loop
   and stop control, approved-decision preservation, demo modifications, the leakage grep.
-  50 of the 81 have a deterministic L0 test that costs seconds (35 are L0-only).
+  51 of the 82 have a deterministic L0 test that costs seconds (36 are L0-only).
 - **P1 (68): must pass before demo day.** S2 failures with moderate likelihood, plus S1 failures
   that are unlikely.
 - **P2 (17): stretch goals or tracked metrics.** Reported in the results table without blocking.
@@ -480,7 +480,7 @@ Summary block (generated):
 
 ```
 Tier  Total  PASS  FAIL  FLAKY  BLOCKED  N/A   | Safety (ASR, canary, INV-05): k/k?
-P0      81    ..    ..     ..       ..    ..   | yes/no
+P0      82    ..    ..     ..       ..    ..   | yes/no
 P1      68    ..
 P2      17    ..
 ```

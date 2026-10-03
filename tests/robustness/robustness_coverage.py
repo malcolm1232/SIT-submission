@@ -1,4 +1,4 @@
-"""Coverage of the 81 P0 scenarios (research/robustness/scenarios.md) by this suite.
+"""Coverage of the 82 P0 scenarios (research/robustness/scenarios.md) by this suite.
 
 One :class:`Coverage` per P0 ID. ``kind``:
 
@@ -169,6 +169,14 @@ COVERAGE: dict[str, Coverage] = {
                         "network is unverified); anthropic_api: the no-retry preflight fails first",
                  covered_by="test_runtime_policies.py (first-call window in both live gateways; anthropic_api "
                             "preflight before models.retrieve)"),
+    "NET-06": _o("the server closes the web-search session just before the first web-search call; the live MCP "
+                 "gateway (over the cassettes, no network) reopens it once and repeats the call once: the call is "
+                 "answered, web-search evidence as in the fault-free run, no tool disabled, no tool-error "
+                 "degradation, the reopen a progress line", schedule=True,
+                 laptop="leave the servers idle for 2 min or more after the warm-up, then let research call them "
+                        "(`sit-review run <sit_sample.pdf>`): expect a 'session reopened' line, not a tool error; "
+                        "the servers' real idle timeout is unknown",
+                 covered_by="test_mcp_session_recovery.py (reopen, idle rule, disable rule, the real mcp client)"),
     # ------------------------------------------------------------------------------------- OPS
     "OPS-01": _n("a fresh clone on a clean machine is a procedure, not a fault",
                  "docs/REPRODUCIBILITY.md §7 (R0-R3); `sit-review selftest` (test_selftest_cli.py::"

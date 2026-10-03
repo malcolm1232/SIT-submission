@@ -597,9 +597,41 @@ class MCPToolGateway:
                       elapsed_s=round(self.clock.monotonic() - t0, 3))
         return dataclasses.replace(res, attempts=list(attempts))
 
+    def close_session_for_fault(self, server: str) -> bool:
+        """Robustness ``session_closed`` (NET-06): make ``server``'s live session behave as a session
+        the server has closed (every later request fails at once with ``MCPError(-32000,
+        "Connection closed")``, as mcp 2.x does once the stream has ended) while the connection
+        still looks alive, so the next call takes the real recovery path. False when no session is
+        open (nothing to close)."""
+        conn = self._conns.get(server)
+        if conn is None or not conn.alive:
+            return False
+        conn.session = _ClosedSession()
+        return True
+
     async def aclose(self) -> None:
         for server in list(self._conns):
             await self._drop(server)
+
+
+class _ClosedSession:
+    """A session whose stream the server has closed (robustness ``session_closed``)."""
+
+    @staticmethod
+    def _closed() -> Exception:
+        from mcp import MCPError
+
+        return MCPError(-32000, "Connection closed")
+
+    async def initialize(self) -> Any:
+        raise self._closed()
+
+    async def list_tools(self, *, params: Any = None) -> Any:
+        raise self._closed()
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None,
+                        read_timeout_seconds: float | None = None) -> Any:
+        raise self._closed()
 
 
 class _ServerFailure(Exception):
@@ -847,6 +879,14 @@ class FaultInjectingGateway:
             self.injected.append({**note, "fault": kind})
         if delay:
             await self.clock.sleep(delay)
+        if terminal is not None and terminal.type.value == "session_closed":
+            # Close the live session below and let the call meet it (NET-06); with no live MCP
+            # layer below (replay, fake) the call fails as a closed session nothing can reopen.
+            from sit_review_agent.tools.mcp_client import find_layer
+
+            base = find_layer(self.inner, MCPToolGateway)
+            if base is not None and base.close_session_for_fault(server):
+                terminal = None
         if terminal is not None:
             return await self._terminal(terminal, server, tool, args, started, t_start)
         res = await self.inner.call(tool_name, args, phase=phase)
@@ -897,6 +937,9 @@ class FaultInjectingGateway:
         if kind == "malformed_body":
             return self._failed(server, tool, args, started, t_start, ToolErrorClass.MALFORMED,
                                 f"malformed response body ({param(spec, 'kind', 'non_json')})")
+        if kind == "session_closed":
+            return self._failed(server, tool, args, started, t_start, ToolErrorClass.SESSION_CLOSED,
+                                "session closed (MCP error -32000: Connection closed)")
         if kind == "session_expired":
             return self._failed(server, tool, args, started, t_start, ToolErrorClass.SESSION_EXPIRED,
                                 "session terminated (HTTP 404 on a stale Mcp-Session-Id)", http_status=404)

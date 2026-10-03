@@ -632,6 +632,35 @@ def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
                   "<= 10; one exit, the other stage 1 members cancelled")
 
 
+def check_net06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """MCP session closed mid-run, reopened (sit_sample_tools_1). The live MCP gateway, run over the
+    cassettes, meets the closed session on the first web search: one reopen (a new initialize),
+    the call repeated once and answered; web-search evidence in the ledger as in the fault-free run;
+    no tool disabled, no tool-error degradation, the reopen disclosed as a progress line."""
+    from sit_review_agent.tools.gateway import MCPToolGateway
+
+    rec = recs[0]
+    r = ok(rec)
+    first = tool_calls(rec, "mcp-internet-search")[0]
+    classes = [a["error_class"] for a in first["attempts"]]
+    assert first["status"] == "ok" and classes == ["session_closed", None], classes
+    assert first["attempts"][-1]["message"] == "retried once after the session was reopened"
+    base = find_layer(rec.tools, MCPToolGateway)
+    assert base is not None
+    reopens = [e for e in base.session_events if e["server"] == "mcp-internet-search"]
+    assert len(reopens) == 1 and reopens[0]["reason"].startswith("closed by the server"), base.session_events
+    policy = find_layer(rec.tools, PolicyToolGateway)
+    assert policy is not None and not policy.unusable_tools and not policy.events
+    web_ev = [e for e in external(rec) if e["tool"]["server"] == "mcp-internet-search"]
+    control_web = [e for e in external(control) if e["tool"]["server"] == "mcp-internet-search"]
+    assert web_ev and len(web_ev) == len(control_web), (len(web_ev), len(control_web))
+    events = degs(rec)
+    assert not any("session_closed" in d or "tool_error" in d for d in events), events
+    assert not any(d["type"] == "tool_error" for d in r["research_log"]["degradations"])
+    assert "session reopened (closed by the server" in rec.run_dir.progress_log.read_text(encoding="utf-8")
+    return Metric("session reopens for the closed session", len(reopens), "1, the call answered after it")
+
+
 def check_inf08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """Live tool transport with the MCP key unset: a usage error (exit 2) before any model call or
     run directory, naming the variable and --no-tools; with --no-tools the review runs doc-only."""
@@ -1196,6 +1225,8 @@ CASES: list[Case] = [
     Case("NET-01", [sc("NET-01", faults="NET-01")], check_net01),
     Case("NET-02", [sc("NET-02", faults="NET-02", clock="scheduling")], check_net02,
          notes="six concurrent first calls (scheduling clock): the first to give up exits 3 once, the rest cancelled"),
+    Case("NET-06", [sc("NET-06", faults="NET-06", tool_base="mcp")], check_net06,
+         notes="the live MCP gateway over the cassettes: the closed session is reopened once and the call repeated"),
     Case("INF-08", [sc("INF-08", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",)),
                     sc("INF-08-no-tools", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",),
                        overrides={"no_tools": True})], check_inf08,

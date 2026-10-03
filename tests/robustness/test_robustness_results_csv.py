@@ -28,7 +28,7 @@ def test_writer_produces_the_template_table(tmp_path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     assert text.splitlines()[0] == TEMPLATE == ",".join(COLUMNS)
     rows = list(csv.DictReader(text.splitlines()))
-    assert [r["scenario_id"] for r in rows] == [*p0_rows(), *CONCURRENT_META]   # 81 in scenarios.md order, then 6
+    assert [r["scenario_id"] for r in rows] == [*p0_rows(), *CONCURRENT_META]   # 82 in scenarios.md order, then 6
     by = {r["scenario_id"]: r for r in rows}
     assert all(r["status"] in STATUSES and r["tier"] == "P0" for r in rows)
     assert by["INF-03"]["status"] == "PASS" and by["INF-03"]["pass_hat_k"] == "1.00" and by["INF-03"]["k"] == "1"
@@ -46,7 +46,7 @@ def test_writer_produces_the_template_table(tmp_path: Path) -> None:
         assert by[sid]["status"] == "BLOCKED" and not by[sid]["notes"].startswith("awaiting integration"), sid
         assert (by[sid]["severity"], by[sid]["tier"]) == (CONCURRENT_META[sid]["sev"], "P0"), sid
     block = (path.parent / "robustness_summary.txt").read_text(encoding="utf-8")
-    assert block.startswith("Tier  Total  PASS  FAIL") and "P0       87     1" in block
+    assert block.startswith("Tier  Total  PASS  FAIL") and "P0       88     1" in block
 
 
 def test_a_changed_row_that_ran_is_its_own_result_after_integration() -> None:

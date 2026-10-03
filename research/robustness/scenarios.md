@@ -100,6 +100,7 @@ zero and take 1 to 2 minutes to wake. `mcp-document-intelligence` currently reje
 | NET-03 | S2 | P1 | L0 | **Laptop sleeps mid-run** (lid closed): sockets go stale and the wall clock jumps. | Timeouts use a monotonic clock. Stale sessions re-initialise (INF-09). The run resumes. | Virtual-clock jump of 600 s, plus all sockets reset. | Run completes or resumes cleanly. No timeout storms (at most 1 retry per server). |
 | NET-04 | S2 | P1 | L0 | **Captive portal:** venue Wi-Fi answers with an HTML login page (HTTP 200 or a redirect). | A content-type or protocol mismatch is classified as a network fault, never stored as evidence. | Stub returns `text/html` login page to every request. | Zero ledger entries from the stub. Message: "network requires login". |
 | NET-05 | S2 | P1 | L2 | **Phone hotspot:** 500 ms RTT, 1 Mbit/s. | Completes within the demo budget using parallel calls and capped payloads. | Toxiproxy `latency: 500` and `bandwidth: 125` (KB/s), or `tc netem`. | Sample doc reviewed in 10 min or less (wall clock). |
+| NET-06 | S1 | P0 | L0 | **MCP session closed mid-run** (added 2026-10-03 after the first with-tools run, `docs/live_runs/sit_sample_tools_1/MEASUREMENT.md`: the warm-up session sat idle from 2 s to 132 s and every web search then failed with `MCP error -32000: Connection closed`, was read as a tool error and disabled the tool). | A closed session (-32000, a closed or ended stream, a reset connection) is a session error, not a tool error: the session is reopened once (a new `initialize`, same key) and the call repeated once; only a second failure counts against the tool. A session idle longer than `tools.session_idle_reopen_s` (60 s) is reopened before the next call. Each reopen is disclosed as an event, not a degradation. | Fault `session_closed` on the first web-search call, with the live MCP gateway over the strict cassettes (no network). | The call succeeds after exactly one reopen. Web-search evidence matches the fault-free run. No tool is disabled and no tool-error degradation is recorded. |
 
 ## 1d. OPS: operational and environment (added category)
 
@@ -288,14 +289,14 @@ the result) and directional tests (a DIR perturbation should change it).
 |---|---|---|---|---|
 | INF (MCP tools and infra) | 28 | 13 | 13 | 2 |
 | LLM (LLM API) | 12 | 10 | 2 | 0 |
-| NET (network) | 5 | 2 | 3 | 0 |
+| NET (network) | 6 | 3 | 3 | 0 |
 | OPS (operational) | 10 | 5 | 3 | 2 |
 | INP (input variations) | 32 | 9 | 17 | 6 |
 | ADV (adversarial) | 24 | 9 | 12 | 3 |
 | BEH (agent behaviour) | 28 | 20 | 6 | 2 |
 | DEMO (demo day) | 15 | 9 | 5 | 1 |
 | OVF (overfitting) | 12 | 4 | 7 | 1 |
-| **Total** | **166** | **81** | **68** | **17** |
+| **Total** | **167** | **82** | **68** | **17** |
 
 (Recount with the snippet in README section 9. If the snippet and this table disagree, the snippet
 is right.)
