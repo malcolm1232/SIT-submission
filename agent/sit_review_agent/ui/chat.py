@@ -1,11 +1,18 @@
 """The chat panel: a reading aid over one finished run, not the review (design note section 6).
 
-* Corpus: that run's ``report.json`` (findings, verdict, unresolved, limitations, sound areas,
-  intent, decision registry, degradations), its evidence ledger, ``anchors.json`` and the coverage
-  map (what ``dra explain`` and ``dra coverage`` read). Never the PDF, the prompts, ``llm.jsonl``
-  or the model's own earlier answers: every question is one fresh call.
+* Corpus: that run's ``report.json`` (findings with their anchors and evidence, verdict, unresolved,
+  limitations, sound areas, intent, decision registry, degradations), the evidence ledger entries a
+  finding cites, and the coverage outcomes per criterion (what ``dra explain`` and ``dra coverage``
+  read; the integration pass of 2026-10-03 cut the uncited ledger entries, the ledger excerpts the
+  findings already quote, the anchor rows and the coverage rows, planner ruling on cache reads).
+  Never the PDF, the prompts, ``llm.jsonl`` or the model's own earlier answers: every question is
+  one fresh call.
 * One call per question: Opus 5.5 at ``medium`` effort through headless Claude Code (the agent's
-  backend, ADR-010), with a strict JSON schema (:data:`ANSWER_SCHEMA`) and no tools.
+  backend, ADR-010), with a strict JSON schema (:data:`ANSWER_SCHEMA`) and no tools. The corpus is
+  the tail of the system prompt (``--system-prompt-file``), the question the whole user turn: the
+  system prompt is where the CLI sets a cache breakpoint, so the second question of a run reads the
+  cache the first wrote. In the user turn (the first live pair) a byte-identical corpus prefix was
+  written again on the second call (71,451 then 70,511 tokens written, 943 read).
 * Citations are checked against the run: an ID that does not resolve is dropped and the answer is
   flagged; an answer with ``supported: false``, or with no citation left, is shown as
   :data:`UNSUPPORTED_TEXT` with no prose.
@@ -58,6 +65,7 @@ ANSWER_SCHEMA: dict[str, Any] = {
     },
 }
 
+SYSTEM_FILE = "chat_system_prompt.txt"
 SYSTEM_PROMPT = """You answer questions about one finished design review, using only the review data given \
 below in <review_data>. You are a reading aid, not the reviewer.
 
@@ -133,32 +141,31 @@ def run_ids(run_dir: Path) -> RunIds:
         criteria={str(c) for c in cov.get("criteria") or []})
 
 
+def cited_evidence_ids(report: dict[str, Any]) -> set[str]:
+    """The ledger entries the findings rest on: their evidence items and their recommendations'
+    supporting evidence."""
+    out: set[str] = set()
+    for f in report.get("findings") or []:
+        out |= {str(e.get("evidence_id")) for e in f.get("evidence") or [] if e.get("evidence_id")}
+        out |= {str(i) for i in (f.get("recommendation") or {}).get("supporting_evidence_ids") or []}
+    return out
+
+
 def corpus(run_dir: Path) -> dict[str, Any]:
-    """The run data the model sees. Provenance hashes, the run manifest and tool-call logs are left
-    out; finding, evidence and registry text is kept verbatim."""
+    """The run data the model sees: ``report.json`` without provenance hashes, the ledger entries a
+    finding cites (without their excerpt, which the finding quotes), and the coverage outcomes. The
+    run manifest, tool-call logs, uncited ledger entries, anchor rows and coverage rows are left
+    out; finding, verdict and registry text is kept verbatim."""
     report = read_json(run_dir / "report.json") or {}
     findings = []
     for f in report.get("findings") or []:
         g = {k: v for k, v in f.items() if k != "provenance"}
         findings.append(g)
+    cited = cited_evidence_ids(report)
     ledger = [{k: e.get(k) for k in ("evidence_id", "source_type", "authority", "url_or_citation", "title",
-                                     "excerpt", "derived_from") if e.get(k) not in (None, [], "")}
-              for e in _ledger(run_dir, report)]
-    anchors_doc = read_json(run_dir / "anchors.json") or {}
-    rows = anchors_doc.get("rows", []) if isinstance(anchors_doc, dict) else anchors_doc
-    anchors: dict[str, list[str]] = {}
-    for r in rows if isinstance(rows, list) else []:
-        if isinstance(r, dict) and r.get("owner_id"):
-            anchors.setdefault(str(r["owner_id"]), []).append(
-                f"p.{r.get('page')} §{r.get('section_ref')}: {r.get('anchor_status')} ({r.get('method')} match)")
+                                     "derived_from") if e.get(k) not in (None, [], "")}
+              for e in _ledger(run_dir, report) if str(e.get("evidence_id")) in cited]
     cov = _coverage(run_dir)
-    cov_rows = []
-    for row in cov.get("rows") or []:
-        cells = {k: v for k, v in (row.get("cells") or {}).items() if v not in ("", "-", None)}
-        if cells or row.get("sound_areas"):
-            cov_rows.append({"section": row.get("section"), "heading": row.get("heading"), "cells": cells,
-                             **({"sound_areas": row["sound_areas"]} if row.get("sound_areas") else {})})
-    cov = {**cov, "rows": cov_rows}
     rlog = report.get("research_log") or {}
     return {
         "run_id": (report.get("metadata") or {}).get("run_id", run_dir.name),
@@ -175,15 +182,20 @@ def corpus(run_dir: Path) -> dict[str, Any]:
         "decision_registry": [{k: r.get(k) for k in ("registry_id", "type", "doc_ref", "statement")}
                               for r in report.get("decision_registry") or []],
         "evidence_ledger": ledger,
-        "anchors": anchors,
-        "coverage": {k: cov.get(k) for k in ("criteria", "outcomes", "criterion_findings", "notes", "rows")
-                     if k in cov},
+        "coverage": {k: cov.get(k) for k in ("criteria", "outcomes", "criterion_findings", "notes") if k in cov},
     }
 
 
-def prompt_for(run_dir: Path, question: str) -> str:
+def system_for(run_dir: Path) -> str:
+    """The system prompt of every call about ``run_dir``: the rules, then the corpus. Byte-identical
+    from one question to the next, so the cache written by the first call is read by the second."""
     data = json.dumps(corpus(run_dir), ensure_ascii=False, separators=(",", ":"))
-    return f"<review_data>\n{data}\n</review_data>\n\n<question>\n{question}\n</question>"
+    return f"{SYSTEM_PROMPT}\n\n<review_data>\n{data}\n</review_data>"
+
+
+def prompt_for(question: str) -> str:
+    """The user turn: the question alone."""
+    return f"<question>\n{question}\n</question>"
 
 
 def resolve(answer: dict[str, Any], ids: RunIds) -> dict[str, Any]:
@@ -228,7 +240,9 @@ class ChatClient(Protocol):
 class ClaudeCodeChatClient:
     """One ``claude -p`` per question, built like ``ClaudeCodeGateway.build_argv`` (every CLI tool,
     MCP server and slash command off, the system prompt replaced, ``--json-schema``), but logging to
-    ``ui/chat.jsonl`` only. No ``--resume``: every question starts a fresh session."""
+    ``ui/chat.jsonl`` only. No ``--resume``: every question starts a fresh session. The system
+    prompt (rules plus the corpus, well over an argument's size on Linux) goes through
+    ``--system-prompt-file``: written to ``cwd`` for the call and removed after it."""
 
     def __init__(self, *, executable: str = "claude", extra_args: tuple[str, ...] = (),
                  inherit_api_key: bool = False, runner: Any = None) -> None:
@@ -244,10 +258,10 @@ class ClaudeCodeChatClient:
         cc = config.agent.claude_code
         return cls(executable=cc.executable, extra_args=tuple(cc.extra_args), inherit_api_key=cc.inherit_api_key)
 
-    def argv(self, system: str, schema: dict[str, Any], max_budget_usd: float | None) -> list[str]:
+    def argv(self, system_file: Path, schema: dict[str, Any], max_budget_usd: float | None) -> list[str]:
         from sit_review_agent.llm.claude_code import STREAM_FLAGS
 
-        out = [self.executable, "-p", "--model", MODEL, "--system-prompt", system, "--tools", "",
+        out = [self.executable, "-p", "--model", MODEL, "--system-prompt-file", str(system_file), "--tools", "",
                "--strict-mcp-config", "--disallowedTools", "mcp__*", "--disable-slash-commands", *STREAM_FLAGS,
                "--effort", EFFORT, "--json-schema", json.dumps(schema, separators=(",", ":"))]
         if max_budget_usd is not None:
@@ -270,11 +284,15 @@ class ClaudeCodeChatClient:
         from sit_review_agent.llm.partial import parse_cli_stdout
 
         t0 = time.monotonic()
+        system_file = Path(cwd) / SYSTEM_FILE
         try:
-            done = await self.runner(self.argv(system, schema, max_budget_usd), prompt, self.env(), cwd,
+            system_file.write_text(system, encoding="utf-8")
+            done = await self.runner(self.argv(system_file, schema, max_budget_usd), prompt, self.env(), cwd,
                                      CALL_TIMEOUT_S)
         except (TimeoutError, OSError) as exc:
             return ChatReply(None, None, None, None, time.monotonic() - t0, f"{type(exc).__name__}: {exc}")
+        finally:
+            system_file.unlink(missing_ok=True)
         out, _ = parse_cli_stdout(done.stdout)
         elapsed = time.monotonic() - t0
         if out is None:
@@ -355,14 +373,15 @@ async def ask(run_dir: Path, question: str, client: ChatClient, *, running: bool
         if b["stopped"]:
             raise ChatRefused(429, f"The chat cap for this run is reached ({b['calls_used']} of {MAX_CALLS} calls, "
                                    f"${b['cost_usd']:.2f} of ${MAX_COST_USD:.2f}).")
-        prompt = prompt_for(run_dir, question)
+        system, prompt = system_for(run_dir), prompt_for(question)
         # The CLI runs in ui/ (its session files stay out of the run directory proper); it must exist first.
         (run_dir / UI_DIR).mkdir(parents=True, exist_ok=True)
-        reply = await client.ask(system=SYSTEM_PROMPT, prompt=prompt, schema=ANSWER_SCHEMA,
+        reply = await client.ask(system=system, prompt=prompt, schema=ANSWER_SCHEMA,
                                  cwd=(run_dir / UI_DIR), max_budget_usd=MAX_COST_USD - b["cost_usd"])
         entry: dict[str, Any] = {
             "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "question": question,
-            "prompt_sha256": sha256_text(SYSTEM_PROMPT + "\n" + prompt), "requested_model": MODEL, "effort": EFFORT,
+            "prompt_sha256": sha256_text(system + "\n" + prompt), "system_sha256": sha256_text(system),
+            "requested_model": MODEL, "effort": EFFORT,
             "served_model": reply.model, "usage": reply.usage, "cost_usd": reply.cost_usd,
             "duration_s": round(reply.duration_s, 3), "counted": True, "error": reply.error}
         if reply.data is not None:

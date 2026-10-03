@@ -72,7 +72,7 @@ def served(tmp_path: Path, replayed: Path):
         if server.started:
             break
         time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}", runs
+    yield f"http://127.0.0.1:{port}", runs, state
     server.should_exit = True
     th.join(timeout=5)
 
@@ -80,7 +80,7 @@ def served(tmp_path: Path, replayed: Path):
 @pytest.fixture
 def page(served):
     sync_api = pytest.importorskip("playwright.sync_api")
-    base, runs = served
+    base, runs, state = served
     with sync_api.sync_playwright() as p:
         try:
             browser = p.chromium.launch()
@@ -89,7 +89,7 @@ def page(served):
         pg = browser.new_page(viewport={"width": 1440, "height": 900})
         errors: list[str] = []
         pg.on("pageerror", lambda e: errors.append(str(e)))
-        yield pg, base, runs
+        yield pg, base, runs, state
         browser.close()
     assert errors == []
 
@@ -109,7 +109,7 @@ def tracks(pg: Any) -> dict[str, tuple[str, str]]:
 
 
 def test_a_replayed_run_is_stamped_and_never_drawn_as_live(page) -> None:
-    pg, base, runs = page
+    pg, base, runs, _state = page
     rp = next(p for p in runs.iterdir() if p.name.startswith("rehearsal_replay"))
     evs = records(rp / "progress.jsonl")
     assert events.started(evs)["mode"] == "replay"
@@ -131,11 +131,59 @@ def test_a_replayed_run_is_stamped_and_never_drawn_as_live(page) -> None:
     assert pg.locator("#finished-bar").inner_text().endswith(f"{len(report['findings'])} findings.")
 
 
+# ------------------------------------------------------------------ a run opened before its first event
+
+
+class _AliveProc:
+    pid = 4242
+
+    def __init__(self) -> None:
+        self.code: int | None = None
+
+    def poll(self) -> int | None:
+        return self.code
+
+    def send_signal(self, sig: int) -> None:
+        self.code = 130
+
+
+def test_a_run_opened_before_its_first_event_follows_the_file_once_it_appears(page) -> None:
+    """The page opens the run right after POST /runs, before the child has written progress.jsonl
+    (the first live run from the page showed an empty timeline for 14 minutes for this reason):
+    the stream is subscribed at once and the server follows the file from the moment it appears."""
+    from sit_review_agent.ui.launcher import Launched
+
+    pg, base, runs, state = page
+    rd = runs / "just_started"
+    (rd / "ui").mkdir(parents=True)
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "just_started", "display": "dra review x.pdf --run-id "
+                                                       "just_started", "args": [], "document_name": "x.pdf"}),
+                                           encoding="utf-8")
+    proc = _AliveProc()
+    state.launcher.runs["just_started"] = Launched("just_started", proc, "dra review x.pdf --run-id just_started",
+                                                   "now")
+    pg.goto(base + "/?run=just_started")
+    pg.wait_for_selector("#status-feed")
+    assert pg.locator("#status-feed .row").count() == 0
+    assert pg.locator(".notice", has_text="no progress.jsonl").count() == 0
+    assert pg.locator("#top-action button", has_text="Stop run").count() == 1
+    lines = (FIXTURES / "progress.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+    (rd / "progress.jsonl").write_text("".join(lines[:40]), encoding="utf-8")
+    pg.wait_for_function("document.querySelectorAll('#status-feed .row').length > 0")
+    pg.wait_for_function(f"document.querySelectorAll('#status-feed .row').length === "
+                         f"{sum(1 for ln in lines[:40] if json.loads(ln)['console'])}")
+    assert pg.locator("#finished-bar").is_hidden()
+    (rd / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
+    proc.code = 0
+    pg.wait_for_function("!document.querySelector('#finished-bar').hidden")
+    assert pg.locator("#status-feed .row").count() == sum(1 for ln in lines if json.loads(ln)["console"])
+
+
 # ------------------------------------------------------------------ a cut shard, a resumed run
 
 
 def test_the_cut_shard_shows_its_disclosure_id_and_what_it_kept(page) -> None:
-    pg, base, runs = page
+    pg, base, runs, _state = page
     evs = records(runs / "progress_cut" / "progress.jsonl")
     cut = next(r["fields"] for r in evs if r["type"] == "shard_cut")
     open_run(pg, base, "progress_cut")
@@ -157,7 +205,7 @@ def test_the_cut_shard_shows_its_disclosure_id_and_what_it_kept(page) -> None:
 
 
 def test_a_resumed_run_continues_on_the_page_with_one_sequence(page) -> None:
-    pg, base, runs = page
+    pg, base, runs, _state = page
     evs = records(runs / "progress_resume" / "progress.jsonl")
     open_run(pg, base, "progress_resume")
     t = tracks(pg)

@@ -162,13 +162,44 @@ def test_the_corpus_is_the_run_directory_only(run: Path) -> None:
     client = client_for(run, fake)
     client.post("/runs/rehearsal_concurrent_1/chat", json={"question": "one"})
     client.post("/runs/rehearsal_concurrent_1/chat", json={"question": "two"})
-    second = fake.calls[1]["prompt"]
-    assert "<question>\ntwo\n</question>" in second and "<question>\none" not in second
-    assert "FIRST-ANSWER-CANARY" not in second and "LLM-JSONL-CANARY" not in second and "PDF-CANARY" not in second
-    data = json.loads(second.split("<review_data>\n", 1)[1].split("\n</review_data>", 1)[0])
-    assert set(data) >= {"findings", "verdict", "evidence_ledger", "anchors", "coverage", "unresolved", "limitations"}
-    assert "run_manifest" not in data and all("provenance" not in f for f in data["findings"])
+    second, system = fake.calls[1]["prompt"], fake.calls[1]["system"]
+    assert second == "<question>\ntwo\n</question>" and "<question>\none" not in system
+    sent = system + second
+    assert "FIRST-ANSWER-CANARY" not in sent and "LLM-JSONL-CANARY" not in sent and "PDF-CANARY" not in sent
+    assert system.startswith(chat.SYSTEM_PROMPT + "\n\n<review_data>\n") and system.endswith("\n</review_data>")
+    data = json.loads(system.split("<review_data>\n", 1)[1].split("\n</review_data>", 1)[0])
+    assert set(data) >= {"findings", "verdict", "evidence_ledger", "coverage", "unresolved", "limitations"}
+    assert "run_manifest" not in data and "anchors" not in data and "rows" not in data["coverage"]
+    assert all("provenance" not in f for f in data["findings"])
+    report = json.loads((run / "report.json").read_text(encoding="utf-8"))
+    cited = chat.cited_evidence_ids(report)
+    assert {e["evidence_id"] for e in data["evidence_ledger"]} == cited and cited
+    assert all("excerpt" not in e for e in data["evidence_ledger"])
     assert fake.calls[1]["schema"] == chat.ANSWER_SCHEMA and fake.calls[1]["cwd"] == run / "ui"
+
+
+def test_every_call_sends_the_same_prefix_so_the_second_reads_the_cache(run: Path) -> None:
+    """Planner ruling 2026-10-03: the corpus comes first and the question last, under one system
+    prompt and one schema, so the prompt cache written by the first call is read by the next. The
+    corpus is the tail of the system prompt, where the CLI's cache breakpoint is; the user turn is
+    the question alone."""
+    fake = FakeChat(answer(), answer())
+    client = client_for(run, fake)
+    client.post("/runs/rehearsal_concurrent_1/chat", json={"question": "first question"})
+    client.post("/runs/rehearsal_concurrent_1/chat", json={"question": "a different second question"})
+    one, two = fake.calls
+    assert one["system"] == two["system"] and one["system"].startswith(chat.SYSTEM_PROMPT)
+    assert one["prompt"] == "<question>\nfirst question\n</question>"
+    assert two["prompt"] == "<question>\na different second question\n</question>"
+    assert len(one["system"]) > len(one["prompt"]) * 100                      # the shared prefix is the bulk
+    assert one["schema"] == two["schema"] == chat.ANSWER_SCHEMA
+    rows = chat.history(run)
+    assert rows[0]["system_sha256"] == rows[1]["system_sha256"] and rows[0]["prompt_sha256"] != rows[1]["prompt_sha256"]
+    real = chat.ClaudeCodeChatClient()
+    f = run / "ui" / chat.SYSTEM_FILE
+    a0, a1 = real.argv(f, chat.ANSWER_SCHEMA, 3.0), real.argv(f, chat.ANSWER_SCHEMA, 2.5)
+    assert [x for x in a0 if not x.startswith("2.") and not x.startswith("3.")] == \
+        [x for x in a1 if not x.startswith("2.") and not x.startswith("3.")]       # only the budget cap differs
 
 
 def test_the_answer_schema_is_strict() -> None:
@@ -200,6 +231,7 @@ async def test_client_argv_env_and_parsing(tmp_path: Path, monkeypatch: pytest.M
 
     async def runner(argv: list[str], stdin: str, env: dict[str, str], cwd: Path, timeout_s: float) -> CompletedRun:
         seen.update(argv=argv, stdin=stdin, env=env, cwd=cwd, timeout_s=timeout_s)
+        seen["system_file_text"] = Path(argv[argv.index("--system-prompt-file") + 1]).read_text(encoding="utf-8")
         return CompletedRun(0, stream_result(answer()), "")
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "placeholder-not-a-key")
@@ -211,6 +243,8 @@ async def test_client_argv_env_and_parsing(tmp_path: Path, monkeypatch: pytest.M
     assert json.loads(argv[argv.index("--json-schema") + 1]) == chat.ANSWER_SCHEMA
     assert argv[argv.index("--tools") + 1] == "" and "--resume" not in argv and "--bare" not in argv
     assert argv[argv.index("--max-budget-usd") + 1] == "2.50" and argv[-2:] == ["--setting-sources", ""]
+    assert "--system-prompt" not in argv and seen["system_file_text"] == "S"
+    assert not (tmp_path / chat.SYSTEM_FILE).exists()                      # written for the call, removed after
     assert "ANTHROPIC_API_KEY" not in seen["env"] and seen["stdin"] == "P" and seen["cwd"] == tmp_path
     assert reply.data == answer() and reply.cost_usd == 0.12 and reply.model == "claude-opus-5-5"
     assert reply.usage == {"input_tokens": 1000, "output_tokens": 200} and reply.error is None

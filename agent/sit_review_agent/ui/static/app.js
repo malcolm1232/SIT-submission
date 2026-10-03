@@ -375,7 +375,9 @@ function showRun(info, tabs) {
   renderRun(m);
   runTop(info, m, tabs);
   if (info.argv) $("status-feed").before(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
-  if (!info.has_events) {
+  // A run just started has no progress.jsonl until the child's first event: the stream is opened anyway and
+  // the server follows the file from the moment it appears. Only a run that ended without one has no timeline.
+  if (!info.has_events && info.status !== "running") {
     $("legend").after(h("p", { class: "notice", text: "This run directory has no progress.jsonl (it was recorded before the structured event stream), so there is no timeline to show." }));
     return;
   }
