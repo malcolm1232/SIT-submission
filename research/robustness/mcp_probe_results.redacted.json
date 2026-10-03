@@ -1,0 +1,1175 @@
+{
+  "_meta": {
+    "mode": "live",
+    "generated_at": "2026-10-03T11:25:28+0800",
+    "total_runtime_s": 71.0,
+    "python": "3.13.13",
+    "mcp_version": "2.2.0",
+    "httpx_version": "0.28.1",
+    "client_offered_protocol_version": "2025-11-25",
+    "auth_variants_in_order": [
+      "Authorization: Bearer",
+      "X-API-Key",
+      "x-api-key",
+      "api-key",
+      "Ocp-Apim-Subscription-Key",
+      "?api_key= query parameter"
+    ],
+    "api_key_env": "SIT_MCP_API_KEY",
+    "api_key": "***REDACTED***"
+  },
+  "mcp-internet-search": {
+    "url": "https://mcp-internet-search.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+    "winning_header_variant": "Authorization: Bearer",
+    "attempts": [
+      {
+        "variant": "Authorization: Bearer",
+        "cold_start_retry": false,
+        "timeout_s": 180.0,
+        "http_status": 200,
+        "initialize_ok": true,
+        "protocol_version": "2025-11-25",
+        "server_info": {
+          "name": "mcp-internet-search",
+          "version": "4.0.3"
+        },
+        "capabilities": {
+          "logging": {},
+          "prompts": {
+            "listChanged": true
+          },
+          "resources": {
+            "subscribe": false,
+            "listChanged": true
+          },
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "instructions": "This server reproduces Open WebUI's internet-search architecture: ONE stable tool contract\n(search_web, fetch_url) with multiple provider adapters routed behind it — not a separate tool\nsurface per provider. You do not choose a provider in the normal case; the server picks one\nautomatically with real fallback, and tells you which one it used.\n\n═══════════════════════════════════════════════════════════════════════════════\nPROVIDER ROUTING — handled by this server, not by you\n═══════════════════════════════════════════════════════════════════════════════\nsearch_web automatically routes requests across currently enabled internet-search providers.\nDo not select or assume a provider, and do not assume a fixed provider order — which providers\nare enabled and in what priority can change (a provider can be added, removed, or disabled\nwithout this text being updated). Inspect the response's `provider_used` and `attempts` fields\nafter every call to see exactly what happened: which providers were tried, in what order, why\nany were skipped or failed, and which one actually answered. Call get_provider_status() if you\nneed to know ahead of time which providers are currently enabled. You CAN force a specific\nprovider via the `provider` parameter if you have a reason to (e.g. re-querying after a\nfree-tier answer wasn't good enough).\n\n═══════════════════════════════════════════════════════════════════════════════\nSEARCH DEPTH — mode parameter\n═══════════════════════════════════════════════════════════════════════════════\n- mode=\"discover\" — broad exploratory search. Returns titles/URLs/snippets only, no page\n  content fetched. Use when scanning a topic before narrowing down.\n- mode=\"answer\" — for answering, explaining, comparing, or summarizing. Fetches full page\n  content inline for the top results (fetch_top_n, default 10).\n- mode=\"auto\" (default) — the server infers depth from the query using a small, deterministic\n  heuristic (question marks, comparison/explanation cue words, or query length lean toward\n  \"answer\"; short/broad queries lean toward \"discover\"). This is a heuristic, not true intent\n  understanding — pass mode explicitly when you know which you want.\n- fetch_top_n is still available as an advanced override and always wins over mode when set\n  explicitly.\n\n═══════════════════════════════════════════════════════════════════════════════\nREQUIRED USAGE PATTERN: agentic search, NOT single-shot tool calling\n═══════════════════════════════════════════════════════════════════════════════\n1. QUERY DELIBERATELY — focused queries for multi-part questions, run several rather than one\n   broad query.\n2. EVALUATE, don't trust blindly — read titles/snippets/domains critically. Whichever provider\n   was used, snippets are a pointer to a source, not verified evidence.\n3. READ extracted_text FIRST when content_status is \"fetched\" or \"partially_fetched\" — do NOT\n   make a redundant fetch_url call for a URL search_web already fetched. Only use fetch_url\n   for: a URL beyond the fetched range, a different max_chars, re-fetching a URL from an\n   earlier turn, content_status was \"not_requested\"/\"fetch_failed\", or a specific direct URL\n   needs inspecting.\n4. ITERATE if results are poor — reformulate the query, or try fetch_url on a known/guessed\n   direct URL (e.g. a manufacturer's own spec page) instead of searching at all, especially\n   for time-sensitive or fact-specific questions. Prefer direct, authoritative source pages\n   over search snippets for time-sensitive facts.\n5. Cite your sources in the final answer (title/URL).\n6. Do NOT treat an empty result as proof information doesn't exist — check `attempts` and each\n   attempt's failure_code/reason first; an empty result can mean every provider errored, not\n   that nothing was found.\n\nTools:\n- search_web(query, mode=\"auto\", provider=None, max_results=5, fetch_top_n=None, min_results=None,\n  max_chars=None) -> {results: [{link, title, snippet, extracted_text, content_status,\n  fetch_method, fetch_error, retrieved_at}], provider_used, attempts} — content_status is one\n  of not_requested/fetched/partially_fetched/fetch_failed/blocked/unsupported. min_results, if\n  set, escalates to the next provider when a result set is thinner than requested.\n- fetch_url(urls, max_chars=None) -> [{source_id, title, final_url, extracted_text,\n  retrieved_at, status, error?}] — SSRF-protected: URLs resolving to localhost/private IPs/\n  cloud-metadata addresses are refused and reported with status \"blocked\", not fetched. Same\n  SSRF protection applies to any URL search_web auto-fetches.\n- get_provider_status() -> [{provider, enabled, cost_class, routing_priority, healthy}] —\n  diagnostic only, does not select a provider or perform a search.",
+        "jsonrpc_error": null,
+        "elapsed_s": 34.412,
+        "response_headers": {
+          "cache-control": "no-cache, no-transform",
+          "content-type": "text/event-stream",
+          "date": "Sat, 03 Oct 2026 03:24:52 GMT",
+          "mcp-session-id": "***REDACTED-SESSION-ID-32-HEX***",
+          "server": "uvicorn",
+          "x-accel-buffering": "no",
+          "transfer-encoding": "chunked"
+        },
+        "body_snippet": null,
+        "error": null
+      }
+    ],
+    "protocol_version": "2025-11-25",
+    "server_info": {
+      "name": "mcp-internet-search",
+      "version": "4.0.3"
+    },
+    "capabilities": {
+      "logging": {},
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": true
+      },
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "instructions": "This server reproduces Open WebUI's internet-search architecture: ONE stable tool contract\n(search_web, fetch_url) with multiple provider adapters routed behind it — not a separate tool\nsurface per provider. You do not choose a provider in the normal case; the server picks one\nautomatically with real fallback, and tells you which one it used.\n\n═══════════════════════════════════════════════════════════════════════════════\nPROVIDER ROUTING — handled by this server, not by you\n═══════════════════════════════════════════════════════════════════════════════\nsearch_web automatically routes requests across currently enabled internet-search providers.\nDo not select or assume a provider, and do not assume a fixed provider order — which providers\nare enabled and in what priority can change (a provider can be added, removed, or disabled\nwithout this text being updated). Inspect the response's `provider_used` and `attempts` fields\nafter every call to see exactly what happened: which providers were tried, in what order, why\nany were skipped or failed, and which one actually answered. Call get_provider_status() if you\nneed to know ahead of time which providers are currently enabled. You CAN force a specific\nprovider via the `provider` parameter if you have a reason to (e.g. re-querying after a\nfree-tier answer wasn't good enough).\n\n═══════════════════════════════════════════════════════════════════════════════\nSEARCH DEPTH — mode parameter\n═══════════════════════════════════════════════════════════════════════════════\n- mode=\"discover\" — broad exploratory search. Returns titles/URLs/snippets only, no page\n  content fetched. Use when scanning a topic before narrowing down.\n- mode=\"answer\" — for answering, explaining, comparing, or summarizing. Fetches full page\n  content inline for the top results (fetch_top_n, default 10).\n- mode=\"auto\" (default) — the server infers depth from the query using a small, deterministic\n  heuristic (question marks, comparison/explanation cue words, or query length lean toward\n  \"answer\"; short/broad queries lean toward \"discover\"). This is a heuristic, not true intent\n  understanding — pass mode explicitly when you know which you want.\n- fetch_top_n is still available as an advanced override and always wins over mode when set\n  explicitly.\n\n═══════════════════════════════════════════════════════════════════════════════\nREQUIRED USAGE PATTERN: agentic search, NOT single-shot tool calling\n═══════════════════════════════════════════════════════════════════════════════\n1. QUERY DELIBERATELY — focused queries for multi-part questions, run several rather than one\n   broad query.\n2. EVALUATE, don't trust blindly — read titles/snippets/domains critically. Whichever provider\n   was used, snippets are a pointer to a source, not verified evidence.\n3. READ extracted_text FIRST when content_status is \"fetched\" or \"partially_fetched\" — do NOT\n   make a redundant fetch_url call for a URL search_web already fetched. Only use fetch_url\n   for: a URL beyond the fetched range, a different max_chars, re-fetching a URL from an\n   earlier turn, content_status was \"not_requested\"/\"fetch_failed\", or a specific direct URL\n   needs inspecting.\n4. ITERATE if results are poor — reformulate the query, or try fetch_url on a known/guessed\n   direct URL (e.g. a manufacturer's own spec page) instead of searching at all, especially\n   for time-sensitive or fact-specific questions. Prefer direct, authoritative source pages\n   over search snippets for time-sensitive facts.\n5. Cite your sources in the final answer (title/URL).\n6. Do NOT treat an empty result as proof information doesn't exist — check `attempts` and each\n   attempt's failure_code/reason first; an empty result can mean every provider errored, not\n   that nothing was found.\n\nTools:\n- search_web(query, mode=\"auto\", provider=None, max_results=5, fetch_top_n=None, min_results=None,\n  max_chars=None) -> {results: [{link, title, snippet, extracted_text, content_status,\n  fetch_method, fetch_error, retrieved_at}], provider_used, attempts} — content_status is one\n  of not_requested/fetched/partially_fetched/fetch_failed/blocked/unsupported. min_results, if\n  set, escalates to the next provider when a result set is thinner than requested.\n- fetch_url(urls, max_chars=None) -> [{source_id, title, final_url, extracted_text,\n  retrieved_at, status, error?}] — SSRF-protected: URLs resolving to localhost/private IPs/\n  cloud-metadata addresses are refused and reported with status \"blocked\", not fetched. Same\n  SSRF protection applies to any URL search_web auto-fetches.\n- get_provider_status() -> [{provider, enabled, cost_class, routing_priority, healthy}] —\n  diagnostic only, does not select a provider or perform a search.",
+    "tools": [
+      {
+        "name": "search_web",
+        "title": "Search Web",
+        "description": "Search the web. Routes to a provider adapter automatically (currently enabled providers,\nreal fallback) unless `provider` is explicitly set. mode controls search depth:\n\"discover\" (snippets only), \"answer\" (fetches full page content inline for the top\nfetch_top_n results, default 10), or \"auto\" (default -- a deterministic heuristic infers\ndepth from the query; see AGENT_INSTRUCTIONS). fetch_top_n, if set explicitly, always\noverrides mode. min_results, if set, escalates to the next provider when a result set is\nthinner than requested. Returns {results: [{link, title, snippet, extracted_text,\ncontent_status, fetch_method, fetch_error, retrieved_at}], provider_used, attempts} --\ncontent_status is one of not_requested/fetched/partially_fetched/fetch_failed/blocked/\nunsupported. Check provider_used/attempts to see what actually happened, don't assume.\nContent is fetched in provider-returned order, not ranked/reranked -- that judgment stays\nwith you.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "mode": {
+              "default": "auto",
+              "type": "string"
+            },
+            "provider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "max_results": {
+              "default": 5,
+              "type": "integer"
+            },
+            "fetch_top_n": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "min_results": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "max_chars": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "fetch_url",
+        "title": "Fetch Url",
+        "description": "Fetch and extract full page content for one or more URLs (e.g. from search_web's\nresults, or a URL you already know). SSRF-protected: any URL resolving to localhost, a\nprivate IP range, or a cloud-metadata address is refused, not fetched, and reported with\nstatus \"blocked\" and a reason. Returns one entry per URL, same order given.",
+        "input_schema": {
+          "properties": {
+            "urls": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "max_chars": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "urls"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "properties": {
+            "result": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "type": "object",
+          "x-fastmcp-wrap-result": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "get_provider_status",
+        "title": "Get Provider Status",
+        "description": "Diagnostic status for every internet-search provider this server knows about: whether\nit's currently enabled/in the routing chain, its cost class (free/paid), routing priority,\nand (if probe=True) a real lightweight live health check. Does NOT select a provider or\nperform a search -- purely informational, e.g. to confirm searxng is disabled before\nwondering why it never appears in attempts.",
+        "input_schema": {
+          "properties": {
+            "probe": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "properties": {
+            "result": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "type": "object",
+          "x-fastmcp-wrap-result": true
+        },
+        "annotations": null
+      }
+    ],
+    "cold_start_s": 34.412,
+    "warm_s": 0.038,
+    "first_response_s": 34.412,
+    "sdk": {
+      "initialize_ok": true,
+      "initialize_s": 0.037,
+      "protocol_version": "2025-11-25",
+      "server_info": {
+        "name": "mcp-internet-search",
+        "version": "4.0.3"
+      },
+      "mcp_package_version": "2.2.0",
+      "client_offered_version": "2025-11-25",
+      "tools_list_s": 0.535
+    },
+    "no_auth_control": {
+      "http_status": 401,
+      "initialize_ok": false,
+      "elapsed_s": 0.041,
+      "error": null,
+      "www_authenticate": "Bearer"
+    },
+    "sample_call": {
+      "tool": "search_web",
+      "arguments": {
+        "query": "model context protocol",
+        "max_results": 3
+      },
+      "is_error": false,
+      "content_count": 1,
+      "content_types": [
+        "text"
+      ],
+      "text": "{\"results\":[{\"link\":\"https://en.wikipedia.org/wiki/Model_Context_Protocol\",\"title\":\"Model Context Protocol\",\"snippet\":\"The Model Context Protocol (MCP) is an open standard and open-source framework introduced by Anthropic in November 2024 to standardize the way artificial intelligence (AI) systems like large language models (LLMs) integrate and share data with external tools, systems, and data sources. MCP provides a standardized interface for reading files, executing functions, and handling contextual prompts. Following its announcement, the protocol was adopted by major AI providers, including OpenAI and Google DeepMind. In December 2025, Anthropic donated MCP to the Agentic AI Foundation, a fund under the Linux Foundation.\",\"extracted_text\":null,\"content_status\":\"not_requested\",\"fetch_method\":null,\"fetch_error\":null,\"retrieved_at\":null},{\"link\":\"https://grokipedia.com/page/model-context-protocol\",\"title\":\"Model Context Protocol\",\"snippet\":\"Model Context Protocol (MCP) is the open standard that addresses the problem of \\\"Model Sprawl,\\\" where different AIs could not communicate with each other or user data, solving the biggest issue in AI beyond intelligence itself. It functions as the u…\",\"extracted_text\":null,\"content_status\":\"not_requested\",\"fetch_method\":null,\"fetch_error\":null,\"retrieved_at\":null},{\"link\":\"https://modelcontextprotocol.io/docs/2026-07-28/getting-started/intro\",\"title\":\"What is the Model Context Protocol (MCP)?\",\"snippet\":\"MCP (Model Context Protocol) is an open-source standard for connecting AI applications to external systems. Using MCP, AI applications like Claude or ChatGPT can connect to data sources (e.g. local files, databases), tools (e.g. search engines, calculators) and workflows (e.g. specialized prompts)—enabling them to access key information and perform tasks. Think of MCP like a USB-C port for ...\",\"extracted_text\":null,\"content_status\":\"not_requested\",\"fetch_method\":null,\"fetch_error\":null,\"retrieved_at\":null}],\"provider_used\":\"",
+      "text_truncated": true,
+      "text_length": 2103,
+      "structured_content_type": "dict",
+      "structured_content_keys": [
+        "attempts",
+        "provider_used",
+        "results"
+      ],
+      "structured_content_preview": "{\"results\": [{\"link\": \"https://en.wikipedia.org/wiki/Model_Context_Protocol\", \"title\": \"Model Context Protocol\", \"snippet\": \"The Model Context Protocol (MCP) is an open standard and open-source framework introduced by Anthropic in November 2024 to standardize the way artificial intelligence (AI) systems like large language models (LLMs) integrate and share data with external tools, systems, and data sources. MCP provides a standardized interface for reading files, executing functions, and handling contextual prompts. Following its announcement, the protocol was adopted by major AI providers, including OpenAI and Google DeepMind. In December 2025, Anthropic donated MCP to the Agentic AI Foundation, a fund under the Linux Foundation.\", \"extracted_text\": null, \"content_status\": \"not_requested\", \"fetch_method\": null, \"fetch_error\": null, \"retrieved_at\": null}, {\"link\": \"https://grokipedia.com/page/model-context-protocol\", \"title\": \"Model Context Protocol\", \"snippet\": \"Model Context Protocol (MCP) is the open standard that addresses the problem of \\\"Model Sprawl,\\\" where different AIs could not communicate with each other or user data, solving the biggest issue in AI beyond intelligence itself. It functions as the u\\u2026\", \"extracted_text\": null, \"content_status\": \"not_requested\", \"fetch_method\": null, \"fetch_error\": null, \"retrieved_at\": null}, {\"link\": \"https://modelcontextprotocol.io/docs/2026-07-28/getting-started/intro\", \"title\": \"What is the Model Context Protocol (MCP)?\", ",
+      "elapsed_s": 4.526
+    },
+    "errors": [],
+    "timing_notes": "first_response_s = time to the very first HTTP response of any status (container wake); cold_start_s = first successful raw initialize POST; warm_s = identical POST repeated immediately; sdk.initialize_s = full SDK handshake once warm."
+  },
+  "mcp-browser-automation-pw": {
+    "url": "https://mcp-browser-automation-pw.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+    "winning_header_variant": "Authorization: Bearer",
+    "attempts": [
+      {
+        "variant": "Authorization: Bearer",
+        "cold_start_retry": false,
+        "timeout_s": 180.0,
+        "http_status": 200,
+        "initialize_ok": true,
+        "protocol_version": "2025-11-25",
+        "server_info": {
+          "name": "mcp-browser-automation-playwright",
+          "version": "4.0.3"
+        },
+        "capabilities": {
+          "logging": {},
+          "prompts": {
+            "listChanged": true
+          },
+          "resources": {
+            "subscribe": false,
+            "listChanged": true
+          },
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "instructions": "This server drives one real Chromium browser session via Playwright and exposes it as 7\nlow-level browser actions: open_browser, visit_website, login, click_button, fill_form,\nextract_data, close_browser. There is no higher-level \"do task X on this site\" tool -- you plan\nthe sequence of actions yourself.\n\nREQUIRED SESSION LIFECYCLE:\n1. open_browser() first -- every other tool operates on the one browser session this creates;\n   calling anything else before it, or calling open_browser() again while one is already open,\n   fails with a clear error rather than silently doing something unexpected.\n2. visit_website(url), then whatever sequence of click_button/fill_form/login/extract_data the\n   task needs.\n3. close_browser() when done -- this is not automatic; an unclosed session stays open\n   consuming a real browser process until you close it or the server restarts.\nSingle global session: there is exactly one browser/page for the whole server, not one per\ncaller or per task -- do not assume you can run two unrelated browsing tasks concurrently\nagainst this server.\n\nFINDING SELECTORS -- this server takes real CSS selectors, not accessibility-tree refs or\nnatural-language element descriptions:\n- You are not given the page's HTML or a structured accessibility snapshot up front. Call\n  extract_data() with no selector first to read the page's visible text and orient yourself,\n  then extract_data(selector) to confirm a specific CSS selector actually matches before using\n  it in click_button/fill_form/login -- do not guess a selector and act on it blind.\n- click_button/fill_form/login all fail with a clear error if the selector matches nothing;\n  read the error rather than retrying the same selector.\n\nTOOL SELECTION:\n- Use login() (not fill_form + click_button separately) when you have a username, password,\n  and their form selectors -- it is the same underlying action but tracked as one step.\n- Use fill_form() for multi-field forms in one call (search boxes, checkout forms, etc.);\n  fields maps CSS selector -> value, with an optional submit_selector to click afterward.\n- Use click_button() for any single click that isn't a form submit already covered by\n  fill_form/login (links, dropdown toggles, \"load more\" buttons, etc.).\n- Native <select> dropdowns (e.g. e-commerce variant/option pickers) are not reliably driven by\n  click_button -- if a selector looks like a <select> and click_button doesn't produce the\n  expected page change, that's a real, known gap in this tool surface, not a sign you used the\n  wrong selector.\n\nSECURITY, HONEST SCOPING:\n- login() takes credentials directly as call arguments. They are not stored server-side and\n  are never logged by this server, but they do flow through whatever MCP client/LLM is\n  orchestrating this call -- do not use this with production or high-value credentials.\n- This server does not sandbox or restrict which sites visit_website can reach -- there is no\n  SSRF/domain allowlist here unlike this project family's search/document servers. Treat it as\n  operating with the same access as whoever is running it, not as safe-by-default for\n  untrusted or adversarial target sites.\n- No screenshots, no file downloads, no PDF export -- extract_data returns text only (full\n  visible body text, or matching elements' text + count for a given selector).",
+        "jsonrpc_error": null,
+        "elapsed_s": 29.273,
+        "response_headers": {
+          "cache-control": "no-cache, no-transform",
+          "content-type": "text/event-stream",
+          "date": "Sat, 03 Oct 2026 03:24:46 GMT",
+          "mcp-session-id": "***REDACTED-SESSION-ID-32-HEX***",
+          "server": "uvicorn",
+          "x-accel-buffering": "no",
+          "transfer-encoding": "chunked"
+        },
+        "body_snippet": null,
+        "error": null
+      }
+    ],
+    "protocol_version": "2025-11-25",
+    "server_info": {
+      "name": "mcp-browser-automation-playwright",
+      "version": "4.0.3"
+    },
+    "capabilities": {
+      "logging": {},
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": true
+      },
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "instructions": "This server drives one real Chromium browser session via Playwright and exposes it as 7\nlow-level browser actions: open_browser, visit_website, login, click_button, fill_form,\nextract_data, close_browser. There is no higher-level \"do task X on this site\" tool -- you plan\nthe sequence of actions yourself.\n\nREQUIRED SESSION LIFECYCLE:\n1. open_browser() first -- every other tool operates on the one browser session this creates;\n   calling anything else before it, or calling open_browser() again while one is already open,\n   fails with a clear error rather than silently doing something unexpected.\n2. visit_website(url), then whatever sequence of click_button/fill_form/login/extract_data the\n   task needs.\n3. close_browser() when done -- this is not automatic; an unclosed session stays open\n   consuming a real browser process until you close it or the server restarts.\nSingle global session: there is exactly one browser/page for the whole server, not one per\ncaller or per task -- do not assume you can run two unrelated browsing tasks concurrently\nagainst this server.\n\nFINDING SELECTORS -- this server takes real CSS selectors, not accessibility-tree refs or\nnatural-language element descriptions:\n- You are not given the page's HTML or a structured accessibility snapshot up front. Call\n  extract_data() with no selector first to read the page's visible text and orient yourself,\n  then extract_data(selector) to confirm a specific CSS selector actually matches before using\n  it in click_button/fill_form/login -- do not guess a selector and act on it blind.\n- click_button/fill_form/login all fail with a clear error if the selector matches nothing;\n  read the error rather than retrying the same selector.\n\nTOOL SELECTION:\n- Use login() (not fill_form + click_button separately) when you have a username, password,\n  and their form selectors -- it is the same underlying action but tracked as one step.\n- Use fill_form() for multi-field forms in one call (search boxes, checkout forms, etc.);\n  fields maps CSS selector -> value, with an optional submit_selector to click afterward.\n- Use click_button() for any single click that isn't a form submit already covered by\n  fill_form/login (links, dropdown toggles, \"load more\" buttons, etc.).\n- Native <select> dropdowns (e.g. e-commerce variant/option pickers) are not reliably driven by\n  click_button -- if a selector looks like a <select> and click_button doesn't produce the\n  expected page change, that's a real, known gap in this tool surface, not a sign you used the\n  wrong selector.\n\nSECURITY, HONEST SCOPING:\n- login() takes credentials directly as call arguments. They are not stored server-side and\n  are never logged by this server, but they do flow through whatever MCP client/LLM is\n  orchestrating this call -- do not use this with production or high-value credentials.\n- This server does not sandbox or restrict which sites visit_website can reach -- there is no\n  SSRF/domain allowlist here unlike this project family's search/document servers. Treat it as\n  operating with the same access as whoever is running it, not as safe-by-default for\n  untrusted or adversarial target sites.\n- No screenshots, no file downloads, no PDF export -- extract_data returns text only (full\n  visible body text, or matching elements' text + count for a given selector).",
+    "tools": [
+      {
+        "name": "open_browser",
+        "title": "Open Browser",
+        "description": "Launch a new browser session (Chromium). Must be called before any other tool.",
+        "input_schema": {
+          "properties": {
+            "headless": {
+              "default": true,
+              "type": "boolean"
+            }
+          },
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "visit_website",
+        "title": "Visit Website",
+        "description": "Navigate the current browser session to a URL.",
+        "input_schema": {
+          "properties": {
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "login",
+        "title": "Login",
+        "description": "Fill and submit a login form. Provide CSS selectors for the username\nfield, password field, and submit button (inspect the page with\nextract_data first if these aren't already known).\n\nSecurity: credentials are passed directly as arguments, not stored\nserver-side. Do not use with production/high-value credentials.",
+        "input_schema": {
+          "properties": {
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "username_selector": {
+              "type": "string"
+            },
+            "password_selector": {
+              "type": "string"
+            },
+            "submit_selector": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "username",
+            "password",
+            "username_selector",
+            "password_selector",
+            "submit_selector"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "click_button",
+        "title": "Click Button",
+        "description": "Click an element matching a CSS selector.",
+        "input_schema": {
+          "properties": {
+            "selector": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "selector"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "fill_form",
+        "title": "Fill Form",
+        "description": "Fill multiple form fields in one call. `fields` maps CSS selector to the\nvalue to enter. If submit_selector is provided, clicks it afterward.",
+        "input_schema": {
+          "properties": {
+            "fields": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "submit_selector": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "extract_data",
+        "title": "Extract Data",
+        "description": "Extract data from the current page. Without a selector, returns the\nfull visible body text. With a CSS selector, returns matching elements'\ntext content and count.",
+        "input_schema": {
+          "properties": {
+            "selector": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "close_browser",
+        "title": "Close Browser",
+        "description": "Close the current browser session.",
+        "input_schema": {
+          "properties": {},
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      }
+    ],
+    "cold_start_s": 29.273,
+    "warm_s": 0.037,
+    "first_response_s": 29.273,
+    "sdk": {
+      "initialize_ok": true,
+      "initialize_s": 0.045,
+      "protocol_version": "2025-11-25",
+      "server_info": {
+        "name": "mcp-browser-automation-playwright",
+        "version": "4.0.3"
+      },
+      "mcp_package_version": "2.2.0",
+      "client_offered_version": "2025-11-25",
+      "tools_list_s": 0.468
+    },
+    "no_auth_control": {
+      "http_status": 401,
+      "initialize_ok": false,
+      "elapsed_s": 0.026,
+      "error": null,
+      "www_authenticate": "Bearer"
+    },
+    "sample_call": null,
+    "errors": [],
+    "timing_notes": "first_response_s = time to the very first HTTP response of any status (container wake); cold_start_s = first successful raw initialize POST; warm_s = identical POST repeated immediately; sdk.initialize_s = full SDK handshake once warm."
+  },
+  "mcp-research-information": {
+    "url": "https://mcp-research-information.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+    "winning_header_variant": "Authorization: Bearer",
+    "attempts": [
+      {
+        "variant": "Authorization: Bearer",
+        "cold_start_retry": false,
+        "timeout_s": 180.0,
+        "http_status": 200,
+        "initialize_ok": true,
+        "protocol_version": "2025-11-25",
+        "server_info": {
+          "name": "mcp-research-information",
+          "version": "4.0.5"
+        },
+        "capabilities": {
+          "logging": {},
+          "prompts": {
+            "listChanged": true
+          },
+          "resources": {
+            "subscribe": false,
+            "listChanged": true
+          },
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "instructions": "This server provides scholarly research capability: search across open scholarly APIs\n(OpenAlex, Crossref, arXiv, PubMed, Semantic Scholar), reconcile/deduplicate/rank results,\nresolve where full content is legitimately available, and -- only when actually needed --\nacquire and process that content. It exposes 7 research-level tools, not one tool per provider\nor per acquisition method; provider and acquisition-tier selection are internal decisions you\nnever need to make directly.\n\nCORE PRINCIPLES:\n1. API-first, metadata-before-content. search_research/get_research_work never fetch full\n   text -- only resolve_research_access (checks where) and retrieve_research_content (actually\n   fetches) touch real content, and resolve comes before retrieve, always.\n2. Don't acquire every result. Retrieve full content only for the specific works you actually\n   need to answer the request, not everything a search returned.\n3. Never treat a metadata record or abstract as full-text evidence, and never imply you read a\n   paper when you only saw its metadata or abstract.\n4. Never fabricate missing abstracts, methods, findings, or conclusions -- if a field wasn't\n   returned by any provider, it's genuinely unknown, don't guess.\n5. Report partial provider failures accurately (search_research's response includes\n   provider_coverage and any partial_failures -- check them, don't assume every provider\n   succeeded).\n6. This server does not do arbitrary web browsing. retrieve_research_content only accepts a\n   reference to a work whose access was already resolved -- it is not a general browse_url tool.\n\nPREFERRED SEQUENCES:\n- Topic discovery: search_research -> get_research_work (if reconciling one result in detail)\n  -> resolve_research_access -> retrieve_research_content -> get_research_evidence (for\n  citations).\n- Known publication: get_research_work -> resolve_research_access -> retrieve_research_content\n  -> get_research_evidence.\n- Citation exploration: get_research_work -> find_related_research -> get_research_work (for\n  selected related works) -> resolve_research_access only for the ones you'll actually use.\n- Researcher discovery: search_research_author -> search_research constrained to that author ->\n  get_research_work for selected works.\n\nEach tool's own description (below, and in tools/list) repeats its specific use-when/do-not-use\nguidance -- read those too, this is the shared overview.\n",
+        "jsonrpc_error": null,
+        "elapsed_s": 39.539,
+        "response_headers": {
+          "cache-control": "no-cache, no-transform",
+          "content-type": "text/event-stream",
+          "date": "Sat, 03 Oct 2026 03:24:57 GMT",
+          "mcp-session-id": "***REDACTED-SESSION-ID-32-HEX***",
+          "server": "uvicorn",
+          "x-accel-buffering": "no",
+          "transfer-encoding": "chunked"
+        },
+        "body_snippet": null,
+        "error": null
+      }
+    ],
+    "protocol_version": "2025-11-25",
+    "server_info": {
+      "name": "mcp-research-information",
+      "version": "4.0.5"
+    },
+    "capabilities": {
+      "logging": {},
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": true
+      },
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "instructions": "This server provides scholarly research capability: search across open scholarly APIs\n(OpenAlex, Crossref, arXiv, PubMed, Semantic Scholar), reconcile/deduplicate/rank results,\nresolve where full content is legitimately available, and -- only when actually needed --\nacquire and process that content. It exposes 7 research-level tools, not one tool per provider\nor per acquisition method; provider and acquisition-tier selection are internal decisions you\nnever need to make directly.\n\nCORE PRINCIPLES:\n1. API-first, metadata-before-content. search_research/get_research_work never fetch full\n   text -- only resolve_research_access (checks where) and retrieve_research_content (actually\n   fetches) touch real content, and resolve comes before retrieve, always.\n2. Don't acquire every result. Retrieve full content only for the specific works you actually\n   need to answer the request, not everything a search returned.\n3. Never treat a metadata record or abstract as full-text evidence, and never imply you read a\n   paper when you only saw its metadata or abstract.\n4. Never fabricate missing abstracts, methods, findings, or conclusions -- if a field wasn't\n   returned by any provider, it's genuinely unknown, don't guess.\n5. Report partial provider failures accurately (search_research's response includes\n   provider_coverage and any partial_failures -- check them, don't assume every provider\n   succeeded).\n6. This server does not do arbitrary web browsing. retrieve_research_content only accepts a\n   reference to a work whose access was already resolved -- it is not a general browse_url tool.\n\nPREFERRED SEQUENCES:\n- Topic discovery: search_research -> get_research_work (if reconciling one result in detail)\n  -> resolve_research_access -> retrieve_research_content -> get_research_evidence (for\n  citations).\n- Known publication: get_research_work -> resolve_research_access -> retrieve_research_content\n  -> get_research_evidence.\n- Citation exploration: get_research_work -> find_related_research -> get_research_work (for\n  selected related works) -> resolve_research_access only for the ones you'll actually use.\n- Researcher discovery: search_research_author -> search_research constrained to that author ->\n  get_research_work for selected works.\n\nEach tool's own description (below, and in tools/list) repeats its specific use-when/do-not-use\nguidance -- read those too, this is the shared overview.\n",
+    "tools": [
+      {
+        "name": "search_research",
+        "title": "Search Research",
+        "description": "Search appropriate scholarly sources and return normalised, deduplicated, ranked research works.\n\nUse when: Exploring a topic, finding publications, or beginning a literature search.\nDo NOT use when: You already have a specific DOI/PMID/arXiv ID -- use get_research_work instead, it's more precise and cheaper.\nTypically follows: (usually the first tool called for a new topic)\nTypically followed by: get_research_work (to reconcile a specific result), resolve_research_access (before requesting content)\nSide effects: Calls multiple provider APIs in parallel; no content acquisition happens here.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "discipline": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "date_from": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "date_to": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "publication_types": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "open_access_preference": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "max_results": {
+              "default": 10,
+              "type": "integer"
+            },
+            "preferred_sources": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "related_work_depth": {
+              "default": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "get_research_work",
+        "title": "Get Research Work",
+        "description": "Retrieve and reconcile one already-known work by identifier.\n\nUse when: You have a DOI, PMID, PMCID, arXiv ID, OpenAlex ID, or Semantic Scholar ID -- or an earlier tool returned one.\nDo NOT use when: You're exploring a topic with no specific paper in mind yet -- use search_research first.\nTypically follows: search_research (to discover the identifier), or the user supplying one directly\nTypically followed by: resolve_research_access, find_related_research\nSide effects: None beyond the provider API call(s) needed to reconcile the identifier.",
+        "input_schema": {
+          "properties": {
+            "doi": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "pmid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "pmcid": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "arxiv_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "openalex_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "semantic_scholar_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "title": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "properties": {
+            "result": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "type": "object",
+          "x-fastmcp-wrap-result": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "find_related_research",
+        "title": "Find Related Research",
+        "description": "Find cited, citing, or semantically related research for a known seed work, where the source provider supports it.\n\nUse when: After identifying a seed paper and you want to explore its citation neighborhood.\nDo NOT use when: As the first tool for an unconstrained topic search -- start with search_research instead.\nTypically follows: get_research_work or search_research (to get a seed work)\nTypically followed by: get_research_work (for selected related works), resolve_research_access (only for the ones you actually need content from)\nSide effects: None beyond provider API calls; does not acquire content.",
+        "input_schema": {
+          "properties": {
+            "canonical_id": {
+              "type": "string"
+            },
+            "relation": {
+              "default": "related",
+              "type": "string"
+            },
+            "max_results": {
+              "default": 10,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "canonical_id"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "search_research_author",
+        "title": "Search Research Author",
+        "description": "Find and reconcile author records.\n\nUse when: Researcher discovery, author disambiguation, or finding works by a specific author.\nDo NOT use when: You already have the author's identifier and just want their works -- use search_research with preferred_sources scoped appropriately, or get_research_work per known paper.\nTypically follows: (often a first tool, when the request is about a person rather than a topic)\nTypically followed by: search_research (constrained to the resolved author), get_research_work\nSide effects: None; no content acquisition.",
+        "input_schema": {
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "max_results": {
+              "default": 10,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "resolve_research_access",
+        "title": "Resolve Research Access",
+        "description": "Determine whether metadata, abstract, public HTML, public PDF, or another approved content location is available for a work -- WITHOUT fetching it yet.\n\nUse when: Before requesting full content for a specific work.\nDo NOT use when: You only need metadata/abstract, which search_research/get_research_work already returned -- don't resolve access you won't use.\nTypically follows: get_research_work or a result from search_research\nTypically followed by: retrieve_research_content, but ONLY if the resolution actually found a usable location\nSide effects: None -- this tool never fetches content, only decides where content might be.",
+        "input_schema": {
+          "properties": {
+            "canonical_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "canonical_id"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "retrieve_research_content",
+        "title": "Retrieve Research Content",
+        "description": "Retrieve and process content from an already-resolved, approved location.\n\nUse when: After resolve_research_access found a usable location, and you actually need the full text (not just metadata) to answer the request.\nDo NOT use when: A metadata record or abstract is already sufficient -- do not acquire content just because you can. Also never for arbitrary unrestricted URLs -- this tool does not accept a bare URL not tied to a resolved work.\nTypically follows: resolve_research_access\nTypically followed by: get_research_evidence, if you need to cite/verify how the content was obtained\nSide effects: Performs a real network fetch (HTTP -> Crawl4AI -> bounded Playwright fallback), SSRF-protected. May be slow for the Playwright tier.",
+        "input_schema": {
+          "properties": {
+            "canonical_id": {
+              "type": "string"
+            },
+            "max_chars": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "canonical_id"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      },
+      {
+        "name": "get_research_evidence",
+        "title": "Get Research Evidence",
+        "description": "Return provider provenance, source identifiers, access history, processing status, and evidence for a previously returned work.\n\nUse when: Verifying a claim, generating citations, explaining source coverage, or showing how a result was actually obtained.\nDo NOT use when: You haven't retrieved/resolved anything about this work yet -- there's nothing to show evidence for.\nTypically follows: Any of the other tools, once you have a canonical_id to ask about.\nTypically followed by: (usually the last tool in a chain, feeding the final answer's citations)\nSide effects: None -- pure read of what already happened.",
+        "input_schema": {
+          "properties": {
+            "canonical_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "canonical_id"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      }
+    ],
+    "cold_start_s": 39.539,
+    "warm_s": 0.042,
+    "first_response_s": 39.539,
+    "sdk": {
+      "initialize_ok": true,
+      "initialize_s": 0.039,
+      "protocol_version": "2025-11-25",
+      "server_info": {
+        "name": "mcp-research-information",
+        "version": "4.0.5"
+      },
+      "mcp_package_version": "2.2.0",
+      "client_offered_version": "2025-11-25",
+      "tools_list_s": 0.622
+    },
+    "no_auth_control": {
+      "http_status": 401,
+      "initialize_ok": false,
+      "elapsed_s": 0.035,
+      "error": null,
+      "www_authenticate": "Bearer"
+    },
+    "sample_call": null,
+    "errors": [],
+    "timing_notes": "first_response_s = time to the very first HTTP response of any status (container wake); cold_start_s = first successful raw initialize POST; warm_s = identical POST repeated immediately; sdk.initialize_s = full SDK handshake once warm."
+  },
+  "mcp-document-intelligence": {
+    "url": "https://mcp-document-intelligence.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+    "winning_header_variant": "Authorization: Bearer",
+    "attempts": [
+      {
+        "variant": "Authorization: Bearer",
+        "cold_start_retry": false,
+        "timeout_s": 180.0,
+        "http_status": 200,
+        "initialize_ok": true,
+        "protocol_version": "2025-11-25",
+        "server_info": {
+          "name": "mcp-document-intelligence",
+          "version": "4.0.4"
+        },
+        "capabilities": {
+          "logging": {},
+          "prompts": {
+            "listChanged": true
+          },
+          "resources": {
+            "subscribe": false,
+            "listChanged": true
+          },
+          "tools": {
+            "listChanged": true
+          }
+        },
+        "instructions": "This server extracts content from documents. It exposes exactly ONE tool, read_document --\nthere is no separate tool per engine or per OCR capability, and you never choose which\nextraction engine runs. The server inspects each document and routes it automatically between\na fast path (MarkItDown) and an advanced/OCR path (Docling), retrying with the advanced path if\nthe fast path's output turns out insufficient. This is read-only: no document creation,\nediting, or generation.\n\nEXTRACTION_MODE:\n- \"auto\" (default) -- the server decides fast vs advanced based on the document itself.\n- \"fast\" -- prefer the lightweight path; may produce a worse result on a scanned/complex\n  document (this will show up in `warnings`, not be silently upgraded).\n- \"advanced\" -- force the more capable path (handles OCR, tables, complex layout).\n- \"ocr\" -- force OCR-capable processing explicitly.\n\nRESPONSE CONTRACT -- always check these fields, don't assume success from a lack of exception:\n- `processing_status`: \"completed\" | \"failed\" | \"rejected\". A \"rejected\" status (e.g. a\n  password-protected document, an unsupported file type, a blocked URI) is not the same as\n  \"failed\" (a real processing failure) -- read `warnings` for why.\n- `extraction_engine` and `ocr_used` tell you which path actually ran and whether OCR was\n  involved -- don't assume based on the file type alone.\n- `attempts` records every engine tried, including ones that were tried and rejected as\n  insufficient before a fallback succeeded, with `fallback_reason` -- this server does not\n  silently retry without telling you.\n- `content` is empty/absent when `processing_status` is not \"completed\" -- never treat an empty\n  response as \"the document has no content\" without checking `processing_status` first.\n\nKNOWN, HONEST SCOPING (don't assume more than this actually does):\n- `tables`/`images` are only populated when the advanced (Docling) path ran -- a\n  fast-path-only extraction returns empty arrays even if the source document visibly has tables\n  or images (they remain embedded in `content` as markdown, not extracted separately).\n- `page_range` only has real effect on PDF input; it's a documented no-op (with a warning) for\n  other formats.\n- ZIP/archive files are not supported input in this version.\n- This service does not currently perform malware scanning or enforce real user/agent\n  authentication -- do not rely on it as the sole security boundary for untrusted input; treat\n  it as read-only extraction over documents you already trust the source of.",
+        "jsonrpc_error": null,
+        "elapsed_s": 70.124,
+        "response_headers": {
+          "cache-control": "no-cache, no-transform",
+          "content-type": "text/event-stream",
+          "date": "Sat, 03 Oct 2026 03:25:27 GMT",
+          "mcp-session-id": "***REDACTED-SESSION-ID-32-HEX***",
+          "server": "uvicorn",
+          "x-accel-buffering": "no",
+          "transfer-encoding": "chunked"
+        },
+        "body_snippet": null,
+        "error": null
+      }
+    ],
+    "protocol_version": "2025-11-25",
+    "server_info": {
+      "name": "mcp-document-intelligence",
+      "version": "4.0.4"
+    },
+    "capabilities": {
+      "logging": {},
+      "prompts": {
+        "listChanged": true
+      },
+      "resources": {
+        "subscribe": false,
+        "listChanged": true
+      },
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "instructions": "This server extracts content from documents. It exposes exactly ONE tool, read_document --\nthere is no separate tool per engine or per OCR capability, and you never choose which\nextraction engine runs. The server inspects each document and routes it automatically between\na fast path (MarkItDown) and an advanced/OCR path (Docling), retrying with the advanced path if\nthe fast path's output turns out insufficient. This is read-only: no document creation,\nediting, or generation.\n\nEXTRACTION_MODE:\n- \"auto\" (default) -- the server decides fast vs advanced based on the document itself.\n- \"fast\" -- prefer the lightweight path; may produce a worse result on a scanned/complex\n  document (this will show up in `warnings`, not be silently upgraded).\n- \"advanced\" -- force the more capable path (handles OCR, tables, complex layout).\n- \"ocr\" -- force OCR-capable processing explicitly.\n\nRESPONSE CONTRACT -- always check these fields, don't assume success from a lack of exception:\n- `processing_status`: \"completed\" | \"failed\" | \"rejected\". A \"rejected\" status (e.g. a\n  password-protected document, an unsupported file type, a blocked URI) is not the same as\n  \"failed\" (a real processing failure) -- read `warnings` for why.\n- `extraction_engine` and `ocr_used` tell you which path actually ran and whether OCR was\n  involved -- don't assume based on the file type alone.\n- `attempts` records every engine tried, including ones that were tried and rejected as\n  insufficient before a fallback succeeded, with `fallback_reason` -- this server does not\n  silently retry without telling you.\n- `content` is empty/absent when `processing_status` is not \"completed\" -- never treat an empty\n  response as \"the document has no content\" without checking `processing_status` first.\n\nKNOWN, HONEST SCOPING (don't assume more than this actually does):\n- `tables`/`images` are only populated when the advanced (Docling) path ran -- a\n  fast-path-only extraction returns empty arrays even if the source document visibly has tables\n  or images (they remain embedded in `content` as markdown, not extracted separately).\n- `page_range` only has real effect on PDF input; it's a documented no-op (with a warning) for\n  other formats.\n- ZIP/archive files are not supported input in this version.\n- This service does not currently perform malware scanning or enforce real user/agent\n  authentication -- do not rely on it as the sole security boundary for untrusted input; treat\n  it as read-only extraction over documents you already trust the source of.",
+    "tools": [
+      {
+        "name": "read_document",
+        "title": "Read Document",
+        "description": "Read and extract content from a document. `uri` must be a file:// URI (restricted to a\nconfigured allowed local root) or an https:// URI (restricted to an approved-domain\nallowlist, SSRF-protected). extraction_mode: \"auto\" (default, server decides fast vs\nadvanced), \"fast\" (prefer MarkItDown), \"advanced\" (force Docling), \"ocr\" (force OCR-capable\nprocessing). page_range (e.g. \"3-7\") only applies to PDF input. output_format: \"markdown\"\n(default), \"text\", or \"json\" -- requesting \"json\" or include_tables=True on a PDF routes to\nthe advanced engine, since only it produces structured table data. Returns\n{source_uri, file_name, file_type, page_count, processing_status, extraction_engine,\nextraction_mode, ocr_used, detected_languages, content, tables, images, metadata, warnings,\nattempts}. Check `processing_status` and `attempts` rather than assuming success -- a\n\"rejected\" status means the request was refused (unsupported type, password-protected,\nblocked URI), not a processing failure.",
+        "input_schema": {
+          "properties": {
+            "uri": {
+              "type": "string"
+            },
+            "extraction_mode": {
+              "default": "auto",
+              "type": "string"
+            },
+            "page_range": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "output_format": {
+              "default": "markdown",
+              "type": "string"
+            },
+            "include_tables": {
+              "default": true,
+              "type": "boolean"
+            },
+            "include_images": {
+              "default": false,
+              "type": "boolean"
+            },
+            "language_hint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            },
+            "maximum_output_size": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "required": [
+            "uri"
+          ],
+          "type": "object",
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "annotations": null
+      }
+    ],
+    "cold_start_s": 70.124,
+    "warm_s": 0.037,
+    "first_response_s": 70.124,
+    "sdk": {
+      "initialize_ok": true,
+      "initialize_s": 0.046,
+      "protocol_version": "2025-11-25",
+      "server_info": {
+        "name": "mcp-document-intelligence",
+        "version": "4.0.4"
+      },
+      "mcp_package_version": "2.2.0",
+      "client_offered_version": "2025-11-25",
+      "tools_list_s": 0.519
+    },
+    "no_auth_control": {
+      "http_status": 401,
+      "initialize_ok": false,
+      "elapsed_s": 0.036,
+      "error": null,
+      "www_authenticate": "Bearer"
+    },
+    "sample_call": {
+      "tool": "read_document",
+      "arguments": {
+        "uri": "Hello from the SIT MCP probe. This is a short plain-text test document."
+      },
+      "is_error": false,
+      "content_count": 1,
+      "content_types": [
+        "text"
+      ],
+      "text": "{\"source_uri\":\"Hello from the SIT MCP probe. This is a short plain-text test document.\",\"file_name\":\"Hello from the SIT MCP probe. This is a short plain-text test document.\",\"file_type\":\"unknown\",\"page_count\":null,\"processing_status\":\"rejected\",\"extraction_engine\":null,\"extraction_mode\":\"auto\",\"ocr_used\":false,\"detected_languages\":[],\"content\":null,\"tables\":[],\"images\":[],\"metadata\":{},\"warnings\":[\"scheme not allowed: ''; only file:// and https:// are accepted\"],\"attempts\":[]}",
+      "text_truncated": false,
+      "text_length": 481,
+      "structured_content_type": "dict",
+      "structured_content_keys": [
+        "attempts",
+        "content",
+        "detected_languages",
+        "extraction_engine",
+        "extraction_mode",
+        "file_name",
+        "file_type",
+        "images",
+        "metadata",
+        "ocr_used",
+        "page_count",
+        "processing_status",
+        "source_uri",
+        "tables",
+        "warnings"
+      ],
+      "structured_content_preview": "{\"source_uri\": \"Hello from the SIT MCP probe. This is a short plain-text test document.\", \"file_name\": \"Hello from the SIT MCP probe. This is a short plain-text test document.\", \"file_type\": \"unknown\", \"page_count\": null, \"processing_status\": \"rejected\", \"extraction_engine\": null, \"extraction_mode\": \"auto\", \"ocr_used\": false, \"detected_languages\": [], \"content\": null, \"tables\": [], \"images\": [], \"metadata\": {}, \"warnings\": [\"scheme not allowed: ''; only file:// and https:// are accepted\"], \"attempts\": []}",
+      "elapsed_s": 0.053
+    },
+    "errors": [],
+    "timing_notes": "first_response_s = time to the very first HTTP response of any status (container wake); cold_start_s = first successful raw initialize POST; warm_s = identical POST repeated immediately; sdk.initialize_s = full SDK handshake once warm."
+  }
+}
