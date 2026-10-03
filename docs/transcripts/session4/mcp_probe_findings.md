@@ -40,4 +40,6 @@ The raw name stays gitignored (`.gitignore` line 7, commit `b730cab`, fresh-eyes
 
 ## Merge note
 
-Decisions #32 to #34 live on local branch `s4/budget` (`517c03e`), not on this line; #35 is appended in its own section, and `eval/EVAL_PLAN.md` is also changed on `s4/budget`, so merging that branch may need a small hand merge at the end of `docs/USER_DECISIONS.md`.
+The budget lane pushed decisions #32 to #34 while this worker ran, and a preview showed one conflict, at the end of `docs/USER_DECISIONS.md`, where both sides appended.
+No conflict was resolved by hand: this worker took its own #35 out, merged the remote cleanly, then appended #35 after #34.
+`eval/EVAL_PLAN.md` and the runbook merged automatically; the §1 note now quotes the redone A-6 and A-7 cost ($34.44).
