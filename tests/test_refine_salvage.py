@@ -107,7 +107,8 @@ async def test_cut_after_10_of_20_revisions_applies_the_10(tmp_path: Path, cfg: 
 async def test_merge_whose_target_the_cut_lost_keeps_both(tmp_path: Path, cfg: EffectiveConfig) -> None:
     """FND-002 merges into FND-015, whose revision was not finished: the set fails as a whole, the
     merge is dropped, both findings stand, and FND-001's keep is still applied."""
-    revs = [keep(fid(1), 1, "high", "governance_decision", reason="needs an owner decision"),
+    revs = [keep(fid(1), 1, "high", "governance_decision", reason="needs an owner decision",
+                 next_step={"owner": "Architecture board", "action": "Decide the notification owner"}),
             gone(fid(2), "merge", fid(15), reason="same issue")]
     ctx = await twenty(tmp_path, cfg, {"revisions": revs})
     await RefinePhase().run(ctx)
