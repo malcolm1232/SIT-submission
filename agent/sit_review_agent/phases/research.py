@@ -730,6 +730,13 @@ class _ResearchRun:
                 q.status = "unanswered"
         state.unanswered_questions = [f"{q.id}: {q.question}" for q in external if q.status != "answered"]
         self._count_tool_errors(external)
+        settled = stop_rules.settle_sufficient_evidence(stop, state, self.params, ctx.ledger)
+        if settled is not stop:
+            ctx_event(ctx, f"research stop {stop.code.value} recorded as {settled.code.value}: "
+                      f"{stop_rules.evidence_tally(state, ctx.ledger).describe()}", "warn",
+                      event="stop_rule", code=settled.code.value, detail=settled.detail, stage="research",
+                      to="research_end")
+            stop = settled
         state.stop_reason = stop
         self._record_registry_hash()
         if stop.code in (StopReasonCode.BUDGET_TOOL_CALLS, StopReasonCode.BUDGET_TOKENS, StopReasonCode.DEADLINE):

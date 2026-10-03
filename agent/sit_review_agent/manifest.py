@@ -378,6 +378,20 @@ def stage_timing(phase_seconds: dict[str, float], spans: dict[str, tuple[float, 
     return out
 
 
+def session_reopens(ctx: RunContext) -> dict[str, Any]:
+    """The tool-server session reopens of this process (``MCPToolGateway.session_events``, found
+    through the gateway stack): ``session_reopens`` (the count, 0 when none or a doc-only run) and
+    ``session_reopens_by_server``. Only counts and server names: a reason can quote a server error."""
+    from sit_review_agent.tools.mcp_client import find_attr
+
+    events = find_attr(ctx.tools, "session_events") if ctx.tools is not None else None
+    by_server: dict[str, int] = {}
+    for ev in events if isinstance(events, list) else []:
+        server = str(ev.get("server")) if isinstance(ev, dict) else "unknown"
+        by_server[server] = by_server.get(server, 0) + 1
+    return {"session_reopens": sum(by_server.values()), "session_reopens_by_server": dict(sorted(by_server.items()))}
+
+
 def run_clock_s(ctx: RunContext) -> float:
     """The run's wall total: the live run clock, else the clock recorded at the last checkpoint
     (``budget.elapsed_s``), else 0.0."""
@@ -584,7 +598,7 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                             "url_sha256": sha256_text(endpoints[s.name]) if s.name in endpoints else None,
                             "allow_tools": list(s.allow_tools), "protocol_version": None,
                             "tools_list_sha256": None, "health_at_start": None} for s in cfg.tools.servers],
-               "tool_calls": len(tool_ids)},
+               "tool_calls": len(tool_ids), **session_reopens(ctx)},
         stop={"active_rules": list(cfg.stop_rules.active), "params": cfg.stop_rules.model_dump(mode="json"),
               "stop_reason": st.stop_reason.model_dump(mode="json") if st.stop_reason else None},
         fault_injection={"profile": sched_id or "none", "schedule_sha256": sched_sha},

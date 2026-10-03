@@ -219,7 +219,11 @@ def test_start_launches_dra_review_as_a_subprocess(tmp_path: Path) -> None:
     assert res.json()["command"].startswith("dra review ")
     assert res.json()["command"].endswith(f"--no-tools --run-id {run_id}")
     launch = json.loads((tmp_path / run_id / "ui" / "launch.json").read_text(encoding="utf-8"))
-    assert launch["args"] == proc.argv[3:]
+    # Run fix G: the record keeps the arguments without an absolute path under the home folder.
+    assert len(launch["args"]) == len(proc.argv) - 3 and launch["args"][-3:] == ["--no-tools", "--run-id", run_id]
+    assert str(Path.home()) not in json.dumps(launch)
+    assert launch["document"] == f"{run_id}/ui/input/My_Design_v2.pdf"
+    assert launch["v1"] == f"{run_id}/ui/input/previous/old.pdf"
     created = set(tmp_path.rglob("*")) - before
     ui_root = tmp_path / run_id / "ui"
     assert all(p == tmp_path / run_id or ui_root in (p, *p.parents) for p in created)

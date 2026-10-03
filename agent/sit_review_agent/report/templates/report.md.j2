@@ -61,7 +61,7 @@ p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{% if a.req %} ({
 | {{ d.role | replace("_", " ") | capitalize }} | {{ d.doc_id }}: {{ d.title }}{% if d.version %} {{ d.version }}{% endif %}{% if d.pages %}, {{ d.pages }} pages{% endif %} |
 {% endfor %}
 | Verdict | **{{ verdict.label_text }}** (confidence {{ verdict.confidence }}, {{ verdict.band }}) |
-| Tools used | {{ enabled_tools | join(", ") if enabled_tools else "none" }} |
+| Tools used | {{ used_tools | join(", ") if used_tools else "none" }} |
 | Tools disabled | {{ disabled_tools | join(", ") if disabled_tools else "none" }} |
 | Reporting threshold | severity {{ min_severity }} and above ({{ appendix | length }} finding(s) in the appendix) |
 {% if no_external %}
@@ -271,6 +271,7 @@ No coverage map was recorded. Criteria configured: {{ run.criteria }}.
 | Model | requested {{ run.requested_model }}; served {{ run.served_models }}; effort {{ run.effort }} |
 | Persona | {{ run.persona }} |
 | Tool transport | {{ run.transport }} |
+| Tool session reopens | {{ run.session_reopens }} |
 | Research stop | {{ run.stop }}; {{ run.iterations }} iteration(s); {{ run.sources }} |
 | Tool calls | {% for k, v in run.tool_calls | dictsort %}{{ k }}: {{ v }}{{ ", " if not loop.last }}{% else %}none{% endfor %} |
 | Tokens | input {{ run.usage.input_tokens }}, cached {{ run.usage.cached_tokens }}, output {{ run.usage.output_tokens }}; cost ~${{ "%.2f" | format(run.usage.cost_usd) }} (price table {{ run.usage.price_table_date }}){% if run.unrecorded %}; a lower bound: {{ run.unrecorded }}{% endif %} |

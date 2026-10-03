@@ -114,9 +114,11 @@ async def test_stop_vote_with_nothing_answered_is_not_sufficient_evidence(tmp_pa
     assert stop.detail == "model_stop_vote with no question answered; mcp-internet-search__search_web unusable"
 
 
-async def test_stop_vote_with_an_answer_stays_sufficient_evidence(tmp_path: Path) -> None:
+async def test_stop_vote_with_one_answer_of_three_is_not_sufficient_evidence(tmp_path: Path) -> None:
+    """Run fix E (3 Oct 2026): a stop vote with 1 of the plan's 3 questions answered and no source
+    cited by a finding is recorded as the reason that fits, never ``sufficient_evidence``."""
     clock = FakeClock()
     script = run_script(("RQ-001", "unanswered", []), ("RQ-002", "answered", ["EV-001", "EV-002"]))
     ctx = await ResearchPhase().run(make_ctx(tmp_path, script, base=live_base(clock, {}), clock=clock))
-    assert ctx.state.stop_reason.code is StopReasonCode.SUFFICIENT_EVIDENCE
-    assert ctx.state.stop_reason.detail == "model_stop_vote"
+    assert ctx.state.stop_reason.code is StopReasonCode.NO_MARGINAL_GAIN
+    assert ctx.state.stop_reason.detail.startswith("sufficient_evidence not met (model_stop_vote): 1 of 3 ")

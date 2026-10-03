@@ -322,6 +322,18 @@ def intent_locations(review: Review) -> list[dict[str, Any]]:
         loc["passages"] += 1
     return list(out.values())
 
+
+def _session_reopens(tools_extra: dict[str, Any]) -> str:
+    """The run details' tool session line: the reopen count (zero included) and, when any, per
+    server; ``not recorded`` for a manifest written before the count existed."""
+    n = tools_extra.get("session_reopens")
+    if not isinstance(n, int) or isinstance(n, bool):
+        return "not recorded"
+    by = tools_extra.get("session_reopens_by_server") or {}
+    detail = ", ".join(f"{k}: {v}" for k, v in sorted(by.items())) if isinstance(by, dict) else ""
+    return f"{n}" + (f" ({detail})" if n and detail else "")
+
+
 def render_markdown(review: Review, *, template: str = "standard", min_severity: Severity = Severity.LOW,
                     coverage: list[CriterionCoverage] | None = None) -> str:
     """Render ``review``. ``min_severity`` moves lower-severity findings to an appendix (live
@@ -366,6 +378,9 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
         "review_mode": md.review_mode.value, "prior_review_id": md.prior_review_id,
         "disabled_tools": [t.name for t in m.tools if not t.enabled],
         "enabled_tools": [t.name for t in m.tools if t.enabled],
+        # "Tools used": enabled servers that received at least one call in this run.
+        "used_tools": [t.name for t in m.tools
+                       if t.enabled and review.research_log.tool_calls_by_tool.get(t.name, 0) > 0],
         "no_external": not any(e.source_type.value == "external" for e in review.evidence_ledger),
         "intent": {"statement": _md(review.intent_summary.statement),
                    "objectives": [{"ref": o.ref, "text": _one_line(o.text)} for o in review.intent_summary.objectives],
@@ -421,6 +436,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
             "served_models": ", ".join(sorted({s for u in m.models_used for s in u.served_models})),
             "effort": m.models_used[0].effort if m.models_used else None,
             "transport": (extra.get("tools") or {}).get("transport", ""),
+            "session_reopens": _session_reopens(extra.get("tools") or {}),
             "stop": f"{review.stop_reason.code.value} ({review.stop_reason.group.value})"
                     + (f": {review.stop_reason.detail}" if review.stop_reason.detail else ""),
             "iterations": review.research_log.iterations,

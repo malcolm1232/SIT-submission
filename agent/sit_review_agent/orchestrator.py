@@ -608,6 +608,10 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
                      k_index=request.k_index, documents=refs)
+    # The run clock starts here, so every progress record of the run (run_started, the warm-up's
+    # lines written while the LLM preflight waits) carries run_s; Orchestrator.run keeps this start.
+    state.budget.started_monotonic = clk.monotonic()                 # type: ignore[attr-defined]
+    _run_bind_clock(prog, clk, state)
     _run_started(prog, cfg, rd, state, resumed=False, plan_only=request.plan_only)
     ctx: RunContext | None = None
     warm: asyncio.Task[None] | None = None
@@ -718,6 +722,7 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
     state.budget.started_monotonic = clk.monotonic() - spent        # type: ignore[attr-defined]
     state.current_phase = None
     prog = progress or _run_console_progress(clk, rd)
+    _run_bind_clock(prog, clk, state)
     _run_started(prog, config, rd, state, resumed=True, start_at=start_at.value if start_at else None)
     sched = _run_fault_schedule(config)
     if start_at is not None:
@@ -776,6 +781,16 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
 
 
 # ------------------------------------------------------------------------- run_review helpers
+
+
+def _run_bind_clock(progress: object, clock: object, state: object) -> None:
+    """Bind the run clock (resume-adjusted ``budget.started_monotonic``) to ``progress`` before the
+    first record of the run, so ``run_s`` is a number on every record, setup included."""
+
+    def run_clock() -> float:
+        return clock.monotonic() - state.budget.started_monotonic  # type: ignore[attr-defined]
+
+    bind_run_clock(progress, run_clock)  # type: ignore[arg-type]
 
 
 def _run_console_progress(clock: object, rd: RunDir) -> object:
