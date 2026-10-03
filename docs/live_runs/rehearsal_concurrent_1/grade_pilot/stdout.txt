@@ -1,0 +1,5 @@
+EXPLORATORY: this run was started with --exploratory (eval/prereg.yaml LC12 override); these scores are exploratory and may not be reported as confirmatory
+Grader-derived score; validity tier: unvalidated (GR §7 smoke calibration not yet run); same-family grader
+S = 83.0 grade B PASS; calls 4; spent $5.3034; needs human review: False
+wrote docs/live_runs/rehearsal_concurrent_1/grade_pilot/grade.json, docs/live_runs/rehearsal_concurrent_1/grade_pilot/grade.md, docs/live_runs/rehearsal_concurrent_1/grade_pilot/grader_calls.jsonl
+exit 0
