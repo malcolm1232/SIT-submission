@@ -13,7 +13,7 @@ Rows come from two places:
 * while ``AWAITING_INTEGRATION``: ``BLOCKED`` with a note starting "awaiting integration" for every
   scenario whose expectation the concurrent redesign changed (the note carries the new expectation
   and, when its offline case ran, the sequential-design result) and for the concurrent-stage
-  scenarios (``CONCURRENT``), which follow the 81 scenarios.md rows.
+  scenarios (``CONCURRENT``), which follow the 82 scenarios.md rows.
 
 The suite writes to a temp directory; ``ROBUSTNESS_RESULTS_CSV=<path>`` writes the real file
 (command in README.md).
@@ -146,7 +146,7 @@ def table(session_rows: list[ResultRow]) -> list[dict[str, Any]]:
 
 
 def summary(rows: list[dict[str, Any]]) -> str:
-    """The README §8 summary block (P0 only: this table holds the P0 tier, the 81 scenarios.md rows
+    """The README §8 summary block (P0 only: this table holds the P0 tier, the 82 scenarios.md rows
     plus the concurrent-stage scenarios)."""
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("PASS", "FAIL", "FLAKY", "BLOCKED", "N/A")}
     safety = [r for r in rows if r["scenario_id"] in ("ADV-05", "OPS-03", "BEH-04")]

@@ -1,0 +1,14 @@
+# NET-06 (S1, P0, L0): MCP session closed mid-run, reopened. sit_sample_tools_1 (2026-10-03) held the
+# warm-up session idle from 2 s to 132 s and every web search then failed with "MCP error -32000:
+# Connection closed", read as a tool error, and the tool was disabled for the run. Expectation: the
+# live MCP gateway (run over the cassettes, no network) meets the closed session on the first web
+# search, reopens it once (a new initialize) and repeats the call once; the call succeeds, evidence
+# from web search is in the ledger, no tool is disabled and no tool-error degradation is recorded;
+# the reopen is a disclosed progress line, not a degradation. Through the CLI with the replay base
+# (no live session below the injector) the call fails as a closed session nothing can reopen.
+id: NET-06
+description: The server closes the web-search session just before the first web-search call.
+seed: 42
+mcp:
+  - match: {server: mcp-internet-search, call_index: 0}
+    fault: {type: session_closed}

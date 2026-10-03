@@ -280,6 +280,67 @@ class OutboundReplayGateway(ReplayGateway):
         return await super().call(tool_name, args, phase=phase)
 
 
+class CassetteMCPSession:
+    """A stand-in for ``mcp.ClientSession`` serving the strict cassettes, so a scenario can run the
+    live :class:`~sit_review_agent.tools.gateway.MCPToolGateway` (sessions, reopen, idle rule)
+    with no network (NET-06). Every ``tools/call`` reaching it is logged as outbound."""
+
+    def __init__(self, server: str, outbound: list[dict[str, Any]], inits: dict[str, int]) -> None:
+        self.server, self.outbound, self.inits = server, outbound, inits
+
+    async def initialize(self) -> Any:
+        from mcp import types
+
+        self.inits[self.server] = self.inits.get(self.server, 0) + 1
+        return types.InitializeResult(protocol_version="2025-11-25", capabilities=types.ServerCapabilities(),
+                                      server_info=types.Implementation(name=self.server, version="cassette"))
+
+    async def list_tools(self, *, params: Any = None) -> Any:
+        from mcp import types
+
+        items = json.loads((CASSETTES / "tools_list" / f"{self.server}.json").read_text(encoding="utf-8"))
+        return types.ListToolsResult(tools=[types.Tool(name=t["name"], description=t.get("description") or "",
+                                                       input_schema=t.get("input_schema") or {"type": "object"})
+                                            for t in items])
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None,
+                        read_timeout_seconds: float | None = None) -> Any:
+        from mcp import types
+
+        from sit_review_agent.errors import ReplayMiss
+        from sit_review_agent.tools.cassette import cassette_key, cassette_path
+
+        args = dict(arguments or {})
+        self.outbound.append({"server": self.server, "tool": name, "args": copy.deepcopy(args), "phase": None})
+        key = cassette_key(self.server, name, args)
+        path = cassette_path(CASSETTES, self.server, name, key)
+        if not path.exists():
+            raise ReplayMiss(key, self.server, name)
+        res = json.loads(path.read_text(encoding="utf-8")).get("result") or {}
+        return types.CallToolResult.model_validate({"content": res.get("content") or [],
+                                                    "isError": bool(res.get("isError")),
+                                                    "structuredContent": res.get("structuredContent")})
+
+
+def cassette_mcp_gateway(cfg: EffectiveConfig, clock: Any, progress: Any, outbound: list[dict[str, Any]],
+                         inits: dict[str, int]) -> Any:
+    """The live MCP base over :class:`CassetteMCPSession` (endpoints point at an unroutable local
+    address that is never dialled: the session factory replaces the transport)."""
+    import contextlib
+
+    from sit_review_agent.tools.gateway import MCPToolGateway
+
+    gw = MCPToolGateway(cfg.tools, {s.name: "http://127.0.0.1:9/mcp" for s in cfg.tools.servers}, clock=clock,
+                        progress=progress)
+
+    @contextlib.asynccontextmanager
+    async def factory(server: str, url: str, headers: dict[str, str], timeout_s: float, on_response: Any) -> Any:
+        yield CassetteMCPSession(server, outbound, inits)
+
+    gw.session_factory = factory
+    return gw
+
+
 # ============================================================================= generated fixtures
 
 
@@ -327,6 +388,7 @@ class Scenario:
     clock: str = "fake"                                                  # fake | scheduling
     run_id: str | None = None
     env_unset: tuple[str, ...] = ()                                      # env vars removed for the run (INF-08)
+    tool_base: str = "replay"                                            # replay | mcp (live MCP over cassettes)
 
 
 @dataclass
@@ -428,8 +490,12 @@ def _factories(sc: Scenario, cfg: EffectiveConfig, sched: FaultSchedule | None, 
         enabled = [s.name for s in cfg.tools.enabled_servers()]
         if not enabled:
             return None                              # doc-only run, as orchestrator._run_build_tools
-        base = OutboundReplayGateway(CASSETTES, strict=True, servers=enabled, clock=clock,
-                                     capabilities=cfg.tools.capabilities, outbound=outbound)
+        if sc.tool_base == "mcp":
+            base = cassette_mcp_gateway(cfg, clock, progress, outbound, holder.setdefault("inits", {}))
+            holder["mcp"] = base
+        else:
+            base = OutboundReplayGateway(CASSETTES, strict=True, servers=enabled, clock=clock,
+                                         capabilities=cfg.tools.capabilities, outbound=outbound)
         gw = build_tool_gateway(cfg, rd, clock=clock, progress=progress, fault_schedule=sched,
                                 resume_offset=resume_offset, base=base)
         holder["tools"] = gw

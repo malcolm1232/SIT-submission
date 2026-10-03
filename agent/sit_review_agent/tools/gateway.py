@@ -72,6 +72,7 @@ class ToolErrorClass(StrEnum):
     HTTP_5XX = "http_5xx"
     AUTH = "auth"                        # 401 / 403: shared key, disables every server (INF-07)
     SESSION_EXPIRED = "session_expired"  # 404 on a stale Mcp-Session-Id: re-initialize (INF-09)
+    SESSION_CLOSED = "session_closed"    # -32000 "Connection closed", EOF, reset: reopen once (NET-06)
     TOOL_ERROR = "tool_error"            # isError: true from the server
     MALFORMED = "malformed"
     BLOCKED = "blocked"                  # URL policy or sanitiser
@@ -227,9 +228,16 @@ class MCPToolGateway:
     cold-start-like failure (``ExceptionGroup`` leaf ``httpx2.ReadTimeout``, ``RemoteProtocolError``,
     ``ReadError``, HTTP 502/503/504); on a stale session (mcp 2.2.0 surfaces HTTP 404 as
     ``MCPError(-32600, "Session terminated")``), re-``initialize`` once and repeat the call
-    (INF-09); a confirmed 401/403 (a second auth refusal on any server: the original plus the
-    policy layer's one confirmation retry) marks every server DOWN, sets :attr:`auth_failed` and
-    every later call returns ``error_class=auth`` without touching the network (shared key,
+    (INF-09); on a closed session (``MCPError(-32000, "Connection closed")``, a closed or ended
+    stream, a reset connection: :attr:`ToolErrorClass.SESSION_CLOSED`) reopen the session (a new
+    ``initialize``, same auth) once and repeat the call once (NET-06); a session idle longer than
+    ``tools.session_idle_reopen_s`` is reopened before the next call instead of waiting for that
+    error (sit_sample_tools_1: a session idle from 2 s to 132 s failed every web search). Each reopen
+    is a disclosed event (a progress line, :attr:`session_events`, and the message of the call's
+    attempt in ``tools.jsonl``), not a degradation; a confirmed 401/403 (a second auth refusal on
+    any server: the original plus the policy layer's one confirmation retry) marks every server
+    DOWN, sets :attr:`auth_failed` and every later call returns ``error_class=auth`` without
+    touching the network (shared key,
     INF-07). The key is read from ``tools.auth_env`` (or ``api_key``) and never logged; messages
     name the variable only. Every failure is returned as a :class:`ToolResult`; nothing is raised
     except :class:`~sit_review_agent.errors.ToolNotAllowedError` for an unqualified tool name.
@@ -267,6 +275,11 @@ class MCPToolGateway:
         self._tools: dict[str, list[ToolSpec]] = {}
         self._auth_strikes = 0
         self._cap_by_server = {srv: cap for cap, srv in tools.capabilities.items()}
+        #: Last time each server's session was used (opened, or a call started or ended), monotonic.
+        self._last_used: dict[str, float] = {}
+        self._inflight: dict[str, int] = {}
+        #: Every session reopen: ``{server, reason, idle_s, at_s}`` (disclosed, not a degradation).
+        self.session_events: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------ helpers
     def _emit(self, message: str, kind: str = "step") -> None:
@@ -301,14 +314,53 @@ class MCPToolGateway:
     async def _session(self, server: str, attempts: list[ToolAttempt]) -> Any:
         """The live session for ``server``, connecting (with the cold-start allowance) if needed.
         Raises :class:`_ServerFailure`."""
+        session, _ = await self._acquire(server, attempts)
+        return session
+
+    def _idle_s(self, server: str) -> float | None:
+        last = self._last_used.get(server)
+        return None if last is None else self.clock.monotonic() - last
+
+    def _touch(self, server: str) -> None:
+        self._last_used[server] = self.clock.monotonic()
+
+    def _session_event(self, server: str, reason: str, idle_s: float | None) -> str:
+        idle = f"{idle_s:.0f} s" if idle_s is not None else "unknown"
+        msg = (f"{server}: session reopened ({reason}; idle {idle}); a new initialize with the same key, "
+               "not a degradation")
+        self.session_events.append({"server": server, "reason": reason,
+                                    "idle_s": round(idle_s, 3) if idle_s is not None else None,
+                                    "at_s": round(self.clock.monotonic(), 3)})
+        self._emit(msg, "step")
+        return msg
+
+    async def _acquire(self, server: str, attempts: list[ToolAttempt]) -> tuple[Any, Any]:
+        """``(session, connection)`` for ``server``. A session idle longer than
+        ``tools.session_idle_reopen_s`` (and with no call in flight) is reopened first."""
         lock = self._locks.setdefault(server, asyncio.Lock())
         async with lock:
             conn = self._conns.get(server)
+            limit = self.tools.session_idle_reopen_s
+            idle = self._idle_s(server)
+            if (conn is not None and conn.alive and limit > 0 and idle is not None and idle > limit
+                    and not self._inflight.get(server)):
+                self._session_event(server, f"idle longer than session_idle_reopen_s {limit:.0f} s", idle)
+                await self._drop(server)
+                conn = None
             if conn is not None and conn.alive:
-                return conn.session
+                return conn.session, conn
             if conn is not None:
                 await self._drop(server)
-            return await self._connect(server, attempts)
+            session = await self._connect(server, attempts)
+            return session, self._conns.get(server)
+
+    async def _reopen(self, server: str, failed: Any, attempts: list[ToolAttempt], reason: str) -> None:
+        """Replace the connection ``failed`` (unless another call already replaced it)."""
+        lock = self._locks.setdefault(server, asyncio.Lock())
+        async with lock:
+            if self._conns.get(server) is failed:
+                self._session_event(server, reason, self._idle_s(server))
+                await self._drop(server)
 
     async def _connect(self, server: str, attempts: list[ToolAttempt]) -> Any:
         from sit_review_agent.tools import mcp_client as mc
@@ -354,6 +406,7 @@ class MCPToolGateway:
                     else ServerHealth.DEGRADED)
                 raise _ServerFailure(f) from None
             self._conns[server] = conn
+            self._touch(server)
             self._auth_strikes = 0
             if self.health.get(server) is not ServerHealth.DISABLED:
                 self.health[server] = ServerHealth.OK
@@ -395,13 +448,16 @@ class MCPToolGateway:
             except Exception as exc:  # noqa: BLE001
                 f = mc.classify_exception(exc, status_hint=self._status.setdefault(server, mc.StatusLog()).last())
                 await self._drop(server)
-                if f.error_class is ToolErrorClass.SESSION_EXPIRED and not reinit:
+                if f.error_class in (ToolErrorClass.SESSION_EXPIRED, ToolErrorClass.SESSION_CLOSED) and not reinit:
+                    if f.error_class is ToolErrorClass.SESSION_CLOSED:
+                        self._session_event(server, "closed during tools/list", self._idle_s(server))
                     continue
                 if f.error_class is ToolErrorClass.AUTH:
                     self._auth_strike(f.http_status)
                 self.health[server] = ServerHealth.DEGRADED
                 self.last_errors[server] = f.message
                 raise _ServerFailure(f) from None
+            self._touch(server)
             self._tools[server] = specs
             return specs
         raise AssertionError("unreachable")  # pragma: no cover
@@ -464,14 +520,21 @@ class MCPToolGateway:
             return self._fail(call_id, server, tool, args, started, t0, mc.Failure(
                 ToolErrorClass.AUTH, self._auth_message(None) + "; every server is disabled"), attempts)
         reinitialised = False
+        note: str | None = None
         while True:
+            events_before = len(self.session_events)
             try:
-                session = await self._session(server, attempts)
+                session, conn = await self._acquire(server, attempts)
             except _ServerFailure as exc:
                 return self._fail(call_id, server, tool, args, started, t0, exc.failure, attempts)
+            if len(self.session_events) > events_before and note is None:
+                ev = self.session_events[-1]
+                note = f"session reopened before the call ({ev['reason']}; idle {ev['idle_s']:.0f} s)"
             status_log = self._status.setdefault(server, mc.StatusLog())
             status_log.clear()
             a0, a_started = self.clock.monotonic(), isoformat_z(self.clock.now_utc())
+            self._inflight[server] = self._inflight.get(server, 0) + 1
+            self._touch(server)
             try:
                 raw = await asyncio.wait_for(
                     session.call_tool(tool, args, read_timeout_seconds=self.tools.call_timeout_s),
@@ -487,15 +550,28 @@ class MCPToolGateway:
                     self._emit(f"{server}: session expired (HTTP 404); re-initialising once", "warn")
                     await self._drop(server)
                     continue
+                if f.error_class is ToolErrorClass.SESSION_CLOSED and not reinitialised:
+                    # A session error, not a tool error: reopen once (unless a concurrent call already
+                    # did) and repeat the call once; only a second failure counts against the tool.
+                    reinitialised = True
+                    await self._reopen(server, conn, attempts, f"closed by the server: {f.message}")
+                    note = "retried once after the session was reopened"
+                    continue
                 if f.error_class is ToolErrorClass.AUTH:
                     self._auth_strike(f.http_status)
                     f = mc.Failure(ToolErrorClass.AUTH, self._auth_message(f.http_status), f.http_status)
                 if f.error_class in (ToolErrorClass.CONNECTION, ToolErrorClass.TIMEOUT, ToolErrorClass.SESSION_EXPIRED,
-                                     ToolErrorClass.MALFORMED, ToolErrorClass.UNKNOWN):
-                    await self._drop(server)       # the transport may be wedged; reconnect next time
+                                     ToolErrorClass.SESSION_CLOSED, ToolErrorClass.MALFORMED, ToolErrorClass.UNKNOWN):
+                    # The transport may be wedged; reconnect next time (unless a concurrent call already
+                    # replaced this connection with a fresh one).
+                    if self._conns.get(server) is conn:
+                        await self._drop(server)
                 return self._fail(call_id, server, tool, args, started, t0, f, attempts)
+            finally:
+                self._inflight[server] -= 1
+                self._touch(server)
             attempts.append(ToolAttempt(attempt=len(attempts), started_at=a_started,
-                                        elapsed_s=round(self.clock.monotonic() - a0, 3)))
+                                        elapsed_s=round(self.clock.monotonic() - a0, 3), message=note))
             self._auth_strikes = 0
             return self._convert(call_id, server, tool, args, started, t0, raw, attempts)
 
@@ -521,9 +597,41 @@ class MCPToolGateway:
                       elapsed_s=round(self.clock.monotonic() - t0, 3))
         return dataclasses.replace(res, attempts=list(attempts))
 
+    def close_session_for_fault(self, server: str) -> bool:
+        """Robustness ``session_closed`` (NET-06): make ``server``'s live session behave as a session
+        the server has closed (every later request fails at once with ``MCPError(-32000,
+        "Connection closed")``, as mcp 2.x does once the stream has ended) while the connection
+        still looks alive, so the next call takes the real recovery path. False when no session is
+        open (nothing to close)."""
+        conn = self._conns.get(server)
+        if conn is None or not conn.alive:
+            return False
+        conn.session = _ClosedSession()
+        return True
+
     async def aclose(self) -> None:
         for server in list(self._conns):
             await self._drop(server)
+
+
+class _ClosedSession:
+    """A session whose stream the server has closed (robustness ``session_closed``)."""
+
+    @staticmethod
+    def _closed() -> Exception:
+        from mcp import MCPError
+
+        return MCPError(-32000, "Connection closed")
+
+    async def initialize(self) -> Any:
+        raise self._closed()
+
+    async def list_tools(self, *, params: Any = None) -> Any:
+        raise self._closed()
+
+    async def call_tool(self, name: str, arguments: dict[str, Any] | None = None,
+                        read_timeout_seconds: float | None = None) -> Any:
+        raise self._closed()
 
 
 class _ServerFailure(Exception):
@@ -771,6 +879,14 @@ class FaultInjectingGateway:
             self.injected.append({**note, "fault": kind})
         if delay:
             await self.clock.sleep(delay)
+        if terminal is not None and terminal.type.value == "session_closed":
+            # Close the live session below and let the call meet it (NET-06); with no live MCP
+            # layer below (replay, fake) the call fails as a closed session nothing can reopen.
+            from sit_review_agent.tools.mcp_client import find_layer
+
+            base = find_layer(self.inner, MCPToolGateway)
+            if base is not None and base.close_session_for_fault(server):
+                terminal = None
         if terminal is not None:
             return await self._terminal(terminal, server, tool, args, started, t_start)
         res = await self.inner.call(tool_name, args, phase=phase)
@@ -821,6 +937,9 @@ class FaultInjectingGateway:
         if kind == "malformed_body":
             return self._failed(server, tool, args, started, t_start, ToolErrorClass.MALFORMED,
                                 f"malformed response body ({param(spec, 'kind', 'non_json')})")
+        if kind == "session_closed":
+            return self._failed(server, tool, args, started, t_start, ToolErrorClass.SESSION_CLOSED,
+                                "session closed (MCP error -32000: Connection closed)")
         if kind == "session_expired":
             return self._failed(server, tool, args, started, t_start, ToolErrorClass.SESSION_EXPIRED,
                                 "session terminated (HTTP 404 on a stale Mcp-Session-Id)", http_status=404)
@@ -943,6 +1062,19 @@ class SelfReplayGateway:
         await self.inner.aclose()
 
 
+def genuine_failure(res: ToolResult) -> bool:
+    """A failure that counts against the tool (INF-11, NET-06): a tool error from a live session, or a
+    closed session met again after the session was reopened for this call. A session error that the
+    reopen recovered, and failures to reach the server, do not count (the breaker handles those)."""
+    if res.ok:
+        return False
+    if res.error_class is ToolErrorClass.TOOL_ERROR:
+        return True
+    if res.error_class is ToolErrorClass.SESSION_CLOSED:
+        return sum(a.error_class is ToolErrorClass.SESSION_CLOSED for a in res.attempts) >= 2
+    return False
+
+
 class PolicyToolGateway:
     """Allowlist (``tools.yaml allow_tools``), URL policy (``url_policy.yaml``), argument sanitiser
     (secrets and canaries never leave the process, ADV-05), per-server breaker (``ServerHealth``),
@@ -962,7 +1094,9 @@ class PolicyToolGateway:
     #: In-flight calls per server, and the reduced cap after a 429 (INF-05).
     DEFAULT_CONCURRENCY = 4
     RATE_LIMITED_CONCURRENCY = 1
-    #: Consecutive ``isError`` results after which a tool is unusable for the session (INF-11).
+    #: Consecutive genuine failures after which a tool is unusable for the run (INF-11): a tool error
+    #: from a live session, or a call that failed again after its session was reopened. A session
+    #: error the reopen recovered never counts (NET-06, sit_sample_tools_1).
     TOOL_ERROR_LIMIT = 2
     _RETRYABLE = frozenset({ToolErrorClass.COLD_START, ToolErrorClass.TIMEOUT, ToolErrorClass.CONNECTION,
                             ToolErrorClass.HTTP_5XX, ToolErrorClass.UNKNOWN})
@@ -991,6 +1125,8 @@ class PolicyToolGateway:
         self._open_until: dict[str, float] = {}
         self._first_call_at: dict[str, float] = {}
         self._tool_error_streak: dict[str, int] = {}
+        #: Per tool: logical calls, tool errors, failures after a session reopen, session errors recovered.
+        self.tool_counts: dict[str, dict[str, int]] = {}
         self._caps: dict[str, int] = {}
         self._inflight: dict[str, int] = {}
         self._cond: asyncio.Condition | None = None
@@ -1076,7 +1212,7 @@ class PolicyToolGateway:
         elif cls is ToolErrorClass.COLD_START and self._in_cold_window(server):
             pass                                   # never marked dead inside the cold-start allowance (INF-01)
         elif cls in self._RETRYABLE or cls in (ToolErrorClass.MALFORMED, ToolErrorClass.SESSION_EXPIRED,
-                                               ToolErrorClass.COLD_START):
+                                               ToolErrorClass.SESSION_CLOSED, ToolErrorClass.COLD_START):
             n = self._failures.get(server, 0) + 1
             self._failures[server] = n
             if n >= self.BREAKER_THRESHOLD:
@@ -1085,12 +1221,23 @@ class PolicyToolGateway:
                        f"(last: {cls.value if cls else 'error'}); retrying it in {self.BREAKER_COOLDOWN_S:.0f} s")
                 self.events.append(msg)
                 self._emit(phase, msg)
-        if cls is ToolErrorClass.TOOL_ERROR:
+        counts = self.tool_counts.setdefault(tool_name, {"calls": 0, "tool_errors": 0, "failed_after_reopen": 0,
+                                                         "session_recovered": 0})
+        counts["calls"] += 1
+        closed = sum(a.error_class is ToolErrorClass.SESSION_CLOSED for a in res.attempts)
+        genuine = genuine_failure(res)
+        if closed and not genuine:
+            counts["session_recovered"] += 1
+        if genuine:
+            counts["tool_errors" if cls is ToolErrorClass.TOOL_ERROR else "failed_after_reopen"] += 1
             streak = self._tool_error_streak.get(tool_name, 0) + 1
             self._tool_error_streak[tool_name] = streak
             if streak >= self.TOOL_ERROR_LIMIT and tool_name not in self.unusable_tools:
                 self.unusable_tools.add(tool_name)
-                msg = f"{tool_name} returned isError {streak} times in a row; marked unusable for this run"
+                msg = (f"{tool_name} marked unusable for this run after {streak} genuine failures in a row "
+                       f"({counts['tool_errors']} tool error(s), {counts['failed_after_reopen']} failure(s) after a "
+                       f"session reopen) in {counts['calls']} call(s); {counts['session_recovered']} session "
+                       "error(s) were recovered by reopening the session and did not count")
                 self.events.append(msg)
                 self._emit(phase, msg)
         elif res.ok:

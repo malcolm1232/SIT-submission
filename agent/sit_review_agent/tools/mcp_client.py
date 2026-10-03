@@ -44,6 +44,9 @@ INTERNAL_ERROR = -32603
 METHOD_NOT_FOUND = -32601
 PARSE_ERROR = -32700
 INVALID_PARAMS = -32602
+#: mcp 2.x ``CONNECTION_CLOSED``: the session's stream ended (the server closed it, or the transport
+#: died). Every later request on that session fails with it at once until it is reopened.
+CONNECTION_CLOSED = -32000
 
 #: ``on_response(status, retry_after_s)`` callback the session factory calls for every HTTP error.
 ResponseHook = Callable[[int, float | None], None]
@@ -180,6 +183,10 @@ def classify_exception(exc: BaseException, *, status_hint: tuple[int | None, flo
         code, msg = leaf.error.code, leaf.error.message
         if code == INVALID_REQUEST and "session terminated" in msg.lower():
             return Failure(ToolErrorClass.SESSION_EXPIRED, "session terminated (HTTP 404)", 404)
+        if code == CONNECTION_CLOSED:
+            # Not a tool error: the session is gone (sit_sample_tools_1 lost five web searches to
+            # this after a 130 s idle session). The gateway reopens the session and retries once.
+            return Failure(ToolErrorClass.SESSION_CLOSED, f"session closed (MCP error {code}: {msg[:200]})")
         if code == INTERNAL_ERROR and "error response" in msg.lower():
             if status is not None:
                 return classify_status(status, first_contact=first_contact, retry_after_s=retry_after)
@@ -189,6 +196,9 @@ def classify_exception(exc: BaseException, *, status_hint: tuple[int | None, flo
         if code == METHOD_NOT_FOUND and status == 404:
             return Failure(ToolErrorClass.HTTP_4XX, "HTTP 404 (endpoint not found)", 404)
         return Failure(ToolErrorClass.TOOL_ERROR, f"MCP error {code}: {msg[:300]}")
+    if not first_contact and _is_closed_session(leaf):
+        # On first contact the same exceptions keep their cold-start / connection meaning below.
+        return Failure(ToolErrorClass.SESSION_CLOSED, f"session closed ({_closed_name(leaf)})")
     if isinstance(leaf, TimeoutError | asyncio.TimeoutError) or (
             httpx2 is not None and isinstance(leaf, httpx2.TimeoutException)):
         cls = ToolErrorClass.COLD_START if first_contact else ToolErrorClass.TIMEOUT
@@ -205,6 +215,41 @@ def classify_exception(exc: BaseException, *, status_hint: tuple[int | None, flo
     if isinstance(leaf, json.JSONDecodeError | ValueError):
         return Failure(ToolErrorClass.MALFORMED, f"malformed response ({name})")
     return Failure(ToolErrorClass.UNKNOWN, f"{name}: {str(leaf)[:200]}")
+
+
+def _closed_types() -> tuple[type[BaseException], ...]:
+    """Exceptions that mean the session's stream is gone: anyio's closed, broken and ended streams
+    and a connection reset or broken pipe at the socket."""
+    out: list[type[BaseException]] = [ConnectionResetError, BrokenPipeError, EOFError]
+    try:
+        import anyio
+
+        out += [anyio.ClosedResourceError, anyio.BrokenResourceError, anyio.EndOfStream]
+    except ImportError:  # pragma: no cover - environment problem
+        pass
+    return tuple(out)
+
+
+def _chain(exc: BaseException) -> list[BaseException]:
+    out: list[BaseException] = []
+    cur: BaseException | None = exc
+    while cur is not None and len(out) < 8 and cur not in out:
+        out.append(cur)
+        cur = cur.__cause__ or cur.__context__
+    return out
+
+
+def _is_closed_session(leaf: BaseException) -> bool:
+    """True when ``leaf`` (or what it wraps, as ``httpx2.ReadError`` wraps a reset) says the stream is
+    closed, ended or reset."""
+    types_ = _closed_types()
+    return any(isinstance(e, types_) for e in _chain(leaf))
+
+
+def _closed_name(leaf: BaseException) -> str:
+    types_ = _closed_types()
+    hit = next((e for e in _chain(leaf) if isinstance(e, types_)), leaf)
+    return type(hit).__name__
 
 
 # ------------------------------------------------------------------------------ connection owner

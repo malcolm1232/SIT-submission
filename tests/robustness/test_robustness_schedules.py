@@ -1,6 +1,6 @@
 """The fault schedules and the coverage table: every ``faults/*.yaml`` loads through the agent's own
 loader and resolves through ``sit-review run --faults <ID>``; every fixture a schedule names exists;
-the coverage registry, the README table, the scenario cases and scenarios.md agree on the 81 P0
+the coverage registry, the README table, the scenario cases and scenarios.md agree on the 82 P0
 IDs; the cassettes are keyed correctly; no fixture holds a secret."""
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def test_every_schedule_is_a_p0_scenario_and_registered() -> None:
 
 def test_coverage_registry_is_exactly_the_p0_scenarios() -> None:
     rows = p0_rows()
-    assert len(rows) == 81                                               # scenarios.md "Counts" (README §9 parser)
+    assert len(rows) == 82                                               # scenarios.md "Counts" (README §9 parser)
     assert set(COVERAGE) == set(rows)
     for sid, c in COVERAGE.items():
         assert c.kind in KIND_LABEL, sid
@@ -75,7 +75,7 @@ def test_offline_cases_match_the_registry() -> None:
 
 def test_readme_table_lists_every_p0_scenario_with_its_coverage() -> None:
     readme = (HERE / "README.md").read_text(encoding="utf-8")
-    section = readme.split("## Coverage of the 81 P0 scenarios", 1)[1].split("\n## ", 1)[0]
+    section = readme.split("## Coverage of the 82 P0 scenarios", 1)[1].split("\n## ", 1)[0]
     found: dict[str, list[str]] = {}
     for line in section.splitlines():
         m = re.match(r"^\| ([A-Z]+-\d\d) \|", line)

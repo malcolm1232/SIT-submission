@@ -24,6 +24,13 @@ url_policy: url_policy.yaml
 connect_timeout_s: 150            # cold-start allowance for initialize (scale-to-zero containers)
 call_timeout_s: 60
 cold_start_retries: 1             # one retry on a cold-start-like failure (timeout, 502/503/504)
+# Reopen an MCP session idle longer than this before the next call (0 = never). Run sit_sample_tools_1
+# (docs/live_runs/sit_sample_tools_1/MEASUREMENT.md) held the warm-up session idle from 2 s to 132 s and
+# every web search then failed "MCP error -32000: Connection closed"; the servers scale to zero and the
+# probe of 2026-10-03 measured cold starts of 29 to 70 s against 0.04 s warm
+# (research/robustness/mcp_probe_results.redacted.json), so a session idle for more than about a minute
+# is treated as stale. The real idle timeout of the servers is not known.
+session_idle_reopen_s: 60
 capabilities:                     # capability -> server; tools are offered by capability (INF-12)
   search: mcp-internet-search
   scholarly: mcp-research-information

@@ -286,6 +286,17 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     Readers in this commit: `tests/test_finding_refs.py`; the next commit adds it to `check_all`, whose readers
     are `phases/report.py`, `selftest.py`, `tests/robustness/oracles.py`, `tests/robustness/concurrent_oracles.py`
     and the tests that call `check_all`.
+- 2026-10-03, MCP session recovery (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` defect 1).
+  Additive; no existing constructor call changes.
+  - `tools/gateway.py` `ToolErrorClass.SESSION_CLOSED` (`session_closed`): a call that failed because the
+    server closed the session (mcp `MCPError` -32000 "Connection closed", a closed or ended stream, a reset
+    connection). Writer: `tools/mcp_client.classify_exception`. Readers: `MCPToolGateway.call` (reopen
+    once and retry once), `PolicyToolGateway` (breaker and the disable rule), `FaultInjectingGateway`,
+    `phases/research.py` (disclosure text).
+  - `tools/faults.py` `FaultType.SESSION_CLOSED`: closes the live session below the injector so the next
+    call meets a closed session (robustness NET-06). Reader: `FaultInjectingGateway`.
+  - `config.py` `ToolsConfig.session_idle_reopen_s` (default 60, `config/tools.yaml` below the pinned
+    lines): a session idle longer than this is reopened before the next call. Reader: `MCPToolGateway`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

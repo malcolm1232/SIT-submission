@@ -313,8 +313,9 @@ async def test_model_stop_vote_is_advisory(tmp_path: Path) -> None:
     ctx = await ResearchPhase().run(make_ctx(tmp_path, script))
     assert any("ignored" in e.message for e in ctx.progress.events)       # type: ignore[attr-defined]
     assert ctx.state.budget.research_iterations == 2
-    assert ctx.state.stop_reason.code is StopReasonCode.SUFFICIENT_EVIDENCE
-    assert ctx.state.stop_reason.detail == "model_stop_vote"
+    # Nothing answered (RQ-001 partial, RQ-002 unanswered), tools fine: not "sufficient" (sit_sample_tools_1).
+    assert ctx.state.stop_reason.code is StopReasonCode.NO_MARGINAL_GAIN
+    assert ctx.state.stop_reason.detail == "model_stop_vote with no question answered"
 
 
 # =============================================================================== degradations

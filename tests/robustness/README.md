@@ -35,7 +35,7 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 
 | Path | What it is |
 |---|---|
-| `faults/<ID>.yaml` | 29 fault schedules (format of research/robustness/README.md §5.2), loaded by `tools/faults.load_fault_schedule`. The header comment of each file states the expectation |
+| `faults/<ID>.yaml` | 30 fault schedules (format of research/robustness/README.md §5.2), loaded by `tools/faults.load_fault_schedule`. The header comment of each file states the expectation |
 | `faults_concurrent/<ID>.yaml` | 6 fault schedules for the concurrent stage 1 (latency redesign 2026-10-03), with the `shard` / `shard_call` match keys; section "Concurrent stage 1 scenarios" |
 | `concurrent_schedules.py` | Their loader: resolves a shard index to the stage's logical call `nth` and returns the agent's `FaultSchedule`; `python tests/robustness/concurrent_schedules.py <ID> --out <file>` writes the resolved schedule for `--faults <file>` |
 | `concurrent_oracles.py` | Their oracles: the agent's invariants (`invariants.check_all`) plus each scenario's disclosure, not-assessed criteria, surviving findings and no-crash checks |
@@ -44,7 +44,7 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 | `fixtures/tools/*.json` | Hand-authored `replace_content` fixtures: an injected page (ADV-04/05), irrelevant results (INF-15, BEH-01), benchmark evidence (ADV-14), content-farm results (ADV-16). Invented; `.example` / `.invalid` domains, no key |
 | `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, an outbound log, and the generated 150-page document of LLM-10 (`long_design_pages`, built at test time, never committed) |
 | `oracles.py` | INV-01..INV-12 as post-run checks (INV-03..INV-10 and INV-12 call `sit_review_agent.invariants`), plus OPS-10, BEH-23, BEH-28 and DEMO-06 |
-| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 49 P0 scenarios, 66 runs plus 4 resumes and one shared fault-free control run |
+| `test_robustness_scenarios.py` | The parametrised end-to-end suite: 50 P0 scenarios, 67 runs plus 4 resumes and one shared fault-free control run |
 | `test_robustness_schedules.py` | Every schedule loads and resolves; this table, the registry, the cases and scenarios.md agree; cassette keys; no secret in a fixture; the offline CLI drill above runs (INF-24, INF-03) |
 | `test_robustness_regressions.py` | Regression tests for the agent defects fixed here (six by the implementer, four by the verifier); the runtime policies of 2026-10-02 are tested in `tests/test_runtime_policies.py` |
 | `test_robustness_results_csv.py` | The results writer |
@@ -62,7 +62,9 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 3. **Faults** sit below the policy: `FaultInjectingGateway` (MCP) and `FaultInjectingLLMGateway`
    (model), built by the agent from the schedule; `process:` entries (`raise_in_stage`,
    `sigint_in_stage`, `clock_jump`) are applied by the agent's orchestrator around the named phase.
-   The harness adds no fault layer of its own.
+   The harness adds no fault layer of its own. The bottom tool layer is a strict cassette replay, except
+   for NET-06 (`Scenario.tool_base="mcp"`), which runs the live `MCPToolGateway` over the same cassettes
+   (`robustness_harness.CassetteMCPSession`, no network) so a closed session takes the real reopen path.
 4. **Model**: a scripted `FakeGateway` built from the selftest fixture script. Research runs web
    search and scholarly search in parallel, then fetches the web hit; a scenario can replace the
    research turns (a model that never stops, that obeys an injection, that asks to stop at once) or
@@ -85,7 +87,7 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
    Since the integration pass of 2026-10-03 the concurrent-stage scenarios and the rows whose
    expectation the latency redesign changed run against the concurrent orchestrator like any other.
 
-## Coverage of the 81 P0 scenarios
+## Coverage of the 82 P0 scenarios
 
 Offline: run by `test_robustness_scenarios.py`. Laptop: needs the live model and/or the live MCP
 servers (commands below; `<sit_sample.pdf>` is the SIT sample, not in the repository; "fixture not
@@ -94,10 +96,10 @@ Not a schedule: a static check, a procedure or an evaluation metric with nothing
 
 | Coverage | Scenarios | Of which need a decision |
 |---|---|---|
-| offline | 49 | 0 |
+| offline | 50 | 0 |
 | laptop | 28 | 0 |
 | not a schedule | 4 | 0 |
-| **total** | **81** | **0** |
+| **total** | **82** | **0** |
 
 LLM-05, NET-02, INF-08, LLM-10 and OVF-07 moved into the passing suite with the runtime policies of
 2026-10-02 (section "Runtime policies" below); INF-08, LLM-10 and OVF-07 became offline cases.
@@ -133,6 +135,7 @@ scenarios").
 | LLM-11 | S1 | L0 | offline | yes | 401 on every model call: not retried, exit 3 within 10 s virtual, credential named, never its value | - | test_run_and_resume.py::test_live_backend_preflight_failure_exits_3_before_ingest |
 | NET-01 | S1 | L0, L1 | offline | yes | network drops at 205 s for 120 s while research runs (plan delayed 200 s; the assess shards, which start with plan, have finished): exit 3 with the checkpoints of the completed stage 1 members, then `resume` completes with no duplicate ledger entry and no completed member re-run | physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` (docs/DEMO_DAY_RUNBOOK.md §7 drill 5) | - |
 | NET-02 | S1 | L0 | offline | yes | no network from the start: the six stage 1 calls start together and each is a first call of the run; connection errors get the 10 s window, the first call to give up exits 3 once with a 'no network' message naming resume and --replay, the other members are cancelled (none runs its retry budget); scheduling clock | Wi-Fi off, then `sit-review run <pdf>` (claude_code: how `claude -p` reports an offline network is unverified); anthropic_api: the no-retry preflight fails first | test_runtime_policies.py (first-call window in both live gateways; anthropic_api preflight before models.retrieve) |
+| NET-06 | S1 | L0 | offline | yes | the server closes the web-search session just before the first web-search call; the live MCP gateway (over the cassettes, no network) reopens it once and repeats the call once: the call is answered, web-search evidence as in the fault-free run, no tool disabled, no tool-error degradation, the reopen a progress line | leave the servers idle for 2 min or more after the warm-up, then let research call them (`sit-review run <sit_sample.pdf>`): expect a 'session reopened' line, not a tool error; the servers' real idle timeout is unknown | test_mcp_session_recovery.py (reopen, idle rule, disable rule, the real mcp client) |
 | OPS-01 | S1 | L2 | not a schedule | - | a fresh clone on a clean machine is a procedure, not a fault | docker run python:3.11, clone, follow README verbatim, `sit-review selftest` | docs/REPRODUCIBILITY.md §7 (R0-R3); `sit-review selftest` (test_selftest_cli.py::test_selftest_end_to_end) |
 | OPS-02 | S1 | L0 | not a schedule | - | static scan of the repository and its git history (git is not run here) | gitleaks detect; then grep the full history (git log -p) for the key prefix | test_tool_gateways.py::test_policy_module_has_no_secret_values; test_robustness_schedules.py::test_fixtures_hold_no_secret |
 | OPS-03 | S1 | L0 | offline | - | every scenario runs with canary keys in the environment; INV-08 greps every run directory and the outbound log; ADV-05 tries to exfiltrate them | - | - |
@@ -227,7 +230,7 @@ The resolved schedule is the agent's own `FaultSchedule`, so `sit-review run --f
 
 ### The six scenarios
 
-The IDs are new (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28) and follow its numbering; they are registered in `robustness_coverage.CONCURRENT`, not in the 81-row table above.
+The IDs are new (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28) and follow its numbering; they are registered in `robustness_coverage.CONCURRENT`, not in the 82-row table above.
 
 | ID | Sev | Lvl | Coverage | Schedule | Fault | Expected (oracle in `concurrent_oracles.py`) |
 |---|---|---|---|---|---|---|
