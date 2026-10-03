@@ -8,5 +8,6 @@ mcp_probe_results.json
 mcp_probe_selftest_results.json
 runs/
 *.log
+progress.jsonl
 .DS_Store
 *.egg-info/

@@ -321,6 +321,37 @@ log it: either a `tools` key (`request.tools`) on the attempt-0 `llm.jsonl` entr
 (`{"listed_at", "tools": [{server, name, description, input_schema, capability}]}`, written by
 `LoggingToolGateway.list_tools`). Replay already reads both.
 
+### Progress events (2026-10-03, UI workstream W1; `docs/design/ui_design.md` section 5)
+
+Every progress line is also a typed event with structured fields, and each run appends them to
+`runs/<id>/progress.jsonl` beside `progress.log` (gitignored like it), one JSON object per line, opened and
+flushed per event so a reader can tail it live; a resumed run appends to the same file and continues the
+sequence. The contract is `spec/progress_event.schema.json` (version 1, validated in
+`tests/test_progress_events.py`): every record has `v` (1), `seq` (1, 2, 3 ... in file order), `t` (seconds
+since the sink's first event, the console's `[mm:ss]`), `run_s` (run-clock seconds, resume-adjusted, the
+clock the stage limits use; `null` before the run clock starts), `type`, `phase` (the console's phase
+column), `kind` (`step`, `wait`, `warn`, `done`, `draft`), `console` (whether it is also a console and
+`progress.log` line), `message` and `fields` (required keys per type in the schema). Four types have no
+console line, so the console and `progress.log` stay byte for byte what they were (pinned by
+`tests/test_progress_console.py` against lines recorded before the change): `run_started` (first record:
+run ID and directory, mode, documents, profile, model, backend, deadline, the stage limits the runtime
+uses, the assess shard groups), `call_opened` and `call_closed` (per logical model call, from
+`progress.CallEventsGateway`, the outermost LLM layer, for every backend: call ID, stage, shard index and
+name, purpose, attempt; on close the outcome `ok`, `cut`, `refusal`, `truncated`, `error`, `cancelled`,
+`interrupted` or `replaced`, wall seconds, usage as measured or `null` with `usage_status: unknown`, and for a
+cut what it kept), and `run_finished` (last record: outcome, exit code, report path, run-clock seconds,
+cost and whether it is a lower bound). Every other type is a console line with its data, for example
+`phase_started`, `phase_done`, `milestone`, `stop_rule`, `shard_started`, `shard_drafted` (shard and each
+draft's kind, severity and title), `shard_cut` (call ID and the findings kept), `draft_item` (a streamed
+item: call ID, shard, severity and a finding's title), `call_status` (the 10 s line of open calls),
+`call_bounded`, `call_retry`, `verdict` and `run_error`; `status` is a plain line with no data (none in a
+fixture run). Emit sites use `progress.emit_event`, `ctx_event` and `record_event`; a sink that only has
+`emit` (a test double) still gets the plain line. The stream never carries model prose: a line that quotes
+model text (a plan question, a skip reason, a repair problem, an error message, a tool policy refusal) is
+written with a `public` message of codes and counts, and the only model text kept is a draft finding's
+title and severity. `dra replay` writes the same event sequence apart from clock values and the run's
+identity.
+
 ### Runtime policies (2026-10-02; robustness LLM-05, NET-02, INF-08, LLM-10, OVF-07)
 
 - **Deadline inside model calls.** With the `deadline` rule active, every model attempt's timeout is
