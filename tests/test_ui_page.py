@@ -22,6 +22,7 @@ from sit_review_agent.ui.server import UIState, build_app
 
 REPO = Path(__file__).resolve().parents[1]
 REHEARSAL = REPO / "docs" / "live_runs" / "rehearsal_concurrent_1"
+REHEARSAL_PDF = REPO / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
 FIXTURES = Path(__file__).parent / "fixtures" / "ui"
 RUN_FILES = ("report.json", "manifest.json", "anchors.json", "ledger.json", "state.json", "effective_config.json",
              "replay.json")
@@ -40,11 +41,12 @@ def records(path: Path) -> list[dict[str, Any]]:
 @pytest.fixture(scope="module")
 def replayed(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """``dra replay`` of the committed rehearsal run into a scratch run root (offline: its recorded
-    model calls are served from ``llm.jsonl``)."""
+    model calls are served from ``llm.jsonl``). The input is given by absolute path: the recording
+    holds it relative to the repository, so the suite passes from any working directory."""
     from sit_review_agent.replay import replay_run
 
     root = tmp_path_factory.mktemp("replay_root")
-    out = asyncio.run(replay_run(REHEARSAL, run_root=str(root), run_id="rehearsal_replay"))
+    out = asyncio.run(replay_run(REHEARSAL, run_root=str(root), run_id="rehearsal_replay", pdf=REHEARSAL_PDF))
     assert out.exit_code == 0, out.message
     return Path(out.run_dir)
 
