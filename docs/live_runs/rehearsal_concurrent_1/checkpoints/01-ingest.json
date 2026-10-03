@@ -1,0 +1,91 @@
+{
+ "checkpoint_version": 1,
+ "created_utc": "2026-10-03T02:09:24Z",
+ "hashes": {
+  "canonical_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+  "effective_config": "bdec44450f5811185fe0da49f4d81ff184e14af203b44c42f8d2f947e42ccfab",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "offsets": {
+  "ledger_jsonl": 0,
+  "llm_jsonl": 0,
+  "tools_jsonl": 0
+ },
+ "ordinal": 1,
+ "phase": "ingest",
+ "run_id": "rehearsal_concurrent_1",
+ "seq": 1,
+ "state": {
+  "anchor_table": [],
+  "budget": {
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 0,
+   "elapsed_s": 2.228,
+   "input_tokens": 0,
+   "new_sources_by_iteration": [],
+   "output_tokens": 0,
+   "phase_seconds": {
+    "ingest": 2.228
+   },
+   "research_iterations": 0,
+   "started_monotonic": 58155.58351925,
+   "tool_calls": 0
+  },
+  "completed_phases": [
+   "ingest"
+  ],
+  "coverage": [],
+  "created_utc": "2026-10-03T02:09:22Z",
+  "current_phase": "ingest",
+  "declined_sections": [],
+  "degradations": [
+   {
+    "event": "DOC-design_v1: native PDF block not sent because the configured model backend accepts text only",
+    "id": "DEG-001",
+    "impact": "figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text",
+    "type": "input_degraded"
+   }
+  ],
+  "documents": [
+   {
+    "doc_id": "DOC-design_v1",
+    "native_pdf": false,
+    "page_count": 21,
+    "pdf_path": "eval/synthetic/payments_orchestration/design_v1.pdf",
+    "role": "under_review",
+    "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99",
+    "sha256_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+    "text_path": "text/DOC-design_v1.pages.txt",
+    "title": "Serindit Pay — Merchant Payment Orchestration Platform",
+    "version": null
+   }
+  ],
+  "fallback_events": [],
+  "finding_drafts": [],
+  "finding_meta": {},
+  "findings": [],
+  "intent_summary": null,
+  "k_index": null,
+  "limitations": [],
+  "llm_calls": {},
+  "mode": "dev",
+  "plan": null,
+  "previous_run_dir": null,
+  "prior_review_id": null,
+  "queries_issued": 0,
+  "refusals": [],
+  "registry": [],
+  "registry_frozen": false,
+  "registry_hashes": [],
+  "review_inputs_found": [],
+  "review_mode": "full",
+  "run_id": "rehearsal_concurrent_1",
+  "sound_area_drafts": [],
+  "sound_areas": [],
+  "stop_reason": null,
+  "tool_calls": [],
+  "unanswered_questions": [],
+  "unresolved": [],
+  "verdict": null
+ }
+}

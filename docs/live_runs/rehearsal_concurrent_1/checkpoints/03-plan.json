@@ -1,0 +1,508 @@
+{
+ "checkpoint_version": 1,
+ "created_utc": "2026-10-03T02:10:36Z",
+ "hashes": {
+  "canonical_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+  "effective_config": "bdec44450f5811185fe0da49f4d81ff184e14af203b44c42f8d2f947e42ccfab",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "offsets": {
+  "ledger_jsonl": 0,
+  "llm_jsonl": 16370,
+  "tools_jsonl": 0
+ },
+ "ordinal": 2,
+ "phase": "plan",
+ "run_id": "rehearsal_concurrent_1",
+ "seq": 3,
+ "state": {
+  "anchor_table": [],
+  "budget": {
+   "cache_creation_input_tokens": 28341,
+   "cache_read_input_tokens": 0,
+   "elapsed_s": 73.769,
+   "input_tokens": 28343,
+   "new_sources_by_iteration": [],
+   "output_tokens": 7403,
+   "phase_seconds": {
+    "ingest": 2.228,
+    "plan": 71.539
+   },
+   "research_iterations": 0,
+   "started_monotonic": 58155.58351925,
+   "tool_calls": 0
+  },
+  "completed_phases": [
+   "ingest",
+   "plan"
+  ],
+  "coverage": [],
+  "created_utc": "2026-10-03T02:09:22Z",
+  "current_phase": "ingest",
+  "declined_sections": [],
+  "degradations": [
+   {
+    "event": "DOC-design_v1: native PDF block not sent because the configured model backend accepts text only",
+    "id": "DEG-001",
+    "impact": "figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text",
+    "type": "input_degraded"
+   }
+  ],
+  "documents": [
+   {
+    "doc_id": "DOC-design_v1",
+    "native_pdf": false,
+    "page_count": 21,
+    "pdf_path": "eval/synthetic/payments_orchestration/design_v1.pdf",
+    "role": "under_review",
+    "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99",
+    "sha256_text": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+    "text_path": "text/DOC-design_v1.pages.txt",
+    "title": "Serindit Pay — Merchant Payment Orchestration Platform",
+    "version": null
+   }
+  ],
+  "fallback_events": [],
+  "finding_drafts": [],
+  "finding_meta": {},
+  "findings": [],
+  "intent_summary": null,
+  "k_index": null,
+  "limitations": [],
+  "llm_calls": {
+   "plan": [
+    "llm-0002"
+   ]
+  },
+  "mode": "dev",
+  "plan": {
+   "approved": true,
+   "criteria_skipped": [],
+   "questions": [
+    {
+     "capability": "none",
+     "criterion_id": "design_intent",
+     "evidence_ids": [],
+     "id": "RQ-001",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are the objectives (Section 1 volume baseline), FR/NFR requirements, principles P1-P10, and confirmed decisions (Section 24) stated precisely enough to review against? In particular, does the FR-8 '2%' threshold mean 2 percentage points or a 2% relative reduction, and does Section 10.3's 'tolerance (default 2)' use the same unit?",
+     "rationale": "FR-8 and the confirmed routing decision depend on a threshold whose unit is unclear, so routing behaviour and its acceptance test could legitimately go two different ways.",
+     "section_refs": [
+      "1",
+      "2.1",
+      "3",
+      "10.3",
+      "24"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-002",
+     "needs_external": false,
+     "queries": [],
+     "question": "Is the Redis fast-path key idem:resp:{idempotency_key} scoped to merchant as P3 and FR-5 require? Does a hit return the stored response without checking the request-body hash, which would bypass the 422 on key reuse and could return one merchant's response to another merchant using the same order-ID key?",
+     "rationale": "P3, FR-5 and the 422 contract all depend on (merchant, key) scoping and a hash check, and Section 9.1 explicitly allows order-ID keys, which makes collisions across merchants likely.",
+     "section_refs": [
+      "3",
+      "9.1",
+      "9.2",
+      "2.1"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-003",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which elements are fit for purpose and can be affirmed as strengths? Candidates: committing state, journal and outbox in one transaction (P1, FR-2, FR-10); integer minor units with explicit exponents (P4); the hardening of webhook SSRF and DNS rebinding (FR-12); the balance projector avoiding hot rows; and JIT elevation in the back office (P9).",
+     "rationale": "The review must confirm where the design already meets its objectives, not only report defects.",
+     "section_refs": [
+      "7.2",
+      "14.3",
+      "15",
+      "17",
+      "18.5"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "requirement_completeness",
+     "evidence_ids": [],
+     "id": "RQ-004",
+     "needs_external": false,
+     "queries": [],
+     "question": "What does the design leave out? Candidates include: how the per-merchant rate limits for the 45% marketplace merchant are sized under NFR-9; fraud thresholds and the REVIEW hold workflow; payout failure and return handling; refund-as-payout account verification under FR-15; how FR-10 'authorization' fits with the memo ledger; and recovery from reconciliation exceptions.",
+     "rationale": "These control and error paths are needed for FR-9, FR-10, FR-15, FR-17 and NFR-9 to be met in operation.",
+     "section_refs": [
+      "2.1",
+      "14.3",
+      "16.3",
+      "8",
+      "13.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-005",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can NFR-4 (zero RPO for authorized payments and ledger postings, including loss of the whole region) hold with Aurora Global Database's asynchronous replication, which Section 20.2 describes as 'typical lag under one second', and with DynamoDB, Redis and MSK recreated empty?",
+     "rationale": "The document itself states asynchronous replication, which contradicts a zero RPO, and the confirmed DR decision depends on it.",
+     "section_refs": [
+      "2.2",
+      "20.2",
+      "24",
+      "26.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-006",
+     "needs_external": false,
+     "queries": [],
+     "question": "Is the claim in Section 21.1 that cascading stays above p99 because fewer than 1% of payments cascade consistent with the 3.8% retryable rate in Section 10.5 and with the 2,500 ms per-attempt timeout? Can NFR-2 (p99 including cascade at 1,500 ms or less) be met?",
+     "rationale": "NFR-2 explicitly includes cascades, and its acceptance test injects 3.8% retryable outcomes, so the latency budget's central argument may be wrong.",
+     "section_refs": [
+      "2.2",
+      "10.5",
+      "11.1",
+      "21.1",
+      "26.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-007",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can NFR-8 (reports by 08:00 SGT on T+1) be met when the batch matcher waits for all files, the latest file arrives at 06:30 ICT (07:30 SGT), and matching plus report generation take 60 minutes at 2025 volume, with volume expected to roughly double by 2027?",
+     "rationale": "The document's own timings appear to miss the NFR-8 deadline even at today's volume.",
+     "section_refs": [
+      "2.2",
+      "16.1",
+      "16.2",
+      "26.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-008",
+     "needs_external": false,
+     "queries": [],
+     "question": "Do the build phases agree with the requirements? The first cohort goes live after Phase 7, but the Fraud Hook is Phase 8, while FR-9 requires every card payment to be scored. Phase 3 is marked 'No - ready' for network tokens even though TRID registration has not been applied for (Backlog item 2).",
+     "rationale": "The go-live plan conflicts with FR-9 and FR-14 and with the readiness claims in Section 27.",
+     "section_refs": [
+      "2.1",
+      "24",
+      "25",
+      "27",
+      "28"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-009",
+     "needs_external": true,
+     "queries": [
+      "DynamoDB partition maximum write capacity units per second",
+      "DynamoDB local secondary index item collection size limit 10 GB",
+      "DynamoDB adaptive capacity hot partition split for heat LSI"
+     ],
+     "question": "What is DynamoDB's documented per-partition write throughput (1,000 WCU/s or 10,000), and how do tables with a local secondary index behave (10 GB item-collection limit, no split for heat)? Can a merchant_id partition key absorb about 1,800 WCU/s from the largest merchant?",
+     "rationale": "Section 9.3 bases idempotency capacity for the 45% merchant on a 10,000 WCU per-partition ceiling, so if that figure is wrong, NFR-1 and FR-5 fail at campaign peak.",
+     "section_refs": [
+      "9.3",
+      "24",
+      "2.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-010",
+     "needs_external": true,
+     "queries": [
+      "PCI DSS v4.0 requirement 3.3.1 sensitive authentication data not retained after authorization",
+      "PCI DSS v4.0 requirement 3.3.2 SAD stored prior to completion of authorization encrypted",
+      "PCI DSS card verification code storage after authorization"
+     ],
+     "question": "Do PCI DSS v4.0 Requirements 3.2.1, 3.3.1 and 3.3.2 permit a merchant or service provider to keep the CVC, even encrypted, after authorization until settlement or for 72 hours, for cascades and incremental authorizations?",
+     "rationale": "NFR-6, Section 12.4 and the confirmed CVC decision rely on this reading, and if storing SAD after authorization is prohibited, the NFR-5 Level 1 assessment cannot be passed.",
+     "section_refs": [
+      "2.2",
+      "12.4",
+      "24",
+      "26.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-011",
+     "needs_external": true,
+     "queries": [
+      "Visa decline reattempt rules category 1 2 3 response code 05",
+      "Mastercard merchant advice code transaction reattempt rules",
+      "card scheme cascading soft decline different acquirer compliance"
+     ],
+     "question": "Do Visa and Mastercard reattempt rules allow cascading a response-code-05 decline to a different acquirer, and how do Visa decline categories and the Mastercard Merchant Advice Code rules treat reattempts across acquirers on the same card?",
+     "rationale": "FR-7 and the confirmed cascade policy rely on cascading code 05 being compliant with scheme rules, and breaching them brings scheme fines.",
+     "section_refs": [
+      "11.1",
+      "11.3",
+      "24",
+      "2.1"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-012",
+     "needs_external": false,
+     "queries": [],
+     "question": "Does the Fraud Hook's detokenisation of the full PAN (Section 13.1), using the Card Adapter's service role, contradict P2, the 'only the Card Adapter may detokenise' rule, P9 least privilege, and the Section 12.2 CDE scope, which lists the Fraud Hook as out of scope? Does it also send PAN to FRV-1 with no DPA in place (Backlog item 4)?",
+     "rationale": "This flow moves the Fraud Hook and its vendor link into the CDE, which undermines the NFR-5 scoping and the FR-9 integration as designed.",
+     "section_refs": [
+      "3",
+      "12.1",
+      "12.2",
+      "13.1",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-013",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are payout bank account changes (Section 18.4) adequately protected? MFA is optional for Finance users, there is no second approval or cooling-off period, notice goes only to the user who made the change, and the same role can issue refunds. Is this consistent with P9 separation of duties?",
+     "rationale": "Diverting payouts is a direct financial-loss path for FR-13 and FR-17, and P9 requires separation of money-moving permissions.",
+     "section_refs": [
+      "3",
+      "18.2",
+      "18.3",
+      "18.4",
+      "24"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-014",
+     "needs_external": true,
+     "queries": [
+      "Bank Indonesia regulation payment transaction processing domestic data localisation",
+      "Indonesia GR 71/2019 electronic system operator data localisation financial sector",
+      "Indonesia Law 27/2022 cross-border personal data transfer requirements"
+     ],
+     "question": "Do Indonesian (Bank Indonesia payment-system and GR 71/2019) or other market rules require domestic processing or storage of payment transaction data? Does that conflict with placing all primary data in ap-southeast-1, and does NFR-7 cover cross-border transfer obligations under the listed PDP laws?",
+     "rationale": "Indonesia is the largest merchant market (4,200), and Section 19.1 puts every primary store in Singapore while NFR-7 says nothing about data localisation.",
+     "section_refs": [
+      "2.2",
+      "4",
+      "19.1"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-015",
+     "needs_external": true,
+     "queries": [
+      "AWS CloudHSM high availability recommendation multiple HSMs across availability zones",
+      "AWS CloudHSM performance operations per second AES unwrap per HSM",
+      "AWS CloudHSM restore cluster from backup time"
+     ],
+     "question": "Does a single CloudHSM in one AZ (Section 12.3) support about 1,100 card TPS of detokenise unwraps, plus cascade and Fraud Hook calls, under the 99.95% availability target? Since every acquirer path depends on the Vault, does treating HSM failure as 'retryable' achieve anything?",
+     "rationale": "The HSM is a single point of failure for every card payment, so NFR-3 and NFR-1 depend on its documented throughput and availability guidance.",
+     "section_refs": [
+      "12.3",
+      "20.1",
+      "21.1",
+      "24",
+      "2.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-016",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are the concurrency and recovery paths complete? Specifically: late acquirer approvals discarded after the 2,500 ms timeout while a cascade proceeds (possible double authorization or orphaned holds); stuck IN_PROGRESS idempotency records when the payment was never created; idempotency reconstruction after regional failover for capture and refund keys; and the expiry sweeper's 'one day before scheme expiry' for short authorization windows.",
+     "rationale": "FR-5, FR-2 and P1 depend on these failure paths, which the document describes only in part.",
+     "section_refs": [
+      "7.2",
+      "9.2",
+      "11.2",
+      "20.2",
+      "20.3"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "assumptions_and_dependencies",
+     "evidence_ids": [],
+     "id": "RQ-017",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which confirmed decisions depend on items that are still pending? Candidates: network tokens from launch versus Backlog item 2, FRV-1 sending PAN with no DPA (Backlog item 4), the ACQ-PH1 v3 migration, missing sample files, and the HSM benchmark that is a vendor figure only. For each, what priority and closure owner can the review add?",
+     "rationale": "Section 27 marks components as ready even though their premises are untracked or still pending.",
+     "section_refs": [
+      "12.5",
+      "21.1",
+      "24",
+      "25",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-018",
+     "needs_external": false,
+     "queries": [],
+     "question": "Do the Section 26 acceptance criteria actually verify their requirements? Points to check: the FR-5 test sends only sequential retries, not concurrent or cross-merchant duplicates; the NFR-4 game day may pass by chance when replication lag happens to be low; NFR-12 tests only S3; the NFR-2 test uses the same assumption about the retryable rate; and NFR-8 replays at production volume but not at 2027 volume.",
+     "rationale": "Several criteria cannot show that the requirement holds in the very conditions the requirement names.",
+     "section_refs": [
+      "26.1",
+      "26.2",
+      "2.1",
+      "2.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-019",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which capacity and latency figures (the 12 ms idempotency step, 20 ms HSM unwrap, the 2,600 TPS Aurora spike, and the MSK sizing) rest on vendor figures or spikes and need a benchmark before build?",
+     "rationale": "The budgets for NFR-1 and NFR-2 have narrow headroom (238 ms of overhead against 250 ms), so unmeasured components could break them.",
+     "section_refs": [
+      "21.1",
+      "21.2",
+      "9.3"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "decision_preservation",
+     "evidence_ids": [],
+     "id": "RQ-020",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which proposed refinements leave the confirmed decisions intact, for example scoping the Redis key by merchant, which keeps the two-tier idempotency design? Which would challenge one and need at least two pieces of evidence: the CVC retention decision, the single HSM at launch, the DR decision against NFR-4, and network tokens from launch?",
+     "rationale": "Rule 5 requires confirmed decisions to be preserved unless strong evidence shows one cannot meet an objective.",
+     "section_refs": [
+      "24",
+      "12.3",
+      "12.4",
+      "20.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "operability_and_governance",
+     "evidence_ids": [],
+     "id": "RQ-021",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are accountable owners named for the operational processes and governance decisions? These include the weekly Routing Review and its 5% approval-first control slice, the Finance Operations exception queue, the stuck-payment escalation queue, payout freezes, fraud-threshold ownership by the risk team, and accepting risk on the deferred second HSM. Are cost and monitoring obligations defined?",
+     "rationale": "Without clear owners, controls such as the FR-8 weekly review and NFR-8 exception handling will not happen reliably once the system is live.",
+     "section_refs": [
+      "10.3",
+      "13.2",
+      "16.2",
+      "20.3",
+      "14.3"
+     ],
+     "status": "open",
+     "summary": ""
+    }
+   ]
+  },
+  "previous_run_dir": null,
+  "prior_review_id": null,
+  "queries_issued": 0,
+  "refusals": [],
+  "registry": [],
+  "registry_frozen": false,
+  "registry_hashes": [],
+  "review_inputs_found": [],
+  "review_mode": "full",
+  "run_id": "rehearsal_concurrent_1",
+  "sound_area_drafts": [],
+  "sound_areas": [],
+  "stop_reason": null,
+  "tool_calls": [],
+  "unanswered_questions": [],
+  "unresolved": [],
+  "verdict": null
+ }
+}
