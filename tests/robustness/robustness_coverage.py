@@ -110,10 +110,10 @@ COVERAGE: dict[str, Coverage] = {
     "INF-24": _o("every server down: zero external evidence, 'No external research was possible' in the report, "
                  "research ends in < 150 s virtual", schedule=True, laptop="sit-review run <pdf> --faults INF-24"),
     # ------------------------------------------------------------------------------------- LLM
-    "LLM-01": _o("429 retry-after 15 on attempt 0 of every assess shard's call (the K = 4 shards start together in "
+    "LLM-01": _o("429 retry-after 15 on attempt 0 of every assess shard's call (the K shards start together in "
                  "stage 1): each shard retried >= 15 s later, attempts within the policy per call, every shard "
                  "completes, findings as in the fault-free run", schedule=True),
-    "LLM-02": _o("429 without retry-after on every call: each of the six stage 1 calls (understand, plan, the K = 4 "
+    "LLM-02": _o("429 without retry-after on every call: each of the K + 2 stage 1 calls (understand, plan, the K "
                  "assess shards, started together) makes max_retries + 1 attempts and no more, exit 3 once, "
                  "checkpoint, 'spend cap' message, resumable", schedule=True),
     "LLM-03": _o("529 on attempts 0-3 of every assess shard's call, then recovery (exit 0, no model switch, manifest "
@@ -129,7 +129,7 @@ COVERAGE: dict[str, Coverage] = {
                  schedule=True,
                  covered_by="test_fault_injection.py::test_llm05_hang_times_out_and_is_retried (gateway level); "
                             "test_runtime_policies.py (deadline-bounded attempts in both live gateways)"),
-    "LLM-06": _o("refusal on every assess call: persistent -> each of the K = 4 shards gets one reframed retry (2 K "
+    "LLM-06": _o("refusal on every assess call: persistent -> each of the K shards gets one reframed retry (2 K "
                  "refusals, no third call per shard), 'model declined' disclosed, every criterion not assessed, "
                  "verdict not_assessed (no shard finished a finding) with no verdict call, other stages complete; "
                  "once (nth [0], shard 0's first call) -> its reframed retry succeeds, findings as in the fault-free "
@@ -161,7 +161,7 @@ COVERAGE: dict[str, Coverage] = {
                  "`resume` completes with no duplicate ledger entry and no completed member re-run", schedule=True,
                  laptop="physical drill: Wi-Fi off at ~200 s, back after 2 min, `sit-review resume <run_dir>` "
                         "(docs/DEMO_DAY_RUNBOOK.md §7 drill 5)"),
-    "NET-02": _o("no network from the start: the six stage 1 calls start together and each is a first call of the "
+    "NET-02": _o("no network from the start: the K + 2 stage 1 calls start together and each is a first call of the "
                  "run; connection errors get the 10 s window, the first call to give up exits 3 once with a 'no "
                  "network' message naming resume and --replay, the other members are cancelled (none runs its "
                  "retry budget); scheduling clock", schedule=True,
@@ -310,16 +310,18 @@ CONCURRENT_META: dict[str, dict[str, str]] = {
     "BEH-29": {"sev": "S1", "tier": "P0", "level": "L0", "title": "One assess shard fails with an exception"},
 }
 CONCURRENT: dict[str, Coverage] = {
-    "LLM-13": _o("demo profile: assess shard 2 (claims_and_assumptions) hangs: cut at stage_limits_s.stage_1_end "
-                 "(265 s), not retried, disclosed as budget_or_deadline_hit naming the shard, its criteria not "
-                 "assessed, the findings of shards 0, 1 and 3 survive, verdict assessed, report, exit 0",
+    "LLM-13": _o("demo profile: the assess shard of claims_and_external_constraints (claims_and_assumptions) hangs: "
+                 "cut at stage_limits_s.stage_1_end (265 s), not retried, disclosed as budget_or_deadline_hit "
+                 "naming the shard, its criteria not assessed, the other shards' findings survive, verdict "
+                 "assessed, report, exit 0",
                  schedule=True),
-    "LLM-14": _o("assess shard 0 (intent_and_fitness) refuses its call and its reframed retry (nth [0, 4]): no third "
-                 "call, 'declined' disclosed naming the shard, its criteria not assessed, the findings of shards 1, 2 "
-                 "and 3 survive, verdict assessed (partial review), report, exit 0", schedule=True),
-    "LLM-15": _o("assess shard 1 (requirements_and_consistency) truncated at max_tokens on its call and its retry "
-                 "(nth [1, 4]): no third call, 'truncated twice' disclosed naming the shard, its criteria not "
-                 "assessed, the findings of shards 0, 2 and 3 survive, verdict assessed, report, exit 0",
+    "LLM-14": _o("the assess shard of fitness_for_objectives (intent_and_fitness, shard 0) refuses its call and its "
+                 "reframed retry (nth [0, K]): no third call, 'declined' disclosed naming the shard, its criteria "
+                 "not assessed, the other shards' findings survive, verdict assessed (partial review), report, "
+                 "exit 0", schedule=True),
+    "LLM-15": _o("the assess shard of verifiability truncated at max_tokens on its call and its retry (nth [s, K]): "
+                 "no third call, 'truncated twice' disclosed naming the shard, its criteria not assessed, the "
+                 "other shards' findings survive, verdict assessed, report, exit 0",
                  schedule=True),
     "LLM-16": _o("demo profile: the refine call hangs: cut at stage_limits_s.refine_end (465 s), not retried; the "
                  "merged findings stand, ordered by severity then confidence, none revised (the hang returned no "
@@ -330,9 +332,9 @@ CONCURRENT: dict[str, Coverage] = {
                  "retried; stop reason deadline; the ledger keeps the first round's external evidence and replays "
                  "exactly; the cut disclosed as budget_or_deadline_hit naming research; the assess shards' findings "
                  "survive, verdict assessed, report, exit 0", schedule=True),
-    "BEH-29": _o("exception at the start of assess shard 3 (risk_and_operations; process fault with a shard): a "
-                 "partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the "
-                 "failure disclosed naming the shard, its criteria not assessed, the findings of shards 0, 1 and 2 "
+    "BEH-29": _o("exception at the start of the assess shard of security_and_privacy (process fault with a shard): "
+                 "a partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the "
+                 "failure disclosed naming the shard, its criteria not assessed, the other shards' findings "
                  "survive, verdict assessed", schedule=True),
 }
 
