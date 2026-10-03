@@ -40,3 +40,12 @@ No model calls; nothing against the SIT MCP hosts.
 - The conclusion names one document and one run per arm, the heavier Mac load (15.8 against about 5) and the exploratory status; the section 12 row of `docs/ARCHITECTURE.md` carries the same numbers. No em dash in the note, the row, the measurement, the builder's edit log or report.
 - FIXED: the note said the stage 1 members "started within 0.2 s of each other in both runs, at about 2 s", and `MEASUREMENT.md` said "1.9 s to 2.1 s into the run in both runs"; the custom loop's run checkpointed ingest at 2.228 s and its own `MEASUREMENT.md` says about 2.3 s, so no committed file supports 1.9 s to 2.1 s for it. Both now give each run's own figure with its source.
 - Added decision #42 to `docs/USER_DECISIONS.md` (the owner's words, the consequence, the five refused runs) and the comparison to row 8 (framework) of `docs/SUBMISSION_GAPS.md`.
+
+## 6. Gates on the verified HEAD (before the merge)
+
+- `ruff check agent harness tests`: exit 0.
+- Full suite with langgraph: 1866 passed, 1 skipped (the absent-langgraph test), 2 xfailed, 0 failed.
+- `sit-review selftest`: exit 0. `make smoke`: exit 0 (252 passed, 1 skipped). `make test`: exit 0 (1866 passed, 1 skipped, 2 xfailed).
+- `scripts/leakage_grep.py`: exit 0, "no unresolved hit in a gated area". `tests/robustness/robustness_repro.py`: exit 0.
+- `tests/test_export_public_snapshot.py`: 65 passed. The exporter's generic rules already drop the new run's `llm.jsonl`, `eval_pilot_bounded/`, `checkpoints/`, `shards/`, `text/` and `langgraph/`, and keep only `report.md`, `report.json`, `manifest.json`, `MEASUREMENT.md`, `effective_config.json` and `anchors.json`; no rule change was needed.
+- Every commit on the branch is authored and committed as `malcolm1232 <66200354+malcolm1232@users.noreply.github.com>` with no co-author or agent line.
