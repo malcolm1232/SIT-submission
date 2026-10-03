@@ -90,6 +90,7 @@ from sit_review_agent.models import (
     finding_id,
     sound_area_id,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.rundir import JsonlWriter, write_json_atomic
 from sit_review_agent.state.decision_registry import DecisionRegistry
 from sit_review_agent.state.evidence_ledger import EvidenceLedger
@@ -311,6 +312,7 @@ def settle_registry_anchors(ctx: RunContext) -> list[str]:
     if any(h.iteration > 0 for h in hashes) or later or not ctx.documents:
         return []
     notes: list[str] = []
+    acts: list[tuple[str, str]] = []                 # (registry ID, what was done) for progress.jsonl
     kept: list[RegistryEntry] = []
     changed = False
     for e in ctx.registry.entries():
@@ -329,6 +331,7 @@ def settle_registry_anchors(ctx: RunContext) -> list[str]:
         if fixed is not None:
             kept.append(e.model_copy(update={"doc_anchor": fixed}))
             notes.append(f"{e.registry_id} ({e.doc_ref}): anchor re-quoted from the passage stating {e.doc_ref}")
+            acts.append((e.registry_id, "requoted"))
         else:
             ctx.state.add_degradation(
                 DegradationType.OTHER,
@@ -336,14 +339,17 @@ def settle_registry_anchors(ctx: RunContext) -> list[str]:
                 "located in the document",
                 f"{e.doc_ref} was not used as an approved decision or constraint in this review")
             notes.append(f"{e.registry_id} ({e.doc_ref}): removed (no verifiable passage)")
+            acts.append((e.registry_id, "removed"))
     if changed:
         settled = DecisionRegistry(kept, frozen=ctx.registry.frozen)
         if hashes:                                   # re-record the freeze-time hash for the settled registry
             settled.record_iteration(0)
         ctx.registry = settled
         ctx.sync_state()
-    for n in notes:
-        ctx.emit(f"registry anchor check: {n}")
+    # The doc_ref is the model's: progress.jsonl names the registry entry and the action only.
+    for n, (rid, act) in zip(notes, acts, strict=True):
+        ctx_event(ctx, f"registry anchor check: {n}", event="registry_anchor",
+                  public=f"registry anchor check: {rid} {act}", registry_id=rid, action=act)
     return notes
 
 
@@ -562,8 +568,11 @@ class VerifyPhase:
             "summary": {"anchors": len(rows), "resolved": sum(1 for r in rows if r["anchor_status"] == "resolved"),
                         "repaired": n_repaired, "unresolved": n_unresolved},
             "rows": rows})
-        ctx.emit(f"anchors: {len(rows) - n_unresolved - n_repaired} resolved, {n_repaired} repaired, "
-                 f"{n_unresolved} unresolved; {len(state.findings)} findings verified, {len(unverified)} unverified")
+        ctx_event(ctx, f"anchors: {len(rows) - n_unresolved - n_repaired} resolved, {n_repaired} repaired, "
+                  f"{n_unresolved} unresolved; {len(state.findings)} findings verified, {len(unverified)} unverified",
+                  event="anchors_verified", anchors=len(rows), resolved=len(rows) - n_unresolved - n_repaired,
+                  repaired=n_repaired, unresolved=n_unresolved, findings_verified=len(state.findings),
+                  findings_unverified=len(unverified), repair_call_id=call_id)
         return ctx
 
     # ------------------------------------------------------------------ helpers
@@ -603,7 +612,8 @@ class VerifyPhase:
             _degrade(ctx, f"anchor repair call skipped: {slack:.0f} s of slack left before the verify and verdict "
                           f"reserve (the call needs more than {REPAIR_MIN_SLACK_S:.0f} s)",
                      "unresolved anchors were not re-quoted; affected findings may be listed as unverified")
-            ctx.emit(f"{len(failures)} anchor(s) unresolved; no repair turn ({slack:.0f} s of slack)", "warn")
+            ctx_event(ctx, f"{len(failures)} anchor(s) unresolved; no repair turn ({slack:.0f} s of slack)", "warn",
+                      event="anchor_repair", unresolved=len(failures), repair=False, slack_s=slack)
             return None
         listed = [{"owner_id": o.owner_id, "anchor_index": i, "section_ref": o.anchors[i].section_ref,
                    "page": o.anchors[i].page, "quote": o.anchors[i].quote,
@@ -618,7 +628,8 @@ class VerifyPhase:
                          max_tokens=ctx.config.agent.max_tokens, output_schema=AnchorRepairOutput,
                          cache_breakpoints=(bp,), thinking_display=ctx.config.agent.thinking_display,
                          purpose=REPAIR_PURPOSE)
-        ctx.emit(f"{len(failures)} anchor(s) unresolved; one repair turn")
+        ctx_event(ctx, f"{len(failures)} anchor(s) unresolved; one repair turn", event="anchor_repair",
+                  unresolved=len(failures), repair=True, slack_s=slack)
         try:
             res = await ctx.llm.call(req)
         except (LLMRefusalError, LLMSchemaError, LLMTruncatedError, LLMDeadlineError) as exc:

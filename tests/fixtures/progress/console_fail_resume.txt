@@ -1,0 +1,84 @@
+[00:00] run        | no MCP warm-up for this tool transport; skipped
+[00:00] run        | run pc-fail: <tmp>/pc-fail
+[00:00] ingest     | started
+[00:00] ingest     | DOC-design (under_review): 19 pages, 5 sections, 1 requirement IDs, text sha256 fa118ac6b54a
+[00:00] ingest     | OK done in 0.0s
+[00:00] understand | started
+[00:00] plan       | started
+[00:00] assess     | started
+[00:00] understand | reading the design: intent, objectives, constraints and the decision registry
+[00:00] plan       | planning the review over 11 criteria (capabilities: search)
+[00:00] assess     | assessing 11 criteria in 4 concurrent shard(s)
+[00:00] plan       | WARN plan left out 10 criteria; added document-only questions for: design_intent, fitness_for_objectives, requirement_completeness, internal_consistency, security_and_privacy, scalability_and_failure_modes, assumptions_and_dependencies, verifiability, decision_preservation, operability_and_governance
+[00:00] plan       | OK plan: 11 questions (1 need external research), 0 criteria skipped
+[00:00] plan       | RQ-001 [none] design_intent: What are the design's objectives, principles, constraints, requirements and approved decisions, and are they stated clearly enough to review against?
+[00:00] plan       | RQ-002 [none] fitness_for_objectives: Does each major design element plausibly achieve the objective or requirement it is meant to serve?
+[00:00] plan       | RQ-003 [none] requirement_completeness: Are any requirements, controls, error paths, rollback paths or owners missing that the objectives need?
+[00:00] plan       | RQ-004 [none] internal_consistency: Do requirements, decisions, numbers, flows and acceptance criteria agree with each other across sections?
+[00:00] plan       | RQ-005 [search] claims_and_external_constraints: Does the selected e-mail service plan have a daily sending limit below the peak reminder volume?
+[00:00] plan       | RQ-006 [none] security_and_privacy: Are data protection, access control, secrets handling, auditability and regulatory obligations covered for the data the design handles?
+[00:00] plan       | RQ-007 [none] scalability_and_failure_modes: Does the design hold at the stated load and under partial failure, retry, concurrency and recovery?
+[00:00] plan       | RQ-008 [none] assumptions_and_dependencies: Which premises, pending items, vendor capabilities or approvals does the design rely on without verifying or tracking them to closure?
+[00:00] plan       | RQ-009 [none] verifiability: Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?
+[00:00] plan       | RQ-010 [none] decision_preservation: Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?
+[00:00] plan       | RQ-011 [none] operability_and_governance: Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?
+[00:00] assess     | assess shard 1/4 (intent_and_fitness): design_intent, fitness_for_objectives, decision_preservation
+[00:00] assess     | assess shard 2/4 (requirements_and_consistency): requirement_completeness, internal_consistency, verifiability
+[00:00] assess     | assess shard 3/4 (claims_and_assumptions): claims_and_external_constraints, assumptions_and_dependencies
+[00:00] assess     | assess shard 4/4 (risk_and_operations): security_and_privacy, scalability_and_failure_modes, operability_and_governance
+[00:00] assess     | OK assess shard 1/4 (intent_and_fitness): 1 draft finding(s) (1 strength), unverified
+[00:00] assess     | OK assess shard 2/4 (requirements_and_consistency): 2 draft finding(s) (1 gap, 1 validation_need), unverified
+[00:00] assess     | OK assess shard 3/4 (claims_and_assumptions): 1 draft finding(s) (1 risk), unverified
+[00:00] assess     | OK assess shard 4/4 (risk_and_operations): 0 draft finding(s) (none), unverified
+[00:00] understand | WARN error (LLMConnectionError, exit 3): connection reset by the fixture; state saved; resume with `sit-review resume <tmp>/pc-fail`
+[00:00] run        | no MCP warm-up for this tool transport; skipped
+[00:00] run        | resuming run pc-fail at understand
+[00:00] assess     | 4 finished shard(s) kept from before the interruption: 1, 2, 3, 4
+[00:00] understand | started
+[00:00] plan       | started
+[00:00] assess     | started
+[00:00] understand | reading the design: intent, objectives, constraints and the decision registry
+[00:00] plan       | planning the review over 11 criteria (capabilities: search)
+[00:00] assess     | assessing 11 criteria in 4 concurrent shard(s); 4 already finished
+[00:00] understand | OK intent: 2 objectives, 1 constraints; registry: 1 approved_decision (frozen, sha256 857bd91b5f47)
+[00:00] plan       | WARN plan left out 10 criteria; added document-only questions for: design_intent, fitness_for_objectives, requirement_completeness, internal_consistency, security_and_privacy, scalability_and_failure_modes, assumptions_and_dependencies, verifiability, decision_preservation, operability_and_governance
+[00:00] plan       | OK plan: 11 questions (1 need external research), 0 criteria skipped
+[00:00] plan       | RQ-001 [none] design_intent: What are the design's objectives, principles, constraints, requirements and approved decisions, and are they stated clearly enough to review against?
+[00:00] plan       | RQ-002 [none] fitness_for_objectives: Does each major design element plausibly achieve the objective or requirement it is meant to serve?
+[00:00] plan       | RQ-003 [none] requirement_completeness: Are any requirements, controls, error paths, rollback paths or owners missing that the objectives need?
+[00:00] plan       | RQ-004 [none] internal_consistency: Do requirements, decisions, numbers, flows and acceptance criteria agree with each other across sections?
+[00:00] plan       | RQ-005 [search] claims_and_external_constraints: Does the selected e-mail service plan have a daily sending limit below the peak reminder volume?
+[00:00] plan       | RQ-006 [none] security_and_privacy: Are data protection, access control, secrets handling, auditability and regulatory obligations covered for the data the design handles?
+[00:00] plan       | RQ-007 [none] scalability_and_failure_modes: Does the design hold at the stated load and under partial failure, retry, concurrency and recovery?
+[00:00] plan       | RQ-008 [none] assumptions_and_dependencies: Which premises, pending items, vendor capabilities or approvals does the design rely on without verifying or tracking them to closure?
+[00:00] plan       | RQ-009 [none] verifiability: Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?
+[00:00] plan       | RQ-010 [none] decision_preservation: Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?
+[00:00] plan       | RQ-011 [none] operability_and_governance: Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?
+[00:00] understand | OK done in 0.0s
+[00:00] understand | OK milestone intent: intent ready, registry 1 entries
+[00:00] plan       | OK done in 0.0s
+[00:00] plan       | OK milestone plan: plan ready, 11 research questions
+[00:00] assess     | 4 shard(s) ended in 0.0s; merged when stage 1 closes
+[00:00] research   | started
+[00:00] research   | 1 question(s) need external evidence; 2 tool(s) offered
+[00:00] research   | iteration 1/4: 1 open question(s), 30 tool call(s) left
+[00:00] research   | tool round: 1 call(s) (mcp-internet-search__search)
+[00:00] research   | tool round: 1 call(s) (mcp-internet-search__fetch)
+[00:00] research   | OK research stopped: sufficient_evidence (sufficient_evidence); 1/1 answered, 2 tool call(s), 2 ledger entr(y/ies)
+[00:00] research   | OK done in 0.0s
+[00:00] assess     | OK merged 4 shard(s): 4 findings (1 gap, 1 risk, 1 strength, 1 validation_need); 1 sound areas; coverage: 4 findings, 7 no_issue; evidence: 3 doc and 0 inference entries added to the ledger
+[00:00] assess     | OK done in 0.0s; stage 1 closed, merged in 0.0s
+[00:00] refine     | OK milestone merged: merged list ready, 4 findings from 4 shards
+[00:00] refine     | started
+[00:00] refine     | refining 4 merged findings as one global reviewer (revisions only)
+[00:00] refine     | OK refined: 3 revised, 1 unchanged, 0 merged, 0 withdrawn; 4 findings
+[00:00] refine     | OK done in 0.0s
+[00:00] verify     | started
+[00:00] verify     | 2 anchor(s) unresolved; one repair turn
+[00:00] verify     | anchors: 6 resolved, 1 repaired, 1 unresolved; 3 findings verified, 1 unverified
+[00:00] verify     | OK done in 0.0s
+[00:00] report     | started
+[00:00] report     | verdict fit_with_conditions; 3 findings, 2 unresolved, 1 limitations; invariants INV-03..10 pass; wrote report.md
+[00:00] report     | OK done in 0.0s
+[00:00] report     | OK milestone verified: verified report ready, 3 findings
+[00:00] run        | OK report: <tmp>/pc-fail/report.md

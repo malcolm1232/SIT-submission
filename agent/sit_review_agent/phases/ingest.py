@@ -26,6 +26,7 @@ from sit_review_agent.ingest.pdf import Document, ingest
 from sit_review_agent.ingest.text import PAGE_MARKER_RE, normalise
 from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.models import DegradationType, DocumentRole
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.state.run_state import DocumentRef
 from sit_review_agent.states import PhaseName
 
@@ -131,8 +132,12 @@ class IngestPhase:
                     f"{doc.doc_id}: native PDF block not sent because {why}",
                     "figures, diagrams and tables rendered as images were not visible to the model; "
                     "the review is based on the extracted text")
-            ctx.emit(f"{doc.doc_id} ({doc.role.value}): {doc.page_count or 0} pages, {len(doc.sections)} sections, "
-                     f"{len(doc.requirement_index)} requirement IDs, text sha256 {doc.sha256_text[:12]}")
+            ctx_event(ctx, f"{doc.doc_id} ({doc.role.value}): {doc.page_count or 0} pages, "
+                      f"{len(doc.sections)} sections, {len(doc.requirement_index)} requirement IDs, text sha256 "
+                      f"{doc.sha256_text[:12]}",
+                      event="document_ingested", doc_id=doc.doc_id, role=doc.role.value, pages=doc.page_count or 0,
+                      sections=len(doc.sections), requirement_ids=len(doc.requirement_index),
+                      sha256_text=doc.sha256_text[:12], title=doc.title or None)
         ctx.state.documents = refs
         ctx.documents = docs
         return ctx

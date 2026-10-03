@@ -66,6 +66,7 @@ from sit_review_agent.phases._model_calls import (
     registry_vars,
     resolve_evidence,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.state.run_state import FindingMeta, FindingRevision
 from sit_review_agent.states import PhaseName
@@ -116,12 +117,14 @@ class RefinePhase:
         phase = self.name
         drafts = list(ctx.state.finding_drafts)
         if not drafts:
-            ctx.emit("no findings to refine; skipping the refine call", "done")
+            ctx_event(ctx, "no findings to refine; skipping the refine call", "done", event="refine_skipped",
+                      findings=0)
             return ctx
         iteration = ctx.state.budget.research_iterations
         by_id = {d.id: d for d in drafts}
         ids = [d.id for d in drafts]
-        ctx.emit(f"refining {len(drafts)} merged findings as one global reviewer (revisions only)")
+        ctx_event(ctx, f"refining {len(drafts)} merged findings as one global reviewer (revisions only)",
+                  event="refine_started", findings=len(drafts))
 
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
             return ctx.prompts.render(
@@ -143,7 +146,9 @@ class RefinePhase:
                     DegradationType.OTHER,
                     "the refine revisions could not be applied after one repair call: "
                     + "; ".join(call.invalid)[:1500], REFINE_FALLBACK_IMPACT)
-            ctx.emit("refine fallback: the merged findings stand, in severity and confidence order", "warn")
+            ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order", "warn",
+                      event="refine_fallback", cut=call.cut, truncated=call.truncated, invalid=bool(call.invalid),
+                      declined=not (call.cut or call.truncated or call.invalid))
             return ctx                                     # cut, truncated or declined: disclosed by call_model
         raw = result.parsed
         out = without_unexplained_changes(raw, by_id)
@@ -167,7 +172,8 @@ class RefinePhase:
             flips = unexplained_changes(raw_revs[f.id], old)
             if flips:
                 what = ", ".join(flips)
-                ctx.emit(f"{f.id}: {what} rejected (no revision reason, no new evidence)", "warn")
+                ctx_event(ctx, f"{f.id}: {what} rejected (no revision reason, no new evidence)", "warn",
+                          event="revision_rejected", finding_id=f.id, fields_rejected=list(flips))
                 add_history(f.id, FindingRevision(phase=phase, call_id=result.call_id,
                                                   note=f"rejected: {what} without a revision reason or new evidence "
                                                        "(BEH-10); the draft's value kept"))
@@ -202,8 +208,11 @@ class RefinePhase:
             a.model_copy(update={"related_finding_ids": [i for i in dict.fromkeys(
                 target.get(x, x) for x in a.related_finding_ids) if i in kept]})
             for a in ctx.state.sound_area_drafts]
-        ctx.emit(f"refined: {counts['revised']} revised, {counts['unchanged']} unchanged, {counts['merged']} merged, "
-                 f"{counts['withdrawn']} withdrawn; {len(revised)} findings", "done")
+        ctx_event(ctx, f"refined: {counts['revised']} revised, {counts['unchanged']} unchanged, {counts['merged']} "
+                  f"merged, {counts['withdrawn']} withdrawn; {len(revised)} findings", "done", event="refined",
+                  call_id=result.call_id, revised=counts["revised"], unchanged=counts["unchanged"],
+                  merged=counts["merged"], withdrawn=counts["withdrawn"], findings=len(revised))
         if stats.dropped:
-            ctx.emit(f"{stats.dropped} evidence citations dropped (not in the evidence register)", "warn")
+            ctx_event(ctx, f"{stats.dropped} evidence citations dropped (not in the evidence register)", "warn",
+                      event="citations_dropped", count=stats.dropped)
         return ctx

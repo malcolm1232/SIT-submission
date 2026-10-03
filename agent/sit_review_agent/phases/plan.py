@@ -29,6 +29,7 @@ from __future__ import annotations
 from sit_review_agent.context import RunContext
 from sit_review_agent.llm.outputs import CriterionSkip, PlanOutput, ResearchQuestionDraft
 from sit_review_agent.phases._model_calls import call_model, criteria_vars, known_criteria
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.state.run_state import ResearchPlan, ResearchQuestion
 from sit_review_agent.states import PhaseName
@@ -106,8 +107,9 @@ class PlanPhase:
     async def run(self, ctx: RunContext) -> RunContext:
         phase = self.name
         caps = enabled_capabilities(ctx)
-        ctx.emit(f"planning the review over {len(known_criteria(ctx))} criteria "
-                 f"(capabilities: {', '.join(caps) or 'none'})")
+        ctx_event(ctx, f"planning the review over {len(known_criteria(ctx))} criteria "
+                  f"(capabilities: {', '.join(caps) or 'none'})", event="plan_started",
+                  criteria=len(known_criteria(ctx)), capabilities=list(caps))
         stop = ctx.config.stop_rules
 
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
@@ -122,15 +124,23 @@ class PlanPhase:
         plan, added = build_plan(ctx, out, missing=missing)
         ctx.state.plan = plan
         if added and out is not None:
-            ctx.emit(f"plan left out {len(added)} criteria; added document-only questions for: {', '.join(added)}",
-                     "warn")
+            ctx_event(ctx, f"plan left out {len(added)} criteria; added document-only questions for: "
+                      f"{', '.join(added)}", "warn", event="plan_criteria_added", criteria=list(added))
         n_ext = sum(1 for q in plan.questions if q.needs_external)
-        ctx.emit(f"plan: {len(plan.questions)} questions ({n_ext} need external research), "
-                 f"{len(plan.criteria_skipped)} criteria skipped", "done")
+        ctx_event(ctx, f"plan: {len(plan.questions)} questions ({n_ext} need external research), "
+                  f"{len(plan.criteria_skipped)} criteria skipped", "done", event="plan_ready",
+                  questions=len(plan.questions), external=n_ext, criteria_skipped=len(plan.criteria_skipped),
+                  fallback=None if out is not None else missing)
+        # The question and the skip reason are model text: progress.jsonl gets the IDs only.
         for q in plan.questions:
-            ctx.emit(f"{q.id} [{q.capability}] {q.criterion_id}: {q.question}")
+            ctx_event(ctx, f"{q.id} [{q.capability}] {q.criterion_id}: {q.question}", event="plan_question",
+                      public=f"{q.id} [{q.capability}] {q.criterion_id}", question_id=q.id,
+                      capability=getattr(q.capability, "value", q.capability), criterion_id=q.criterion_id,
+                      needs_external=q.needs_external)
         for s in plan.criteria_skipped:
-            ctx.emit(f"skipped {s.criterion_id}: {s.reason}")
+            ctx_event(ctx, f"skipped {s.criterion_id}: {s.reason}", event="plan_criterion_skipped",
+                      public=f"skipped {s.criterion_id}", criterion_id=s.criterion_id)
         if not plan.approved:
-            ctx.emit("plan_approval is on: waiting for approval before research", "wait")
+            ctx_event(ctx, "plan_approval is on: waiting for approval before research", "wait",
+                      event="plan_approval_waiting")
         return ctx
