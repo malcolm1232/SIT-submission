@@ -737,6 +737,8 @@ class AnthropicGateway:
                 if mapped is None:
                     raise
                 err, retry, retry_after, status = mapped
+                if status is not None:
+                    self._net.answer()          # the API answered with an error status: the network is there
                 elapsed = self.clock.monotonic() - t0
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
                                            outcome=type(err).__name__, status_code=status, retry_after_s=retry_after))
@@ -766,9 +768,10 @@ class AnthropicGateway:
                     await self.clock.sleep(delay)
                     attempt += 1
                     continue
-                if first and isinstance(err, LLMConnectionError):
+                if first and not self._net.answered and isinstance(err, LLMConnectionError):
                     raise self._net.error(err, attempt + 1) from None
                 raise err from None
+            self._net.answer()
             elapsed = self.clock.monotonic() - t0
             attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
             return self._anthropic_result(request, message, request_id=request_id, call_id=call_id, base=base,
@@ -1178,8 +1181,12 @@ class FaultInjectingLLMGateway:
             if delay:
                 await self.clock.sleep(delay)
             if spec is None:
-                return self._with_injected(await self.inner.call(request), injected)
+                res = await self.inner.call(request)
+                net.answer()
+                return self._with_injected(res, injected)
             kind = spec if isinstance(spec, str) else spec.type.value
+            if kind not in ("offline", "hang", "connection_reset"):
+                net.answer()                    # an injected API answer (a status, a stop reason, a bad body)
             try:
                 attempt_s, cut = attempt_timeout(self.runtime, request.phase, timeout_s)
             except LLMError as exc:
@@ -1268,7 +1275,7 @@ class FaultInjectingLLMGateway:
                 elif not retry_allowed(self.runtime, request.phase, wait_next):
                     assert self.runtime is not None and self.runtime.deadline is not None
                     err, final = self.runtime.deadline.no_time(request.phase, after=type(err).__name__), True
-            elif first and isinstance(err, LLMConnectionError):
+            elif first and not net.answered and isinstance(err, LLMConnectionError):
                 err = net.error(err, attempt + 1)
             if final and err.call_id is None:
                 # The call ends here: number it like a real call (schema_violation keeps the

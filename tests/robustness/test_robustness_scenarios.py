@@ -577,16 +577,36 @@ def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """No network from the start. Stage 1 starts six calls together (understand, plan, K = 4 assess
+    shards), each a first call of the run: the first to give up (connection errors within the 10 s
+    window, never the full budget) ends the run with the 'no network' message, exit 3 once; the
+    other members are cancelled, so no call runs its retry budget and none runs on after the exit.
+    The scheduling clock overlaps the concurrent waits as a wall clock would."""
     rec = recs[0]
     assert oracles.exit_code(rec) == 3 and rec.report is None
     assert rec.virtual_s <= 10, rec.virtual_s
     fail = rec.failure
     assert fail["error"] == "LLMConnectionError" and fail["message"].startswith("no network")
     assert "resume" in fail["message"] and "--replay" in fail["message"]
-    attempts = [e for e in llm_calls(rec) if e.get("fault") == "offline"]
-    assert 2 <= len(attempts) <= rec.config.agent.llm.max_retries                # a short window, not the budget
-    assert all(e["phase"] == "understand" for e in attempts)
-    return Metric("time to a clear 'no network' exit (s, virtual)", round(rec.virtual_s, 1), "<= 10")
+    entries = llm_calls(rec)
+    assert entries and all(e.get("fault") == "offline" for e in entries)            # nothing reached the model
+    by_conv: dict[str, list[dict[str, Any]]] = {}
+    for e in entries:
+        by_conv.setdefault(e["conversation_id"], []).append(e)
+    assert set(by_conv) <= {"understand-0", "plan-0", "assess-0-s1", "assess-0-s2", "assess-0-s3", "assess-0-s4"}
+    budget = rec.config.agent.llm.max_retries + 1
+    ended = [c for c, es in by_conv.items() if es[-1]["call_id"] is not None]      # the calls that gave up
+    assert ended and any(c.startswith(f"{fail['phase']}-0") for c in ended), (ended, fail["phase"])
+    for conv, es in by_conv.items():
+        assert len(es) < budget, (conv, len(es))                                   # cancelled or windowed, never the budget
+        if conv in ended:
+            assert 2 <= len(es), conv                                              # the window, not a single attempt
+    last = max(ts(e["started_at"]) for e in entries)                                # nothing ran on after the exit
+    assert (last - ts(entries[0]["started_at"])).total_seconds() <= rec.virtual_s
+    progress = rec.run_dir.progress_log.read_text(encoding="utf-8")
+    assert progress.count("error (LLMConnectionError, exit 3)") == 1                 # exits once, not six times
+    return Metric("time to a clear 'no network' exit (s, virtual)", round(rec.virtual_s, 1),
+                  "<= 10; one exit, the other stage 1 members cancelled")
 
 
 def check_inf08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -1122,7 +1142,8 @@ CASES: list[Case] = [
          notes="generated 150-page document (text form), 150k-token window: refused before sending"),
     Case("LLM-11", [sc("LLM-11", faults="LLM-11")], check_llm11),
     Case("NET-01", [sc("NET-01", faults="NET-01")], check_net01),
-    Case("NET-02", [sc("NET-02", faults="NET-02")], check_net02),
+    Case("NET-02", [sc("NET-02", faults="NET-02", clock="scheduling")], check_net02,
+         notes="six concurrent first calls (scheduling clock): the first to give up exits 3 once, the rest cancelled"),
     Case("INF-08", [sc("INF-08", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",)),
                     sc("INF-08-no-tools", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",),
                        overrides={"no_tools": True})], check_inf08,

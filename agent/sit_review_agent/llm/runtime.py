@@ -22,8 +22,9 @@ without one are left alone).
   :class:`~sit_review_agent.errors.LLMContextTooLongError` naming the document size, and is never sent.
 * :class:`FirstCallNetwork` (NET-02). Connection-type errors on the first model call of a run get a
   short retry window (``llm.first_call_network_window_s``, 10 s), then the run ends with a clear "no
-  network" message (exit 3). Later calls keep the full retry policy. Each gateway instance counts
-  its own first call, so a resumed run is covered too.
+  network" message (exit 3). Stage 1 starts its calls together, so every call started before the
+  API has answered one is a first call; calls after an answer keep the full retry policy. Each
+  gateway instance counts its own first calls, so a resumed run is covered too.
 """
 
 from __future__ import annotations
@@ -312,20 +313,32 @@ NO_NETWORK_HINT = ("no network: the model API could not be reached on the first 
 
 @dataclass
 class FirstCallNetwork:
-    """NET-02 policy for one gateway instance."""
+    """NET-02 policy for one gateway instance.
+
+    Stage 1 starts understand, plan and the K assess shards together (latency redesign), so the
+    run's "first model call" is every call started before the API has answered any of them: each
+    of those gets the window on a connection error, and the first to give up ends the run (the
+    orchestrator cancels the other stage 1 members: the run exits once). An answer is a result or
+    an HTTP error status (the API was reached); a connection error, a timeout or a cut is not. A
+    call started after an answer keeps the full retry policy."""
 
     window_s: float = 10.0
     calls_started: int = 0
+    answered: bool = False     # some attempt of some call got an answer from the API
 
     def start_call(self) -> bool:
-        """Count a logical call; ``True`` for the first one of this gateway (this run)."""
+        """Count a logical call; ``True`` while no call of this gateway (this run) has been answered."""
         self.calls_started += 1
-        return self.calls_started == 1
+        return not self.answered
+
+    def answer(self) -> None:
+        """An attempt reached the API: later calls are not first calls."""
+        self.answered = True
 
     def give_up(self, err: LLMError, elapsed_s: float, delay_s: float) -> bool:
-        """On the first call, a connection error stops retrying once the next attempt would start
-        after the window."""
-        return isinstance(err, LLMConnectionError) and elapsed_s + delay_s > self.window_s
+        """On a first call, a connection error stops retrying once the next attempt would start
+        after the window; not once the API has answered another call (the network is there)."""
+        return not self.answered and isinstance(err, LLMConnectionError) and elapsed_s + delay_s > self.window_s
 
     def error(self, err: LLMError, attempts: int) -> LLMConnectionError:
         return LLMConnectionError(f"{NO_NETWORK_HINT} ({attempts} attempt(s) within "

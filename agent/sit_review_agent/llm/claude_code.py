@@ -767,6 +767,8 @@ class ClaudeCodeGateway:
                 attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed,
                                            outcome=type(fail.error).__name__))
                 self._log_failure(base_entry, fail, elapsed, conv)
+                if not isinstance(fail.error, LLMConnectionError | LLMTimeoutError):
+                    self._net.answer()          # the API answered (an error from it): the network is there
                 if fail.retry and attempt < self.max_retries:
                     delay = self._backoff(attempt)
                     if first and self._net.give_up(fail.error, self.clock.monotonic() - t_call, delay):
@@ -781,9 +783,10 @@ class ClaudeCodeGateway:
                     await self.clock.sleep(delay)
                     attempt += 1
                     continue
-                if first and isinstance(fail.error, LLMConnectionError):
+                if first and not self._net.answered and isinstance(fail.error, LLMConnectionError):
                     raise self._net.error(fail.error, attempt + 1) from None
                 raise fail.error from None
+            self._net.answer()
             elapsed = self.clock.monotonic() - t0
             attempts.append(LLMAttempt(attempt=attempt, started_at=started_at, elapsed_s=elapsed, outcome="ok"))
             conv.session_uuid = attempt_uuid

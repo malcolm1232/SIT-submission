@@ -48,7 +48,8 @@ def llm05() -> str:
 
 
 def net02() -> str:
-    rec = run(Scenario(id="NET-02", faults="NET-02"))
+    # the scheduling clock overlaps the six concurrent first calls' waits, as a wall clock would
+    rec = run(Scenario(id="NET-02", faults="NET-02", clock="scheduling"))
     return "expected: non-zero exit with an actionable message within 10 s (virtual)\n  " + _summary(rec)
 
 

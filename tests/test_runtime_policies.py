@@ -41,6 +41,7 @@ from sit_review_agent.errors import (
     LLMConnectionError,
     LLMContextTooLongError,
     LLMDeadlineError,
+    LLMError,
     LLMOverloadedError,
     LLMTimeoutError,
 )
@@ -572,6 +573,41 @@ async def test_anthropic_first_call_connection_errors_get_a_short_window(tmp_pat
     with pytest.raises(LLMConnectionError, match="^no network"):
         await gw.call(req(PhaseName.UNDERSTAND))
     assert 2 <= msgs.calls < base.agent.llm.max_retries + 1 and clock.monotonic() <= 10
+
+
+async def test_anthropic_concurrent_first_calls_each_get_the_window_until_one_is_answered(
+        tmp_path: Path, base: EffectiveConfig) -> None:
+    """Stage 1 starts understand, plan and the K assess shards together (latency redesign): every
+    call started before the API has answered any of them is a first call of the run (the window,
+    then 'no network'); a call started after an answer keeps the full retry policy (NET-02
+    ruling of the integration pass: the window applies to the first call that fails, not only
+    to the first call started)."""
+    gw, msgs, clock = anthropic_gw(tmp_path, base, *[conn_error() for _ in range(10)])
+    with pytest.raises(LLMConnectionError, match="^no network"):
+        await gw.call(req(PhaseName.UNDERSTAND))
+    first = msgs.calls
+    with pytest.raises(LLMConnectionError, match="^no network"):         # the second call, started before
+        await gw.call(req(PhaseName.PLAN))                                # any answer: also windowed
+    assert 2 <= first < base.agent.llm.max_retries + 1 and 2 <= msgs.calls - first < base.agent.llm.max_retries + 1
+    assert clock.monotonic() <= 20
+
+
+async def test_anthropic_a_call_after_an_api_answer_keeps_the_full_retry_policy(
+        tmp_path: Path, base: EffectiveConfig) -> None:
+    """An HTTP error status is an answer: the API was reached, so a later connection error is
+    not 'no network' and keeps the whole retry budget."""
+    import anthropic
+    import httpx
+
+    resp = httpx.Response(400, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    bad = anthropic.BadRequestError("bad request", response=resp, body=None)
+    gw, msgs, _ = anthropic_gw(tmp_path, base, bad, *[conn_error() for _ in range(10)])
+    with pytest.raises(LLMError):
+        await gw.call(req(PhaseName.UNDERSTAND))                          # answered (400): the API was reached
+    with pytest.raises(LLMConnectionError) as ei:
+        await gw.call(req(PhaseName.PLAN))
+    assert not str(ei.value).startswith("no network")
+    assert msgs.calls == 1 + base.agent.llm.max_retries + 1
 
 
 async def test_anthropic_preflight_offline_is_no_network(tmp_path: Path, base: EffectiveConfig) -> None:
