@@ -152,3 +152,49 @@ The review is rendered from `report.json`, the same object the Markdown template
 The page's chat is labelled "reading aid, not the review": its corpus is the finished review only, its citations are verified by the server against that review, it runs on Opus with a cap, and its log is kept outside the evaluated agent's logs (`docs/design/ui_design.md`).
 A replayed run is stamped "replayed evidence" on the page exactly as `dra replay` stamps the report (`agent/sit_review_agent/replay.py` `BANNER_PREFIX`).
 Outputs leave the laptop as a download, an email or a session-only link on the laptop's wifi address; no hosted share link exists, by decision (`docs/design/ui_design.md`, section 11 below).
+
+## 11. Frozen interfaces and what is deliberately not built
+
+The public signatures, Pydantic models, protocols, enums and constants of the models, config, states, context, state, gateway, outputs, ingest, invariants, errors, run-directory and phase-base modules are frozen; a change to one is made alone, in its own commit, with a note naming every caller (`agent/README.md` "Interface freeze").
+The output contract is the JSON schema and the Pydantic models change only together with it, with a test that fails on enum drift (`spec/finding.schema.json`, `agent/sit_review_agent/models.py`, `tests/test_models.py`).
+The first lines of the three live-change config files are pinned by line number, so the demo-day modifications land on the lines the runbook names (`config/agent.yaml`, `config/stop_rules.yaml`, `config/tools.yaml`, `tests/test_config_layout.py`, `docs/DEMO_DAY_RUNBOOK.md` §4.1).
+The stop-reason codes are a closed enum, so a stop rule added live reuses an existing code and names itself in the detail, and the prompt bundle is hash-locked so an edit that was not meant fails a test (`agent/sit_review_agent/models.py` `StopReasonCode`, `agent/sit_review_agent/stop_rules.py`, `prompts/PROMPTS.lock`).
+A multi-provider model dropdown is not built: the gateway seam exists and another provider would be one more `LLMGateway`, but another provider is not a live change and it waits until after the interview (`agent/sit_review_agent/llm/backend.py`, `docs/DEMO_DAY_RUNBOOK.md` §4.2 row 4).
+Persistent memory across runs is not built beyond re-assessing an updated artefact against a frozen prior review, because cross-run learning on a small evaluation set would be an overfitting channel that nobody could rule out (`agent/sit_review_agent/orchestrator.py` `RunRequest.previous_run`, `docs/DOCUMENTATION_MAP.md` "Memory and state").
+A hosted public share link is not built: outputs leave the laptop as files or a session-only link, so the review of an unseen SIT document never sits on a server (`docs/design/ui_design.md`).
+An in-run second-model verifier is not built: verification is code against the canonical text and the ledger, and an independent judge belongs in the harness where it can be blinded, not inside the agent where it would be scored with it (`agent/sit_review_agent/phases/verify.py`, `harness/sit_eval/grounding.py`, `docs/DECISIONS.md` ADR-003).
+
+## 12. Comparisons made and trade-offs
+
+| The choice | Compared against | What decided it, with the number and the file |
+|---|---|---|
+| A custom state-machine loop on the Anthropic SDK with a direct MCP client | LangGraph, PydanticAI, OpenAI Agents, CrewAI, smolagents | A weighted matrix, custom 92 against LangGraph 80 and PydanticAI 77, stable under three re-weightings; every retry, degradation and log line is then our own code (`research/frameworks/README.md`, `research/frameworks/comparison.md`, `docs/DECISIONS.md` ADR-001) |
+| A concurrent first stage with four assess shards | The sequential chain with one assess call | 3,372 s against 382 s on the same document, and strict recall 11 of 14 against 13 of 14 (`docs/live_runs/QUALITY_COMPARISON.md`, `docs/DECISIONS.md` ADR-011) |
+| `medium` effort on every stage, research `low` | `high` on every stage | The same 13 flaws, precision 0.944 against 0.947, at 382 s and $5.74 against 780 s and $8.21; `high` kept as the comparison arm (`docs/live_runs/QUALITY_COMPARISON.md`, `docs/USER_DECISIONS.md` #33) |
+| The Claude Code CLI as the default backend | The Anthropic API with a key | No key needed on the owner's machine, the same model, the API kept as an option behind one protocol (`docs/DECISIONS.md` ADR-010, `agent/sit_review_agent/llm/backend.py`) |
+| Opus-only scoring judge and grader | A second-provider judge | The owner's decision on cost; the same-family limitation is disclosed and the judge path stays switchable (`docs/USER_DECISIONS.md` #16 and #23, `docs/DECISIONS.md` ADR-003, `harness/sit_eval/live_judges.py`) |
+| Two MCP servers enabled | All four | The probe: document intelligence rejected its only sample, and browser automation keeps one shared browser with no allowlist (`research/robustness/mcp_probe_findings.md`, `config/tools.yaml`) |
+| A local page with a grounded chat beside the review | A terminal-only UI, and a chat-first UI | Chat-first hides the review the lab judges, so the review is the page and the chat is a labelled reading aid built to the anti-slop craft rules (`docs/design/ui_design.md`) |
+| A small evaluation repeated over weeks | The full 132-run Tier A study at once | Subscription concurrency limits; resume and intention-to-treat make chunking safe, and three scoped options are costed for the owner (`docs/BUDGET_OPTIONS.md`, `eval/EVAL_PLAN.md` §1.2, `agent/sit_review_agent/kruns.py`) |
+| A 540 s deadline as a configurable safety net | A hard product limit | The lab brief states no time limit for the live run, so the value is a profile setting pending SIT's answer (`docs/USER_DECISIONS.md` #34, `config/profiles/demo.yaml`) |
+
+Every comparison above was measured where it could be measured, and the number is written down beside the file that holds it.
+Where it was a judgement rather than a measurement, it is a config value or a documented ruling that the owner can reverse without a code change.
+
+## 13. Walkthrough script
+
+1. Open `README.md` and say what the agent does in one sentence: it reviews a design against its own objectives, anchors every finding to a quoted passage, and recommends a change only when it can justify one.
+2. Open `agent/sit_review_agent/states.py` and show the five stages and the stage 1 dependency table, then run `dra states` to print the same graph from the code.
+3. Open `agent/sit_review_agent/orchestrator.py` at `_stage_1` and show understand, plan and the four assess shards starting as asyncio tasks, with research waiting for the first two.
+4. Open `config/agent.yaml` at `assess.shards` and show the four criterion groups, and say that a criterion appended live becomes its own shard, so it adds a parallel call and not wall time.
+5. Open `config/profiles/demo.yaml` and show the 540 s deadline, the three stage limits and the two reserves, and say that the deadline is enforced inside each model call in `agent/sit_review_agent/llm/runtime.py`.
+6. Open `docs/live_runs/QUALITY_COMPARISON.md` and show the side-by-side table: 3,372 s to 382 s, 11 of 14 to 13 of 14 strict, the same grade, with the caveat that it is one document and one run per arm.
+7. Open `agent/sit_review_agent/llm/gateway.py` and show the `LLMGateway` protocol, then `agent/sit_review_agent/llm/backend.py` to show the two backends behind it and why the CLI backend needs no API key.
+8. Open `agent/sit_review_agent/tools/gateway.py` and read the layer stack in the module docstring, then `agent/sit_review_agent/tools/policy.py` for the URL policy and the argument sanitiser.
+9. Open `config/tools.yaml` and `research/robustness/mcp_probe_findings.md` and say which two servers are on, why the other two are off, and what a cold start costs.
+10. Open `agent/sit_review_agent/ingest/anchor.py` and show the anchor rule, then a `report.md` under `docs/live_runs/rehearsal_concurrent_1/` and point at a finding's quote, page and section.
+11. Run `dra explain <finding-id>` on that run and walk the anchors, the evidence with its tool call, and the history across phases, from `agent/sit_review_agent/report/explain.py`.
+12. Open `agent/sit_review_agent/phases/report.py` at `not_assessed_verdict` and say that the model can never declare a design unassessed; only code can, with a reason.
+13. Open `agent/sit_review_agent/state/checkpoint.py` and `agent/sit_review_agent/replay.py` and say that a run can be resumed from its last checkpoint and replayed exactly at its recorded commit, stamped "replayed evidence".
+14. Open `tests/robustness/results/robustness_summary.txt` and `tests/robustness/faults/` and show the 87 scenarios, 55 passing offline, and one fault schedule that the `--faults` flag applies to a live run.
+15. Open `harness/README.md` and `eval/prereg.yaml` and close on how the agent is judged: planted flaws, a bounded matcher, a key-blind grader, a pre-registration, and a guard that marks every unsigned-key score exploratory.
