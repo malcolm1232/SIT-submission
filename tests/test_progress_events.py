@@ -30,6 +30,7 @@ from sit_review_agent.orchestrator import RunRequest, run_review
 from sit_review_agent.paths import config_dir, repo_root
 from sit_review_agent.progress import (
     PROGRESS_JSONL,
+    CallEventsGateway,
     CallTracker,
     ConsoleProgress,
     NullProgress,
@@ -467,3 +468,35 @@ def test_replay_produces_the_same_event_sequence(cfgdir: Path) -> None:
     left, right = list(comparable(a)), list(comparable(b))
     assert len(left) == len(right)
     assert [x for x, y in zip(left, right, strict=True) if x != y] == []
+
+
+# ------------------------------------------------------------------------------ the live backend's stream
+
+
+async def test_claude_code_calls_open_before_their_streamed_drafts(tmp_path: Path) -> None:
+    """On ``ClaudeCodeGateway`` (scripted ``claude -p`` stream) the call opens when the gateway
+    numbers it, before its draft items stream; each draft item carries the call ID and its shard."""
+    from sit_review_agent.config import load_config
+    from sit_review_agent.llm.gateway import LLMRequest
+    from sit_review_agent.states import PhaseName
+    from test_stream_gateway import Findings, StreamRunner, finding, gateway, stream
+
+    sink = NullProgress(jsonl_path=tmp_path / PROGRESS_JSONL)
+    runner = StreamRunner(stream({"findings": [finding(1), finding(2)]}))
+    gw, _ = gateway(tmp_path, load_config(), runner, progress=sink)
+    layer = CallEventsGateway(gw, sink, FakeClock(), shard_names=lambda: ["intent", "quality", "evidence", "ops"])
+    req = LLMRequest(phase=PhaseName.ASSESS, conversation_id="assess-0-s3", system="You are a reviewer.",
+                     messages=[{"role": "user", "content": [{"type": "text", "text": "doc"}]}], effort="medium",
+                     max_tokens=32000, output_schema=Findings, purpose="assess")
+    await layer.call(req)
+    everything = jsonl(tmp_path / PROGRESS_JSONL)
+    validate(everything)
+    status = [r for r in everything if r["type"] == "call_status"]    # the tracker's line (virtual clock)
+    assert status and all(c["call_id"] == "llm-0001" for r in status for c in r["fields"]["calls"])
+    records = [r for r in everything if r["type"] != "call_status"]
+    assert [r["type"] for r in records] == ["call_opened", "draft_item", "draft_item", "call_closed"]
+    assert {r["fields"]["call_id"] for r in records} == {"llm-0001"}
+    assert records[0]["fields"]["shard"] == 3 and records[0]["fields"]["shard_name"] == "evidence"
+    assert [(r["fields"]["shard"], r["fields"]["severity"], r["fields"]["title"]) for r in records[1:3]] == \
+        [(3, "high", "Finding 1"), (3, "high", "Finding 2")]
+    assert records[3]["fields"]["outcome"] == "ok" and records[3]["fields"]["usage"]["output_tokens"] == 400
