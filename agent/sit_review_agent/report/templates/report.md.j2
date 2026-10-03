@@ -58,7 +58,7 @@ p.{{ a.page if a.page is not none else "-" }} §{{ a.section }}{% if a.req %} ({
 |---|---|
 | Review | {{ review_id }} ({{ review_mode }} review) |
 {% for d in documents %}
-| {{ d.role | replace("_", " ") | capitalize }} | {{ d.doc_id }}: {{ d.title }}{% if d.version %} v{{ d.version }}{% endif %}{% if d.pages %}, {{ d.pages }} pages{% endif %} |
+| {{ d.role | replace("_", " ") | capitalize }} | {{ d.doc_id }}: {{ d.title }}{% if d.version %} {{ d.version }}{% endif %}{% if d.pages %}, {{ d.pages }} pages{% endif %} |
 {% endfor %}
 | Verdict | **{{ verdict.label_text }}** (confidence {{ verdict.confidence }}, {{ verdict.band }}) |
 | Tools used | {{ enabled_tools | join(", ") if enabled_tools else "none" }} |

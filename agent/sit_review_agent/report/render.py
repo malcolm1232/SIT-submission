@@ -16,6 +16,7 @@ hash of ``report.md`` can be stored in the manifest that the report itself shows
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -81,6 +82,91 @@ def _cell(text: str | None) -> str:
     return _one_line(text).replace("|", "\\|")
 
 
+_LIST_ITEM = re.compile(r"^\s*(?:[-*\u2022]|\d{1,2}[.)])\s+\S")
+
+
+def _md(text: str | None, indent: str = "") -> str:
+    """``text`` as Markdown that keeps its bullet and numbered lists (``_one_line`` flattened them
+    into " - " runs inside one paragraph: sit_sample_tools_1's fitness text and "What would change
+    this verdict"). Prose lines are joined into paragraphs as before; each list item is one line,
+    with its wrapped continuation lines joined to it; a blank line separates a paragraph from a list.
+    Every line after the first is prefixed with ``indent`` (a list inside a bullet). Text with no
+    list renders exactly as ``_one_line``."""
+    lines = (text or "").splitlines()
+    if not any(_LIST_ITEM.match(ln) for ln in lines):
+        return _one_line(text)
+    blocks: list[tuple[str, list[str]]] = []          # ("p", [lines]) | ("l", [items])
+    for ln in lines:
+        if not ln.strip():
+            continue
+        if _LIST_ITEM.match(ln):
+            item = re.sub(r"^[*\u2022]\s+", "- ", ln.strip())
+            item = re.sub(r"^-\s+", "- ", item)
+            if not blocks or blocks[-1][0] != "l":
+                blocks.append(("l", []))
+            blocks[-1][1].append(_one_line(item))
+        elif blocks and blocks[-1][0] == "l" and ln[:1].isspace():
+            blocks[-1][1][-1] += " " + _one_line(ln)    # a wrapped list item
+        else:
+            if not blocks or blocks[-1][0] != "p":
+                blocks.append(("p", []))
+            blocks[-1][1].append(_one_line(ln))
+    out = "\n\n".join(" ".join(b) if kind == "p" else "\n".join(b) for kind, b in blocks)
+    if blocks[0][0] == "l":
+        out = "\n\n" + out                            # a list never starts mid-line
+    if indent:
+        out = "\n".join((indent + ln) if i and ln else ln for i, ln in enumerate(out.split("\n")))
+    return out
+
+
+_NUMBER_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+                 "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+_SEVERITY_COUNT = re.compile(r"\b(\d{1,3}|" + "|".join(_NUMBER_WORDS) + r")(\s+)(critical|high|medium|low)"
+                             r"(?=[- ]severity\b)", re.IGNORECASE)
+
+
+def severity_counts(review: Review) -> dict[str, int]:
+    """Findings per severity, as ``report.json`` holds them (strengths have none)."""
+    out = {s.value: 0 for s in Severity}
+    for f in review.findings:
+        if f.severity is not None:
+            out[f.severity.value] += 1
+    return out
+
+
+def reconcile_severity_counts(text: str, counts: dict[str, int]) -> str:
+    """Make a "<n> high-severity" count in model prose equal the findings' own count. The verdict
+    call wrote "seven high-severity findings are still open" in sit_sample_tools_1, where the
+    review holds six; the number is computed from the findings, in the prose's own style (digits or
+    a word, capitalised or not). Text with no such count is returned unchanged."""
+
+    def fix(m: re.Match[str]) -> str:
+        n = counts.get(m.group(3).lower())
+        if n is None:
+            return m.group(0)
+        num = m.group(1)
+        if num.isdigit():
+            new = str(n)
+        else:
+            new = _NUMBER_WORDS[n] if n < len(_NUMBER_WORDS) else str(n)
+            if num[:1].isupper():
+                new = new.capitalize()
+        return f"{new}{m.group(2)}{m.group(3)}"
+
+    return _SEVERITY_COUNT.sub(fix, text)
+
+
+def version_label(version: str | None) -> str | None:
+    """The document version as the header shows it: "v2.0" for "2.0", "v2.0", "V2.0" or "Version 2.0"
+    (sit_sample_tools_1 printed "vVersion 2.0"); a version that is not a number ("Draft 3") as is."""
+    from sit_review_agent.phases.understand import normalise_version
+
+    v = normalise_version(version)
+    if not v:
+        return None
+    return f"v{v}" if v[:1].isdigit() else v
+
+
 def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[str, dict[str, Any]]) -> dict[str, Any]:
     ev = []
     for e in f.evidence:
@@ -95,17 +181,17 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
         "severity": f.severity.value if f.severity else None, "confidence": f"{f.confidence:.2f}",
         "band": confidence_band(f.confidence), "disposition": f.disposition.value,
         "secondary": [d.value for d in f.secondary_dispositions], "title": _one_line(f.title),
-        "title_cell": _cell(f.title), "statement": _one_line(f.statement),
+        "title_cell": _cell(f.title), "statement": _md(f.statement),
         "anchors": [{"page": a.page, "section": a.section_ref, "req": list(a.requirement_ids),
                      "quote": _one_line(a.quote), "doc_id": a.doc_id} for a in f.doc_anchors],
         "evidence": ev,
         "recommendation": None if rec is None else {
-            "issue": _one_line(rec.issue), "rationale": _one_line(rec.rationale),
+            "issue": _md(rec.issue, "    "), "rationale": _md(rec.rationale, "    "),
             "benefit": _one_line(rec.expected_benefit), "change": _one_line(rec.change_summary),
             "change_cell": _cell(rec.change_summary), "benefit_cell": _cell(rec.expected_benefit),
             "objectives": list(rec.objective_refs), "evidence_ids": list(rec.supporting_evidence_ids),
-            "verification": _one_line(rec.verification) if rec.verification else None},
-        "no_change_rationale": _one_line(f.no_change_rationale) if f.no_change_rationale else None,
+            "verification": _md(rec.verification, "    ") if rec.verification else None},
+        "no_change_rationale": _md(f.no_change_rationale, "  ") if f.no_change_rationale else None,
         "next_step": {"owner": f.next_step.owner, "action": _one_line(f.next_step.action)} if f.next_step else None,
         "owner_cell": _cell(f.next_step.owner) if f.next_step else "Design owner",
         "decisions": [{"id": a.registry_id, "relation": a.relation.value, "justification": _one_line(a.justification),
@@ -212,6 +298,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
             groups.setdefault(st, []).append(views[f.id])
         delta = [{"status": s, "label": s.replace("_", " "), "findings": groups[s]}
                  for s in ("resolved", "partially_addressed", "still_open", "new_in_update") if s in groups]
+    counts = severity_counts(review)
     used = {e.evidence_id for f in review.findings for e in f.evidence} | {
         x for s in review.sound_areas for x in s.evidence_ids}
     ctx = {
@@ -219,14 +306,14 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
         "headings": dict(SECTION_ORDER),
         "title": _one_line(under.title) or under.doc_id,
         "documents": [{"doc_id": d.doc_id, "title": _one_line(d.title) or d.doc_id, "role": d.role.value,
-                       "version": d.version, "pages": d.page_count, "sha256_text": d.sha256_text}
+                       "version": version_label(d.version), "pages": d.page_count, "sha256_text": d.sha256_text}
                       for d in md.documents],
         "review_id": md.review_id, "run_id": md.run_id, "created_at": md.created_at,
         "review_mode": md.review_mode.value, "prior_review_id": md.prior_review_id,
         "disabled_tools": [t.name for t in m.tools if not t.enabled],
         "enabled_tools": [t.name for t in m.tools if t.enabled],
         "no_external": not any(e.source_type.value == "external" for e in review.evidence_ledger),
-        "intent": {"statement": _one_line(review.intent_summary.statement),
+        "intent": {"statement": _md(review.intent_summary.statement),
                    "objectives": [{"ref": o.ref, "text": _one_line(o.text)} for o in review.intent_summary.objectives],
                    "constraints": [{"ref": o.ref, "text": _one_line(o.text)}
                                    for o in review.intent_summary.constraints],
@@ -236,12 +323,13 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
         "verdict": {"label": review.verdict.label.value, "label_text": verdict_label_text(review),
                     "confidence": f"{review.verdict.confidence:.2f}",
                     "band": confidence_band(review.verdict.confidence),
-                    "rationale": _one_line(review.verdict.rationale),
-                    "conditions": [{"text": _one_line(c.text), "ids": c.finding_ids}
-                                   for c in review.verdict.conditions],
+                    "rationale": reconcile_severity_counts(_md(review.verdict.rationale), counts),
+                    "conditions": [{"text": reconcile_severity_counts(_md(c.text, "  "), counts),
+                                    "ids": c.finding_ids} for c in review.verdict.conditions],
                     "per_objective": [{"ref": o.objective_ref, "label": o.label.value, "ids": o.finding_ids}
                                       for o in review.verdict.per_objective],
-                    "what_would_change_it": _one_line(review.verdict.what_would_change_it)
+                    "what_would_change_it": reconcile_severity_counts(_md(review.verdict.what_would_change_it),
+                                                                      counts)
                     if review.verdict.what_would_change_it else None},
         "executive_summary": executive_summary(review),
         "kinds": kinds,

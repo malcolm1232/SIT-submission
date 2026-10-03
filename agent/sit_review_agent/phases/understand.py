@@ -23,6 +23,8 @@ Implementation notes (workstream A):
 
 from __future__ import annotations
 
+import re
+
 from sit_review_agent.context import RunContext
 from sit_review_agent.errors import RegistryFrozenError
 from sit_review_agent.llm.outputs import RefTextDraft, UnderstandOutput
@@ -44,6 +46,21 @@ from sit_review_agent.states import PhaseName
 def _ref_texts(items: list[RefTextDraft]) -> list[RefText]:
     return [RefText(ref=(i.ref or "").strip() or None, text=i.text.strip()) for i in items if i.text.strip()]
 
+
+
+_VERSION_PREFIX = re.compile(r"^(?:document\s+)?(?:(?:version|ver|revision|rev)\b\.?\s*(?=\w)|v\.?\s*(?=\d))",
+                             re.IGNORECASE)
+
+
+def normalise_version(version: str | None) -> str | None:
+    """The document version without a word prefix: "Version 2.0", "Rev. 2.0", "v2.0" -> "2.0"
+    (the model returns the document's own wording; the report adds the "v", so sit_sample_tools_1
+    printed "vVersion 2.0"). ``None`` or blank -> ``None``; a version that is only the prefix is kept."""
+    v = " ".join((version or "").split())
+    if not v:
+        return None
+    rest = _VERSION_PREFIX.sub("", v, count=1).strip()
+    return rest or v
 
 class UnderstandPhase:
     name = PhaseName.UNDERSTAND
@@ -108,7 +125,7 @@ class UnderstandPhase:
                                       "the report has no cited restatement of the design intent")
 
         ctx.state.review_inputs_found = [s.strip() for s in out.review_inputs_found if s.strip()]
-        version = (out.document_version or "").strip()
+        version = normalise_version(out.document_version) or ""
         if version:
             for ref in ctx.state.documents:
                 if ref.role is DocumentRole.UNDER_REVIEW and ref.version is None:
