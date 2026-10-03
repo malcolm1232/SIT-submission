@@ -401,10 +401,18 @@ def settle_refs(ctx: RunContext, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _default_stop_reason(ctx: RunContext) -> StopReason:
-    if ctx.state.stop_reason is not None:
-        return ctx.state.stop_reason
-    ran = PhaseName.RESEARCH in ctx.state.completed_phases
-    return StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "research_completed" if ran else "research_not_run")
+    """The run's stop reason, with the ``sufficient_evidence`` gate applied over the whole run (the
+    findings now cite their sources); the settled reason is kept in the state, so the manifest agrees."""
+    from sit_review_agent import stop_rules
+
+    stop = ctx.state.stop_reason
+    if stop is None:
+        ran = PhaseName.RESEARCH in ctx.state.completed_phases
+        stop = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "research_completed" if ran else "research_not_run")
+    settled = stop_rules.settle_sufficient_evidence(stop, ctx.state, ctx.config.stop_rules, ctx.ledger)
+    if ctx.state.stop_reason is not None or settled is not stop:
+        ctx.state.stop_reason = settled
+    return settled
 
 
 def _intent(ctx: RunContext) -> IntentSummary:

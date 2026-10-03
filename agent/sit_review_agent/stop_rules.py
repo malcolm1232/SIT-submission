@@ -119,3 +119,71 @@ def sufficient_evidence(state: RunState, p: StopRulesConfig, elapsed_s: float) -
     ext = [q for q in state.plan.questions if q.needs_external]
     done = all(q.status == "answered" and q.evidence_ids for q in ext)
     return StopDecision(done, StopReasonCode.SUFFICIENT_EVIDENCE)
+
+
+# --------------------------------------------------------------- the sufficient_evidence gate
+
+#: ``detail`` prefix of a stop reason that was ``sufficient_evidence`` until the gate below refused it.
+NOT_SUFFICIENT = "sufficient_evidence not met"
+
+
+class EvidenceTally(NamedTuple):
+    questions: int
+    answered: int
+    cited_external: int
+
+    def sufficient(self) -> bool:
+        """At least half the plan's questions answered (half rounded up: 3 of 6, 3 of 5), or at
+        least two external ledger entries cited by a finding across the run."""
+        half = -(-self.questions // 2)
+        return (self.questions > 0 and self.answered >= half) or self.cited_external >= 2
+
+    def describe(self) -> str:
+        return (f"{self.answered} of {self.questions} plan question(s) answered, "
+                f"{self.cited_external} external source(s) cited by a finding")
+
+
+def evidence_tally(state: RunState, ledger: object) -> EvidenceTally:
+    """The counts the ``sufficient_evidence`` gate reads: plan questions, those answered, and the
+    external ledger entries (``ledger``: iterable of ledger entries) that a finding cites."""
+    from sit_review_agent.models import SourceType
+
+    questions = list(state.plan.questions) if state.plan is not None else []
+    external = {e.evidence_id for e in ledger  # type: ignore[attr-defined]
+                if getattr(e, "source_type", None) is SourceType.EXTERNAL}
+    cited = {ev.evidence_id for f in state.findings for ev in f.evidence}
+    return EvidenceTally(questions=len(questions), answered=sum(q.status == "answered" for q in questions),
+                         cited_external=len(external & cited))
+
+
+def fitting_reason(state: RunState, params: StopRulesConfig, tally: EvidenceTally, was: str | None) -> StopReason:
+    """The existing reason that fits a research end the gate refused as ``sufficient_evidence``: the
+    tool-call or round limit when one was reached, ``tool_failure`` when calls were made and none
+    succeeded, else ``no_marginal_gain``. ``detail`` names the refused claim and the counts."""
+    from sit_review_agent.models import ToolCallStatus
+
+    note = f"{NOT_SUFFICIENT} ({was or 'sufficient_evidence'}): {tally.describe()}"
+    if state.budget.tool_calls >= params.max_tool_calls:
+        return StopReason.of(StopReasonCode.BUDGET_TOOL_CALLS, f"max_tool_calls; {note}")
+    if state.budget.research_iterations >= params.max_research_iterations:
+        return StopReason.of(StopReasonCode.BUDGET_TOOL_CALLS, f"max_research_iterations; {note}")
+    if state.tool_calls and not any(c.status is ToolCallStatus.OK for c in state.tool_calls):
+        return StopReason.of(StopReasonCode.TOOL_FAILURE, note)
+    return StopReason.of(StopReasonCode.NO_MARGINAL_GAIN, note)
+
+
+def settle_sufficient_evidence(stop: StopReason, state: RunState, params: StopRulesConfig,
+                               ledger: object) -> StopReason:
+    """``stop`` with the ``sufficient_evidence`` gate applied: a ``sufficient_evidence`` that the
+    counts do not support becomes :func:`fitting_reason`; a reason this gate refused earlier (in
+    research, before any finding cited a source) becomes ``sufficient_evidence`` again when the
+    counts now support it. Any other reason is returned unchanged."""
+    tally = evidence_tally(state, ledger)
+    if stop.code is StopReasonCode.SUFFICIENT_EVIDENCE:
+        return stop if tally.sufficient() else fitting_reason(state, params, tally, stop.detail)
+    detail = stop.detail or ""
+    at = detail.find(f"{NOT_SUFFICIENT} (")
+    if at >= 0 and tally.sufficient():
+        was = detail[at + len(NOT_SUFFICIENT) + 2:].split("):", 1)[0]
+        return StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, f"{was}; {tally.describe()}")
+    return stop

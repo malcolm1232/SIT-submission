@@ -154,3 +154,86 @@ async def test_d_a_run_records_the_reopen_count_in_its_manifest_and_report(tmp_p
     tools = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))["extra"]["tools"]
     assert tools["session_reopens"] == 0 and tools["session_reopens_by_server"] == {}
     assert _header_row((run_dir / "report.md").read_text(encoding="utf-8"), "Tool session reopens") == "0"
+
+
+# ------------------------------------------------------------------------------ E: sufficient_evidence
+
+
+def _state(statuses: list[str], *, cited: list[str] = (), tool_calls: int = 3, rounds: int = 1,
+           ok_calls: bool = True) -> Any:
+    from types import SimpleNamespace as NS
+
+    from sit_review_agent.models import ToolCallStatus
+
+    status = ToolCallStatus.OK if ok_calls else ToolCallStatus.ERROR
+    return NS(plan=NS(questions=[NS(status=s) for s in statuses]),
+              findings=[NS(evidence=[NS(evidence_id=e) for e in cited])],
+              budget=NS(tool_calls=tool_calls, research_iterations=rounds),
+              tool_calls=[NS(status=status) for _ in range(tool_calls)])
+
+
+def _ledger() -> list[Any]:
+    from types import SimpleNamespace as NS
+
+    from sit_review_agent.models import SourceType
+
+    return [NS(evidence_id="EV-001", source_type=SourceType.EXTERNAL),
+            NS(evidence_id="EV-002", source_type=SourceType.EXTERNAL),
+            NS(evidence_id="EV-003", source_type=SourceType.DOC)]
+
+
+PARAMS = __import__("types").SimpleNamespace(max_tool_calls=40, max_research_iterations=4)
+
+
+def _settle(state: Any, detail: str = "model_stop_vote") -> Any:
+    from sit_review_agent.models import StopReason, StopReasonCode
+    from sit_review_agent.stop_rules import settle_sufficient_evidence
+
+    return settle_sufficient_evidence(StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, detail), state, PARAMS,
+                                      _ledger())
+
+
+def test_e_one_of_six_answered_is_not_sufficient_evidence() -> None:
+    out = _settle(_state(["answered"] + ["unanswered"] * 5))
+    assert out.code.value == "no_marginal_gain"
+    assert "sufficient_evidence not met (model_stop_vote): 1 of 6" in out.detail
+
+
+def test_e_half_rounded_up_is_sufficient() -> None:
+    assert _settle(_state(["answered"] * 3 + ["unanswered"] * 3)).code.value == "sufficient_evidence"
+    assert _settle(_state(["answered"] * 3 + ["unanswered"] * 2)).code.value == "sufficient_evidence"
+    assert _settle(_state(["answered"] * 2 + ["unanswered"] * 3)).code.value != "sufficient_evidence"
+
+
+def test_e_two_cited_external_entries_are_sufficient_one_is_not() -> None:
+    few = ["answered"] + ["unanswered"] * 5
+    assert _settle(_state(few, cited=["EV-001", "EV-002"])).code.value == "sufficient_evidence"
+    assert _settle(_state(few, cited=["EV-001", "EV-003"])).code.value != "sufficient_evidence"
+
+
+def test_e_the_fitting_reason_is_the_limit_that_ended_research() -> None:
+    few = ["answered"] + ["unanswered"] * 5
+    out = _settle(_state(few, tool_calls=40))
+    assert (out.code.value, out.detail.split(";")[0]) == ("budget_tool_calls", "max_tool_calls")
+    out = _settle(_state(few, rounds=4))
+    assert (out.code.value, out.detail.split(";")[0]) == ("budget_tool_calls", "max_research_iterations")
+    assert _settle(_state(few, ok_calls=False)).code.value == "tool_failure"
+
+
+def test_e_a_refused_claim_returns_when_findings_later_cite_two_sources() -> None:
+    from sit_review_agent.stop_rules import settle_sufficient_evidence
+
+    few = ["answered"] + ["unanswered"] * 5
+    refused = _settle(_state(few), "all_questions_answered")
+    assert refused.code.value == "no_marginal_gain"
+    again = settle_sufficient_evidence(refused, _state(few, cited=["EV-001", "EV-002"]), PARAMS, _ledger())
+    assert again.code.value == "sufficient_evidence" and again.detail.startswith("all_questions_answered; ")
+    assert settle_sufficient_evidence(refused, _state(few), PARAMS, _ledger()) is refused
+
+
+def test_e_other_reasons_pass_unchanged() -> None:
+    from sit_review_agent.models import StopReason, StopReasonCode
+    from sit_review_agent.stop_rules import settle_sufficient_evidence
+
+    cap = StopReason.of(StopReasonCode.DEADLINE, "stage_limits_s.refine_end")
+    assert settle_sufficient_evidence(cap, _state(["unanswered"] * 6), PARAMS, _ledger()) is cap
