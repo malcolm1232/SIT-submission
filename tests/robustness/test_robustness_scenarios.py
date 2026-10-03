@@ -520,9 +520,13 @@ def check_llm11(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert oracles.exit_code(rec) == 3 and rec.report is None
     msg = rec.failure["message"]
     assert "ANTHROPIC_API_KEY" in msg and all(c not in msg for c in CANARIES)
-    assert len([e for e in llm_calls(rec) if e.get("fault")]) == 1          # never retried
+    # the six stage 1 calls (understand, plan, K = 4 assess shards) start together: each is refused
+    # once and never retried (6 attempts, all attempt 0), the run exits 3 once
+    refused = [e for e in llm_calls(rec) if e.get("fault")]
+    assert len(refused) == len(llm_calls(rec)) == 6 and all(e["attempt"] == 0 for e in refused)
+    assert len({e["conversation_id"] for e in refused}) == 6                 # one per call, never retried
     assert rec.virtual_s <= 10
-    return Metric("time to a clear exit (s, virtual)", rec.virtual_s, "<= 10")
+    return Metric("time to a clear exit (s, virtual)", rec.virtual_s, "<= 10; 6 calls refused once each")
 
 
 def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -552,13 +556,16 @@ def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """150-page generated document against a 150k-token context window: the first request is
-    estimated over 80 % of the window and never sent; exit 2 naming the document size."""
+    """150-page generated document against a 150k-token context window: every first request is
+    estimated over 80 % of the window and never sent; exit 2 naming the document size. Stage 1
+    starts six calls together (understand, plan, K = 4 assess shards), so six unsent refusals are
+    logged, and none reaches the model."""
     rec = recs[0]
     assert oracles.exit_code(rec) == 2 and rec.report is None
     assert rec.gateway is not None and rec.gateway.calls == []                  # nothing reached the model
-    logged = llm_calls(rec)                                                     # the refusal is logged, unsent
-    assert len(logged) == 1 and logged[0]["sent"] is False and logged[0]["outcome"] == "LLMContextTooLongError"
+    logged = llm_calls(rec)                                                     # the refusals are logged, unsent
+    assert len(logged) == 6 and len({e["conversation_id"] for e in logged}) == 6
+    assert all(e["sent"] is False and e["outcome"] == "LLMContextTooLongError" for e in logged)
     fail = rec.failure
     assert fail["error"] == "LLMContextTooLongError" and fail["phase"] == "understand"
     assert "150 pages" in fail["message"] and "characters" in fail["message"] and "120,000 tokens" in fail["message"]
