@@ -56,6 +56,11 @@ Next: the integration pass, then the first timed rehearsal on payments v1, which
 What stays the owner's: the scored pilot and the with-tools rehearsal (which waits for the MCP key), the Tier A budget approval, Opus fast mode, the signature on the S-dev keys, and any reversal of ruling #31 (the evaluated agent at `medium`).
 The first with-tools run on the lab's own sample document exists at `docs/live_runs/sit_sample_tools_1/` (owner's run, 428.0 s, $5.54, `fit_with_conditions` 0.72, measured in its `MEASUREMENT.md`): every `search_web` call failed on a closed MCP session that the gateway classifies as a tool error, and its `text/` folder must stay out of any public snapshot.
 
+**State on 2026-10-03 (final hub of session 4).**
+The review UI (`dra ui`, the `progress.jsonl` event stream, and the Download, Email and Share outputs of `docs/USER_DECISIONS.md` #36), the merged-finding-ID fix (`agent/sit_review_agent/finding_refs.py`, invariant INV-12) and the MCP session fix (reopen and retry, `session_idle_reopen_s`, the two-failure disable rule of #38, robustness NET-06) are merged and verified on `claude/happy-darwin-d0bl94` (`docs/transcripts/session4/final_hub.md`).
+`markdown-it-py` is a declared dependency and Playwright is in the `dev` extra; run `playwright install chromium` once for the browser tests.
+What stays the owner's: a second with-tools run on the lab document with the MCP key on his Mac, to confirm the session fix live; an SMTP server and `SIT_UI_SMTP_PASSWORD` in `config/ui.yaml` if Email is to be used; opening a share link from a second device; the Tier A budget approval; Opus fast mode; the signature on the S-dev keys; and any reversal of ruling #31.
+
 ## Owner tasks on the critical path (cannot be delegated)
 
 1. DONE 2026-10-03: the owner ran `scripts/probe_mcp_servers.py` on his Mac at 11:24.

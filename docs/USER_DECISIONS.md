@@ -156,3 +156,14 @@ Recorded by the session 4 probe-findings worker from the owner's words, relayed 
 | # | Question | Decision | Consequence |
 |---|---|---|---|
 | 35 | Will the owner write a human answer key for the SIT Memory Platform PDF before the agent runs on it (#32)? | The owner, 2026-10-03, verbatim: "lets assume there is not answer key". | #32 is superseded. The SIT sample is a demo and rehearsal document, not an evaluation item, and the agent may run on it. Tier A rests on the three synthetic items (S-dev) and the two sealed held-out items (S-heldout). Real-dev lines A-6 and A-7, tasks T1 and T8, claim CL9 and hypothesis H9 are withdrawn (`eval/EVAL_PLAN.md` note under §1, `eval/prereg.yaml`, `eval/prereg_deviations.md` entry 12). The Tier A run count and cost are recomputed by the budget lane. |
+
+## 2026-10-03 (review outputs, assess timing, MCP session rule)
+
+Recorded by the session 4 final hub from the planner's brief.
+Row 36 is the owner's word; rows 37 and 38 are SIT FABLE decisions for the owner.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 36 | What can a reader do with a finished review on the `dra ui` page? | The owner, 2026-10-03, verbatim: "yes", to the planner's shape for the review outputs: Download (one self-contained HTML file, plus `report.md` and `report.json`); Email (SMTP from the owner's Mac, the password from the environment, shown disabled with its reason when unconfigured); a session-only share link on the laptop's wifi address, with no login and no persistence. No hosted public link. | Built in `agent/sit_review_agent/ui/export.py`, `mail.py` and `share.py`, configured by `config/ui.yaml` (email off as shipped). The pasted-link fetch of `ui/fetch.py` cites this row in its docstring but is not part of the shape the owner answered. |
+| 37 | The assess shards start at about 2 s and research at about 126 s, so no shard sees external evidence. Is that acceptable before the interview? | SIT FABLE for the owner, 2026-10-03: yes. Refine applies the external evidence to the merged findings; this is the designed trade for the time slot, confirmed by the first with-tools run on the lab document (428 s, nothing cut). | Stays as is before the interview. A future variant may start a second assess pass after research. |
+| 38 | How does the agent treat an MCP session the server has closed or left idle? | SIT FABLE for the owner, 2026-10-03: a closed session is reopened once and the call retried once; a session idle over 60 s is reopened before a call; a tool is disabled only after two genuine failures. | From the first with-tools run, where all five web searches failed on a session the server had closed. Implemented in `agent/sit_review_agent/tools/gateway.py` (`MCPToolGateway`, `PolicyToolGateway.TOOL_ERROR_LIMIT`), `config/tools.yaml` `session_idle_reopen_s: 60`; robustness scenario NET-06. |
