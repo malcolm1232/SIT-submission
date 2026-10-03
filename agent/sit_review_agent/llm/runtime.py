@@ -10,7 +10,7 @@ without one are left alone).
   timeout is ``min(llm.timeout_s, remaining - reserve)``; the reserve is
   ``stop_rules.report_reserve_seconds`` (verify + report, the same reserve the between-phase
   ``deadline`` rule keeps) and, for ``research`` only, also ``stop_rules.refine_reserve_seconds``,
-  so research absorbs the squeeze and assess keeps its time. ``verify`` and ``report`` are the
+  so research absorbs the squeeze and refine keeps its time. ``verify`` and ``report`` are the
   reserve and may use what is left up to the deadline. A run whose ``stop_rules.active`` has no
   ``deadline`` rule keeps the full ``llm.timeout_s``. An attempt bounded by the deadline that times
   out raises :class:`~sit_review_agent.errors.LLMDeadlineError` and is never retried; a retry (or a
@@ -436,7 +436,7 @@ def deadline_warnings(stop_rules: Any, *, min_attempt_s: float = MIN_ATTEMPT_S) 
                       f"{fix}"]
     if before_verify - a < min_attempt_s:
         return [*out, f"deadline {d} s leaves research no time: {r} s is kept for verify + report and {a} s for "
-                      f"assess, so understand, plan and assess share {before_verify} s and the review will be "
+                      f"refine, so understand, plan and assess share {before_verify} s and the review will be "
                       f"document-only (not assessed if those calls need longer); {fix}"]
     return out
 

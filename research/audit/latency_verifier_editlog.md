@@ -32,3 +32,12 @@ The fetch itself had already failed on the credential helper (`git: 'credential-
   Survived: a hash match with another phase or purpose served silently instead of raising `ReplayDivergence`.
   Test added: `tests/test_cli_replay.py::test_a_hash_match_with_another_purpose_diverges`; it fails under that mutation.
   The `_TimedPhase` forward was mutated by the integration pass and was not mutated again.
+- G (salvage and accounting): no edit.
+  The stream, partial-scanner, stream-gateway, unrecorded-usage, accounting, concurrent-manifest and harness usage tests passed (123).
+  The phase-graph probe run (selftest fixture, scheduling clock) was scored with `sit-eval score --judge fake --exploratory` against the payments key: exit 0, `metrics.efficiency.value.calls_with_unrecorded_usage` read as `[]`.
+- H (hermetic argv): no edit; the agent's argv tests passed.
+  Observation, not changed: the harness judge's `claude -p` argv (`harness/sit_eval/live_judges.py`) uses `--output-format json` and carries no `--setting-sources ""`; the harness is unchanged since 7be556d and outside the redesign.
+- I (config): stale wording after the redesign.
+  `llm/runtime.py` said the refine reserve lets "assess keep its time" and its short-deadline warning called the reserve "for assess"; both now say refine.
+  `config/stop_rules.yaml` said "Until W1 reads stage_limits_s"; it now says each call is bounded by `stage_limits_s` and the reserve still bounds research.
+  Test: `tests/test_runtime_policies.py` asserts the warning names refine, not assess.

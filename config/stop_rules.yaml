@@ -25,8 +25,8 @@ report_reserve_seconds: 180        # kept for verify + report: the deadline rule
 refine_reserve_seconds: 600        # stage 1 (research and the assess shards) ends this long before the report
                                    # reserve, so refine keeps its time (research absorbs the squeeze; LLM-05).
                                    # Renamed from assess_reserve_seconds on 2026-10-03 (latency redesign); the
-                                   # old key is refused, not mapped. Until W1 reads stage_limits_s the runtime
-                                   # still applies it to research only, as before. 600 s: one assess attempt at
+                                   # old key is refused, not mapped. Each model call is bounded by
+                                   # stage_limits_s; this reserve still bounds research. 600 s: one assess attempt at
                                    # high took ~520 s (HANDOVER §8)
 # stage_limits_s: the run-clock second by which each stage of the concurrent design must have ended
 # (design 2026-10-03 section 4; readers: W1 llm/runtime.py, W2 orchestrator.py). They are absolute

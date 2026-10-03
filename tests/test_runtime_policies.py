@@ -505,6 +505,7 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     short = deadline_warnings(rules(deadline_seconds=300))
     assert len(short) == 2 and "scaled by 300/3600" in short[0]
     assert "leaves research no time" in short[1] and "share 120 s" in short[1]
+    assert "s for refine" in short[1] and "for assess" not in short[1]          # the reserve is refine's
     none = deadline_warnings(rules(deadline_seconds=185))
     assert len(none) == 2 and "no model call can run before verify" in none[1] and "not assessed" in none[1]
     # The runbook's rerun: the limits are scaled and the demo reserves (75 s + 200 s) still leave research 25 s.
