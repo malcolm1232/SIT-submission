@@ -4,8 +4,11 @@ Routes (design note section 9, W2)::
 
     GET  /                          the page (``/?run=<id>`` opens a run)
     GET  /static/<file>             index.html, tokens.css, app.css, app.js
-    GET  /meta                      profiles, tools, whether runs can be started here
-    GET  /runs                      run directories under --runs-dir, newest first
+    GET  /meta                      profiles, tools, backend, version, config file names, whether runs can start here
+    GET  /tools                     per server: enabled, the last recorded warm-up and its time, tool count
+    POST /tools/probe               the preflight warm-up of the enabled servers, on demand (never on page load)
+    GET  /runs                      run directories under --runs-dir, newest first (a running row carries its
+                                    stage, run clock and open calls from the last progress.jsonl records)
     POST /runs                      start ``dra review`` as a subprocess (multipart upload, or a pasted
                                     https link to a PDF in ``document_url``, fetched by ``ui.fetch``)
     GET  /runs/<id>                 one run's summary and status
@@ -31,7 +34,8 @@ and spend chat budget; that is the documented limitation.
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import AsyncIterator, Callable
+import os
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -42,6 +46,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from sit_review_agent import __version__
 from sit_review_agent.config import UrlPolicy
 from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
@@ -98,6 +103,18 @@ class UIState:
     url_policy: UrlPolicy = field(default_factory=UrlPolicy)
     fetch_transport: Any = None
     resolve: Callable[[str], list[str]] = fetch.resolve_host
+    #: The effective config as the server states it to the page: the LLM backend (``claude_code`` means
+    #: "your subscription, no API key"), the model, the package version and the config files by name.
+    backend: str | None = None
+    model: str | None = None
+    version: str = __version__
+    config_files: list[str] = field(default_factory=list)
+    #: The env var that holds the MCP key (``tools.auth_env``); its value is never read into the page.
+    auth_env: str = "SIT_MCP_API_KEY"
+    #: Runs the preflight warm-up of the enabled servers and returns its rows; None when the server has
+    #: no agent configuration to probe with.
+    probe: Callable[[], Awaitable[dict[str, Any]]] | None = None
+    last_probe: dict[str, Any] | None = None
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -120,7 +137,10 @@ def build_app(state: UIState) -> Starlette:
 
     async def meta(request: Request) -> Response:
         return _json({"profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
-                      "launch_note": state.launch_note, "commit": state.commit,
+                      "launch_note": state.launch_note, "commit": state.commit, "version": state.version,
+                      "backend": state.backend, "model": state.model, "config_files": list(state.config_files),
+                      "auth_env": state.auth_env, "bind_host": state.bind_host, "port": state.port,
+                      "ui_args": list(state.ui_args),
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
                       "link_max_mb": fetch.MAX_BYTES // (1024 * 1024),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
@@ -128,6 +148,25 @@ def build_app(state: UIState) -> Starlette:
 
     async def list_runs(request: Request) -> Response:
         return _json({"runs": rundata.list_runs(state.runs_dir, alive=state.launcher.alive())})
+
+    async def tools_get(request: Request) -> Response:
+        out = rundata.tools_status(state.runs_dir, state.tools)
+        out.update(auth_env=state.auth_env, key_present=bool(os.environ.get(state.auth_env, "").strip()),
+                   probe=state.last_probe)
+        return _json(out)
+
+    async def tools_probe(request: Request) -> Response:
+        """The preflight warm-up (initialize + tools/list on every enabled server), only on this request:
+        the page never probes on load, because the servers scale to zero and each probe is a cold start."""
+        if state.probe is None:
+            return _err(409, "This server has no agent configuration to probe with.")
+        if not any(t.get("enabled") for t in state.tools):
+            return _err(409, "No tool server is enabled in config/tools.yaml, so there is nothing to probe.")
+        if not os.environ.get(state.auth_env, "").strip():
+            return _err(409, f"{state.auth_env} is not set in this server's environment: export it in the shell "
+                             "that starts dra ui, then probe again. The page never reads the key.")
+        state.last_probe = await state.probe()
+        return _json(state.last_probe)
 
     async def start_run(request: Request) -> Response:
         if not state.can_launch:
@@ -359,6 +398,8 @@ def build_app(state: UIState) -> Starlette:
     routes = [
         Route("/", index),
         Route("/meta", meta),
+        Route("/tools", tools_get, methods=["GET"]),
+        Route("/tools/probe", tools_probe, methods=["POST"]),
         Route("/runs", list_runs, methods=["GET"]),
         Route("/runs", start_run, methods=["POST"]),
         Route("/runs/{run_id}", run_info),
@@ -434,10 +475,52 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
                 "is off. Serve the run root to start runs here.")
     tools = [{"name": s.name, "enabled": s.enabled} for s in cfg.tools.servers]
     smtp, smtp_detail = mail.load_smtp(Path(cfg.config_root) / "ui.yaml")
+    files = sorted(cfg.source_files)
+    try:
+        files.append(str((Path(cfg.config_root) / "ui.yaml").relative_to(root)))
+    except ValueError:
+        files.append(str(Path(cfg.config_root) / "ui.yaml"))
     return UIState(runs_dir=rd, repo_root=root, launcher=launcher or Launcher(repo_root=root),
                    chat_client=chat_client or chat.ClaudeCodeChatClient.from_config(cfg),
                    can_launch=can_launch, launch_note=note, profiles=_profiles(config_path), tools=tools,
-                   commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy)
+                   commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy,
+                   backend=cfg.agent.llm.backend, model=cfg.agent.model, config_files=files,
+                   auth_env=cfg.tools.auth_env, probe=probe_with(cfg))
+
+
+def probe_with(cfg: Any) -> Callable[[], Awaitable[dict[str, Any]]]:
+    """The on-demand probe: the gateway's own warm-up (initialize + ``tools/list`` on every enabled
+    server, the full cold-start allowance), then one row per server. Its progress lines are kept
+    with the result after the key redaction the preflight uses."""
+
+    async def probe() -> dict[str, Any]:
+        import io
+
+        from sit_review_agent.clock import SystemClock
+        from sit_review_agent.progress import ConsoleProgress
+        from sit_review_agent.tools.cassette import Redactor
+        from sit_review_agent.tools.gateway import MCPToolGateway, ServerHealth
+
+        out = io.StringIO()
+        redact = Redactor.from_env((cfg.tools.auth_env,))
+        clock = SystemClock()
+        gw = MCPToolGateway(cfg.tools, cfg.endpoints.servers, clock=clock, progress=ConsoleProgress(stream=out))
+        at = clock.now_utc().strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows = []
+        try:
+            health = await gw.warm_up()
+            for s in cfg.tools.enabled_servers():
+                h = health.get(s.name, ServerHealth.DOWN)
+                n = len(getattr(gw, "_tools", {}).get(s.name, []))
+                err = getattr(gw, "last_errors", {}).get(s.name)
+                rows.append({"name": s.name, "warm": h is ServerHealth.OK and n > 0, "tools": n, "health": h.value,
+                             "error": redact.text(str(err)) if err else None})
+        finally:
+            await gw.aclose()
+        return {"at": at, "servers": rows, "auth_failed": bool(getattr(gw, "auth_failed", False)),
+                "lines": [redact.text(ln) for ln in out.getvalue().splitlines() if ln.strip()]}
+
+    return probe
 
 
 def serve(*, host: str, port: int, runs_dir: Path | None, config_path: Path | None, allow_remote: bool,
