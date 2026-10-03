@@ -1,0 +1,51 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	ingest(ingest)
+	stage1_open(stage1_open)
+	assess_shard(assess_shard)
+	assess(assess)
+	merge(merge)
+	refine(refine)
+	verify(verify)
+	report(report)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> ingest;
+	assess --> merge;
+	assess_shard --> merge;
+	ingest --> stage1_open;
+	merge -.-> __end__;
+	merge -.-> refine;
+	merge -.-> verify;
+	refine --> verify;
+	stage1_chain\3a__end__ --> merge;
+	stage1_open -.-> assess;
+	stage1_open -.-> assess_shard;
+	stage1_open -.-> merge;
+	stage1_open -.-> stage1_chain\3a__start__;
+	stage1_open -.-> verify;
+	verify --> report;
+	report --> __end__;
+	subgraph stage1_chain
+	stage1_chain\3a__start__(<p>__start__</p>)
+	stage1_chain\3aunderstand(understand)
+	stage1_chain\3aplan(plan)
+	stage1_chain\3agate(gate)
+	stage1_chain\3aresearch(research)
+	stage1_chain\3a__end__(<p>__end__</p>)
+	stage1_chain\3a__start__ --> stage1_chain\3aplan;
+	stage1_chain\3a__start__ --> stage1_chain\3aunderstand;
+	stage1_chain\3agate -.-> stage1_chain\3a__end__;
+	stage1_chain\3agate -.-> stage1_chain\3aresearch;
+	stage1_chain\3aplan --> stage1_chain\3agate;
+	stage1_chain\3aunderstand --> stage1_chain\3agate;
+	stage1_chain\3aresearch --> stage1_chain\3a__end__;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+
