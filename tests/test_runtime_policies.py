@@ -292,6 +292,41 @@ def test_a_deadline_below_the_stage_limits_scales_them_and_says_so(base: Effecti
     assert tiny["stage_1_end"] < tiny["refine_end"] < tiny["verdict_end"] < 3
 
 
+def test_a_deadline_above_the_planned_run_scales_the_limits_up_and_says_so(base: EffectiveConfig) -> None:
+    """Runbook §5: `--profile demo --deadline 900` must give the stages the added 360 s. Before
+    2026-10-03 the limits only scaled down, so a longer deadline kept 265 / 465 / 530 s and the
+    extra time idled after the verdict limit. The ratio is the scale-down one, deadline / planned
+    (planned = refine_end + report reserve = 540 s on the demo profile, 3600 s on the default)."""
+    from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
+
+    demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    at = lambda s: demo.model_copy(update={"deadline_seconds": s})  # noqa: E731
+    # 540 s, the profile's own deadline: unchanged and quiet.
+    same, quiet = effective_stage_limits(at(540))
+    assert quiet is None and same == DEMO_LIMITS
+    # 900 s: scaled up by 900/540.
+    up, note = effective_stage_limits(at(900))
+    assert up == {"stage_1_end": 441, "refine_end": 775, "verdict_end": 883}
+    assert note is not None and "scaled up by 900/540 to 441 / 775 / 883 s" in note and "265 / 465 / 530 s" in note
+    assert deadline_warnings(at(900)) == [note]                          # announced first, nothing else
+    lim = build_runtime(load_config(overrides=ConfigOverrides(profile="demo", deadline_seconds=900)), lambda: 0.0)
+    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (441, True)
+    # 3600 s on the demo profile: scaled up by 3600/540, and still inside the deadline's reserves.
+    big, big_note = effective_stage_limits(at(3600))
+    assert big == {"stage_1_end": 1766, "refine_end": 3100, "verdict_end": 3533}
+    assert big_note is not None and "scaled up by 3600/540" in big_note
+    for d, got in ((900, up), (3600, big)):
+        assert got["stage_1_end"] < got["refine_end"] < got["verdict_end"] < d
+        assert got["refine_end"] <= d - demo.report_reserve_seconds          # verify + report keep their reserve
+        assert d - got["verdict_end"] >= 540 - DEMO_LIMITS["verdict_end"]      # and render its margin
+    # The default profile at its own deadline: unchanged and quiet; above it: scaled up.
+    dflt, dflt_note = effective_stage_limits(base.stop_rules)
+    assert dflt_note is None and dflt == {"stage_1_end": 2820, "refine_end": 3420, "verdict_end": 3540}
+    longer, longer_note = effective_stage_limits(base.stop_rules.model_copy(update={"deadline_seconds": 7200}))
+    assert longer == {"stage_1_end": 5640, "refine_end": 6840, "verdict_end": 7080}
+    assert longer_note is not None and "scaled up by 7200/3600" in longer_note
+
+
 async def test_claude_code_announces_its_bound(tmp_path: Path, base: EffectiveConfig) -> None:
     from sit_review_agent.progress import NullProgress
 

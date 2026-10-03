@@ -48,7 +48,7 @@ CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`)
 
 ## 4. On-the-spot modifications (part d)
 
-The four most likely requests, with the exact file and lines each one touches. Every change is followed by `make smoke` (≤ 60 s, offline) and then a demonstration: `dra review <pdf> --plan-only` (prints the plan, zero tool calls) when the change shows in the plan, or a short live rerun (`--profile demo --deadline 300`) when it shows in behaviour. The new value appears in the run manifest. A deadline shorter than the profile's stage limits (265 / 465 / 530 s on the run clock, `config/profiles/demo.yaml` `stage_limits_s`) is allowed: the limits are absolute seconds, so a rerun such as `--deadline 300` holds a deadline below them, and the runtime scales the three limits by the deadline over 540 s and announces it on the first progress lines (`WARN deadline 300 s is not above this profile's stage limits ... scaled by 300/540 to 147 / 258 / 294 s`; not rehearsed). What such a short rerun produces is not yet measured, so prefer `--plan-only` where the change shows in the plan, and otherwise rerun with the profile's own deadline.
+The four most likely requests, with the exact file and lines each one touches. Every change is followed by `make smoke` (≤ 60 s, offline) and then a demonstration: `dra review <pdf> --plan-only` (prints the plan, zero tool calls) when the change shows in the plan, or a short live rerun (`--profile demo --deadline 300`) when it shows in behaviour. The new value appears in the run manifest. A deadline shorter than the profile's stage limits (265 / 465 / 530 s on the run clock, `config/profiles/demo.yaml` `stage_limits_s`) is allowed: the limits are absolute seconds, so a rerun such as `--deadline 300` holds a deadline below them, and the runtime scales the three limits by the deadline over 540 s and announces it on the first progress lines (`WARN deadline 300 s is not above this profile's stage limits ... scaled by 300/540 to 147 / 258 / 294 s`; not rehearsed). What such a short rerun produces is not yet measured, so prefer `--plan-only` where the change shows in the plan, and otherwise rerun with the profile's own deadline. A deadline longer than 540 s scales the three limits up by the same rule, announced the same way (`--deadline 900` gives 441 / 775 / 883 s), so a longer rerun gives every stage its share of the added time; a deadline from 531 to 540 s keeps them as set.
 
 ### 4.1 Planned config files (line numbers are part of the contract)
 
@@ -138,7 +138,7 @@ Less likely, prepared: change the persona (`config/agent.yaml` line 12 → `secu
 
 - If no draft finding has appeared by run time 265 s (clock 4:55), say so, start the replay, and walk `explain` and `coverage` on it while the live run finishes.
 - If the live report is partial, show it first with its disclosed cuts, then the replay for depth.
-- If it is `not_assessed`, show the replay, and rerun with `--deadline 900` during questions.
+- If it is `not_assessed`, show the replay, and rerun with `--profile demo --deadline 900` during questions: the runtime scales the three stage limits up by 900/540 to 441 / 775 / 883 s on the run clock and says so on the first progress lines (`WARN deadline 900 s is longer than the 540 s run ... scaled up by 900/540 to 441 / 775 / 883 s`; not rehearsed).
 - The replay shows the SIT sample only, never the unseen PDF. It is stamped "replayed evidence"; say that aloud.
 
 ### 5.1 `dra explain <finding-id>` (provenance)
