@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .env
 .env.*
+!.env.example
 mcp_probe_results.json
 mcp_probe_selftest_results.json
 runs/
