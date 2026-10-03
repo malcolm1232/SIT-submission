@@ -426,3 +426,29 @@ async def test_real_mcp_client_reopens_a_session_whose_stream_ended() -> None:
         assert [a.error_class for a in res.attempts] == [ToolErrorClass.SESSION_CLOSED, None]
         assert len(gw.session_events) == 1
         await gw.aclose()
+
+
+# =============================================================================== the recorded run replays as recorded
+
+
+async def test_recorded_session_errors_of_sit_sample_tools_1_replay_as_recorded() -> None:
+    """``dra replay`` serves tools.jsonl as recorded (no policy layer runs again): the five recorded
+    search_web failures come back as the recorded ``tool_error`` with the -32000 message, and the
+    recorded success as a success. The new classification applies to new calls only."""
+    import json
+    from pathlib import Path
+
+    from sit_review_agent.replay import JournalReplayToolGateway
+
+    log = Path(__file__).resolve().parents[1] / "docs" / "live_runs" / "sit_sample_tools_1" / "tools.jsonl"
+    entries = [json.loads(ln) for ln in log.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    web = [e for e in entries if e["tool"] == "search_web"]
+    assert len(web) == 5 and len(entries) == 6
+    gw = JournalReplayToolGateway(entries, None)
+    for e in entries:
+        res = await gw.call(qualify(e["server"], e["tool"]), e["args"])
+        assert res.replayed and res.ok == (e["status"] == "ok")
+        if e["tool"] == "search_web":
+            assert res.error_class is ToolErrorClass.TOOL_ERROR               # as recorded, not reclassified
+            assert "-32000" in (res.error_message or "")
+    assert gw.pending == []
