@@ -92,14 +92,29 @@ Run mix check: FULL = A-1 16 + A-2 9 + A-3 9 + A-4 6 + A-5 18 + A-6 3 + A-7 3 + 
 - Pilot checkpoint cost figure: $3.24 → $8.21 (the measured `high` run); $8.21 - $6.14 = $2.07 above the predicted with-research FULL run.
 - Tier B line B-1: 9 A4b-high runs × $8.21 = $73.89 before margin; A4b-xhigh not measured; the rest of Tier B not redone.
 
+### 2.8 EVAL_PLAN E1 schedule cell
+
+- A-3 and A-5 hold 36 FULL-shaped runs (A-3 9 FULL + 9 A5, A-5 18 FULL), 9 B0 and 9 B0-$.
+- 36 × 382.3 s = 13,762.8 s; 9 × 859.8 s = 7,738.2 s; 9 × 1,719.6 s = 15,476.4 s; sum 36,977.4 s; / 3,600 = 10.27 h; / 2 = 5.14 h; / 3 = 3.42 h (shown as 10.3, 5.1 and 3.4 h).
+
 ## 3. Edits
 
 | File | Change | Why |
 |---|---|---|
 | `docs/BUDGET.md` | Top note replaced by a dated Basis paragraph; §1.1 measured per-run table with arithmetic; old §1 kept as §1.2 planning figures; §2 to §5 marked as planning prices, not redone; §4 Tier A pointer $650 → $3,282; §4 effort-switch note on the `claude_code` backend; §5 checkpoint re-based to $8.21 with the prereg field left as it is; §6 Tier A recomputed with comparison, wall-time tables and an owner approval line left blank | Item 1 |
 | `eval/EVAL_PLAN.md` | Cost basis paragraph replaced by the measured figures with a pointer to `docs/BUDGET.md` §1.1 and §6; the old run-time note labelled as the old sequential agent; the "to be re-measured after the first rehearsal" note replaced by the measured figures; §1.2 agent USD column, instruments table, totals and approval line at the measured prices; the pilot-score paragraph labels the old numbers as the old agent and cites `docs/live_runs/QUALITY_COMPARISON.md`; the checkpoint line names the re-based $8.21; the second "to be re-measured" line replaced by the measured run time; E1 schedule cell recomputed; Tier B line B-1 and the Tier A plus B line marked as not redone; one pre-existing em dash placeholder in the run table replaced by "-" | Item 2 |
+| `docs/USER_DECISIONS.md` | Rows #32 (the owner: no agent run on the SIT Memory Platform PDF before his key exists), #33 (SIT FABLE: `medium` stays the default on measured ground, `high` is the A4b arm) and #34 (SIT FABLE: the lab brief sets no live-run time limit; 540 s is an assumption) in two new dated sections; nothing renumbered | Item 3 |
+| `docs/DEMO_DAY_RUNBOOK.md` | Line 7 (unknowns) and the §5 clock row at 0:30 say the 540 s figure is an assumption pending SIT's answer and name #34; the §5 prediction replaced by the measured 382.3 s (clock 6:52) and the predicted with-research 389.3 to 438.3 s (clock 6:59 to 7:48) | Item 4 |
+| `config/profiles/demo.yaml` | One comment line inserted as line 28, after the pinned line 27 (`deadline_seconds: 540`); no value changed and no pinned line moved (`tests/test_config_layout.py` 9 passed) | Item 4 |
+| `docs/transcripts/session4/budget_and_records.md`, this file | The session report and this edit log | Item 5 |
 
-### 2.8 EVAL_PLAN E1 schedule cell
+### 3.1 Runbook clock arithmetic
 
-- A-3 and A-5 hold 36 FULL-shaped runs (A-3 9 FULL + 9 A5, A-5 18 FULL), 9 B0 and 9 B0-$.
-- 36 × 382.3 s = 13,762.8 s; 9 × 859.8 s = 7,738.2 s; 9 × 1,719.6 s = 15,476.4 s; sum 36,977.4 s; / 3,600 = 10.27 h; / 2 = 5.14 h; / 3 = 3.42 h (shown as 10.3, 5.1 and 3.4 h).
+- 382.3 s + 30 s = 412.3 s = 6 min 52 s; 389.3 + 30 = 419.3 s = 6:59; 438.3 + 30 = 468.3 s = 7:48.
+
+## 4. Findings left open
+
+- Row #33 says the ablation is re-run in Tier A at larger n, but `eval/EVAL_PLAN.md` still has A4b in Tier B (line B-1); this pass changes neither the run matrix nor the Tier A budget for it; 9 A4b-high runs would add 9 × $8.21 = $73.89 before margin, $96.06 with it (9 × $8.21 × 1.3 = $96.057).
+- Prereg `costs.per_run_usd` still holds the planning figures, including `heavy_case_FULL: 3.24`; it is not a `fill_before_freeze` field, so the re-base to $8.21 needs a deviations entry.
+- The Sonnet control grader, B0 and B0-$ costs and times are derived, not measured; research with tools is predicted, not measured.
+- `docs/BUDGET.md` §2 to §5 (full programme, cut savings) and `eval/EVAL_PLAN.md` Tier B are still at the planning prices.
