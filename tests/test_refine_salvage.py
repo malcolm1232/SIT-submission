@@ -172,13 +172,14 @@ async def test_applied_evidence_reaches_the_ledger_and_the_finding(tmp_path: Pat
               "derived_from": []}]
     revs = [keep(fid(1), 1, "high", "refinement_now", reason="the vendor limit confirms it", added_evidence=added)]
     ctx.llm.script["refine"] = deque([FakeResponse(raises=cut_error({"revisions": revs}))])
-    n_ledger = len(list(ctx.ledger))
+    [notify] = [e.evidence_id for e in ctx.ledger if e.excerpt == Q_NOTIFY]   # cited by the even findings
+    assert notify not in {c.evidence_id for c in ctx.state.finding_drafts[0].evidence}
     await RefinePhase().run(ctx)
     f = next(x for x in ctx.state.finding_drafts if x.id == fid(1))
     cited = [c.evidence_id for c in f.evidence]
     assert ext in cited
-    new = list(ctx.ledger)[n_ledger:]
-    assert new and new[0].excerpt == Q_NOTIFY and new[0].evidence_id in cited
+    assert notify in cited                                  # the document quote reuses its ledger entry
+    assert [e.evidence_id for e in ctx.ledger if e.excerpt == Q_NOTIFY] == [notify]   # no duplicate entry
     assert "NEW-1" not in cited
     assert "1 of 20" in cut_degradation(ctx).impact
 
