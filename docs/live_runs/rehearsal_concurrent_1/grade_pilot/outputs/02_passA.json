@@ -1,0 +1,902 @@
+{
+  "pass": "A",
+  "sample_seed": "s2-2",
+  "prompt_injection_detected": false,
+  "findings": [
+    {
+      "finding_id": "FND-009",
+      "category": "validation_need",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "critical",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p8 §9.3 'single partition sustains up to 10,000 write capacity units per second...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p8 §9.3 'Keying by merchant_id keeps each merchant's records co-located...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p8 §9.2 'response_body ... up to 4 KB'",
+          "check": "verified"
+        },
+        {
+          "cited": "p2 §1 'Largest single merchant share at peak 41% 45%'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "investigation",
+        "correct_label": "mixed",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Correctly spots that §9.3 counts writes not WCU and relies on unsourced limits. By AWS documentation the per-partition limit is 1,000 WCU/s (not 10,000), and LSI tables cap each item collection at 10 GB. So the design is broken, not just unverified. The review hedges ('if... lower than assumed') instead of checking the AWS docs. Calibrated, but it under-calls a checkable fact, and the investigation label could have been a refinement. The 'needs verification' framing is a missed research opportunity."
+    },
+    {
+      "finding_id": "FND-053",
+      "category": "strength",
+      "validity": "valid",
+      "materiality": "low",
+      "severity_assessed": null,
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p13 §17 'refuses private, loopback, link-local and cloud-metadata addresses...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p13 §17 'Each endpoint has a cap of 20 in-flight deliveries...'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": null,
+      "no_change": {
+        "justification_correct": true,
+        "reasoned": true
+      },
+      "triage": {
+        "review_label": "none",
+        "correct_label": "not_applicable",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "Accurate, anchored affirmation of the webhook isolation and SSRF controls. Linking it to NFR-9 (per-merchant rate limits) is a slight stretch, but reasonable as noisy-neighbour protection."
+    },
+    {
+      "finding_id": "FND-016",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p9 §11.2 'cascading cannot create a duplicate charge...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §11.2 'arrive for an attempt after its 2,500 ms timeout are logged... and discarded.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §11.1 'no response within 2,500 ms'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "Strong, material catch: a timeout means the outcome is unknown, yet §11.2 discards late approvals, which leaves orphan authorizations. The recommendation is concrete (reversal, status query, FR-7 test case). The link to FR-5 is loose, but P1 and FR-7 fit."
+    },
+    {
+      "finding_id": "FND-021",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p21 §28 'first merchant cohort... goes live after Phase 7'",
+          "check": "verified"
+        },
+        {
+          "cited": "p21 §28 'Hardening - load, chaos and DR game days; PCI DSS assessment; Section 26 test plan'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §2.1 FR-9 text",
+          "check": "verified",
+          "actual_location": "p2-3 §2.1"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Valid sequencing contradiction. Go-live after Phase 7 comes before the Fraud Hook (Phase 8) and the PCI assessment and acceptance tests (Phase 9), which contradicts the §27 conclusion. Governance triage with a named owner and a risk-acceptance alternative is appropriate."
+    },
+    {
+      "finding_id": "FND-039",
+      "category": "validation_need",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p9 §11.1 'Soft declines 05 ... 91 ... 96'",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §11.3 'stops reattempting at the scheme limits applicable to the card.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §10.5 '31% of retryable outcomes in a three-month pilot on ACQ-SG1 → ACQ-SG2'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "investigation",
+        "correct_label": "investigation",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "A valid point: the scheme limits are referenced but never quantified, so FR-7 cannot be tested. This is an obvious place for external research (the Visa and Mastercard reattempt rules are public), and none was done; the review defers it. The 'excessive-reattempt fees' consequence is asserted without a source."
+    },
+    {
+      "finding_id": "FND-023",
+      "category": "validation_need",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p2 §2.1 FR-5 'including when duplicate requests arrive concurrently'",
+          "check": "verified"
+        },
+        {
+          "cited": "p7 §9.1 'HTTP 409 request_in_progress with Retry-After: 1'",
+          "check": "verified"
+        },
+        {
+          "cited": "p19 §26.1 FR-5 'after its response is received, resend...'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "testing",
+        "correct_label": "mixed",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Correct: the FR-5 text and the §9.1 409 behaviour conflict, and the acceptance test checks only sequential duplicates. The fix is both a requirement refinement and test additions, so 'mixed' is the better label, and the secondary refinement disposition partly covers this."
+    },
+    {
+      "finding_id": "FND-011",
+      "category": "ambiguity",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p2 §2.1 FR-8",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §10.3 'applies the cost preference when the difference is within the'",
+          "check": "verified"
+        },
+        {
+          "cited": "p18 §24 'cost-preferred within 2 tolerance'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": false,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "A valid ambiguity: the tolerance has no unit, and there are two enforcement mechanisms. There is an internal tension: the statement says the readings produce 'materially different routing', but the rationale says the pp-vs-relative gap differs 'only slightly'. It is the per-transaction versus weekly mechanism that really matters."
+    },
+    {
+      "finding_id": "FND-020",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p13 §16.2 'matcher starts once all expected files for business day T have been received'",
+          "check": "verified"
+        },
+        {
+          "cited": "p13 §16.2 'measured end-to-end run time is 45 minutes...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §2.2 NFR-8",
+          "check": "verified"
+        },
+        {
+          "cited": "p12 §16.1 'ACQ-TH1 CSV over SFTP Daily 06:30 ICT'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "The arithmetic is correct (ICT is UTC+7, SGT is UTC+8, so 07:30 SGT plus 60 min = 08:30 SGT), and it shows NFR-8 is unreachable even at 2025 volume. The incremental-matching refinement keeps the confirmed three-way match. Raising late or missing file handling adds value."
+    },
+    {
+      "finding_id": "FND-013",
+      "category": "strength",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": null,
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p12 §14.3 'Journals are written in the same PostgreSQL transaction...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p16 §19 'journal and posting have UPDATE and DELETE revoked...'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": null,
+      "no_change": {
+        "justification_correct": true,
+        "reasoned": true
+      },
+      "triage": {
+        "review_label": "none",
+        "correct_label": "not_applicable",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "A well-anchored affirmation of a significant area. The supporting check that the §14.2 example journals balance is arithmetically correct (10000=9720+280; 9810+190=10000)."
+    },
+    {
+      "finding_id": "FND-012",
+      "category": "gap",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p20 §27 'Tokenisation, envelope encryption, HSM, SAD handling and network tokens specified'",
+          "check": "verified"
+        },
+        {
+          "cited": "p21 §27 'The transaction core is specified to implementation level...'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "A derivative roll-up, valid in substance. Cross-references FND-003 and FND-010 do not match the IDs of the CVC (FND-029) and network-token (FND-036) findings in this set, which is a traceability inconsistency. It proposes re-grading the Fraud Hook to 'Mostly ready', but §27 already rates it Mostly ready. Severity 'low' undersells it, since the item gates Phases 2-3."
+    },
+    {
+      "finding_id": "FND-001",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "critical",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p8 §9.2 'written to idem:resp:{idempotency_key} with a 24-hour TTL'",
+          "check": "verified"
+        },
+        {
+          "cited": "p4 §3 P3 'Idempotency is scoped to (merchant, key)'",
+          "check": "verified",
+          "actual_location": "p3-4 §3"
+        },
+        {
+          "cited": "p7 §9.1 'frequently use their own order or invoice identifiers, which is accepted.'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "The most material defect, correctly identified. The fast-path key omits merchant_id and the hit path skips the hash check, which contradicts P3 (which takes precedence) and FR-5. Accepting order numbers as keys makes collisions likely. The fix is minimal, keeps the approved two-tier design, and comes with concrete tests."
+    },
+    {
+      "finding_id": "FND-036",
+      "category": "unresolved_assumption",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": true,
+      "cites_design_acknowledgement": true,
+      "doc_locations": [
+        {
+          "cited": "p18 §24 Card-on-file credential row",
+          "check": "verified"
+        },
+        {
+          "cited": "p19 §25 item 2 'Application not yet submitted.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p21 §28 Phase 3 'card-on-file with network tokens' / 'No - ready'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Properly credits Backlog item 2 and adds value: the inconsistency with the Phase 3 'ready' status, the critical-path dependency, and a PAN plus MIT/CIT launch fallback that FR-14 already permits. The certification lead-time claim is not quantified or sourced."
+    },
+    {
+      "finding_id": "FND-004",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p3 §2.2 NFR-4",
+          "check": "verified"
+        },
+        {
+          "cited": "p16 §20.2 'Replication is storagelevel and asynchronous...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p17 §20.2 'in-flight idempotency state is reconstructed from the payment table.'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "A valid contradiction: asynchronous replication cannot deliver RPO 0. The point that the payment DDL lacks key columns for rebuilding idempotency adds value. One claim is overstated: the NFR-4 game-day criterion (p20 §26.2) checks that every posting committed before the failure is present, which would detect loss if run under load. The real gap is that load is not specified. The options are well framed as a governance trade-off."
+    },
+    {
+      "finding_id": "FND-051",
+      "category": "gap",
+      "validity": "valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": true,
+      "cites_design_acknowledgement": true,
+      "doc_locations": [
+        {
+          "cited": "p16 §19.1 'All primary data stores ... are in ap-southeast-1.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p19 §25 item 4 FRV-1 contract",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Credits Backlog item 4 and extends it to the data placement itself. The concern about Indonesian payment-data localisation is real but entirely unresearched: no regulation is cited (e.g. GR 71/2019 or BI rules), even though NFR-7 names the laws. Confidence 0.5 is appropriately calibrated, and the recommendation to move DPO sign-off earlier is sensible."
+    },
+    {
+      "finding_id": "FND-006",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p10 §12.3 'one HSM in ap-southeast-1a'",
+          "check": "verified"
+        },
+        {
+          "cited": "p10 §12.1 'DEKs are not cached...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §2.2 NFR-3 99.95%",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": true
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "Reopens the confirmed 'one HSM at launch' decision, justified by internal evidence: the 1,500 TPS trigger cannot fire at about 1,100 card TPS, no DEK caching means every authorization depends on the HSM, and 99.95% leaves about 22 minutes a month. The arithmetic is correct. AWS's own guidance to run at least two HSMs in separate AZs could have been cited but was not. It also usefully notes the missing DR-region HSM."
+    },
+    {
+      "finding_id": "FND-046",
+      "category": "gap",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p14 §18.4 'A confirmation email is sent to the user who made the change...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p14 §18.3 'enforced for the Owner role at first login.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p14 §18.2 Finance row 'edit payout bank account'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": true
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "mixed",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "A material account-takeover-to-payout-fraud path, and the P9 separation-of-duties argument is sound. It challenges the confirmed MFA decision with internal evidence, which is acceptable, but changing a confirmed decision needs a governance sign-off, so labelling it pure 'refinement' is incomplete. The link to P8 is weak. The recommendation is broad (MFA, step-up, notification, hold, re-verification, role split) but concrete."
+    },
+    {
+      "finding_id": "FND-005",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "high",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p17 §21.1 'fewer than 1% of card payments cascade'",
+          "check": "verified"
+        },
+        {
+          "cited": "p9 §10.5 'retryable outcomes ... 3.8%'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §2.2 NFR-2 'including any cascade'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "mixed",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "A valid internal contradiction: 3.8% retryable versus the '<1% cascade' claim, a 2,500 ms timeout that exceeds the 1,500 ms target, and an NFR-2 test that injects 3.8%. 'Every one of them triggers a cascade' slightly overstates it, since there may be no eligible candidate or a scheme limit may apply. The alternative of redefining NFR-2 is a governance choice, so the right label is mixed."
+    },
+    {
+      "finding_id": "FND-022",
+      "category": "gap",
+      "validity": "partially_valid",
+      "materiality": "medium",
+      "severity_assessed": "medium",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p6 §7.1 'One or more refunds succeeded against a captured or succeeded payment.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p19 §26.1 FR-2 'never produce a transition outside Section 7.2'",
+          "check": "verified"
+        },
+        {
+          "cited": "p2 §2.1 FR-2",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "refinement",
+        "correct_label": "refinement",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "Strong points: REQUIRES_ACTION->FAILED is missing, and a refunded-before-settlement payment cannot reach SETTLED (p6 §7.2 vs p13 §16.2). Weaker points: a second partial refund or partial capture leaves the state unchanged, which arguably needs no transition (§7.1 already says 'One or more refunds'). The REVIEW hold could simply be AUTHORISED with a flag. The positive-path test addition is valuable."
+    },
+    {
+      "finding_id": "FND-014",
+      "category": "strength",
+      "validity": "valid",
+      "materiality": "low",
+      "severity_assessed": null,
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p3 §3 'These ten principles govern every design decision...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p2 §2 'Each requirement carries an ID used again in Section 26...'",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": null,
+      "no_change": {
+        "justification_correct": true,
+        "reasoned": true
+      },
+      "triage": {
+        "review_label": "none",
+        "correct_label": "not_applicable",
+        "owner_or_next_step_named": false
+      },
+      "padding": false,
+      "note": "Accurate but low-value structural affirmation. It is anchored, so it is not padding, but it is not a significant design area."
+    },
+    {
+      "finding_id": "FND-029",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "critical",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p10 §12.4 '...allow sensitive authentication data to be retained in encrypted form until the transaction is settled.'",
+          "check": "verified"
+        },
+        {
+          "cited": "p10 §12.4 'The CVC is required for the initial customer-initiated authorization...'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §2.2 NFR-6",
+          "check": "verified"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": true
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "investigation",
+        "correct_label": "mixed",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "The substance is correct: PCI DSS v4.0 Req 3.3.1/3.3.1.2 prohibit retaining SAD/CVC after authorization, and 3.3.2 covers encryption only before authorization completes. The design's claim of retention 'until settlement' is wrong. The review is appropriately hedged but did no research ('No external source was available'), even though the standard is public and decisive. That leaves a confirmed decision 'challenged' only conditionally where it could have been settled. The QSA confirmation step is sensible."
+    },
+    {
+      "finding_id": "FND-002",
+      "category": "risk",
+      "validity": "valid",
+      "materiality": "high",
+      "severity_assessed": "critical",
+      "acknowledged_by_design": false,
+      "cites_design_acknowledgement": false,
+      "doc_locations": [
+        {
+          "cited": "p11 §13.1 'The Fraud Hook obtains the PAN through the Vault's'",
+          "check": "verified"
+        },
+        {
+          "cited": "p10 §12.2 'Fraud Hook Out of scope Token, BIN, last 4 only'",
+          "check": "verified"
+        },
+        {
+          "cited": "p3 §3 P2 'Card data stays in the Vault...'",
+          "check": "verified",
+          "actual_location": "p3-4 §3"
+        }
+      ],
+      "external_sources": [],
+      "recommendation": {
+        "issue": true,
+        "rationale": true,
+        "evidence": true,
+        "expected_benefit": true,
+        "objective_link": true,
+        "coherent": true,
+        "specific_and_bounded": true,
+        "justified": true,
+        "reopens_confirmed_decision": false
+      },
+      "no_change": null,
+      "triage": {
+        "review_label": "governance",
+        "correct_label": "governance",
+        "owner_or_next_step_named": true
+      },
+      "padding": false,
+      "note": "A clear, well-evidenced contradiction across P2, §12.1, §12.2 and §13.1, with role sharing breaking P9. The options (HMAC fingerprint or explicit CDE expansion) preserve the confirmed fraud decision. It rightly extends Backlog item 4 to cover FRV-1's PCI status."
+    }
+  ],
+  "hallucinations": [
+    {
+      "finding_id": "FND-004",
+      "type": "misrepresented_doc_content",
+      "severity": "minor",
+      "status": "suspected",
+      "review_quote": "The NFR-4 game day only checks postings committed before the failure, which does not exercise the loss window.",
+      "design_quote": "p20 §26.2 NFR-4: 'every ledger posting committed in ap-southeast-1 before the failure is present after failover'",
+      "reasoning": "Checking that every posting committed before the failure survives is exactly the zero-RPO check. It would detect losses in the replication window if the failover ran under load. The real gap is that no load is specified, not that the criterion ignores the window.",
+      "what_to_check": "Whether the review elsewhere frames the gap as 'no load specified' rather than as a wrong criterion."
+    },
+    {
+      "finding_id": "FND-012",
+      "type": "wrong_doc_location",
+      "severity": "minor",
+      "status": "suspected",
+      "review_quote": "CVC retention (FND-003) ... and the network-token dependency (FND-010)",
+      "design_quote": null,
+      "reasoning": "In this finding set, CVC retention is FND-029 and the network-token dependency is FND-036. The internal cross-references may point to IDs that do not exist or have been renumbered, which weakens traceability.",
+      "what_to_check": "Check that FND-003 and FND-010 exist in the full review and cover these topics."
+    }
+  ]
+}
