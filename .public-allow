@@ -53,6 +53,7 @@ oauth:research/audit/latency_w1_editlog.md  # a list of scan needles
 oauth:research/frameworks/README.md  # framework comparison prose
 oauth:research/frameworks/comparison.md  # framework comparison prose
 oauth:scripts/leakage_grep.py  # a generic-word list entry
+oauth:scripts/export_public_snapshot.py  # the scanner's own rule name and docstring
 oauth:tests/test_claude_code_gateway.py  # an error message in a test case
 oauth:tests/test_stream_fixtures.py  # a scrub needle list
 
