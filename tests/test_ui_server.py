@@ -449,17 +449,26 @@ def test_tools_with_no_recorded_warm_up_claim_nothing(tmp_path: Path) -> None:
 
 
 def test_tools_take_the_warm_up_record_time_from_the_run_start(tmp_path: Path) -> None:
-    rd = fixture_run(tmp_path)                                  # mcp_warmup at t=0.5, no tools_list.jsonl
+    rd = fixture_run(tmp_path)                                  # mcp_warmup "none" at t=0.5, no tools_list.jsonl
     (rd / "manifest.json").write_text(json.dumps({"timestamps": {"start_utc": "2026-10-03T04:24:22Z"}}),
                                       encoding="utf-8")
-    out = TestClient(build_app(tools_state(tmp_path))).get("/tools").json()
+    client = TestClient(build_app(tools_state(tmp_path)))
+    assert client.get("/tools").json()["from_run"] is None       # "none": no warm-up was attempted in that run
+    lines = (rd / "progress.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+    for i, ln in enumerate(lines):
+        ev = json.loads(ln)
+        if ev["type"] == "mcp_warmup":
+            ev["fields"]["status"] = "failed"
+            lines[i] = json.dumps(ev) + "\n"
+    (rd / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
+    out = client.get("/tools").json()
     assert out["from_run"] == "fixture_run"
     row = next(r for r in out["servers"] if r["name"] == "mcp-internet-search")
-    wu = next(e for e in events.read_all(rd / "progress.jsonl") if e["type"] == "mcp_warmup")
-    assert row["status"] == wu["fields"]["status"]
+    assert row["status"] == "failed"
     assert row["warm"] is False and row["at"] is None            # no tools/list answer was recorded for it
-    assert rundata._iso_plus("2026-10-03T04:24:22Z", wu["t"]) == "2026-10-03T04:24:22Z"
+    assert rundata._iso_plus("2026-10-03T04:24:22Z", 0.5) == "2026-10-03T04:24:22Z"
     assert rundata._iso_plus("2026-10-03T04:24:22Z", 61) == "2026-10-03T04:25:23Z"
+    assert rundata._iso_plus(None, 61) is None
 
 
 def test_the_probe_runs_only_with_the_key_in_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -28,9 +28,9 @@ ul { padding-left: 18px; margin: 0; }
 .app.rail-collapsed { --navrail-w: 64px; }
 
 /* ---------- the rail (rail.css .navrail, verbatim geometry) ---------- */
-.navrail { grid-area: nav; width: var(--navrail-w); display: flex; flex-direction: column; gap: 2px; padding: 16px 12px;
-  background: var(--navrail-bg); color: var(--navrail-fg); border-right: 1px solid var(--navrail-rule);
-  position: sticky; top: 0; height: 100vh; overflow: hidden; }
+/* the column is dark for the whole page; its contents stay in view (sticky, one viewport tall) */
+.navrail { grid-area: nav; width: var(--navrail-w); background: var(--navrail-bg); color: var(--navrail-fg); border-right: 1px solid var(--navrail-rule); }
+.navrail-inner { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; gap: 2px; padding: 16px 12px; }
 .navrail-brand { display: block; padding: 4px 10px 14px; color: var(--navrail-fg-strong); text-decoration: none;
   font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; white-space: nowrap; }
 .navrail-brand .ai { color: var(--accent-bright); }
@@ -42,7 +42,9 @@ ul { padding-left: 18px; margin: 0; }
 .navrail-item.active { background: var(--navrail-active-bg); color: var(--navrail-active-fg); font-weight: 600; }
 .navrail-ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* the surface slot (rail.css .navrail-slot): here it carries the runs and the tool servers */
-.navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow-y: auto; }
+.navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
+#rail-runs { flex: 0 1 auto; min-height: 0; overflow-y: auto; }   /* the runs list gives way so every tool server stays in view */
+#rail-tools { flex: none; }
 .rail-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--navrail-muted);
   padding: 14px 10px 6px; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
 .rail-run { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12.5px;
@@ -71,7 +73,7 @@ ul { padding-left: 18px; margin: 0; }
   font-size: 12px; padding: 9px 10px; border-radius: var(--r-pill); background: transparent; border: 0; transition: background-color 150ms; }
 .navrail-toggle:hover { background: var(--navrail-row); }
 .navrail-toggle svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; transform: rotate(180deg); }
-.rail-collapsed .navrail { padding: 16px 8px; }
+.rail-collapsed .navrail-inner { padding: 16px 8px; }
 .rail-collapsed .navrail-brand { font-size: 18px; padding: 4px 0 14px; text-align: center; }
 .rail-collapsed .navrail-brand .word, .rail-collapsed .navrail-group, .rail-collapsed .navrail-item .label, .rail-collapsed .navrail-slot,
 .rail-collapsed .navrail-note, .rail-collapsed .navrail-toggle .label { display: none; }

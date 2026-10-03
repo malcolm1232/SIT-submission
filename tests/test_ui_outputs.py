@@ -135,7 +135,9 @@ def test_the_export_is_self_contained_with_no_script_and_no_external_resource(fl
         assert "src" not in attrs and not any(k.startswith("on") for k in attrs)
     assert "@import" not in html and "url(" not in html
     tokens = (export.STATIC_DIR / "tokens.css").read_text(encoding="utf-8")
-    assert "--red-9:" in html and tokens.split(":root", 1)[1].split("}", 1)[0].strip() in html   # tokens inlined
+    assert "--sev-critical-bg:" in html
+    assert tokens.split(":root", 1)[1].split("}", 1)[0].strip() in html   # tokens inlined
+    assert "@font-face" not in html                     # the vendored serif is a file beside tokens.css, not inlined
 
 
 def test_the_export_stylesheet_keeps_the_page_rules() -> None:
@@ -706,7 +708,10 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     first = min(report["findings"], key=lambda f: f["rank"])
     assert exp.get_by_role("heading", name=f"{first['id']} {one_line(first['title'])}").count() == 1
     exp.close()
-    # 2. Email: enabled only for one plain address; the send reaches the (fake) server and is reported.
+    # 2. Email: the pill in the head opens the address field under it (ui_restyle.md decision 5); the send is
+    # enabled only for one plain address, reaches the (fake) server and is reported.
+    assert pg.locator("#email-box").is_hidden()
+    pg.click("#email-btn")
     send = pg.locator("#email-send")
     assert send.inner_text() == "Email the review" and send.is_disabled()
     pg.fill("#email-to", "not an address")
@@ -736,6 +741,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     pg.goto(base + "/?run=no_mail")
     pg.wait_for_selector(".frow")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
+    pg.click("#email-btn")
     assert pg.locator("#email-send").is_disabled() and pg.locator("#email-to").is_disabled()
     assert pg.locator("#email-help").inner_text().startswith(mail.NOT_CONFIGURED + " (")
 

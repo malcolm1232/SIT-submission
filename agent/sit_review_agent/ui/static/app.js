@@ -1,9 +1,11 @@
-// SIT review page (dra ui). Vanilla JS, no framework, nothing loaded from the network but this server.
+// SIT review page (dra ui), v2: the DBSearch idiom with a rail (docs/design/ui_restyle.md). Vanilla JS, no
+// framework, nothing loaded from the network but this server.
 // Rules this file keeps (docs/design/ui_design.md, tests/test_ui_honesty.py):
 // - every number shown comes from the run directory (via the server's JSON) or the event stream;
 // - the run view draws from each event's `event` and `fields` only and never parses `message`;
 // - review text is inserted as textContent, exactly as report.json has it (no rewording);
-// - no animation; times are as of the last event, never ticked by the browser clock.
+// - no animation; times are as of the last event, never ticked by the browser clock;
+// - the rail's running entry is the open run's stream state; the tools dots are GET /tools; no probe on load.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
@@ -17,7 +19,7 @@ function h(tag, attrs, ...kids) {
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? "" : String(v));
   }
-  for (const kid of kids.flat()) {
+  for (const kid of kids.flat(Infinity)) {
     if (kid === null || kid === undefined || kid === false) continue;
     el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
   }
@@ -34,6 +36,8 @@ function dur(s) { if (typeof s !== "number") return "–"; const t = Math.max(0,
 function money(c, lower) { return typeof c === "number" ? (lower ? "≥ $" : "$") + c.toFixed(2) : "–"; }
 function conf(c) { return typeof c === "number" ? c.toFixed(2) : "–"; }
 function intl(n) { return typeof n === "number" ? n.toLocaleString("en-US") : "–"; }
+// hh:mm of an ISO-8601 UTC stamp, as the server recorded it (no browser clock, no time zone of the viewer).
+function hhmm(iso) { return typeof iso === "string" && iso.length >= 16 ? iso.slice(11, 16) + " UTC" : "–"; }
 
 async function api(url, opts) {
   const res = await fetch(url, opts);
@@ -43,24 +47,97 @@ async function api(url, opts) {
   return body;
 }
 
-const S = { meta: null, runId: null, es: null, model: null };
+const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, synthetic: null };
+const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
+const RAIL_KEY = "navrail-collapsed";
 
-function topBar({ doc, tabs, meta, action }) {
-  $("top-doc").textContent = doc || "";
-  const t = clear($("top-tabs"));
-  t.hidden = !tabs || !tabs.length;
-  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : ""), type: "button", onclick: tab.go, text: tab.label }));
-  const m = clear($("top-meta"));
-  for (const part of meta || []) m.append(part);
-  const a = clear($("top-action"));
-  if (action) a.append(action);
+// ------------------------------------------------------------------ the rail and the topbar
+
+function railActive(page) {
+  for (const a of document.querySelectorAll(".navrail-item")) a.classList.toggle("active", a.dataset.page === page);
 }
 
-function joinMeta(parts) {
-  const out = [];
-  parts.filter((p) => p !== null && p !== undefined && p !== "").forEach((p, i) => { if (i) out.push(" · "); out.push(p); });
-  return out;
+function runMetaText(r) {
+  const m = S.model;
+  if (r.status === "running") {
+    // The open run's entry is its stream: the stage, the run clock and the open shards come from the model the
+    // page reduced from progress.jsonl, never from a browser clock.
+    if (m && r.run_id === S.runId) {
+      const inFlight = [...m.tracks.values()].filter((t) => t.status === "running" || t.status === "replayed");
+      const shards = inFlight.filter((t) => t.key.startsWith("assess ")).length;
+      const stage = inFlight.length ? (shards ? "assess" : inFlight[inFlight.length - 1].key) : (S.runs.find((x) => x.run_id === r.run_id) || r).stage;
+      const open = shards ? intl(shards) + " shard" + (shards === 1 ? "" : "s") + " open" : (inFlight.length ? intl(inFlight.length) + " call" + (inFlight.length === 1 ? "" : "s") + " open" : null);
+      return [h("span", { class: "live", text: stage || "starting" }), " · " + clock(m.lastT) + (m.deadline ? " of " + clock(m.deadline) : ""), open ? " · " + open : ""];
+    }
+    const open = r.open_calls ? " · " + intl(r.open_calls) + " call" + (r.open_calls === 1 ? "" : "s") + " open" : "";
+    return [h("span", { class: "live", text: r.stage || "starting" }), " · " + clock(r.run_s) + open];
+  }
+  if (r.verdict) return [words(r.verdict) + " · " + conf(r.confidence) + " · " + dur(r.wall_s)];
+  return [(r.status === "ended" ? "no report" : "no report yet") + (typeof r.wall_s === "number" ? " · " + dur(r.wall_s) : "")];
 }
+
+function renderRailRuns() {
+  const box = clear($("rail-runs"));
+  const running = S.runs.filter((r) => r.status === "running").length;
+  $("rail-runs-note").textContent = running ? intl(running) + " running" : "none running";
+  if (!S.runs.length) box.append(h("div", { class: "rail-empty", text: "no run directory yet" }));
+  for (const r of S.runs) {
+    const dot = r.status === "running" ? "live" : (r.verdict ? "done" : "ended");
+    box.append(h("a", { class: "rail-run" + (r.run_id === S.runId ? " active" : ""), href: "/?run=" + encodeURIComponent(r.run_id), "data-run": r.run_id, title: r.document || r.run_id,
+      onclick: (e) => { e.preventDefault(); go(r.run_id); } },
+      h("span", { class: "dot " + dot }), h("span", { class: "title", text: r.run_id }), h("span", { class: "meta num" }, runMetaText(r))));
+  }
+}
+
+function toolMeta(t, noTools) {
+  if (!t.enabled) return "off in config/tools.yaml";
+  if (noTools) return "this run: --no-tools";
+  if (t.warm) return "warm at " + hhmm(t.at) + (typeof t.tools === "number" ? " · " + intl(t.tools) + " tool" + (t.tools === 1 ? "" : "s") : "") + (t.calls_failed ? " · " + intl(t.calls_failed) + " call" + (t.calls_failed === 1 ? "" : "s") + " failed" : "");
+  if (t.warm === false) return t.status === "failed" ? "warm-up failed in the last run" : "no tools/list answer in the last run";
+  return "no warm-up recorded";
+}
+
+function renderRailTools() {
+  const box = clear($("rail-tools"));
+  const T = S.tools;
+  if (!T) { $("rail-tools-note").textContent = ""; return; }
+  const noTools = !!(S.info && S.info.run_id === S.runId && S.info.no_tools);
+  const warm = T.servers.filter((t) => t.warm).length;
+  $("rail-tools-note").textContent = noTools ? "not in use" : (T.from_run ? intl(warm) + " of " + intl(T.servers.length) + " warm" : "no warm-up recorded");
+  for (const t of T.servers) {
+    box.append(h("div", { class: "rail-tool", "data-server": t.name, title: T.from_run ? "from run " + T.from_run : "" },
+      h("span", { class: "dot " + (t.warm && !noTools ? "warm" : "off") }), h("span", { class: "name", text: t.name }), h("span", { class: "meta", text: toolMeta(t, noTools) })));
+  }
+  const chip = clear($("top-tools"));
+  chip.append("tools: ", h("b", { text: intl(warm) + " of " + intl(T.servers.length) }), " servers warm");
+}
+
+function renderTopbar() {
+  const meta = S.meta;
+  const pill = $("top-edition");
+  pill.classList.toggle("off", meta.backend !== "claude_code");
+  $("top-edition-text").textContent = meta.backend === "claude_code" ? "local · your subscription · no API key" : (meta.backend ? "local · " + words(meta.backend) : "local");
+  const sel = clear($("top-profile"));
+  for (const p of meta.profiles) sel.append(h("option", { value: p.name, text: p.label + " · " + dur(p.deadline_s) }));
+  if (S.profile === null) S.profile = meta.profiles.some((p) => p.name === "demo") ? "demo" : (meta.profiles[0] ? meta.profiles[0].name : "");
+  sel.value = S.profile;
+  sel.addEventListener("change", () => { S.profile = sel.value; const f = $("profile-select"); if (f) { f.value = S.profile; f.dispatchEvent(new Event("change")); } });
+}
+
+function setupRail() {
+  for (const a of document.querySelectorAll(".navrail-item")) a.addEventListener("click", (e) => { e.preventDefault(); goPage(a.dataset.page); });
+  $("top-tools").addEventListener("click", (e) => { e.preventDefault(); goPage("tools"); });
+  document.querySelector(".navrail-brand").addEventListener("click", (e) => { e.preventDefault(); goPage("review"); });
+  const grid = $("app-grid"), toggle = $("navrail-toggle");
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(RAIL_KEY) === "1"; } catch (e) { collapsed = false; }
+  const apply = () => { grid.classList.toggle("rail-collapsed", collapsed); toggle.setAttribute("aria-label", collapsed ? "Expand the rail" : "Collapse the rail"); toggle.querySelector(".label").textContent = collapsed ? "Expand" : "Collapse"; };
+  toggle.addEventListener("click", () => { collapsed = !collapsed; try { localStorage.setItem(RAIL_KEY, collapsed ? "1" : "0"); } catch (e) { /* storage off: the rail still toggles */ } apply(); });
+  apply();
+}
+
+async function refreshRuns() { const r = await api("/runs"); S.runs = r.runs; renderRailRuns(); }
+async function refreshTools() { S.tools = await api("/tools"); renderRailTools(); }
 
 // A pasted link: https only (the server checks it again under config/url_policy.yaml), and the name the
 // server saves it under (ui/fetch.py file_name: the last path segment, made safe, ending in .pdf).
@@ -72,20 +149,36 @@ function linkName(v) {
   return /\.pdf$/i.test(n) ? n : n + ".pdf";
 }
 
-// ------------------------------------------------------------------ frame 1: the drop screen
+function surfaceHead(title, sub, right) {
+  return h("div", { class: "surface-head" }, h("div", {}, h("div", { class: "surface-title", text: title }), sub ? h("div", { class: "surface-sub num" }, sub) : null), right || null);
+}
+
+// ------------------------------------------------------------------ the Review page: the drop screen
+
+function toolsHelp(meta) {
+  const enabled = meta.tools.filter((t) => t.enabled).map((t) => t.name);
+  if (!enabled.length) return "No tool server is enabled in config/tools.yaml.";
+  let s = "Enabled in config/tools.yaml: " + enabled.join(", ") + ".";
+  const T = S.tools;
+  if (T && T.from_run) {
+    const warm = T.servers.filter((t) => t.enabled && t.warm);
+    if (warm.length === enabled.length && warm.every((t) => t.at === warm[0].at)) s += " " + (warm.length === 1 ? "It" : (warm.length === 2 ? "Both" : "All")) + " answered the last recorded warm-up at " + hhmm(warm[0].at) + " (run " + T.from_run + ").";
+    else s += " Last recorded warm-up (run " + T.from_run + "): " + T.servers.filter((t) => t.enabled).map((t) => t.name + " " + (t.warm ? "at " + hhmm(t.at) : "no answer")).join(", ") + ".";
+  } else s += " No warm-up is recorded in a run directory yet.";
+  return s;
+}
 
 async function showDrop() {
   closeStream();
+  S.info = null;
   const meta = S.meta;
-  topBar({ doc: "no run open", meta: joinMeta([meta.commit ? "agent " + meta.commit : null, h("span", { title: meta.runs_dir, text: "run directories in " + meta.runs_dir_name + "/" })]) });
   const app = clear($("app"));
+  app.className = "surface";
   app.append(tpl("tpl-drop"));
   const sel = $("profile-select");
   for (const p of meta.profiles) sel.append(h("option", { value: p.name, text: p.label + " · " + dur(p.deadline_s) }));
-  const demo = meta.profiles.find((p) => p.name === "demo");
-  if (demo) sel.value = "demo";
-  const enabled = meta.tools.filter((t) => t.enabled).map((t) => t.name);
-  $("tools-help").textContent = enabled.length ? "Enabled in config/tools.yaml: " + enabled.join(", ") + "." : "No tool server is enabled in config/tools.yaml.";
+  sel.value = S.profile;
+  $("tools-help").textContent = toolsHelp(meta);
   let doc = null;
   $("link-max").textContent = meta.link_max_mb;
   const link = () => { const v = $("doc-link").value.trim(); return httpsLink(v) ? v : null; };
@@ -106,12 +199,14 @@ async function showDrop() {
     const c = $("doc-chosen");
     c.hidden = !doc && !link();
     c.textContent = doc ? doc.name : (link() ? "Link: " + link() + " (fetched when the review starts)" : "");
+    for (const chip of document.querySelectorAll(".starter")) chip.setAttribute("aria-pressed", String(!!doc && chip.dataset.file === doc.name));
   };
   const choose = (f) => { doc = f || null; if (doc) $("doc-link").value = ""; refresh(); };
   $("doc-link").addEventListener("input", () => { if ($("doc-link").value.trim()) { doc = null; $("doc-input").value = ""; } refresh(); });
   $("doc-input").addEventListener("change", (e) => choose(e.target.files[0]));
   $("prev-input").addEventListener("change", () => { const f = $("prev-input").files[0]; $("prev-chosen").textContent = f ? f.name : "No file chosen"; $("prev-chosen").classList.toggle("muted", !f); refresh(); });
-  for (const id of ["profile-select", "no-tools"]) $(id).addEventListener("change", refresh);
+  sel.addEventListener("change", () => { S.profile = sel.value; $("top-profile").value = sel.value; refresh(); });
+  $("no-tools").addEventListener("change", refresh);
   $("run-id").addEventListener("input", refresh);
   const dz = $("dropzone");
   dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
@@ -147,21 +242,157 @@ async function showDrop() {
     }
   });
   refresh();
-  const runs = await api("/runs");
-  const tb = $("runs-table").querySelector("tbody");
-  if (!runs.runs.length) $("runs-note").textContent = "No run directory yet. A run started here, or with dra review in a terminal, appears in this list.";
-  for (const r of runs.runs) {
-    const verdict = r.status === "running" ? h("span", { class: "pill running", text: "running" })
-      : (r.verdict ? words(r.verdict) + " · " + conf(r.confidence) : (r.status === "ended" ? "no report" : "–"));
-    tb.append(h("tr", { class: "link", onclick: () => go(r.run_id) },
-      h("td", {}, h("a", { href: "/?run=" + encodeURIComponent(r.run_id), text: r.run_id, onclick: (e) => { e.preventDefault(); go(r.run_id); } })),
-      h("td", { text: r.document || "–" }), h("td", { style: "white-space:nowrap" }, verdict),
-      h("td", { class: "r", text: r.findings === null ? "–" : r.findings }),
-      h("td", { class: "r", text: dur(r.wall_s) }), h("td", { class: "r", text: money(r.cost_usd, r.cost_lower_bound) })));
+  // The synthetic documents as chips: a chip fetches the file from this server and fills the form with it
+  // (the same path as a drop); it never submits. The run starts only with the Start review button.
+  if (!S.synthetic) S.synthetic = (await api("/synthetic")).items;
+  const starters = $("starters");
+  if (!starters) return;
+  for (const item of S.synthetic) {
+    starters.append(h("button", { class: "starter", type: "button", "data-file": item.file, "aria-pressed": "false", title: item.path, text: item.label, onclick: async (e) => {
+      const chip = e.currentTarget;
+      chip.disabled = true;
+      try {
+        const res = await fetch("/synthetic/" + encodeURIComponent(item.name));
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        choose(new File([await res.blob()], item.file, { type: "application/pdf" }));
+      } catch (err) { const box = $("start-error"); box.hidden = false; box.textContent = "The synthetic document could not be read: " + err.message; }
+      chip.disabled = false;
+    } }));
   }
 }
 
-// ------------------------------------------------------------------ frame 2: the run, from the event stream
+// ------------------------------------------------------------------ the Runs, Replay, Tools, Settings and Developer pages
+
+function runsTable(rows, withStarted) {
+  const head = h("tr", {}, h("th", { text: "Run" }), h("th", { text: "Document" }), h("th", { text: "Verdict" }), h("th", { class: "r", text: "Findings" }), h("th", { class: "r", text: "Wall" }), h("th", { class: "r", text: "Cost" }), withStarted ? h("th", { class: "r", text: "Started" }) : null);
+  const body = h("tbody");
+  for (const r of rows) {
+    const verdict = r.status === "running" ? h("span", { class: "pill running", text: "running" })
+      : (r.verdict ? words(r.verdict) + " · " + conf(r.confidence) : (r.status === "ended" ? "no report" : "–"));
+    body.append(h("tr", { class: "link", onclick: () => go(r.run_id) },
+      h("td", {}, h("a", { href: "/?run=" + encodeURIComponent(r.run_id), text: r.run_id, onclick: (e) => { e.preventDefault(); go(r.run_id); } }), r.replayed ? [" ", h("span", { class: "pill replayed", text: "replayed evidence" })] : null),
+      h("td", { text: r.document || "–" }), h("td", { style: "white-space:nowrap" }, verdict),
+      h("td", { class: "r", text: r.findings === null ? "–" : r.findings }),
+      h("td", { class: "r", text: dur(r.wall_s) }), h("td", { class: "r", text: money(r.cost_usd, r.cost_lower_bound) }),
+      withStarted ? h("td", { class: "r", text: hhmm(r.started_at) }) : null));
+  }
+  return h("table", { class: "grid num", id: "runs-table", style: "margin-top:18px" }, h("thead", {}, head), body);
+}
+
+function showRuns() {
+  const app = clear($("app"));
+  app.className = "surface wide";
+  const running = S.runs.filter((r) => r.status === "running").length;
+  app.append(surfaceHead("Runs", [h("b", { text: intl(S.runs.length) + " run director" + (S.runs.length === 1 ? "y" : "ies") }), " in " + S.meta.runs_dir_name + "/ · " + (running ? intl(running) + " running" : "none running") + " · opening one reads its files, nothing is re-run"]));
+  if (!S.runs.length) app.append(h("p", { class: "page-intro", id: "runs-note", text: "No run directory yet. A run started here, or with dra review in a terminal, appears in this list." }));
+  else app.append(runsTable(S.runs, true));
+}
+
+function showReplay() {
+  const app = clear($("app"));
+  app.className = "surface wide";
+  app.append(surfaceHead("Replay", ["a recorded run served again from its own directory: no model call, no tool call"]));
+  app.append(h("p", { class: "page-intro" }, h("b", { text: "dra replay" }), " serves a finished run from its recorded model calls (llm.jsonl) and tool calls; the page then draws the same timeline and the same review, stamped ", h("span", { class: "pill replayed", text: "replayed evidence" }), " in the head. Nothing is re-run, and a replay is never shown as live: a track in flight reads \"replayed\", never \"running\"."));
+  const replayed = S.runs.filter((r) => r.replayed), sources = S.runs.filter((r) => !r.replayed && r.status === "finished");
+  app.append(h("div", { class: "sec" }, h("h2", {}, "Replayed runs ", h("span", { class: "n num", text: String(replayed.length) })),
+    replayed.length ? runsTable(replayed, true) : h("p", { class: "notice", style: "margin-top:8px", text: "No run directory in " + S.meta.runs_dir_name + "/ was served by dra replay." })));
+  app.append(h("div", { class: "sec" }, h("h2", {}, "Finished runs that can be replayed ", h("span", { class: "n num", text: String(sources.length) })),
+    h("div", { class: "notice", style: "margin-top:4px", text: "Each line is the command to type; the replay writes a new run directory and this page lists it above." }),
+    h("div", { class: "tool-list", style: "margin-top:8px" }, sources.map((r) => h("div", { class: "tool-row", style: "grid-template-columns:220px minmax(0,1fr)" }, h("div", { class: "name", text: r.run_id }), h("div", { class: "cmd", style: "margin:0", text: "dra replay " + S.meta.runs_dir_name + "/" + r.run_id }))))));
+}
+
+function toolRow(t, T) {
+  const state = !t.enabled ? "off" : (t.warm ? "warm" : (t.warm === false ? "no answer" : "unknown"));
+  const detail = [];
+  if (!t.enabled) detail.push("off in config/tools.yaml; not offered to the model");
+  else if (t.warm) { detail.push(h("b", { text: "answered tools/list at " + hhmm(t.at) }), " in run " + T.from_run + (typeof t.tools === "number" ? ": " + intl(t.tools) + " tool" + (t.tools === 1 ? "" : "s") : "")); }
+  else if (t.warm === false) detail.push("enabled, but run " + T.from_run + " recorded no tools/list answer from it" + (t.status ? " (warm-up " + words(t.status) + ")" : ""));
+  else detail.push("enabled; no run directory has recorded a warm-up yet");
+  if (t.calls_ok || t.calls_failed) detail.push(" · calls in that run: " + intl(t.calls_ok) + " ok, " + intl(t.calls_failed) + " failed");
+  return h("div", { class: "tool-row", "data-server": t.name }, h("span", { class: "dot" + (t.warm ? " warm" : "") }), h("div", { class: "name", text: t.name }), h("div", { class: "state", text: state }), h("div", { class: "detail" }, detail));
+}
+
+function probeRows(p) {
+  const box = h("div", { class: "sec", id: "probe-result" }, h("h2", {}, "Probe at " + hhmm(p.at), h("span", { class: "n", text: p.auth_failed ? "the servers refused the key" : "initialize and tools/list on every enabled server" })));
+  const list = h("div", { class: "tool-list" });
+  for (const s of p.servers) list.append(h("div", { class: "tool-row" }, h("span", { class: "dot" + (s.warm ? " warm" : "") }), h("div", { class: "name", text: s.name }), h("div", { class: "state", text: s.health }), h("div", { class: "detail", text: s.warm ? intl(s.tools) + " tool" + (s.tools === 1 ? "" : "s") + " listed" : (s.error || "no answer") })));
+  box.append(list);
+  if ((p.lines || []).length) box.append(h("div", { class: "raw", text: p.lines.join("\n") }));
+  return box;
+}
+
+async function showTools() {
+  const app = clear($("app"));
+  app.className = "surface wide";
+  if (!S.tools) await refreshTools();
+  const T = S.tools;
+  const warm = T.servers.filter((t) => t.warm).length;
+  app.append(surfaceHead("Tools", [h("b", { text: intl(warm) + " of " + intl(T.servers.length) + " servers warm" }), T.from_run ? " at the last recorded warm-up, run " + T.from_run : " · no run directory has recorded a warm-up"]));
+  app.append(h("p", { class: "page-intro" }, h("b", { text: "What the dot means." }), " A warm dot says the server answered the agent's warm-up (initialize and tools/list) in the newest run directory that recorded one, at the time shown. It does not say the server is awake now: the servers scale to zero, so a live answer needs a live probe, which is the button below and never the page loading."));
+  const list = h("div", { class: "tool-list", id: "tool-list", style: "margin-top:18px" });
+  for (const t of T.servers) list.append(toolRow(t, T));
+  app.append(list);
+  const btn = h("button", { class: "btn", type: "button", id: "probe-btn", text: "Probe now" });
+  const note = h("span", { class: "note", id: "probe-note", text: T.key_present ? "Runs the preflight warm-up on the enabled servers with the key from " + T.auth_env + " in the server's environment (a cold start can take over a minute); the result is shown here and kept until the server restarts." : T.auth_env + " is not set in the server's environment, so a probe would be refused: export it in the shell that starts dra ui." });
+  const err = h("div", { class: "error", id: "probe-error", hidden: true });
+  const result = h("div", { id: "probe-box" });
+  if (T.probe) result.append(probeRows(T.probe));
+  btn.addEventListener("click", async () => {
+    btn.disabled = true; err.hidden = true; btn.textContent = "Probing…";
+    try { const p = await api("/tools/probe", { method: "POST" }); clear(result).append(probeRows(p)); }
+    catch (e) { err.hidden = false; err.textContent = e.message; }
+    btn.disabled = false; btn.textContent = "Probe now";
+  });
+  app.append(h("div", { class: "probe" }, btn, note), err, result);
+}
+
+function showSettings() {
+  const app = clear($("app"));
+  app.className = "surface wide";
+  const meta = S.meta;
+  app.append(surfaceHead("Settings", ["the effective configuration this server read when it started, by file; the page changes nothing"]));
+  app.append(h("p", { class: "page-intro", text: "Settings are files under config/. Edit a file and start the next review; a running review read its configuration when it started." }));
+  const files = meta.config_files || [];
+  const block = (name, body) => h("div", { class: "cfg" }, h("h2", {}, h("span", { class: "mono", text: name })), body);
+  const kv = (pairs) => h("dl", { class: "kv wide" }, pairs.map(([k, v]) => [h("dt", { text: k }), h("dd", {}, v)]));
+  for (const name of files) {
+    if (/\/agent\.yaml$/.test(name)) app.append(block(name, kv([["llm.backend", meta.backend || "–"], ["model", meta.model || "–"], ["run root", meta.runs_dir]])));
+    else if (/\/profiles\//.test(name)) {
+      const p = meta.profiles.find((x) => name.endsWith("/" + x.name + ".yaml"));
+      app.append(block(name, p ? kv([["deadline", clock(p.deadline_s)], ["stage 1 ends by", clock(p.stage_limits_s.stage_1_end)], ["refine ends by", clock(p.stage_limits_s.refine_end)], ["verdict ends by", clock(p.stage_limits_s.verdict_end)], ["effort (assess)", p.effort || "–"]]) : h("div", { class: "notice", text: "overlay of agent.yaml and stop_rules.yaml" })));
+    } else if (/\/tools\.yaml$/.test(name)) {
+      app.append(block(name, kv([["servers", h("span", {}, meta.tools.map((t) => [h("span", { class: "pill " + (t.enabled ? "done" : "waiting"), text: t.name + (t.enabled ? "" : " (off)") }), " "]))], ["key", "read from " + meta.auth_env + " in the server's environment; never shown"]])));
+    } else if (/\/ui\.yaml$/.test(name)) {
+      app.append(block(name, kv([["ask the review", meta.chat.model + ", effort " + meta.chat.effort + ", at most " + intl(meta.chat.max_calls) + " asks or " + money(meta.chat.max_cost_usd) + " per run"], ["email", "SMTP settings for the Email action; the password comes from the environment"]])));
+    } else if (/\/url_policy\.yaml$/.test(name)) {
+      app.append(block(name, kv([["pasted link", "https only, public hosts, at most " + intl(meta.link_max_mb) + " MB"]])));
+    } else if (/\/stop_rules\.yaml$/.test(name)) {
+      const base = meta.profiles.find((x) => x.name === "");
+      app.append(block(name, base ? kv([["deadline", clock(base.deadline_s)], ["stage 1 ends by", clock(base.stage_limits_s.stage_1_end)], ["refine ends by", clock(base.stage_limits_s.refine_end)], ["verdict ends by", clock(base.stage_limits_s.verdict_end)]]) : h("div", { class: "notice", text: "read by the agent" })));
+    } else app.append(block(name, h("div", { class: "notice", text: "read by the agent at the start of a run; hashed into the manifest" })));
+  }
+}
+
+function showDeveloper() {
+  const app = clear($("app"));
+  app.className = "surface wide";
+  const meta = S.meta;
+  app.append(surfaceHead("Developer", ["sit-review-agent " + meta.version + (meta.commit ? " · commit " + meta.commit : "")]));
+  const restart = ["dra", "ui", "--host", meta.bind_host, "--port", String(meta.port), ...(meta.ui_args || [])].join(" ");
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "This server" }), h("dl", { class: "kv wide" },
+    h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: restart })),
+    h("dt", { text: "run directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir })),
+    h("dt", { text: "version" }), h("dd", { text: "sit-review-agent " + meta.version + (meta.commit ? ", git " + meta.commit : "") }),
+    h("dt", { text: "backend" }), h("dd", { text: (meta.backend || "–") + (meta.model ? " · " + meta.model : "") }))));
+  const open = S.runs.find((r) => r.run_id === S.runId) || S.runs[0];
+  if (open) app.append(h("div", { class: "cfg" }, h("h2", {}, (S.runId === open.run_id ? "The open run" : "The newest run") + " ", h("span", { class: "mono", text: open.run_id })), h("dl", { class: "kv wide" },
+    h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
+    h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
+    h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /synthetic. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+}
+
+// ------------------------------------------------------------------ the run, from the event stream
 // Each record of progress.jsonl (spec/progress_event.schema.json; ui/events.py) is applied to a model by its
 // `type` and `fields`; `message` is shown verbatim in the status feed and read nowhere else.
 
@@ -183,7 +414,7 @@ function newRunModel() {
 }
 
 function track(m, key, label) {
-  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null });
+  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null });
   return m.tracks.get(key);
 }
 
@@ -228,7 +459,11 @@ function applyEvent(m, ev) {
     case "research_stopped": { const t = track(m, "research"); t.strong = null; t.text = words(f.code) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + intl(f.tool_calls) + " tool call(s)"; break; }
     case "phase_skipped": { const t = track(m, ev.phase); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
     case "research_skipped": { const t = track(m, "research"); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
-    case "research_doc_only": { const t = track(m, "research"); t.strong = f.degradation_id || null; t.text = (f.degradation_id ? " in the report · " : "") + "document only: " + (f.detail || ""); break; }
+    case "research_doc_only": {
+      const t = track(m, "research"); t.strong = f.degradation_id || null; t.text = (f.degradation_id ? " in the report · " : "") + "document only: " + (f.detail || "");
+      if (f.degradation_id) t.disclose = { id: f.degradation_id, text: f.detail || "" };
+      break;
+    }
     case "call_opened": {
       const key = (ev.phase === "assess" && shardKey(m, f.shard)) || ev.phase;
       const t = track(m, key);
@@ -266,7 +501,9 @@ function applyEvent(m, ev) {
       const t = (f.call_id && m.byCall.get(f.call_id)) || track(m, shardKey(m, f.shard));
       t.status = "cut"; t.cutAt = f.cut_at_s ?? now; t.end = t.cutAt;
       t.strong = f.degradation_id || null;
-      t.text = (f.degradation_id ? " in the report · " : "") + "kept " + intl(f.kept) + " finished finding(s)" + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "");
+      const kept = "kept " + intl(f.kept) + " finished finding(s)" + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "");
+      t.text = (f.degradation_id ? " in the report · " : "") + kept;
+      if (f.degradation_id) t.disclose = { id: f.degradation_id, text: t.key + " cut at " + clock(t.cutAt) + ": " + kept };
       for (const d of f.kept_drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
       break;
     }
@@ -321,6 +558,17 @@ function trackRow(m, t, limit) {
     h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status);
 }
 
+function stage1Summary(m, shards) {
+  const st = (k) => track(m, k).status;
+  const parts = [];
+  const done = ["understand", "plan"].filter((k) => st(k) === "done");
+  if (done.length) parts.push(done.join(" and ") + " done");
+  if (st("research") === "skipped") parts.push("research skipped");
+  const open = shards.filter((k) => ["running", "replayed"].includes(st(k))).length;
+  if (shards.length) parts.push(open ? intl(open) + " of " + intl(shards.length) + " assess shards open" : (shards.every((k) => ["done", "cut", "failed"].includes(st(k))) ? "assess done" : null));
+  return parts.filter(Boolean).join(", ");
+}
+
 function renderRun(m) {
   const lim = m.limits || {};
   const s1 = clear($("stage1-tracks"));
@@ -328,7 +576,13 @@ function renderRun(m) {
   const shards = keys.filter((k) => k.startsWith("assess ")).sort((a, b) => parseInt(a.slice(7), 10) - parseInt(b.slice(7), 10));
   const order = [...STAGE1, ...(shards.length ? shards : ["assess"])];
   for (const k of order) s1.append(trackRow(m, track(m, k), lim.stage_1_end ?? null));
-  $("stage1-limit").textContent = lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "";
+  const summary = stage1Summary(m, shards);
+  $("stage1-limit").textContent = (lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "") + (summary ? " · " + summary : "");
+  const dis = clear($("stage1-disclosures"));
+  for (const k of order) {
+    const t = track(m, k);
+    if (t.disclose) dis.append(h("div", { class: "disclose", "data-track": k }, h("span", { class: "k" }, "disclosed in the report as ", h("b", { text: t.disclose.id })), h("span", { text: t.disclose.text })));
+  }
   const seq = clear($("seq-tracks"));
   for (const row of SEQ) {
     const t = track(m, row.phase);
@@ -361,22 +615,41 @@ function renderRun(m) {
 
 function closeStream() { if (S.es) { S.es.close(); S.es = null; } }
 
+function renderTabs(tabs, note) {
+  const t = clear($("top-tabs"));
+  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : ""), type: "button", disabled: !!tab.off, title: tab.title || null, onclick: tab.go, text: tab.label }));
+  const n = $("tab-note");
+  if (n) n.textContent = note || "";
+}
+
 function runTop(info, m, tabs) {
   const doc = m.doc;
-  const docText = [info.run_id, doc ? [doc.title, typeof doc.pages === "number" ? intl(doc.pages) + " pages" : null, typeof doc.sections === "number" ? intl(doc.sections) + " sections" : null].filter(Boolean).join(", ") : info.document].filter(Boolean).join(" · ");
-  const metaParts = [h("span", {}, "run clock ", h("b", { text: clock(m.lastT) }), m.deadline ? " of " + clock(m.deadline) : "")];
-  if (m.profile) metaParts.push("profile " + m.profile);
-  if (m.resumed || info.resumed) metaParts.push(h("span", { class: "pill", text: "resumed" }));
-  if (info.replayed || m.replay) metaParts.push(h("span", { class: "pill", id: "replay-stamp", text: "replayed evidence" }));
-  let action = null;
+  $("top-doc").textContent = (doc && doc.title) || info.document || info.run_id;
+  const sub = clear($("top-sub"));
+  const bits = [h("b", { text: info.run_id })];
+  const about = doc ? [doc.version ? String(doc.version).toLowerCase() : null, typeof doc.pages === "number" ? intl(doc.pages) + " pages" : null, typeof doc.sections === "number" ? intl(doc.sections) + " sections" : null].filter(Boolean).join(", ") : (typeof info.pages === "number" ? intl(info.pages) + " pages" : null);
+  if (about) bits.push(about);
+  if (m.profile || info.profile) bits.push("profile " + (m.profile || info.profile));
+  if (info.no_tools) bits.push(h("span", {}, "document only (", h("span", { class: "mono", text: "--no-tools" }), ")"));
+  if (info.started_at) bits.push("started " + hhmm(info.started_at));
+  bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
+  const meta = clear($("top-meta"));
+  meta.append(h("div", { class: "t" }, h("b", { text: clock(m.lastT) }), m.deadline ? h("span", { text: " / " + clock(m.deadline) }) : null));
+  const l = h("div", { class: "l" }, "run clock, as of the last event");
+  if (m.resumed || info.resumed) l.append(h("span", { class: "pill", text: "resumed" }));
+  if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
+  meta.append(l);
+  const a = clear($("top-action"));
   if (info.status === "running" && info.argv && !m.replay) {
-    action = h("button", { class: "btn ghost", type: "button", text: "Stop run", onclick: async (e) => {
+    a.append(h("button", { class: "btn quiet", type: "button", text: "Stop run", onclick: async (e) => {
       e.target.disabled = true;
       try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); e.target.textContent = "SIGINT sent"; }
       catch (err) { e.target.textContent = err.message; }
-    } });
+    } }));
   }
-  topBar({ doc: docText, tabs, meta: joinMeta(metaParts), action });
+  $("run-tabrow").hidden = !tabs || !tabs.length;
+  renderTabs(tabs);
+  renderRailRuns();
 }
 
 function finishedText(m, end) {
@@ -397,12 +670,14 @@ function finishedText(m, end) {
 function showRun(info, tabs) {
   closeStream();
   const app = clear($("app"));
+  app.className = "surface wide";
   app.append(tpl("tpl-run"));
   const m = newRunModel();
   S.model = m;
   renderRun(m);
   runTop(info, m, tabs);
-  if (info.argv) $("status-feed").before(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
+  renderRailTools();
+  if (info.argv) $("legend").after(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
   // A run just started has no progress.jsonl until the child's first event: the stream is opened anyway and
   // the server follows the file from the moment it appears. Only a run that ended without one has no timeline.
   if (!info.has_events && info.status !== "running") {
@@ -414,15 +689,21 @@ function showRun(info, tabs) {
   let pending = false;
   const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); };
   es.addEventListener("progress", (e) => {
-    applyEvent(m, JSON.parse(e.data));
+    const ev = JSON.parse(e.data);
+    applyEvent(m, ev);
     if (!pending) { pending = true; requestAnimationFrame(paint); }
+    // The other rail rows are re-read at the open run's status cadence (one call_status record per tick),
+    // never on a browser timer.
+    if (ev.type === "call_status") refreshRuns().catch(() => {});
   });
   es.addEventListener("end", async (e) => {
     es.close(); S.es = null;
     const end = JSON.parse(e.data || "{}");
     const fresh = await api("/runs/" + encodeURIComponent(info.run_id));
     info.status = fresh.status;
+    S.info = fresh;
     paint();
+    await refreshRuns();
     const bar = $("finished-bar");
     if (!bar) return;
     clear(bar).hidden = false;
@@ -436,6 +717,15 @@ function showRun(info, tabs) {
 // One plain address, the same rule as ui/mail.py ADDRESS_RE; the server checks it again.
 const ADDRESS = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
 
+function disclosure(btn, box, onOpen) {
+  btn.addEventListener("click", () => {
+    const open = box.hidden;
+    box.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    if (open && onOpen) onOpen();
+  });
+}
+
 async function setupOutputs(info) {
   const base = "/runs/" + encodeURIComponent(info.run_id);
   const out = await api(base + "/outputs");
@@ -443,10 +733,11 @@ async function setupOutputs(info) {
   $("out-open").href = base + "/export.html";
   $("out-md").href = base + "/report.md";
   $("out-json").href = base + "/report.json";
-  $("out-download").textContent = "Download review (HTML" + (out.export ? ", " + out.export.size : "") + ")";
+  $("out-download-label").textContent = "Download review (HTML" + (out.export ? ", " + out.export.size : "") + ")";
   $("out-download-help").textContent = "One file, no script, nothing loaded from the network: this run's report.md shown as HTML" +
     (info.replayed ? ", stamped replayed evidence" : "") +
     (out.export && out.export.has_chat ? ", then the chat transcript, marked as not part of the review." : ".");
+  $("out-line").hidden = false;
   const to = $("email-to"), send = $("email-send"), help = $("email-help"), result = $("email-result");
   const e = out.email;
   const ready = () => { send.disabled = !e.enabled || !ADDRESS.test(to.value.trim()); };
@@ -455,9 +746,11 @@ async function setupOutputs(info) {
   } else {
     to.disabled = true;
     send.title = e.reason;
+    $("email-btn").title = e.reason;
     help.textContent = e.reason + " (" + e.detail + ").";
   }
   ready();
+  disclosure($("email-btn"), $("email-box"), () => { if (!to.disabled) to.focus(); });
   to.addEventListener("input", () => { ready(); result.hidden = true; help.hidden = false; });
   $("email-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
@@ -473,21 +766,15 @@ async function setupOutputs(info) {
     }
     to.disabled = false; ready();
   });
-  const btn = $("share-btn"), box = $("share-box"), s = out.share;
-  btn.addEventListener("click", () => {
-    const open = box.hidden;
-    box.hidden = !open;
-    $("share-hint").hidden = open;
-    btn.setAttribute("aria-expanded", String(open));
-    btn.textContent = open ? "Hide share link" : "Show share link";
-  });
+  const s = out.share;
+  disclosure($("share-btn"), $("share-box"));
   $("share-line").textContent = s.url || s.restart || "";
   $("share-line").hidden = !(s.url || s.restart);
   $("share-text").textContent = s.text;
   $("outputs").hidden = false;
 }
 
-// ------------------------------------------------------------------ frame 3: the review
+// ------------------------------------------------------------------ the review
 
 function sevPill(f) {
   const s = f.kind === "strength" ? "strength" : f.severity;
@@ -588,7 +875,7 @@ function reviewBody(P) {
   const R = P.report, D = P.derived, v = R.verdict || {};
   const box = h("div", {});
   const vline = h("div", { class: "verdict" }, h("span", { class: "label", text: sentence(v.label) }),
-    h("span", { class: "conf num", text: "confidence " + conf(v.confidence) + (D.verdict_band ? ", " + D.verdict_band : "") }));
+    h("span", { class: "conf num", text: "confidence " + conf(v.confidence) + (D.verdict_band ? ", " + D.verdict_band : "") + ((v.conditions || []).length ? " · " + intl(v.conditions.length) + " condition" + (v.conditions.length === 1 ? "" : "s") : "") }));
   if (D.previous_verdict) vline.append(h("span", { class: "prev num", text: "previous version (" + D.previous_verdict.run_id + "): " + words(D.previous_verdict.label) + " · " + conf(D.previous_verdict.confidence) }));
   box.append(vline);
   const c = D.counts;
@@ -596,26 +883,28 @@ function reviewBody(P) {
   for (const [n, label] of [[c.findings, "findings"], [c.critical, "critical"], [c.high, "high"], [c.medium, "medium"], [c.low, "low"], [c.strengths, "strengths"], [c.sound_areas, "areas checked, no issue"], [c.unresolved, "unresolved"], [c.limitations, "limitations"]]) {
     cs.append(h("span", {}, h("b", { text: n }), " " + label));
   }
-  box.append(cs, h("p", { class: "rationale small", text: v.rationale || "" }));
+  box.append(cs, h("p", { class: "rationale", text: v.rationale || "" }));
   if ((v.conditions || []).length) {
     box.append(h("h3", { text: "Conditions" }), h("ul", { class: "plain small" }, v.conditions.map((x) => h("li", {}, x.text + ((x.finding_ids || []).length ? " (" + x.finding_ids.join(", ") + ")" : "")))));
   }
-  if (v.what_would_change_it) box.append(h("p", { class: "small muted", text: "What would change it: " + v.what_would_change_it }));
+  if (v.what_would_change_it) box.append(h("p", { class: "rationale muted" }, h("b", { style: "font-weight:500;color:var(--fg)", text: "What would change it." }), " " + v.what_would_change_it));
   if ((v.per_objective || []).length) {
-    box.append(h("table", { class: "grid obj", style: "margin:16px 0 24px" },
+    // The objective's own text, as intent_summary.objectives records it under the same ref; the ref alone otherwise.
+    const texts = new Map((((R.intent_summary || {}).objectives) || []).map((o) => [o.ref, o.text]));
+    box.append(h("table", { class: "grid obj", style: "margin:18px 0 0" },
       h("thead", {}, h("tr", {}, h("th", { text: "Objective" }), h("th", { text: "Verdict" }), h("th", { text: "Findings" }))),
-      h("tbody", {}, v.per_objective.map((o) => h("tr", {}, h("td", { text: o.objective_ref }), h("td", { text: words(o.label) }), h("td", { class: "ids", text: (o.finding_ids || []).join(", ") || "–" }))))));
+      h("tbody", {}, v.per_objective.map((o) => h("tr", {}, h("td", { class: "obj", title: texts.get(o.objective_ref) || o.objective_ref }, h("b", { style: "font-weight:500", text: o.objective_ref }), texts.has(o.objective_ref) ? " " + texts.get(o.objective_ref) : ""), h("td", { text: words(o.label) }), h("td", { class: "ids", text: (o.finding_ids || []).join(", ") || "–" }))))));
   }
   const all = [...(R.findings || [])].sort((a, b) => a.rank - b.rank);
   const issues = all.filter((f) => f.kind !== "strength"), strengths = all.filter((f) => f.kind === "strength");
-  box.append(h("div", { class: "sec" }, h("h2", {}, "Findings ", h("span", { class: "n num", text: issues.length + ", ordered by rank" })), findingList(P, issues)));
+  box.append(h("div", { class: "sec" }, h("h2", {}, "Findings ", h("span", { class: "n num", text: issues.length + " issues, ordered by rank" })), findingList(P, issues)));
   if (strengths.length) box.append(h("div", { class: "sec" }, h("h2", {}, "Strengths ", h("span", { class: "n num", text: String(strengths.length) })), findingList(P, strengths)));
   if ((R.sound_areas || []).length) {
     box.append(h("div", { class: "sec" }, h("h2", {}, "Checked, no issue ", h("span", { class: "n num", text: String(R.sound_areas.length) })),
       h("ul", { class: "plain small" }, R.sound_areas.map((s) => h("li", {}, h("b", { style: "font-weight:500", text: s.id }), " " + (s.section_refs || []).map((x) => "§" + x).join(", ") + " · " + s.why_sound)))));
   }
   box.append(h("div", { class: "sec two" },
-    h("div", {}, h("h2", {}, "Unresolved issues ", h("span", { class: "n num", text: String((R.unresolved || []).length) })),
+    h("div", {}, h("h2", {}, "Unresolved issues ", h("span", { class: "n num", text: String((R.unresolved || []).length) + ((R.unresolved || []).every((u) => u.next_step) && (R.unresolved || []).length ? ", each with an owner" : "") })),
       h("ul", { class: "plain small" }, (R.unresolved || []).map((u) => h("li", {}, idsNotIn(u.finding_ids, u.text), u.text + (u.next_step ? " · " + u.next_step.owner + ": " + u.next_step.action : ""))))),
     h("div", {}, h("h2", {}, "Evidence limitations ", h("span", { class: "n num", text: String((R.limitations || []).length) })),
       h("ul", { class: "plain small" }, (R.limitations || []).map((l) => h("li", {}, idsNotIn(l.degradation_ids, l.text), l.text))))));
@@ -635,7 +924,7 @@ function deltaBody(P) {
 
 async function coverageBody(runId) {
   const cm = await api("/runs/" + encodeURIComponent(runId) + "/coverage");
-  const box = h("div", {}, h("h2", { text: "Coverage: criteria by section" }));
+  const box = h("div", { class: "sec" }, h("h2", { text: "Coverage: criteria by section" }));
   const head = h("tr", {}, h("th", { text: "Section" }), cm.criteria.map((c) => h("th", { class: "mono", text: c })));
   const body = h("tbody", {}, cm.rows.map((r) => h("tr", {}, h("td", {}, h("b", { style: "font-weight:500", text: r.section }), " " + (r.heading || "")), cm.criteria.map((c) => h("td", { class: "mono", text: (r.cells || {})[c] || "" })))));
   box.append(h("table", { class: "grid", style: "margin-top:8px" }, h("thead", {}, head), body));
@@ -645,43 +934,59 @@ async function coverageBody(runId) {
 
 function evidenceBody(P) {
   const led = P.report.evidence_ledger || [];
-  return h("div", {}, h("h2", {}, "Evidence register ", h("span", { class: "n num muted", style: "font-weight:400", text: String(led.length) })),
+  return h("div", { class: "sec" }, h("h2", {}, "Evidence register ", h("span", { class: "n num", text: String(led.length) })),
     h("table", { class: "grid", style: "margin-top:8px" }, h("thead", {}, h("tr", {}, h("th", { text: "ID" }), h("th", { text: "Source" }), h("th", { text: "Citation" }), h("th", { text: "Excerpt" }))),
       h("tbody", {}, led.map((e) => h("tr", {}, h("td", { text: e.evidence_id }), h("td", { text: words(e.source_type) + (e.authority ? " (" + e.authority + ")" : "") }),
         h("td", { text: e.url_or_citation }), h("td", { text: (e.excerpt || "") + ((e.derived_from || []).length ? " (derived from " + e.derived_from.join(", ") + ")" : "") }))))));
 }
 
+const NO_DELTA = "No previous version was given for this run";
+
 async function showReview(info, tab) {
   closeStream();
+  S.model = null;
   const P = await api("/runs/" + encodeURIComponent(info.run_id) + "/report");
   const R = P.report;
   const doc = (R.metadata.documents || []).find((d) => d.role === "under_review") || (R.metadata.documents || [])[0] || {};
-  const tabs = [{ key: "review", label: "Review" }];
-  if (P.derived.delta) tabs.push({ key: "delta", label: "Delta" });
+  // The Delta tab is always drawn: live when the report carries re-assessments, else disabled with the reason.
+  const tabs = [{ key: "review", label: "Review" }, { key: "delta", label: "Delta", off: !P.derived.delta, title: P.derived.delta ? null : NO_DELTA }];
   tabs.push({ key: "coverage", label: "Coverage" }, { key: "evidence", label: "Evidence" });
   if (info.has_events) tabs.push({ key: "log", label: "Run log" });
-  const current = tabs.some((t) => t.key === tab) ? tab : "review";
-  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, go: () => go(info.run_id, t.key) }));
+  const current = tabs.some((t) => t.key === tab && !t.off) ? tab : "review";
+  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, off: t.off, title: t.title, go: () => go(info.run_id, t.key) }));
   if (current === "log") { showRun(info, tabList); return; }
-  const s = P.summary;
-  const metaParts = [s.outcome ? words(s.outcome) : null, s.wall_s !== null ? dur(s.wall_s) : null, s.cost_usd !== null ? money(s.cost_usd, s.cost_lower_bound) : null, s.commit ? String(s.commit).slice(0, 7) : null];
-  if (s.replayed) metaParts.push(h("span", { class: "pill", text: "replayed evidence" }));
-  topBar({ doc: info.run_id + " · " + [doc.title, doc.page_count !== undefined ? doc.page_count + " pages" : null].filter(Boolean).join(", "), tabs: tabList, meta: joinMeta(metaParts) });
   const app = clear($("app"));
+  app.className = "surface wide";
   app.append(tpl("tpl-review"));
+  const s = P.summary;
+  $("top-doc").textContent = doc.title || info.run_id;
+  const sub = clear($("top-sub"));
+  const bits = [h("b", { text: info.run_id })];
+  const about = [doc.version ? String(doc.version).toLowerCase() : null, doc.page_count !== undefined ? intl(doc.page_count) + " pages" : null].filter(Boolean).join(", ");
+  if (about) bits.push(about);
+  if (s.outcome) bits.push(words(s.outcome));
+  if (s.wall_s !== null) bits.push(dur(s.wall_s));
+  if (s.cost_usd !== null) bits.push(money(s.cost_usd, s.cost_lower_bound));
+  if (typeof s.model_calls === "number") bits.push(intl(s.model_calls) + " model call" + (s.model_calls === 1 ? "" : "s"));
+  if (s.commit) bits.push(String(s.commit).slice(0, 7));
+  if (s.replayed) bits.push(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
+  bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
+  renderTabs(tabList, P.derived.delta ? "" : "Delta is off: no previous version was given for this run.");
   const main = $("review");
   if (current === "review") main.append(reviewBody(P));
   else if (current === "delta") main.append(deltaBody(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
+  renderRailRuns();
+  renderRailTools();
   await setupOutputs(info);
   await setupChat(info);
 }
 
-// ------------------------------------------------------------------ the chat: a reading aid, not the review
+// ------------------------------------------------------------------ the ask: a reading aid, not the review
 
 function budgetLine(b) {
-  return b.calls_used + " of " + b.max_calls + " calls used · " + money(b.cost_usd) + " of " + money(b.max_cost_usd) + (b.calls_with_unknown_cost ? " (" + b.calls_with_unknown_cost + " call(s) with unknown cost)" : "") + " · logged to " + b.log + " · outside the evaluated agent and its manifest";
+  return b.calls_used + " of " + b.max_calls + " calls used · " + money(b.cost_usd) + " of " + money(b.max_cost_usd) + (b.calls_with_unknown_cost ? " (" + b.calls_with_unknown_cost + " call(s) with unknown cost)" : "") + " · " + b.model + ", effort " + b.effort + " · logged to " + b.log + " · outside the evaluated agent and its manifest";
 }
 
 function citeEl(id) {
@@ -712,12 +1017,15 @@ async function setupChat(info) {
   const data = await api("/runs/" + encodeURIComponent(runId) + "/chat");
   const turns = $("chat-turns");
   for (const t of data.turns) turns.append(...turnEls(t));
-  $("chat-model").textContent = data.budget.model + " · effort " + data.budget.effort;
-  const input = $("chat-input"), send = $("chat-send"), err = $("chat-error");
+  const cap = S.meta.chat;
+  $("chat-hint").textContent = "Trimmed to this review · " + intl(cap.max_calls) + " asks or " + money(cap.max_cost_usd) + " per run";
+  const input = $("chat-input"), send = $("chat-send"), err = $("chat-error"), ready = $("chat-ready");
   const setBudget = (b, running, hasReport) => {
     $("chat-budget").textContent = budgetLine(b);
     const off = running ? "The chat is off while the run is in progress." : (!hasReport ? "This run has no report.json, so there is nothing to ask about." : (b.stopped ? "The chat cap for this run is reached." : null));
     input.disabled = !!off; send.disabled = !!off;
+    ready.classList.toggle("off", !!off);
+    ready.textContent = off ? (running ? "Off while the run is in progress" : (b.stopped ? "Cap reached" : "No report to ask")) : "Grounded in this review";
     err.hidden = !off; err.textContent = off || "";
   };
   setBudget(data.budget, data.running, data.has_report);
@@ -735,7 +1043,7 @@ async function setupChat(info) {
     }
   };
   $("chat-form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } });
 }
 
 // ------------------------------------------------------------------ routing
@@ -746,20 +1054,46 @@ function go(runId, tab) {
   route();
 }
 
+function goPage(page) {
+  history.pushState(null, "", page === "review" ? "/" : "/?page=" + page);
+  route();
+}
+
 async function route() {
   const q = new URLSearchParams(location.search);
   const runId = q.get("run");
+  const page = runId ? "runs" : (PAGES.includes(q.get("page")) ? q.get("page") : "review");
   S.runId = runId;
+  S.page = page;
+  railActive(page);
   try {
-    if (!S.meta) S.meta = await api("/meta");
-    if (!runId) { await showDrop(); return; }
-    const info = await api("/runs/" + encodeURIComponent(runId));
-    if (info.status === "running" || !info.has_report) showRun(info, null);
-    else await showReview(info, q.get("tab"));
+    if (!S.meta) { S.meta = await api("/meta"); renderTopbar(); setupRail(); }
+    await refreshRuns();
+    // The tools dots are GET /tools, a read of recorded files: the page never probes a server on load.
+    if (!S.tools) await refreshTools(); else renderRailTools();
+    if (runId) {
+      const info = await api("/runs/" + encodeURIComponent(runId));
+      S.info = info;
+      if (info.status === "running" || !info.has_report) showRun(info, null);
+      else await showReview(info, q.get("tab"));
+      renderRailTools();
+      return;
+    }
+    S.info = null;
+    closeStream();
+    S.model = null;
+    if (page === "review") await showDrop();
+    else if (page === "runs") showRuns();
+    else if (page === "replay") showReplay();
+    else if (page === "tools") await showTools();
+    else if (page === "settings") showSettings();
+    else if (page === "developer") showDeveloper();
+    renderRailRuns();
   } catch (e) {
     closeStream();
-    topBar({ doc: runId || "no run open" });
-    clear($("app")).append(h("div", { style: "padding:48px 64px" }, h("p", { class: "error", text: e.message }), h("a", { href: "/", text: "Back to the run list" })));
+    const app = clear($("app"));
+    app.className = "surface";
+    app.append(h("div", { style: "padding:48px 0" }, h("p", { class: "error", text: e.message }), h("a", { href: "/", text: "Back to the Review page", onclick: (ev) => { ev.preventDefault(); goPage("review"); } })));
   }
 }
 

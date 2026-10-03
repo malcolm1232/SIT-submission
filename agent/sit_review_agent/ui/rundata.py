@@ -196,10 +196,16 @@ def _iso_plus(base: str | None, seconds: float | None) -> str | None:
     return (t0 + timedelta(seconds=float(seconds))).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+#: ``mcp_warmup`` outcomes that are a warm-up: ``none`` and ``skipped`` say no warm-up was attempted
+#: (a document-only run, a transport without one), so such a run never stands for the servers' state.
+WARMUP_ATTEMPTED = ("done", "failed")
+
+
 def _has_tool_records(run_dir: Path) -> bool:
     if (run_dir / "tools_list.jsonl").is_file():
         return True
-    return any(ev.get("type") == "mcp_warmup" for ev in events.read_all(run_dir / "progress.jsonl"))
+    return any(ev.get("type") == "mcp_warmup" and (ev.get("fields") or {}).get("status") in WARMUP_ATTEMPTED
+               for ev in events.read_all(run_dir / "progress.jsonl"))
 
 
 def tools_status(runs_dir: Path, servers: list[dict[str, Any]]) -> dict[str, Any]:
