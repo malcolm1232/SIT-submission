@@ -71,3 +71,34 @@ python scripts/smoke_claude_code_backend.py --model claude-haiku-4-5   # cheap c
 ```
 
 It asks for a tiny `PlanOutput` against a 3-line fake document and prints the parsed answer, the served model, token usage, `total_cost_usd` (a client-side estimate, not the bill), latency and the path of the `llm.jsonl` it wrote (a temp run directory unless `--run-dir` is given). The call bills to whatever `claude` is logged in with; check the usage or credit meter before and after if you want to confirm where it lands.
+
+# Public snapshot export
+
+`export_public_snapshot.py` writes a public snapshot of this repository into an empty directory outside it.
+The private repository keeps the evaluation material and the history; the snapshot carries the code, the architecture and the trade-offs.
+It never pushes and never creates a remote.
+
+```bash
+. .venv/bin/activate
+python scripts/export_public_snapshot.py --target /path/to/public_snapshot --allow-file .public-allow             # export + scan
+python scripts/export_public_snapshot.py --target /path/to/public_snapshot --allow-file .public-allow --init-git  # + ONE local commit
+```
+
+What goes in: the tracked files of HEAD (`git ls-tree -r HEAD`), read from the committed blobs, so an uncommitted edit, an untracked file or an ignored file cannot leak.
+The script refuses a dirty worktree unless `--allow-dirty` is given; it exports HEAD either way.
+
+What is left out, logged file by file with its rule (the names under `eval/blind/` are withheld from the log; only their count is printed):
+
+- sealed: `eval/blind/**`;
+- answer keys: `**/answer_key*.json|yaml` (not `*.schema.json`), `eval/KEY_SIGNOFF.md`, the named key drafts, and any file that names `core_insight` or `scored_run_ready` outside the reviewed list `KEY_FIELD_REVIEWED` (a new file that names a key field stays out until it is reviewed and added);
+- transcripts: `docs/transcripts/**`, `**/llm.jsonl`, judge, grader and UI chat logs, every `eval_pilot*/` and `grade_pilot*/` folder under `docs/live_runs/`, and every file of a run folder that is not one of `report.md`, `report.json`, `manifest.json`, `MEASUREMENT.md`, `effective_config.json`, `anchors.json`;
+- the lab's material: `docs/live_runs/sit_sample*/**`, `research/robustness/mcp_probe_results*.json`, and files whose name contains `SIT_Memory` or `Lab Exercise`;
+- recorded streams: `tests/fixtures/stream/**` and every `cassettes/` folder;
+- local and secret-shaped files: `.claude/`, `.env*`, `*.pem`, `*.key`; compressed archives (the scan cannot read them); and `.public-allow` itself.
+
+The scan runs over the export before it is declared good and prints counts only: a value is never printed, only the rule, the file, the JSON field or line, and the length.
+It looks for 64-character tokens (`hex64` for sha256-shaped hex, `token64` otherwise), 32-character hex, bearer values, `sk-` keys, `api_key` assignments, the word for the delegated-auth protocol, e-mail addresses, the account name and any home path, session links, MCP session id values, and it runs the export's own `leakage_grep.py` with HEAD's synthetic answer keys in a temporary mirror.
+A finding fails the run (exit 1) unless `--allow RULE:GLOB` or a line of `--allow-file` names it; `.public-allow` is the reviewed list, one reason per line.
+`--init-git` commits only after a clean scan, one commit with no history ("Public snapshot of malcolm1232/SIT at <sha>").
+
+The export root gets `PUBLIC_SNAPSHOT.md`: the date, the source commit, what was removed and why, that the numbers in `docs/live_runs/QUALITY_COMPARISON.md` are exploratory, and that the lab's MCP key is not in the tree.
