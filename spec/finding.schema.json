@@ -155,7 +155,7 @@
       },
       "allOf": [
         {"if": {"properties": {"status": {"const": "withdrawn_on_reassessment"}}},
-         "then": {"properties": {"note": {"type": "string", "minLength": 1}, "finding_ids": {"maxItems": 0}}}},
+         "then": {"properties": {"note": {"type": "string", "pattern": "\\S"}, "finding_ids": {"maxItems": 0}}}},
         {"if": {"properties": {"re_examined": {"const": false}}},
          "then": {"properties": {"status": {"const": "still_open"}, "finding_ids": {"maxItems": 0}}}}
       ]

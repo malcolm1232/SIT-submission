@@ -1,4 +1,4 @@
-"""Shared run invariants INV-03..INV-10 and INV-12 (research/robustness/README.md §2), checked after every run
+"""Shared run invariants INV-03..INV-10, INV-12 and INV-13 (research/robustness/README.md §2), checked after every run
 by ``selftest``, the verify/report phases and the robustness oracles.
 
 Each ``check_INV_xx`` takes a :class:`~sit_review_agent.models.Review` (or its JSON dict) and, where
@@ -385,13 +385,55 @@ def check_INV_12(review: Review | Mapping[str, Any], run_dir: Path | None = None
     return _ok("INV-12", dangling_refs(_as_dict(review)))
 
 
+def _prior_ids_from_run(run_dir: Path | None) -> list[str] | None:
+    """The finding IDs of the previous review of the delta run in ``run_dir`` (its ``state.json``
+    names the previous run directory), or ``None`` when that cannot be read."""
+    if run_dir is None:
+        return None
+    try:
+        state = json.loads((Path(run_dir) / "state.json").read_text(encoding="utf-8"))
+        prev = state.get("previous_run_dir")
+        if not prev:
+            return None
+        prior = json.loads((Path(prev) / "report.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        return None
+    return [str(f["id"]) for f in prior.get("findings") or [] if isinstance(f, dict) and f.get("id")]
+
+
+def check_INV_13(review: Review | Mapping[str, Any], run_dir: Path | None = None, *,
+                 prior_ids: Sequence[str] | None = None) -> InvariantResult:
+    """INV-13 (re-assessment, lab §1.5; 2026-10-03): in a delta review every finding of the previous
+    review has exactly one status in ``prior_findings``, and the table lists no other ID. The
+    previous review's IDs are ``prior_ids``, else read through ``run_dir``'s ``state.json``.
+    A full review must have an empty table. Skipped for a delta review with no previous review
+    (``--v1``), a previous review that cannot be read, and a report written before the table existed
+    (no ``prior_findings`` key)."""
+    r = _as_dict(review)
+    if (r.get("metadata") or {}).get("review_mode") != "delta":
+        return _ok("INV-13", ["a full review has prior_findings"] if r.get("prior_findings") else [])
+    if "prior_findings" not in r:
+        return InvariantResult("INV-13", passed=True, skipped=True,
+                               reason="report has no prior_findings (written before 2026-10-03)")
+    ids = list(prior_ids) if prior_ids is not None else _prior_ids_from_run(run_dir)
+    if ids is None:
+        return InvariantResult("INV-13", passed=True, skipped=True, reason="previous review not available")
+    listed = [str(e.get("prior_id")) for e in r.get("prior_findings") or []]
+    problems = [f"prior finding {pid} has no status in prior_findings" for pid in ids if pid not in listed]
+    problems += [f"prior finding {pid} has {listed.count(pid)} statuses" for pid in dict.fromkeys(listed)
+                 if listed.count(pid) > 1]
+    problems += [f"prior_findings lists {pid}, which is no finding of the previous review" for pid in
+                 dict.fromkeys(listed) if pid not in ids]
+    return _ok("INV-13", problems)
+
+
 def check_all(review: Review | Mapping[str, Any], run_dir: Path | None = None, *,
               canaries: Sequence[str] = (), texts: Mapping[str, str] | None = None,
-              require_extra: bool = True) -> list[InvariantResult]:
+              require_extra: bool = True, prior_ids: Sequence[str] | None = None) -> list[InvariantResult]:
     out = [check_INV_03(review, run_dir), check_INV_04(review, run_dir, texts=texts), check_INV_05(review, run_dir),
            check_INV_06(review, run_dir), check_INV_07(review, run_dir)]
     out.append(check_INV_08(run_dir, canaries) if run_dir is not None
                else InvariantResult("INV-08", passed=True, skipped=True, reason="no run directory"))
     out += [check_INV_09(review, run_dir, require_extra=require_extra), check_INV_10(review, run_dir),
-            check_INV_12(review, run_dir)]
+            check_INV_12(review, run_dir), check_INV_13(review, run_dir, prior_ids=prior_ids)]
     return out

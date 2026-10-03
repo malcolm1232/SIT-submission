@@ -202,15 +202,30 @@ Research questions left unanswered:
 
 Prior review: {{ prior_review_id }}
 
-{% for g in delta %}
+{% if delta.table %}
+{{ delta.prior_count }} prior findings, each with exactly one status below{% if delta.not_re_examined %} ({{ delta.not_re_examined }} recorded as still open because they were not re-examined){% endif %}. Prior IDs are the prior review's own numbering ("FND-003, was FND-002": this review's FND-003 carries the prior review's FND-002 forward).
+{% else %}
+This report has no table of the prior review's findings; only this review's findings are listed, by their reassessment.
+{% endif %}
+
+{% for g in delta.groups %}
 ### {{ g.label | capitalize }}
 
-{% for f in g.findings %}
-- {{ f.id }} {{ f.title }}{% if f.reassessment and f.reassessment.prior %} (was {{ f.reassessment.prior }}){% endif %}
+{% for r in g.rows %}
+- {{ r.label }}: {{ r.title }}{% if r.note %} ({{ r.note }}){% endif %}
 
 {% endfor %}
 
 {% endfor %}
+{% if delta.new %}
+### New in update
+
+{% for f in delta.new %}
+- {{ f.id }} {{ f.title }}{% if f.regression %} (regression){% endif %}
+
+{% endfor %}
+
+{% endif %}
 {% endif %}
 ## {{ headings["limitations"] }}
 

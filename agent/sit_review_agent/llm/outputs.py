@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from sit_review_agent.models import (
     NON_REFINEMENT_DISPOSITIONS,
@@ -276,8 +276,16 @@ class RefineRevisionsOutput(Draft):
     re-review also one prior status per finding of the previous review that no kept finding carries."""
 
     revisions: list[FindingRevisionDraft]
-    # Optional so full-review answers and recordings made before 2026-10-03 still parse.
-    prior_statuses: list[PriorStatusDraft] = []
+    # Optional so full-review answers and recordings made before 2026-10-03 still parse. The rule
+    # reaches the model through this description and the repair message (prior_status_problems), not
+    # prompts/refine.md: a prompt edit changes the prompt bundle, and replay of a committed run
+    # refuses a changed bundle.
+    prior_statuses: list[PriorStatusDraft] = Field(default_factory=list, description=(
+        "Re-review only, otherwise empty. Every finding of the prior review gets exactly one status. A prior "
+        "finding that a kept finding carries forward (its reassessment prior_finding_id) has its status there. "
+        "Give exactly one entry here for every other prior finding listed in the brief, including one whose only "
+        "carrier you merge or withdraw, and none for a prior finding a kept finding carries. The IDs are the prior "
+        "review's own numbering, independent of the merged findings' IDs."))
 
 
 def prior_status_problems(out: RefineRevisionsOutput, prior_ids: Sequence[str], carried: set[str]) -> list[str]:

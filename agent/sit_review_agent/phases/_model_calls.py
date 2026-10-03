@@ -117,6 +117,8 @@ class PhaseCall:
     cut_id: str | None = None
     #: Problems ``check`` still found after the one repair call (the answer is not used).
     invalid: tuple[str, ...] = ()
+    #: Omissions ``ask`` still found after the one repair call (the answer is used; the caller fills them in).
+    omitted: tuple[str, ...] = ()
 
     @property
     def declined(self) -> bool:
@@ -283,7 +285,8 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
 
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None, conversation: str | None = None,
-                     disclose: bool = True, check: Callable[[Any], list[str]] | None = None) -> PhaseCall:
+                     disclose: bool = True, check: Callable[[Any], list[str]] | None = None,
+                     ask: Callable[[Any], list[str]] | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
     docstring. Returns the result, or a declined :class:`PhaseCall` after a persistent refusal.
 
@@ -293,7 +296,11 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     entry or deadline text, because the caller discloses it in its own terms; call IDs, usage and
     refusals are recorded either way. ``check`` (refine) lists what makes a parsed answer unusable;
     a non-empty list is treated like a schema error: one repair call with the list as
-    ``schema_error``, then the call returns with ``invalid`` set (never raises)."""
+    ``schema_error``, then the call returns with ``invalid`` set (never raises). ``ask`` (refine in a
+    re-review: prior findings with no status) lists what the answer left out: a non-empty list asks
+    once through the same repair call (with ``check``'s problems, if any); what the repair answer still
+    leaves out is returned in ``omitted`` with the answer, which is used, and the caller fills the gap
+    in code. A call already repaired once (a schema error) is not asked again."""
     effort = ctx.config.effort_for(phase)
     system = system_prompt(ctx).text
     docs = ordered_documents(ctx)
@@ -386,6 +393,13 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             continue
         record_result(ctx, phase, result)
         problems = check(result.parsed) if check is not None and result.parsed is not None else []
+        omitted = ask(result.parsed) if ask is not None and result.parsed is not None else []
+        if omitted and not problems and repaired:
+            ctx_event(ctx, f"{phase.value} answer still leaves out {len(omitted)} item(s) after one repair call; "
+                      "the answer is used and code fills them in", "warn", event="answer_incomplete",
+                      stage=phase.value, call_id=result.call_id, omitted=len(omitted))
+            return PhaseCall(result=result, brief=brief, omitted=tuple(omitted))
+        problems = problems + omitted
         if problems:
             if repaired:
                 # The problems can quote the answer, so progress.jsonl gets their count only.
