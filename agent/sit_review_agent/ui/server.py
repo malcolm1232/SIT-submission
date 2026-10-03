@@ -13,6 +13,9 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
     GET  /runs/<id>/doc.pdf         the reviewed PDF, only if its SHA-256 matches the manifest
+    GET  /runs/<id>/export.html     the review as one self-contained HTML file (``?download=1`` saves it)
+    GET  /runs/<id>/report.md       the run's report.md, as a download
+    GET  /runs/<id>/report.json     the run's report.json, as a download
     POST /runs/<id>/stop            SIGINT to a run this server started
     GET  /runs/<id>/chat            chat history and budget
     POST /runs/<id>/chat            one question, one model call (``ui.chat``)
@@ -36,7 +39,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from sit_review_agent.ui import chat, events, rundata
+from sit_review_agent.ui import chat, events, export, rundata
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -234,6 +237,24 @@ def build_app(state: UIState) -> Starlette:
         return FileResponse(pdf, media_type="application/pdf",
                             headers={"Content-Disposition": f'inline; filename="{safe_name(pdf.name)}"'})
 
+    async def run_export(request: Request) -> Response:
+        rd = run_dir_of(request)
+        if rd is None or not (rd / "report.md").is_file():
+            return _err(404, "This run has no report.md to export.")
+        html = export.export_html(rd, replayed=rundata.summary(rd)["replayed"])
+        how = "attachment" if request.query_params.get("download") == "1" else "inline"
+        return Response(html, media_type="text/html; charset=utf-8",
+                        headers={"Content-Disposition": f'{how}; filename="{export.export_name(rd.name)}"'})
+
+    def raw_file(name: str, media_type: str) -> Any:
+        async def handler(request: Request) -> Response:
+            rd = run_dir_of(request)
+            if rd is None or not (rd / name).is_file():
+                return _err(404, f"This run has no {name}.")
+            return FileResponse(rd / name, media_type=media_type,
+                                headers={"Content-Disposition": f'attachment; filename="{rd.name}_{name}"'})
+        return handler
+
     async def run_stop(request: Request) -> Response:
         rd = run_dir_of(request)
         if rd is None:
@@ -277,6 +298,9 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/coverage", run_coverage),
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),
         Route("/runs/{run_id}/doc.pdf", run_pdf),
+        Route("/runs/{run_id}/export.html", run_export),
+        Route("/runs/{run_id}/report.md", raw_file("report.md", "text/markdown; charset=utf-8")),
+        Route("/runs/{run_id}/report.json", raw_file("report.json", "application/json")),
         Route("/runs/{run_id}/stop", run_stop, methods=["POST"]),
         Route("/runs/{run_id}/chat", chat_get, methods=["GET"]),
         Route("/runs/{run_id}/chat", chat_post, methods=["POST"]),

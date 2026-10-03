@@ -1,0 +1,36 @@
+/* The HTML export of a finished review (ui/export.py): inlined into the file after tokens.css, so the file
+   loads nothing. Every colour is a token (tokens.css, rule 8.1); no motion; print-friendly. */
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg-app); color: var(--fg); font-family: var(--sans);
+  font-size: 14px; line-height: 21px; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 920px; margin: 0 auto; padding: 32px 32px 56px; }
+.exp-head { border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px; margin-bottom: 8px; }
+.exp-head .brand { font-weight: 600; }
+.exp-head .meta { color: var(--fg-muted); font-size: 13px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.exp-head .note { color: var(--fg-muted); font-size: 12px; line-height: 16px; margin: 8px 0 0; }
+.pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px;
+  font-size: 12px; font-weight: 500; line-height: 16px; white-space: nowrap; background: var(--bg-control); color: var(--fg-muted); }
+.stamp { margin-top: 12px; padding: 8px 12px; border-radius: 6px; background: var(--bg-control); font-size: 13px; }
+h1 { font-size: 22px; line-height: 30px; font-weight: 600; letter-spacing: -0.01em; margin: 24px 0 12px; }
+h2 { font-size: 17px; line-height: 24px; font-weight: 600; margin: 32px 0 10px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 24px 0 6px; }
+p { margin: 0 0 10px; }
+ul { padding-left: 20px; margin: 0 0 10px; }
+li { margin: 0 0 4px; }
+strong { font-weight: 600; }
+a { color: var(--link); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--border-hover); word-break: break-word; }
+code { font-family: var(--mono); font-size: 12px; }
+blockquote { margin: 12px 0; padding: 8px 12px; border-left: 2px solid var(--border-hover); background: var(--bg-subtle); color: var(--fg-muted); }
+blockquote p { margin: 0; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 16px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--fg-muted); padding: 0 12px 6px 0; border-bottom: 1px solid var(--border-subtle); }
+td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; word-break: break-word; }
+.chat-transcript { margin-top: 48px; border-top: 2px solid var(--fg); }
+.chat-transcript h2 { border-top: 0; margin-top: 16px; }
+.chat-transcript .note { color: var(--fg-muted); font-size: 12px; line-height: 16px; }
+.turn { background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 16px; margin: 12px 0; font-size: 13px; }
+.turn .who { font-size: 12px; color: var(--fg-muted); margin: 0 0 4px; }
+.turn .q { font-weight: 500; white-space: pre-wrap; }
+.turn .a { white-space: pre-wrap; }
+.turn .foot { font-size: 12px; color: var(--fg-muted); margin: 6px 0 0; }
+@media print { .wrap { max-width: none; padding: 0; } h2 { break-after: avoid; } .turn { break-inside: avoid; } }
