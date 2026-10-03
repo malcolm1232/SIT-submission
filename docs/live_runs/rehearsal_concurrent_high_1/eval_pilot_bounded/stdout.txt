@@ -1,0 +1,30 @@
+WARNING: eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim
+EXPLORATORY: this run was started with --exploratory (eval/prereg.yaml LC12 override); these scores are exploratory and may not be reported as confirmatory
+{
+ "status": "pilot_unfrozen",
+ "exploratory": true,
+ "exploratory_note": "EXPLORATORY: this run was started with --exploratory (eval/prereg.yaml LC12 override); these scores are exploratory and may not be reported as confirmatory",
+ "outside_preregistered_analysis": false,
+ "scores_json": "docs/live_runs/rehearsal_concurrent_high_1/eval_pilot_bounded/scores.json",
+ "scores_md": "docs/live_runs/rehearsal_concurrent_high_1/eval_pilot_bounded/scores.md",
+ "headline": {
+  "recall": 0.9285714285714286,
+  "lenient_recall": 1.0,
+  "precision_adjudicated": 0.9473684210526315,
+  "severity_weighted_recall": 0.9333333333333333,
+  "hallucinated_finding_rate": 0.0
+ },
+ "cost": {
+  "usage_completeness": "complete",
+  "cost_usd": 8.20961,
+  "cost_usd_lower_bound": null,
+  "calls_with_unrecorded_usage": 0
+ },
+ "calls": {
+  "calls_total": 93,
+  "calls_live": 93,
+  "calls_failed": 0,
+  "cost_usd_reported": 10.646374
+ }
+}
+exit 0
