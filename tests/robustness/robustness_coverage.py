@@ -115,8 +115,9 @@ COVERAGE: dict[str, Coverage] = {
                  "stage 1): each shard retried >= 15 s later, attempts within the policy per call, every shard "
                  "completes, findings as in the fault-free run", schedule=True,
                  awaiting=SEQ + "one assess call, retried >= 15 s later"),
-    "LLM-02": _o("429 without retry-after on every call: exit 3 after max_retries + 1 attempts, checkpoint, "
-                 "'spend cap' message, resumable", schedule=True),
+    "LLM-02": _o("429 without retry-after on every call: each of the six stage 1 calls (understand, plan, the K = 4 "
+                 "assess shards, started together) makes max_retries + 1 attempts and no more, exit 3 once, "
+                 "checkpoint, 'spend cap' message, resumable", schedule=True),
     "LLM-03": _o("529 on attempts 0-3 of every assess shard's call, then recovery (exit 0, no model switch, manifest "
                  "accurate, every shard completes); persistent variant: exit 3, then resume completes", schedule=True,
                  awaiting=SEQ + "one assess call overloaded; open question for the integration pass: whether an "

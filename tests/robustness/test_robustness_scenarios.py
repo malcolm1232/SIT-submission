@@ -311,18 +311,34 @@ def check_inf24(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 # ============================================================================= LLM
 
 
+SHARDS = [1, 2, 3, 4]              # the assess shards of the selftest criteria, in launch order
+
+
+def shard_calls(rec: RunRecord, shard: int) -> list[dict[str, Any]]:
+    """The assess entries of one shard (``shard`` is the launch index the gateway logs)."""
+    return [e for e in llm_calls(rec, "assess") if e.get("shard") == shard]
+
+
 def check_llm01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """Assess runs as K = 4 concurrent shards (latency redesign): the 429 hits attempt 0 of every
+    shard's call, each shard waits retry-after and completes, findings as in the fault-free run."""
     rec = recs[0]
     ok(rec)
-    entries = llm_calls(rec, "assess")
-    fault = [e for e in entries if e.get("fault")]
-    good = [e for e in entries if e.get("outcome") == "ok"]
-    assert len(fault) == 1 and fault[0]["attempt"] == 0 and "429" in fault[0]["message"]
-    waited = (ts(good[0]["started_at"]) - ts(fault[0]["started_at"])).total_seconds()
-    assert waited >= 15, waited
-    assert len(fault) + 1 <= rec.config.agent.llm.max_retries + 1
+    waits = []
+    for s in SHARDS:
+        entries = shard_calls(rec, s)
+        fault = [e for e in entries if e.get("fault")]
+        good = [e for e in entries if e.get("outcome") == "ok"]
+        assert len(fault) == 1 and fault[0]["attempt"] == 0 and "429" in fault[0]["message"], s
+        assert len(good) == 1, s
+        waited = (ts(good[0]["started_at"]) - ts(fault[0]["started_at"])).total_seconds()
+        assert waited >= 15, (s, waited)
+        assert len(fault) + 1 <= rec.config.agent.llm.max_retries + 1
+        waits.append(waited)
+    assert len(llm_calls(rec, "assess")) == 2 * len(SHARDS)
     assert "assess" in rec.state["completed_phases"]
-    return Metric("wait before the retry (s, virtual)", waited, ">= 15")
+    assert titles(rec) == titles(control)
+    return Metric("wait before the retry, min over the 4 shards (s, virtual)", min(waits), ">= 15")
 
 
 def check_llm02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -330,11 +346,18 @@ def check_llm02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert oracles.exit_code(rec) == 3 and rec.report is None
     fail = rec.failure
     assert fail["resumable"] and "spend cap" in fail["message"]
-    attempts = [e["attempt"] for e in llm_calls(rec) if e.get("fault")]
+    # Stage 1 starts understand, plan and the K = 4 assess shards together (latency redesign): each
+    # of the six calls exhausts its own retry budget, none goes past it, and the run exits 3 once.
     n = rec.config.agent.llm.max_retries + 1
-    assert attempts == list(range(n)), attempts                             # exits within the retry budget
+    by_conv: dict[str, list[int]] = {}
+    for e in llm_calls(rec):
+        assert e.get("fault"), e.get("conversation_id")
+        by_conv.setdefault(e["conversation_id"], []).append(e["attempt"])
+    assert sorted(by_conv) == ["assess-0-s1", "assess-0-s2", "assess-0-s3", "assess-0-s4", "plan-0", "understand-0"]
+    for conv, attempts in by_conv.items():
+        assert attempts == list(range(n)), (conv, attempts)               # exits within the retry budget
     assert any(rec.run_dir.checkpoints.iterdir())                          # a checkpoint to resume from
-    return Metric("model attempts before exit 3", len(attempts), f"== {n}")
+    return Metric("model attempts per stage 1 call before exit 3", n, f"== {n} on each of 6 calls")
 
 
 def _persistent_529(data: dict[str, Any]) -> None:
