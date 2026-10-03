@@ -598,7 +598,7 @@ def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     ended = [c for c, es in by_conv.items() if es[-1]["call_id"] is not None]      # the calls that gave up
     assert ended and any(c.startswith(f"{fail['phase']}-0") for c in ended), (ended, fail["phase"])
     for conv, es in by_conv.items():
-        assert len(es) < budget, (conv, len(es))                                   # cancelled or windowed, never the budget
+        assert len(es) < budget, (conv, len(es))                      # cancelled or windowed, never the budget
         if conv in ended:
             assert 2 <= len(es), conv                                              # the window, not a single attempt
     last = max(ts(e["started_at"]) for e in entries)                                # nothing ran on after the exit
