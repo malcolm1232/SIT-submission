@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIT design review</title>
+<link rel="stylesheet" href="/static/tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top" id="top">
+  <a class="brand" href="/">SIT design review</a>
+  <span class="doc" id="top-doc">no run open</span>
+  <span class="tabs" id="top-tabs" hidden></span>
+  <span class="spacer"></span>
+  <span class="meta num" id="top-meta"></span>
+  <span id="top-action"></span>
+</header>
+<main id="app" class="page"></main>
+
+<!-- Frame 1: the drop screen. One empty state: what this is, what to do, one primary action (craft 4.5, 5.1). -->
+<template id="tpl-drop">
+  <div class="drop-wrap">
+    <form id="start-form">
+      <div class="dropzone" id="dropzone">
+        <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--fg-muted)" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+        <div class="big" style="margin-top:12px">Drop the design document here</div>
+        <div class="muted small" style="margin-top:4px">PDF, or a page-marked .txt or Markdown file. The agent reads it only once it is ingested and hashed.</div>
+        <div class="chosen" id="doc-chosen" hidden></div>
+        <div style="margin-top:16px"><label class="btn" for="doc-input">Choose file</label>
+          <input type="file" id="doc-input" name="document" accept=".pdf,.txt,.md" hidden></div>
+      </div>
+      <div class="field" style="margin-top:24px">
+        <span class="label">Previous version (optional)</span>
+        <div class="picker"><label class="btn" for="prev-input">Choose file</label><span class="muted" id="prev-chosen">No file chosen</span>
+          <input type="file" id="prev-input" name="previous" accept=".pdf,.txt,.md" hidden></div>
+        <div class="help">Given, the run is a delta re-assessment of the document above against this earlier version (<span class="mono">--v1</span>): every prior finding is marked resolved, partially addressed, still open or new in update.</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="profile-select">Profile</label>
+          <select class="select" id="profile-select" name="profile"></select>
+          <div class="help" id="profile-help"></div>
+        </div>
+        <div class="field">
+          <span class="label">Tools</span>
+          <label class="check"><input type="checkbox" id="no-tools" name="no_tools" value="1"> Document only (<span class="mono">--no-tools</span>)</label>
+          <div class="help" id="tools-help"></div>
+        </div>
+      </div>
+      <div class="start-row">
+        <button class="btn primary" type="submit" id="start-btn" disabled>Start review</button>
+        <span class="micro muted" id="start-note">Enabled once a document is chosen. The page runs the command below as a subprocess, the same as typing it.</span>
+      </div>
+      <div class="cmd" id="cmd-preview"></div>
+      <div class="error" id="start-error" hidden></div>
+    </form>
+    <div>
+      <h2>Recent runs</h2>
+      <table class="grid num" id="runs-table" style="margin-top:8px">
+        <thead><tr><th>Run</th><th>Document</th><th>Verdict</th><th class="r">Findings</th><th class="r">Wall</th><th class="r">Cost</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="micro muted" style="margin-top:8px" id="runs-note">Every row is a run directory; opening one reads its files, nothing is re-run.</div>
+    </div>
+  </div>
+</template>
+
+<!-- Frame 2: the run. Tracks with elapsed time against the stage limit; drafts labelled unverified; a structured status feed (craft 4.4). -->
+<template id="tpl-run">
+  <div class="finished-bar" id="finished-bar" hidden></div>
+  <div class="run-wrap">
+    <div class="stages">
+      <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num" id="stage1-limit"></span></div>
+      <div class="tracks" id="stage1-tracks"></div>
+      <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
+      <div class="tracks" id="seq-tracks"></div>
+      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received.</div>
+    </div>
+    <div class="feed">
+      <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <span class="pill draft">draft, unverified</span></h2>
+      <div class="rule">Each line appears as its JSON object completes in a shard's stream. None has been through refine or verify; IDs, ranks and severities can change, and a draft can be withdrawn.</div>
+      <div id="drafts"></div>
+      <div class="log">
+        <h2>Status <span class="muted" style="font-weight:400">same lines as the terminal and progress.log</span></h2>
+        <div class="rule">A status line at least every 10 s while any call is open. Newest first.</div>
+        <div class="rows" id="status-feed"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<!-- Frame 3: the review, and the chat as a reading aid kept apart from it. -->
+<template id="tpl-review">
+  <div class="rev-wrap">
+    <div class="review" id="review"></div>
+    <aside class="chat" id="chat" aria-label="Ask the review"><div class="chat-inner">
+      <div class="head"><h2>Ask the review</h2><span class="pill" id="chat-label">reading aid, not the review</span></div>
+      <div class="notice">Answers come only from this run directory: report.json, the evidence ledger, anchors.json and coverage. The model may quote and cite, never add a finding, change one, or re-run the review. If the review does not answer a question, it says so and nothing more.</div>
+      <div id="chat-turns"></div>
+      <form class="composer" id="chat-form">
+        <textarea id="chat-input" placeholder="Ask about a finding, an objective, a page or an evidence ID" aria-label="Question"></textarea>
+        <div class="bar2">
+          <span class="micro muted" id="chat-model"></span>
+          <span class="hint">Cmd+Enter to send</span>
+          <button class="btn" type="submit" id="chat-send" aria-label="Send"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
+        </div>
+      </form>
+      <div class="error" id="chat-error" hidden></div>
+      <div class="budget num" id="chat-budget"></div>
+    </div></aside>
+  </div>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
