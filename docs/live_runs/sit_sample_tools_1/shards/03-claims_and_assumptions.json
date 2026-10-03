@@ -1,0 +1,1025 @@
+{
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "52966ed8963969945d1ce0f129f8d5596d9db4d4409e0f7b63d5dcb1af53f3d6",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0005",
+  "criteria": [
+   "claims_and_external_constraints",
+   "assumptions_and_dependencies"
+  ],
+  "delta": {
+   "budget": {
+    "cache_creation_input_tokens": 24767,
+    "cache_read_input_tokens": 6195,
+    "input_tokens": 30964,
+    "output_tokens": 19790
+   },
+   "declined_sections": [],
+   "degradations": [],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0005"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 3,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "claims_and_assumptions",
+  "outcome": "done",
+  "output": {
+   "coverage": [
+    {
+     "criterion_id": "claims_and_external_constraints",
+     "finding_ids": [
+      "FND-001",
+      "FND-002",
+      "FND-004",
+      "FND-008",
+      "FND-009",
+      "FND-005"
+     ],
+     "note": "Checked the vector sizing arithmetic, filtered-HNSW claims, the Entra token lifetime, the BM25 fallback, the cost estimate, the PDPA claims and the embedding model/dimension. The embedding dimension is consistent with the DDL. External facts could not be verified here and are framed as validation needs.",
+     "outcome": "findings"
+    },
+    {
+     "criterion_id": "assumptions_and_dependencies",
+     "finding_ids": [
+      "FND-003",
+      "FND-005",
+      "FND-006",
+      "FND-007",
+      "FND-004",
+      "FND-010"
+     ],
+     "note": "Checked confirmed decisions against the Pending Backlog (Event Hubs, Auditor/PDPA), the MMP's request-path dependency, and the ordering assumptions in the write path. The backlog is otherwise well tracked.",
+     "outcome": "findings"
+    }
+   ],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_prototyping",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "the effective search space per query is 500-800 vectors, not 9.5 million.",
+       "requirement_ids": [],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 11,
+       "quote": "CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops)",
+       "requirement_ids": [],
+       "section_ref": "11"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "2.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "the effective search space per query is 500-800 vectors, not 9.5 million.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2"
+       ],
+       "evidence_id": "NEW-3",
+       "quote": "A single unpartitioned HNSW index built over all learners cannot, by itself, restrict traversal to one learner's ~600 vectors. The claimed search-space reduction therefore depends on planner behaviour and pgvector filtering features that the design neither specifies nor verifies.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Build a 9.5M-vector pgvector prototype on the target Azure PostgreSQL version and benchmark filtered query plans for latency and recall.",
+      "owner": "Platform data architect"
+     },
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 11-12, state the intended filtered-query strategy explicitly. Options are: exact scan via the (learner_id, slot_path) index; partitioning memory_vectors by learner hash or slot; or a pgvector version with iterative/filtered HNSW scans and a defined ef_search. Prototype on the synthetic 9.5M dataset, and measure both latency and recall@k against an exact baseline.",
+      "expected_benefit": "NFR-2 latency is met with correct recall, and the Section 12 sizing reflects the indexes actually used.",
+      "issue": "The claim about filtered vector search on a global HNSW index is unverified, and it underpins NFR-2 and recall quality.",
+      "objective_refs": [
+       "NFR-2",
+       "NFR-1",
+       "FR-10"
+      ],
+      "rationale": "If the HNSW index filters after the search, highly selective per-learner filters can return incomplete results. If the planner uses exact scans instead, the HNSW index and its RAM cost bring no benefit.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3"
+      ],
+      "verification": "Extend the NFR-2 benchmark to report recall@k against an exact scan, together with EXPLAIN plans, for per-learner filtered queries."
+     },
+     "secondary_dispositions": [
+      "needs_investigation"
+     ],
+     "severity": "high",
+     "statement": "Section 12 says that because queries filter by learner_id + slot_path, the effective search space is only 500-800 vectors. Section 11, however, defines a single global HNSW index over all ~9.5M rows, plus a separate B-tree on (learner_id, slot_path). With a global approximate index, the WHERE filter does not obviously shrink the graph traversal. Depending on the query plan, the database either scans the graph and filters afterwards (which risks returning too few or no results for one learner out of 15,000) or uses the B-tree and does an exact scan (which makes the 80 GB HNSW index largely redundant). NFR-2's 5-15 ms target and the retrieval quality of every context pack depend on which of these happens, and the document does not establish it.",
+     "tags": [
+      "pgvector",
+      "hnsw",
+      "filtered-search",
+      "latency"
+     ],
+     "title": "Filtered HNSW search-space claim is unverified and drives NFR-2"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_testing",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Growth ceiling before degradation ~30-40M vectors (~50,000-60,000 learners)",
+       "requirement_ids": [],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "requirement_ids": [],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Per-learner breakdown (~600 vectors across a full degree): core/identity 10, advisory 15, modules (6 active × 20)",
+       "requirement_ids": [],
+       "section_ref": "12"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-4",
+       "quote": "Growth ceiling before degradation ~30-40M vectors (~50,000-60,000 learners)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "Per-learner breakdown (~600 vectors across a full degree): core/identity 10, advisory 15, modules (6 active × 20)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-4",
+        "NEW-5",
+        "NEW-6"
+       ],
+       "evidence_id": "NEW-7",
+       "quote": "9.5M × 1536 × 4 bytes ≈ 58 GB raw, plus ~80 GB of index, is ≈ 138 GB, which is more than 128 GB of RAM. At 30-40M vectors the index alone would be roughly 250-340 GB. The listed per-learner items sum to about 340 vectors, not 600.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Recalculate sizing and confirm it with measured relation sizes from the load-test dataset.",
+      "owner": "Platform data architect"
+     },
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Recompute Section 12 from first principles. Use a consistent per-learner count, counting only SEMANTIC/PROCEDURAL keys, because episodic writes are not vector-indexed (Section 17). State whether 80 GB is the total index or overhead on top of the raw vectors, and include shared_buffers and working-set assumptions. Restate the growth ceiling as 'to be measured', or derive it. Consider halfvec or reduced dimensions if RAM fit is required.",
+      "expected_benefit": "A defensible SKU choice and a correct growth ceiling for NFR-1, NFR-2 and NFR-10.",
+      "issue": "The capacity figures are internally inconsistent, and the in-RAM index assumption is not supported at the stated SKU.",
+      "objective_refs": [
+       "NFR-1",
+       "NFR-2",
+       "NFR-10"
+      ],
+      "rationale": "Under-sizing RAM means index pages are read from disk, which affects NFR-2. An overstated growth ceiling misleads capacity planning under NFR-1.",
+      "supporting_evidence_ids": [
+       "NEW-4",
+       "NEW-5",
+       "NEW-6",
+       "NEW-7"
+      ],
+      "verification": "Measure the actual table and index sizes (pg_relation_size) on the NFR-1 synthetic dataset and compare the cache hit ratio with the RAM available."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "Section 12 gives ~57 GB of raw vectors and ~80 GB of HNSW index on a 128 GB RAM SKU, and claims an in-RAM index and a growth ceiling of 30-40M vectors. Together, 57 GB and 80 GB already exceed 128 GB before counting content/TOAST, the event and document tables, and PostgreSQL's own memory. At 30-40M vectors, the index alone would be several times the RAM. In addition, the per-learner breakdown adds up to about 340 vectors, not the ~600 used for the total. The SKU decision, the latency claim and NFR-1's 'no engine change' all rest on these figures.",
+     "tags": [
+      "capacity",
+      "sizing",
+      "pgvector",
+      "azure-sku"
+     ],
+     "title": "Vector sizing, RAM fit and growth ceiling do not add up"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 15,
+       "quote": "Not exists + auto-provisionable slot type -> MMP provisions slot, proceed",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "15"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 20,
+       "quote": "+-- PolicyEngine -- cross-slot read permission decisions",
+       "requirement_ids": [],
+       "section_ref": "21"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-8",
+       "quote": "Not exists + auto-provisionable slot type -> MMP provisions slot, proceed",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-9",
+       "quote": "MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-10",
+       "quote": "+-- PolicyEngine -- cross-slot read permission decisions",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-8",
+        "NEW-9",
+        "NEW-10"
+       ],
+       "evidence_id": "NEW-11",
+       "quote": "A synchronous call from the Gateway to MMP provisioning, plus a per-request Policy Engine hosted in the MMP, would put the MMP on the critical path, which contradicts the premise of NFR-4.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "unresolved_assumption",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 15 and 21, state where the runtime Policy Engine is deployed: either a request-path service that reads MMP-published policy, or part of the MMP. For check 4, define behaviour when the MMP is unavailable: deny with a retryable reason, or have the Gateway create the slot from a locally cached published template. Extend the NFR-4 test so that, with the MMP stopped, it includes a write to a not-yet-provisioned auto-provisionable slot.",
+      "expected_benefit": "NFR-4 becomes achievable and the NFR-4 chaos test becomes meaningful.",
+      "issue": "NFR-4's independence premise conflicts with the Gateway's dependency on MMP provisioning and with where the PolicyEngine is hosted.",
+      "objective_refs": [
+       "NFR-4",
+       "FR-4",
+       "FR-8"
+      ],
+      "rationale": "The availability guarantee only holds if no live request depends synchronously on MMP services.",
+      "supporting_evidence_ids": [
+       "NEW-8",
+       "NEW-9",
+       "NEW-10",
+       "NEW-11"
+      ],
+      "verification": "Run the NFR-4 chaos test, including the auto-provisioning case and policy evaluation, with the MMP process stopped."
+     },
+     "secondary_dispositions": [],
+     "severity": "high",
+     "statement": "NFR-4 guarantees agent reads and writes stay available during MMP downtime because the MMP is not in the critical path. Yet Gateway check 4 calls the MMP to provision a missing slot mid-request, and Section 21 lists the PolicyEngine as an MMP component, while the Policy Engine is evaluated live on every request with no caching (Section 16). If either dependency is real, an MMP outage blocks first-time writes to auto-provisioned slots, or blocks all requests. NFR-4's premise is therefore not established.",
+     "tags": [
+      "availability",
+      "mmp",
+      "dependency",
+      "policy-engine"
+     ],
+     "title": "NFR-4 assumes the MMP is off the request path, but Gateway check 4 and the Policy Engine depend on it"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "external_constraint_violation",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "claims_and_external_constraints",
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "requirement_ids": [],
+       "section_ref": "6"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Auth tokens shall be valid for 48 hours, with defined degraded-mode behaviour for EXPIRED and REVOKED",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "Tokens issued at T are ACTIVE until T+48h, then transition to EXPIRED; a",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "27.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-12",
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-13",
+       "quote": "Tokens issued at T are ACTIVE until T+48h, then transition to EXPIRED; a",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-12",
+        "NEW-13"
+       ],
+       "evidence_id": "NEW-14",
+       "quote": "The design treats a 48-hour lifetime as an inherent property of Entra ID tokens without naming the token type or the configuration that achieves it, so both NFR-6 and its test rest on an unverified identity-platform capability.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Confirm which Entra ID token lifetimes are configurable and choose the token model that delivers the 48-hour session window.",
+      "owner": "Identity / IAM lead"
+     },
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 6 and 15, name the token whose 48-hour lifetime is meant (Entra access token, refresh token, or a platform session token minted after Entra login). Cite the Entra configuration that supports it, and define how revocation is detected (for example introspection or a revocation list). Update the NFR-6 acceptance criterion to match.",
+      "expected_benefit": "NFR-6 can actually be built and tested on Entra ID.",
+      "issue": "The 48-hour token window depends on an identity-platform lifetime setting that has not been verified.",
+      "objective_refs": [
+       "NFR-6",
+       "FR-4"
+      ],
+      "rationale": "NFR-6, the Gateway's check 3, and the per-learner auth/ structure in agent memory all depend on this lifetime.",
+      "supporting_evidence_ids": [
+       "NEW-12",
+       "NEW-13",
+       "NEW-14"
+      ],
+      "verification": "In a test tenant, configure Entra ID and confirm the issued token's lifetime and that revocation is detected by the Gateway."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "Sections 6 and 15, NFR-6 and the confirmed decisions all assume that Entra ID OAuth tokens are valid for 48 hours. The document does not say whether this means the access token, the refresh token, or a platform-issued session token. It also does not say how an Entra ID-issued token could be held at a 48-hour lifetime, or how REVOKED is detected before expiry. Whether Entra ID permits a 48-hour access-token lifetime is unverified here. If it does not, both the NFR-6 test (ACTIVE until T+48h) and the degraded-mode design built on it are invalid.",
+     "tags": [
+      "entra-id",
+      "oauth",
+      "token-lifetime"
+     ],
+     "title": "48-hour Entra ID token validity is assumed, not shown to be configurable"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "decision_depends_on_pending_item",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "assumptions_and_dependencies",
+      "claims_and_external_constraints"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "Audit logs are append-only. Never modified. Retained per PDPA requirements.",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "17"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.",
+       "requirement_ids": [],
+       "section_ref": "26"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 19,
+       "quote": "Retention: retained in the audit log after RESOLVED status; the slot itself expires.",
+       "requirement_ids": [
+        "FR-7"
+       ],
+       "section_ref": "19"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "Audit logs are append-only. Never modified. Retained per PDPA requirements.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-16",
+       "quote": "Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-15",
+        "NEW-16"
+       ],
+       "evidence_id": "NEW-17",
+       "quote": "Compliance is asserted while the retention period and the PDPA sign-off are both open, so the audit and escalation designs rest on an unconfirmed legal interpretation.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "unresolved_assumption",
+     "next_step": {
+      "action": "Issue a PDPA interpretation covering audit-log retention, escalation content and the deletion scope, before the Auditor is built.",
+      "owner": "Data Protection Officer"
+     },
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Have the DPO decide the audit retention period, whether escalation content (as opposed to metadata) may stay in the audit log, and how learner deletion requests affect audit and agent-backup copies. Record the outcomes in Sections 17, 19 and 20, and replace 'retained per PDPA requirements' with the concrete period.",
+      "expected_benefit": "NFR-7 and FR-13 become legally grounded, and the risk of rework after the DPO's review is avoided.",
+      "issue": "PDPA claims rest on a sign-off that has not happened, and no retention period is defined for append-only audit logs that contain personal data.",
+      "objective_refs": [
+       "NFR-7",
+       "FR-13",
+       "FR-15"
+      ],
+      "rationale": "Append-only, never-modified logs with no retention limit, which also hold escalation content, may conflict with retention or deletion obligations once the DPO has ruled.",
+      "supporting_evidence_ids": [
+       "NEW-15",
+       "NEW-16",
+       "NEW-17"
+      ],
+      "verification": "The DPO sign-off is recorded, and NFR-7 tests verify that audit-log expiry follows the defined retention period."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "The design says many times that audit trails are 'required for PDPA' and are 'retained per PDPA requirements', and it holds escalation content in the audit log after the slot itself expires. Yet the Auditor's retention period and its PDPA alignment sign-off are still in the Pending Backlog. Which PDPA obligation applies (for example retention limitation versus indefinite append-only logs keyed by learner_id) has not been established. The review adds that FR-13, FR-15 and the escalation lifecycle are treated as settled while their legal basis is still open.",
+     "tags": [
+      "pdpa",
+      "audit",
+      "retention",
+      "governance"
+     ],
+     "title": "PDPA compliance is asserted but PDPA sign-off and retention period are still pending"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "decision_depends_on_pending_item",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.",
+       "requirement_ids": [],
+       "section_ref": "26"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "overwhelm the store; failed writes queue and retry automatically",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 25,
+       "quote": "Write path Async via Kafka (Azure Event Hubs)",
+       "requirement_ids": [],
+       "section_ref": "25"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-19",
+       "quote": "overwhelm the store; failed writes queue and retry automatically",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-18",
+        "NEW-19"
+       ],
+       "evidence_id": "NEW-20",
+       "quote": "A confirmed decision and a 'Ready' rating depend on a broker choice that is still pending, and on automatic retry behaviour that no component is specified to provide.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "unresolved_assumption",
+     "next_step": {
+      "action": "Confirm Event Hubs tier and Kafka-API feature support, and specify retry/DLQ semantics.",
+      "owner": "Platform engineering lead"
+     },
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Close the Event Hubs backlog item before Phase 4/5 build. In Section 18, specify the consumer retry policy, dead-letter topic, idempotency key (memory_id), partition key (learner_id) for ordering, and the broker retention tier. Downgrade the Section 28 write-path rating to 'Mostly ready' until this is done.",
+      "expected_benefit": "FR-9 durability and NFR-3 non-blocking writes rest on verified broker behaviour.",
+      "issue": "The broker choice and the retry semantics are unconfirmed, but the write path is treated as ready to build.",
+      "objective_refs": [
+       "FR-9",
+       "NFR-3"
+      ],
+      "rationale": "Writes are acknowledged before they are processed, so lost or poisoned messages mean silent data loss under FR-9.",
+      "supporting_evidence_ids": [
+       "NEW-18",
+       "NEW-19",
+       "NEW-20"
+      ],
+      "verification": "A fault-injection test in which the consumer fails mid-batch shows every acknowledged write is either stored once or sits in the DLQ with an audit entry."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "Section 25 lists 'Async via Kafka (Azure Event Hubs)' as confirmed, and Section 28 rates the write path 'Ready'. Section 26, however, still has confirming Event Hubs as an open item. Section 18 also claims failed writes 'queue and retry automatically', but no retry, poison-message or dead-letter mechanism is specified, and broker-level capabilities (consumer groups, retention, ordering per learner) are assumed rather than checked. The review adds that FR-9's guarantee of durability after acknowledgement depends on these unconfirmed behaviours.",
+     "tags": [
+      "kafka",
+      "event-hubs",
+      "retry",
+      "durability"
+     ],
+     "title": "Write path is marked confirmed and 'Ready' while Event Hubs and retry behaviour are still pending"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "read the same event stream; separate topics per sensitivity tier keep HIGHLY_RESTRICTED",
+       "requirement_ids": [],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "The Validator shall reject (strict mode) or warn-and-log (lenient mode) any write containing a key not",
+       "requirement_ids": [
+        "FR-11"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "read the same event stream; separate topics per sensitivity tier keep HIGHLY_RESTRICTED",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-22",
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-21",
+        "NEW-22"
+       ],
+       "evidence_id": "NEW-23",
+       "quote": "Because topic selection comes before classification, and validation comes after embedding and acknowledgement, a misdeclared write can transit the standard tier and be embedded before it is rejected, with no defined way to tell the agent.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "unresolved_assumption",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18, derive the topic from the slot template's sensitivity ceiling at the Gateway, not from the agent's declaration. Run cheap template/key validation synchronously before enqueue. Move Validate ahead of Embed in FR-9. Define a rejection notification (status endpoint or audit-visible outcome) for writes that fail asynchronously.",
+      "expected_benefit": "HIGHLY_RESTRICTED isolation in transit is preserved (NFR-5, FR-5), and FR-11 rejections are visible.",
+      "issue": "Sensitivity routing and template validation happen after the point the design assumes they are already settled.",
+      "objective_refs": [
+       "NFR-5",
+       "FR-5",
+       "FR-11",
+       "FR-9"
+      ],
+      "rationale": "Tier isolation and FR-11 rejection only work if sensitivity is fixed before enqueue and invalid writes are caught before embedding.",
+      "supporting_evidence_ids": [
+       "NEW-21",
+       "NEW-22",
+       "NEW-23"
+      ],
+      "verification": "A test write declared INTERNAL to wellbeing/counselling/ never appears on the standard topic, and an undeclared key in strict mode is rejected without an embedding call."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Writes are routed to memory.write.standard or memory.write.sensitive at enqueue time, but sensitivity is only confirmed by the consumer's Classify step afterwards. Validation also runs after Embed and after the agent has already received its acknowledgement. The design therefore assumes the topic chosen at enqueue already reflects the true sensitivity, and that strict-mode rejections need no feedback to the agent. Content later classified HIGHLY_RESTRICTED could pass through the standard topic and standard embedding deployment, which undermines the isolation-in-transit claim and NFR-5.",
+     "tags": [
+      "write-path",
+      "classification",
+      "isolation"
+     ],
+     "title": "Sensitivity topic and validation outcome are assumed to be known before classification"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Fall back to BM25 keyword search for retrieval",
+       "requirement_ids": [],
+       "section_ref": "17"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "Behaviour, fallback paths, and controlling environment variables are",
+       "requirement_ids": [],
+       "section_ref": "28"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-24",
+       "quote": "Fall back to BM25 keyword search for retrieval",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-24"
+       ],
+       "evidence_id": "NEW-25",
+       "quote": "The memory_vectors DDL defines no tsvector/full-text index and no embedded column, so the BM25 fallback has no schema support and depends on an unconfirmed PostgreSQL capability.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Check which keyword search extensions Azure PostgreSQL supports and update the DDL.",
+      "owner": "Platform data architect"
+     },
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Confirm which keyword-ranking capability is available on the target Azure PostgreSQL. Add an 'embedded BOOLEAN' column and a full-text column/index to the Section 11 DDL. State the actual ranking method (BM25 extension or built-in ts_rank). Correct the Section 28 rating.",
+      "expected_benefit": "FR-10 reads stay available and complete during an embedding outage.",
+      "issue": "The BM25 fallback has no schema or extension support in the design.",
+      "objective_refs": [
+       "FR-10",
+       "NFR-1"
+      ],
+      "rationale": "The fallback is the only way to retrieve records when the embedding service is unavailable.",
+      "supporting_evidence_ids": [
+       "NEW-24",
+       "NEW-25"
+      ],
+      "verification": "Integration test: with the embedding endpoint disabled, a newly written semantic record can be retrieved by keyword and is later re-embedded from the backlog."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "The Embedder fallback says retrieval falls back to BM25 keyword search when embedding is unavailable, and Section 28 rates the fallback paths as directly codeable. The DDL has no full-text column or index, and no 'embedded' flag even though the fallback writes one. Whether BM25 ranking is available on Azure Database for PostgreSQL without an additional extension is unverified. Without it, unembedded records are effectively unretrievable during an embedding outage.",
+     "tags": [
+      "embedding",
+      "fallback",
+      "full-text-search"
+     ],
+     "title": "BM25 fallback assumes a capability not present in the schema or the confirmed stack"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.5,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 5,
+       "quote": "Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner",
+       "requirement_ids": [
+        "NFR-10"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 28,
+       "quote": "Projected monthly cost at 15,000-learner scale, computed from the actual",
+       "requirement_ids": [
+        "NFR-10"
+       ],
+       "section_ref": "27.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-26",
+       "quote": "Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-27",
+       "quote": "Projected monthly cost at 15,000-learner scale, computed from the actual",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-009",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Produce a dated Azure Singapore cost model for the selected SKU and its supporting services.",
+      "owner": "Platform finance / FinOps owner"
+     },
+     "no_change_rationale": null,
+     "rank": 9,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add a cost breakdown to Section 12: compute SKU, storage, HA/backup, Event Hubs, Redis and embeddings, each with its pricing date. Restate NFR-10's scope so it matches the NFR-10 acceptance test.",
+      "expected_benefit": "NFR-10 rests on a verifiable, correctly scoped cost baseline.",
+      "issue": "The cost estimate is unsourced, and its scope differs between NFR-10 and its acceptance test.",
+      "objective_refs": [
+       "NFR-10"
+      ],
+      "rationale": "Budget approval relies on this figure, and FND-002 suggests a larger SKU may be needed.",
+      "supporting_evidence_ids": [
+       "NEW-26",
+       "NEW-27"
+      ],
+      "verification": "Run the Azure pricing calculator for the Singapore region using the measured sizing from the NFR-1 dataset."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "NFR-10 commits to SGD 800-1,200/month for vector-store infrastructure on a Memory Optimised 16-vCore tier in Azure Singapore, but no pricing source, storage/IOPS, HA replica or backup assumptions are given. Its acceptance test also includes 'measured embedding volume', which is outside the vector-store scope the requirement names. Whether the figure covers the SKU at current pricing is unverified, and the requirement and its test measure different things.",
+     "tags": [
+      "cost",
+      "azure",
+      "finops"
+     ],
+     "title": "SGD 800-1,200/month cost figure is unsourced and its scope does not match its test"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": null,
+     "confidence": 0.8,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "no_change",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "The honest answer is partial - strong in some areas, not",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Items confirmed as in-scope but not yet fully designed:",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-28",
+       "quote": "The honest answer is partial - strong in some areas, not",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-010",
+     "kind": "strength",
+     "next_step": null,
+     "no_change_rationale": "Openly tracking the gaps supports the Section 1 goal of being implementable and lets each gap be closed in its own phase. Only the specific ratings noted in other findings need correcting.",
+     "rank": 10,
+     "reassessment": null,
+     "recommendation": null,
+     "secondary_dispositions": [],
+     "severity": null,
+     "statement": "Sections 26 and 28 list what is not yet designed and rate each component's readiness, tying the open items to the build phases. This directly serves the document's stated purpose of being an implementation-grade specification, and makes most dependencies traceable to closure. The exceptions are the items in FND-003, FND-006 and FND-008.",
+     "tags": [
+      "governance",
+      "traceability"
+     ],
+     "title": "Readiness assessment and backlog make unverified items explicit"
+    }
+   ],
+   "sound_areas": [
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Generates vector embeddings for semantic memory operations.",
+       "requirement_ids": [],
+       "section_ref": "17"
+      }
+     ],
+     "evidence_ids": [],
+     "related_finding_ids": [],
+     "section_refs": [
+      "17"
+     ],
+     "why_sound": "The embedding model's dimension (1536) matches the vector(1536) column in the DDL, so the Embedder and schema are consistent for FR-10 and NFR-1."
+    },
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Items confirmed as in-scope but not yet fully designed:",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence_ids": [
+      "NEW-28"
+     ],
+     "related_finding_ids": [
+      "FND-010"
+     ],
+     "section_refs": [
+      "26",
+      "28"
+     ],
+     "why_sound": "Open items (cohort namespace, compaction, non-SIT identity) are explicitly deferred with a rationale tied to launch scope, so these dependencies are tracked rather than hidden."
+    }
+   ]
+  },
+  "prompt_hash": "28d5f0d0b177f94b774ed361791d45a5641697d06e3966842ff2e2f336d77cdf",
+  "salvaged": 0
+ }
+}

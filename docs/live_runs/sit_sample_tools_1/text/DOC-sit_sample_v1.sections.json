@@ -1,0 +1,519 @@
+{
+ "doc_id": "DOC-sit_sample_v1",
+ "pages": [
+  {
+   "char_end": 457,
+   "char_start": 11,
+   "image_only": false,
+   "number": 1
+  },
+  {
+   "char_end": 1296,
+   "char_start": 468,
+   "image_only": false,
+   "number": 2
+  },
+  {
+   "char_end": 4034,
+   "char_start": 1307,
+   "image_only": false,
+   "number": 3
+  },
+  {
+   "char_end": 7311,
+   "char_start": 4045,
+   "image_only": false,
+   "number": 4
+  },
+  {
+   "char_end": 7874,
+   "char_start": 7322,
+   "image_only": false,
+   "number": 5
+  },
+  {
+   "char_end": 10352,
+   "char_start": 7885,
+   "image_only": false,
+   "number": 6
+  },
+  {
+   "char_end": 11552,
+   "char_start": 10363,
+   "image_only": false,
+   "number": 7
+  },
+  {
+   "char_end": 13167,
+   "char_start": 11563,
+   "image_only": false,
+   "number": 8
+  },
+  {
+   "char_end": 14253,
+   "char_start": 13178,
+   "image_only": false,
+   "number": 9
+  },
+  {
+   "char_end": 16086,
+   "char_start": 14265,
+   "image_only": false,
+   "number": 10
+  },
+  {
+   "char_end": 17689,
+   "char_start": 16098,
+   "image_only": false,
+   "number": 11
+  },
+  {
+   "char_end": 19334,
+   "char_start": 17701,
+   "image_only": false,
+   "number": 12
+  },
+  {
+   "char_end": 20966,
+   "char_start": 19346,
+   "image_only": false,
+   "number": 13
+  },
+  {
+   "char_end": 21678,
+   "char_start": 20978,
+   "image_only": false,
+   "number": 14
+  },
+  {
+   "char_end": 23803,
+   "char_start": 21690,
+   "image_only": false,
+   "number": 15
+  },
+  {
+   "char_end": 25789,
+   "char_start": 23815,
+   "image_only": false,
+   "number": 16
+  },
+  {
+   "char_end": 27847,
+   "char_start": 25801,
+   "image_only": false,
+   "number": 17
+  },
+  {
+   "char_end": 29902,
+   "char_start": 27859,
+   "image_only": false,
+   "number": 18
+  },
+  {
+   "char_end": 31996,
+   "char_start": 29914,
+   "image_only": false,
+   "number": 19
+  },
+  {
+   "char_end": 34063,
+   "char_start": 32008,
+   "image_only": false,
+   "number": 20
+  },
+  {
+   "char_end": 35682,
+   "char_start": 34075,
+   "image_only": false,
+   "number": 21
+  },
+  {
+   "char_end": 37066,
+   "char_start": 35694,
+   "image_only": false,
+   "number": 22
+  },
+  {
+   "char_end": 38533,
+   "char_start": 37078,
+   "image_only": false,
+   "number": 23
+  },
+  {
+   "char_end": 40602,
+   "char_start": 38545,
+   "image_only": false,
+   "number": 24
+  },
+  {
+   "char_end": 42752,
+   "char_start": 40614,
+   "image_only": false,
+   "number": 25
+  },
+  {
+   "char_end": 45537,
+   "char_start": 42764,
+   "image_only": false,
+   "number": 26
+  },
+  {
+   "char_end": 48769,
+   "char_start": 45549,
+   "image_only": false,
+   "number": 27
+  },
+  {
+   "char_end": 49386,
+   "char_start": 48781,
+   "image_only": false,
+   "number": 28
+  },
+  {
+   "char_end": 52967,
+   "char_start": 49398,
+   "image_only": false,
+   "number": 29
+  },
+  {
+   "char_end": 55883,
+   "char_start": 52979,
+   "image_only": false,
+   "number": 30
+  }
+ ],
+ "sections": [
+  {
+   "char_end": 2622,
+   "char_start": 1359,
+   "heading": "Purpose and Scope",
+   "level": 1,
+   "order": 0,
+   "page_end": 3,
+   "page_start": 3,
+   "section_id": "1"
+  },
+  {
+   "char_end": 2942,
+   "char_start": 2622,
+   "heading": "Requirements",
+   "level": 1,
+   "order": 1,
+   "page_end": 3,
+   "page_start": 3,
+   "section_id": "2"
+  },
+  {
+   "char_end": 6212,
+   "char_start": 2942,
+   "heading": "Functional Requirements",
+   "level": 2,
+   "order": 2,
+   "page_end": 4,
+   "page_start": 3,
+   "section_id": "2.1"
+  },
+  {
+   "char_end": 7937,
+   "char_start": 6212,
+   "heading": "Non-Functional Requirements",
+   "level": 2,
+   "order": 3,
+   "page_end": 6,
+   "page_start": 4,
+   "section_id": "2.2"
+  },
+  {
+   "char_end": 9373,
+   "char_start": 7937,
+   "heading": "Foundational Principles",
+   "level": 1,
+   "order": 4,
+   "page_end": 6,
+   "page_start": 6,
+   "section_id": "3"
+  },
+  {
+   "char_end": 10415,
+   "char_start": 9373,
+   "heading": "Six-Layer Model",
+   "level": 1,
+   "order": 5,
+   "page_end": 7,
+   "page_start": 6,
+   "section_id": "4"
+  },
+  {
+   "char_end": 11807,
+   "char_start": 10415,
+   "heading": "Target Architecture",
+   "level": 1,
+   "order": 6,
+   "page_end": 8,
+   "page_start": 7,
+   "section_id": "5"
+  },
+  {
+   "char_end": 12605,
+   "char_start": 11807,
+   "heading": "Learner Identity",
+   "level": 1,
+   "order": 7,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "6"
+  },
+  {
+   "char_end": 13128,
+   "char_start": 12605,
+   "heading": "Namespace Model",
+   "level": 1,
+   "order": 8,
+   "page_end": 8,
+   "page_start": 8,
+   "section_id": "7"
+  },
+  {
+   "char_end": 15237,
+   "char_start": 13128,
+   "heading": "Learner Namespace - Full Map",
+   "level": 1,
+   "order": 9,
+   "page_end": 10,
+   "page_start": 8,
+   "section_id": "8"
+  },
+  {
+   "char_end": 15716,
+   "char_start": 15237,
+   "heading": "Memory Slot Types",
+   "level": 1,
+   "order": 10,
+   "page_end": 10,
+   "page_start": 10,
+   "section_id": "9"
+  },
+  {
+   "char_end": 16342,
+   "char_start": 15716,
+   "heading": "Five Memory Types → Store Types",
+   "level": 1,
+   "order": 11,
+   "page_end": 11,
+   "page_start": 10,
+   "section_id": "10"
+  },
+  {
+   "char_end": 17927,
+   "char_start": 16342,
+   "heading": "Store Architecture",
+   "level": 1,
+   "order": 12,
+   "page_end": 12,
+   "page_start": 11,
+   "section_id": "11"
+  },
+  {
+   "char_end": 18951,
+   "char_start": 17927,
+   "heading": "Vector Sizing",
+   "level": 1,
+   "order": 13,
+   "page_end": 12,
+   "page_start": 12,
+   "section_id": "12"
+  },
+  {
+   "char_end": 20344,
+   "char_start": 18951,
+   "heading": "Agent Memory Structure",
+   "level": 1,
+   "order": 14,
+   "page_end": 13,
+   "page_start": 12,
+   "section_id": "13"
+  },
+  {
+   "char_end": 21742,
+   "char_start": 20344,
+   "heading": "Interaction Flow",
+   "level": 1,
+   "order": 15,
+   "page_end": 15,
+   "page_start": 13,
+   "section_id": "14"
+  },
+  {
+   "char_end": 23195,
+   "char_start": 21742,
+   "heading": "Memory Access Gateway",
+   "level": 1,
+   "order": 16,
+   "page_end": 15,
+   "page_start": 15,
+   "section_id": "15"
+  },
+  {
+   "char_end": 24091,
+   "char_start": 23195,
+   "heading": "Policy Engine",
+   "level": 1,
+   "order": 17,
+   "page_end": 16,
+   "page_start": 15,
+   "section_id": "16"
+  },
+  {
+   "char_end": 26951,
+   "char_start": 24091,
+   "heading": "Memory Router - Five Components",
+   "level": 1,
+   "order": 18,
+   "page_end": 17,
+   "page_start": 16,
+   "section_id": "17"
+  },
+  {
+   "char_end": 29233,
+   "char_start": 26951,
+   "heading": "Separate Read and Write Paths",
+   "level": 1,
+   "order": 19,
+   "page_end": 18,
+   "page_start": 17,
+   "section_id": "18"
+  },
+  {
+   "char_end": 30820,
+   "char_start": 29233,
+   "heading": "Memory Governance",
+   "level": 1,
+   "order": 20,
+   "page_end": 19,
+   "page_start": 18,
+   "section_id": "19"
+  },
+  {
+   "char_end": 31635,
+   "char_start": 30820,
+   "heading": "Memory Lifecycle",
+   "level": 1,
+   "order": 21,
+   "page_end": 19,
+   "page_start": 19,
+   "section_id": "20"
+  },
+  {
+   "char_end": 34874,
+   "char_start": 31635,
+   "heading": "Memory Management Plane (MMP)",
+   "level": 1,
+   "order": 22,
+   "page_end": 21,
+   "page_start": 19,
+   "section_id": "21"
+  },
+  {
+   "char_end": 35746,
+   "char_start": 34874,
+   "heading": "Institution-Level Memory",
+   "level": 1,
+   "order": 23,
+   "page_end": 22,
+   "page_start": 21,
+   "section_id": "22"
+  },
+  {
+   "char_end": 38266,
+   "char_start": 35746,
+   "heading": "Domain Slot Templates",
+   "level": 1,
+   "order": 24,
+   "page_end": 23,
+   "page_start": 22,
+   "section_id": "23"
+  },
+  {
+   "char_end": 41485,
+   "char_start": 38266,
+   "heading": "Prior Art and Reference Architecture",
+   "level": 1,
+   "order": 25,
+   "page_end": 25,
+   "page_start": 23,
+   "section_id": "24"
+  },
+  {
+   "char_end": 43045,
+   "char_start": 41485,
+   "heading": "Confirmed Decisions",
+   "level": 1,
+   "order": 26,
+   "page_end": 26,
+   "page_start": 25,
+   "section_id": "25"
+  },
+  {
+   "char_end": 44098,
+   "char_start": 43045,
+   "heading": "Pending Backlog",
+   "level": 1,
+   "order": 27,
+   "page_end": 26,
+   "page_start": 26,
+   "section_id": "26"
+  },
+  {
+   "char_end": 44324,
+   "char_start": 44098,
+   "heading": "Validation and Acceptance Criteria",
+   "level": 1,
+   "order": 28,
+   "page_end": 26,
+   "page_start": 26,
+   "section_id": "27"
+  },
+  {
+   "char_end": 47539,
+   "char_start": 44324,
+   "heading": "Functional requirements",
+   "level": 2,
+   "order": 29,
+   "page_end": 27,
+   "page_start": 26,
+   "section_id": "27.1"
+  },
+  {
+   "char_end": 49450,
+   "char_start": 47539,
+   "heading": "Non-functional requirements",
+   "level": 2,
+   "order": 30,
+   "page_end": 29,
+   "page_start": 27,
+   "section_id": "27.2"
+  },
+  {
+   "char_end": 54715,
+   "char_start": 49450,
+   "heading": "Code-Generation Readiness Assessment",
+   "level": 1,
+   "order": 31,
+   "page_end": 30,
+   "page_start": 29,
+   "section_id": "28"
+  },
+  {
+   "char_end": 55883,
+   "char_start": 54715,
+   "heading": "Build Phases",
+   "level": 1,
+   "order": 32,
+   "page_end": 30,
+   "page_start": 30,
+   "section_id": "29"
+  }
+ ],
+ "sha256_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+ "warnings": []
+}

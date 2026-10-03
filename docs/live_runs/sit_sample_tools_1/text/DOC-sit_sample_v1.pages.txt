@@ -1,0 +1,1181 @@
+[[PAGE 1]]
+SIT Institutional Memory Platform - Detailed Design
+SINGAPORE INSTITUTE OF TECHNOLOGY · AI PLATFORM
+SIT Institutional Memory Platform
+Detailed Design
+Architecture, requirements, and validation criteria for build
+Version 2.0
+Status: Design phase - build not started
+Last updated: 2026-07-01 (architecture) · consolidated 2026-07-07
+Prepared by: SIT AI Platform Team
+Companion document: SIT Institutional Memory Platform - Conceptual Design
+Page 1
+[[PAGE 2]]
+SIT Institutional Memory Platform - Detailed Design
+Table of Contents
+1. Purpose and Scope
+2. Requirements
+3. Foundational Principles
+4. Six-Layer Model
+5. Target Architecture
+6. Learner Identity
+7. Namespace Model
+8. Learner Namespace - Full Map
+9. Memory Slot Types
+10. Five Memory Types → Store Types
+11. Store Architecture
+12. Vector Sizing
+13. Agent Memory Structure
+14. Interaction Flow
+15. Memory Access Gateway
+16. Policy Engine
+17. Memory Router - Five Components
+18. Separate Read and Write Paths
+19. Memory Governance
+20. Memory Lifecycle
+21. Memory Management Plane (MMP)
+22. Institution-Level Memory
+23. Domain Slot Templates
+24. Prior Art and Reference Architecture
+25. Confirmed Decisions
+26. Pending Backlog
+27. Validation and Acceptance Criteria
+28. Code-Generation Readiness Assessment
+29. Build Phases
+Page 2
+[[PAGE 3]]
+SIT Institutional Memory Platform - Detailed Design
+1. Purpose and Scope
+This document describes the architecture of the SIT Institutional Memory Platform - a governed memory
+infrastructure for all AI agents serving SIT learners. It is written to a level of technical detail sufficient for an
+engineering team, or an AI coding assistant working from this specification, to begin implementation. Section 28
+gives an explicit, honest assessment of where that is and is not yet true.
+This is not a per-agent memory store. It is an institution-level platform that provides:
+● A structured memory namespace per learner, organised by life area and academic domain
+● Policy-enforced access control - pre-retrieval, not post-filter
+● A full administrative control plane (MMP) for configuring, governing, and auditing memory
+● Audit trails for every operation - required for PDPA compliance
+● Strict domain isolation (counselling memory is never readable by the advisory agent)
+● Async write path and cached read path for scale
+In scope
+Memory infrastructure for AI Tutor, AI Buddy, Academic Advisory, Counselling, Career, and Orientation agents
+serving ~15,000 SIT learners.
+Out of scope
+SIT-AI-Factory-RAG (the Azure AI Search RAG project) - a separate system, in a separate resource group, with
+no shared infrastructure.
+2. Requirements
+Requirements are grouped into Functional Requirements (what the platform must do) and Non-Functional
+Requirements (the quality attributes it must exhibit). Each requirement carries an ID used again in Section 27
+(Validation and Acceptance Criteria) and Section 28 (Code-Generation Readiness Assessment).
+2.1 Functional Requirements
+ID Requirement
+The platform shall provide one structured namespace per learner at learner:<learner_id>/, containing the
+FR-1 nine top-level life areas (core, campus_life, academic, cocurricular, wellbeing, career, tutor_shared,
+escalations, buddy).
+The platform shall support four slot types - Fixed, Programme-structured, Module-structured (stackable,
+FR-2
+term-scoped), and Independent - each with institution- or domain-defined schemas.
+Every memory record shall be classified as exactly one of five memory types: Working, Episodic, Semantic,
+FR-3
+Procedural, or Meta.
+The Memory Access Gateway shall evaluate six ordered checks (agent registered, learner authenticated,
+FR-4 token valid, slot exists, permission granted, sensitivity clearance) before any store query executes. Failure
+at any check denies the request and logs the reason.
+wellbeing/counselling/ shall be classified HIGHLY_RESTRICTED with zero cross-domain reads and no
+FR-5 Memory Management Plane override path, enforced at both the policy-engine level and the
+schema/credential level.
+Page 3
+[[PAGE 4]]
+SIT Institutional Memory Platform - Detailed Design
+Agents shall exchange learner-related information only by writing to and reading from the learner
+FR-6
+namespace. No direct agent-to-agent memory access shall exist.
+Any registered agent may write to escalations/<id>/. Only human reviewers and the named target-domain
+FR-7
+agent may read it. The triggering agent shall not be able to read back its own escalation.
+Every memory operation shall be evaluated against all seven policy dimensions: Storage, Sensitivity,
+FR-8
+Retention, Recall, Redaction, Deletion, and Purpose Limitation.
+Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and
+FR-9 processed asynchronously by a background consumer performing classify → embed → validate → route →
+audit, in that order.
+Reads shall check an L1 cache first; on a cache miss, the platform shall query PostgreSQL, then rank,
+FR-10
+budget, and redact results before caching and serving them.
+The Validator shall reject (strict mode) or warn-and-log (lenient mode) any write containing a key not
+FR-11
+defined in that slot's currently published template.
+SIS events - registration, programme enrolment, module registration, module withdrawal, graduation -
+FR-12
+shall automatically provision or expire the corresponding namespace slots without manual intervention.
+Every read, write, denial, token-validation outcome, provisioning event, compaction, deletion, and
+FR-13 escalation shall be logged to an append-only audit store recording agent_id, learner_id, slot_path,
+operation type, outcome, and reason (if denied).
+The MMP shall expose a REST Admin API covering template, namespace, slot, audit, policy dry-run, and
+FR-14
+dashboard operations.
+Learners shall be able to request deletion of their own user-deletable memory. Institutional records (e.g.
+FR-15
+assessment records, counselling case records) shall be exempt from learner-initiated deletion.
+Each agent shall maintain its own per-learner backup memory, used only when the learner namespace is
+FR-16 unreachable (degraded mode). The backup shall never override the authoritative learner namespace when
+both are available.
+2.2 Non-Functional Requirements
+ID Requirement
+The platform shall support at least 15,000 concurrent learner namespaces and ~9.5 million vectors
+NFR-1
+without a change of database engine.
+Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under
+NFR-2
+normal load.
+The agent-visible latency added by a memory write shall not exceed the time to enqueue the write to the
+NFR-3
+message broker - writes shall not block on classification, embedding, or storage.
+MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical
+NFR-4
+request path.
+HIGHLY_RESTRICTED data shall be stored in a physically separate schema (memory_sensitive) with
+NFR-5
+separate database credentials from memory_standard.
+Auth tokens shall be valid for 48 hours, with defined degraded-mode behaviour for EXPIRED and REVOKED
+NFR-6
+states (Section 15).
+All operations on personal data shall be logged; retention rules shall be enforceable per slot; PII-bearing
+NFR-7
+fields shall be explicitly flagged (pii: true) at the schema level.
+Page 4
+[[PAGE 5]]
+SIT Institutional Memory Platform - Detailed Design
+New domains or agents shall be onboarded by publishing a new YAML slot template and registering the
+NFR-8
+agent, without code changes to the Gateway, Policy Engine, or Router.
+Slot templates shall support a draft → published → deprecated lifecycle; writes shall validate against the
+NFR-9
+currently published version.
+Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner
+NFR-10
+scale (Azure Singapore region, Memory Optimised 16-vCore tier).
+Page 5
+[[PAGE 6]]
+SIT Institutional Memory Platform - Detailed Design
+3. Foundational Principles
+These ten principles govern every design decision in the platform, from the schema of a single table to the shape
+of the Admin API. Where a later section appears to conflict with one of these, the principle wins.
+Learner namespace is authoritative - the agent's copy is backup only. Conflicts are resolved in favour
+P1
+of the learner namespace.
+Private by default - memory is private to the learner, shared by exception, anonymised for service
+P2
+learning.
+Pre-retrieval access control - the namespace restriction gates the query itself, not the results after
+P3
+retrieval.
+Counselling hard wall - wellbeing/counselling/ is HIGHLY_RESTRICTED. Zero cross-domain reads. No
+P4
+MMP override. No exceptions.
+Cross-agent sharing via namespace only - agents never access each other's memory directly; the
+P5
+learner namespace is the only authorised bridge.
+P6 No uncontrolled self-writing - all writes are classified and policy-checked before storage.
+Audit every operation - access, write, denial, compaction, deletion, escalation are all logged. Required
+P7
+for PDPA.
+P8 Write async, read cached - write via Kafka (non-blocking); read via Redis L1 → PostgreSQL.
+Institution configures structure - slot templates, sensitivity levels, and retention rules are configured
+P9
+by administrators, not agents.
+Minimum useful context - summary over transcript, fact over full conversation, token-budgeted
+P10
+context pack.
+4. Six-Layer Model
+Most memory products (Mem0, Zep, Letta) cover layers 2-4 only. This platform is designed across all six.
+Layer Name Covers
+1 Memory Capture What gets captured and when. What is worth remembering versus discarding.
+Memory type (working / episodic / semantic / procedural / meta); sensitivity
+2 Memory Classification (PUBLIC / INTERNAL / RESTRICTED / HIGHLY_RESTRICTED); retention policy; PII
+flagging.
+Where it lives - store type (vector / event / document), store instance (standard
+3 Memory Storage
+tier / sensitive tier).
+Semantic search (pgvector), key lookup, context pack assembly, relevance
+4 Memory Retrieval
+ranking, recency weighting, token budgeting.
+Pre-retrieval access control, policy engine, domain isolation, redaction before
+5 Memory Governance
+serving, purpose-limitation enforcement.
+Memory Audit trails, slot lifecycle, template registry, monitoring, PII review, usage
+6
+Administration analytics, cost tracking - the MMP admin plane.
+Page 6
+[[PAGE 7]]
+SIT Institutional Memory Platform - Detailed Design
+5. Target Architecture
+Every memory operation, from every agent, for every learner, flows through the same governed path. No agent
+ever touches a data store directly.
+Figure 1 - Target architecture: Agents → Memory Access Gateway → Policy Engine → Memory Router → {Write Path (async) | Read Path
+(cached)} → PostgreSQL, with the Memory Management Plane configuring and auditing the whole stack from outside the live request
+path.
+Layer responsibilities
+● AI Agents / Apps - Tutor, Buddy, Advisory, Counselling, Career, Orientation. Never touch a store directly.
+● Memory Access Gateway - AuthN/AuthZ (Entra ID / OAuth 2.0), token validation (48-hour window), rate
+limiting per agent/learner, degraded mode on EXPIRED/REVOKED tokens.
+● Policy Engine (7 dimensions) - Storage, Sensitivity, Retention, Recall, Redaction, Deletion, Purpose
+limitation.
+● Memory Router (5 components) - Gate, Validator, Embedder, Dispatcher, Auditor.
+● PostgreSQL (Azure Database for PostgreSQL) - memory_standard schema (INTERNAL + RESTRICTED) and
+memory_sensitive schema (HIGHLY_RESTRICTED, separate credentials); vector, event, and document tables.
+Page 7
+[[PAGE 8]]
+SIT Institutional Memory Platform - Detailed Design
+● Memory Management Plane - TemplateRegistry, NamespaceRegistry, SlotProvisioner, PolicyEngine,
+AuditStore, Admin API (port 8003), and a dashboard for quality, PII, usage, cost, and warnings.
+6. Learner Identity
+Field Value Notes
+learner_id UPN: a103605@singaporetech.edu.sg Primary key used everywhere in the platform.
+Immutable, unique, future-proof. Never
+entra_object_id oid JWT claim from Entra ID
+changes even if the UPN changes.
+Contact email. Stored with pii: true. May be
+email e.g. caleb.ying@singaporetech.edu.sg
+removed in a future revision.
+Non-SIT / lifelong learners: deferred (see Section 26, Pending Backlog). A platform-level unique-ID concept is
+noted; social-auth keys will map to learner_id when implemented.
+Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours. On expiry: prompt re-authentication,
+continue serving on the agent's backup memory. On revocation: inform the learner, serve from agent backup
+only, no re-authentication path is offered.
+7. Namespace Model
+There are three top-level namespace dimensions:
+/learner/{learner_id}/ <- per-learner memory (primary, authoritative)
+/cohort/{cohort_id}/ <- group-level patterns (e.g. ICT-2024-intake)
+/institution/sit/ <- institutional knowledge (policies, catalogues)
+The three namespace dimensions. Cohort namespace detail is tracked in the Pending Backlog (Section 26).
+Each learner namespace contains slots - structured sub-spaces for each memory domain. Slots are provisioned
+by the MMP, never by agents directly.
+8. Learner Namespace - Full Map
+Page 8
+[[PAGE 9]]
+SIT Institutional Memory Platform - Detailed Design
+Figure 2 - The learner namespace map, learner:<learner_id>/, with its nine top-level areas. Colour indicates sensitivity tier.
+learner:<learner_id>/
+|
++-- core/
+| FIXED. Auto-provisioned at registration. Never deleted while at SIT.
+| Keys: identity (learner_id, entra_object_id, email[pii]),
+| language_preference, accessibility_needs,
+| programme_enrolments, module_enrolments, active_flags
+|
++-- campus_life/
+| +-- orientation/
+| | TIME-BOUNDED. Provisioned on admission.
+| | Expires: event-driven (orientation close) + 30-day fallback.
+| +-- events/
+| +-- services/
+|
++-- academic/
+| +-- advisory/
+| | FIXED. RESTRICTED. Advisory agent only. At registration.
+| | Keys: academic_standing, gpa_trend, at_risk_flags,
+| | module_withdrawal_history, advisor_notes
+| +-- programmes/<prog_id>/
+| PROGRAMME-STRUCTURED. On programme enrolment.
+| +-- modules/<module_code>/
+| MODULE-STRUCTURED. Term-scoped. STACKABLE.
+| +-- tutor/ AI Tutor memory for this module
+| +-- lab/ Lab session memory
+| +-- assessment/ RESTRICTED
+Page 9
+[[PAGE 10]]
+SIT Institutional Memory Platform - Detailed Design
+| +-- interview/ RESTRICTED. Module-linked.
+|
++-- cocurricular/
+| +-- interest_groups/<group_id>/ STACKABLE
+| +-- eca/ +-- leadership/ +-- competitions/
+|
++-- wellbeing/
+| +-- counselling/ HIGHLY_RESTRICTED. Hard wall. Counsellor agent only.
+| +-- financial_aid/ RESTRICTED
+| +-- accessibility/ RESTRICTED
+|
++-- career/
+| +-- profile/ +-- readiness/ (standalone)
+| +-- interview/<session_id>/ STACKABLE
+| +-- industry_attachment/<ia_id>/ STACKABLE
+| +-- internships/<id>/ STACKABLE
+| +-- job_opportunities/
+|
++-- tutor_shared/
+| Tutoring style preference, shared across all module instances.
+|
++-- escalations/<escalation_id>/
+| RESTRICTED. Any agent writes. Human + target domain read only.
+| Triggering agent cannot read back after writing.
+|
++-- buddy/<session_id>/
+STACKABLE. Keys: shared_interests, conversation_topics, check_in_history
+The full learner namespace tree, with slot behaviour annotated at each level.
+9. Memory Slot Types
+Type Schema defined by Stackable Examples
+Institution YAML template core/, orientation/, advisory/,
+Fixed No
+(hardcoded) counselling/
+Programme- Institution, per programme No (one per
+programmes/SIT-ICT/
+structured code programme)
+Institution, per module code, Yes (multiple modules/CS101/,
+Module-structured
+term-scoped modules active) modules/BM201/
+Domain app team, self- buddy/session-001/,
+Independent Depends on domain
+contained career/interview/<id>/
+10. Five Memory Types → Store Types
+Memory type Purpose Store type Technology
+Working Current session, active turn state In-memory (ephemeral) Redis / dict
+Event store (append-only,
+Episodic Past sessions, events, case history PostgreSQL event table
+time-ordered)
+Vector store (similarity
+Semantic Stable facts, profiles, knowledge PostgreSQL + pgvector
+search)
+Page 10
+[[PAGE 11]]
+SIT Institutional Memory Platform - Detailed Design
+Rules, playbooks, agent-learned
+Procedural Vector store PostgreSQL + pgvector
+patterns
+Owner, sensitivity, retention, PostgreSQL document
+Meta-memory Document store (structured)
+consent table
+11. Store Architecture
+Two sensitivity tiers
+Tier Contents Schema Access
+INTERNAL + RESTRICTED All authorised agents (standard
+Standard memory_standard
+memory credentials)
+Designated agents only - separate
+Sensitive HIGHLY_RESTRICTED only memory_sensitive credentials, separate embedding
+deployment
+One store, three table types (per tier)
+-- Vector table (semantic + procedural memory)
+CREATE TABLE memory_vectors (
+memory_id UUID PRIMARY KEY,
+learner_id TEXT NOT NULL,
+slot_path TEXT NOT NULL,
+memory_type TEXT NOT NULL, -- SEMANTIC | PROCEDURAL
+key TEXT,
+content TEXT,
+embedding vector(1536), -- pgvector column
+sensitivity TEXT,
+retention TEXT,
+pii BOOLEAN,
+created_at TIMESTAMPTZ,
+expires_at TIMESTAMPTZ
+);
+CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+CREATE INDEX ON memory_vectors (learner_id, slot_path);
+-- Event table (episodic memory -- append-only)
+CREATE TABLE memory_events (
+event_id UUID PRIMARY KEY,
+learner_id TEXT NOT NULL,
+slot_path TEXT NOT NULL,
+memory_type TEXT DEFAULT 'EPISODIC',
+event_type TEXT,
+content TEXT,
+source TEXT,
+sensitivity TEXT,
+created_at TIMESTAMPTZ NOT NULL
+);
+-- Document table (meta-memory, namespace records)
+CREATE TABLE memory_documents (
+doc_id UUID PRIMARY KEY,
+learner_id TEXT,
+slot_path TEXT,
+memory_type TEXT DEFAULT 'META',
+Page 11
+[[PAGE 12]]
+SIT Institutional Memory Platform - Detailed Design
+key TEXT,
+value JSONB,
+sensitivity TEXT,
+updated_at TIMESTAMPTZ
+);
+DDL for the three table types. This DDL is duplicated once per schema (memory_standard, memory_sensitive).
+12. Vector Sizing
+Estimate for 15,000 learners (full namespace)
+Source Vectors
+Active learners (15,000 × ~600 avg) 9,000,000
+Alumni retained (compacted summaries only) 500,000
+Institution-level (catalogues, policies, aggregates) 54,000
+Total ~9.5M vectors
+Per-learner breakdown (~600 vectors across a full degree): core/identity 10, advisory 15, modules (6 active × 20)
+120, assessment/interview 60, career 30, cocurricular 30, orientation 20, buddy 30, counselling (avg) 5, other
+20+.
+PostgreSQL + pgvector capacity
+Metric Value
+Raw vector storage (1536-dim, 9.5M) ~57 GB
+HNSW index overhead (~1.4×) ~80 GB
+Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM
+Query latency (filtered, in-RAM index) ~5-15 ms
+Growth ceiling before degradation ~30-40M vectors (~50,000-60,000 learners)
+Cost estimate (Azure, Singapore region) SGD 800-1,200/month
+HNSW parameters: m=16, ef_construction=64. Queries are always filtered by learner_id + slot_path - the
+effective search space per query is 500-800 vectors, not 9.5 million.
+13. Agent Memory Structure
+Agent Memory
++-- identity/
+| agent_id, agent_type, version, owned_by, registered_at
+|
++-- global/
+| +-- rules/
+| | system_prompt_rules (immutable -- set at deploy time)
+| | mmp_pushed_rules (updatable by MMP only)
+| +-- domain_knowledge/ institutional knowledge for this agent
+| +-- cross_learner_patterns/ anonymised; HIGHLY_RESTRICTED excluded
+|
+Page 12
+[[PAGE 13]]
+SIT Institutional Memory Platform - Detailed Design
++-- per_learner/<learner_id>/
+Full store always present for all learners.
+Only the authenticated learner's entry loads into context per session.
+|
++-- auth/
+| access_token, refresh_token
+| permitted_reads[], permitted_writes[]
+| expires_at (48hr window)
+| status: ACTIVE | EXPIRED | REFRESHING | REVOKED
+|
++-- session/ SHORT-TERM. Cleared at session end.
++-- episodic/ MID-TERM. Past session summaries, case history.
++-- long_term/ LONG-TERM. Stable knowledge about this learner.
++-- procedural/ Rules learned for THIS learner specifically.
+Every agent maintains this structure regardless of domain. Only per_learner/<learner_id>/ varies by which learner is active.
+Key properties: the learner namespace is authoritative and the agent copy is backup only; the agent backup
+survives learner deletion of their own memory (enabling session resume); rules are written by the system
+prompt or the MMP only - lecturers and learners cannot write rules.
+14. Interaction Flow
+Every agent-learner interaction, regardless of agent or learner, follows the same six-phase flow.
+Figure 3 - The six-phase interaction flow and the degraded-mode behaviour per auth-token state.
+1. Auth check (Gateway)
+- Agent registered in agent_registry?
+- Learner authenticated? Token status?
+- Slot access permitted for this operation?
+2. Context assembly -- priority order:
+Source 1: Learner namespace (authoritative -- if token ACTIVE)
+Source 2: Agent global (always loaded)
+Source 3: Agent per-learner backup (fills gaps; backup only)
+Conflict resolution: learner namespace always wins.
+Page 13
+[[PAGE 14]]
+SIT Institutional Memory Platform - Detailed Design
+3. Context pack built:
+- Relevance-ranked (vector similarity)
+- Recency-weighted
+- Memory-type weighted (semantic > episodic > procedural, typically)
+- Token-budgeted (minimum useful context)
+- Sensitivity-filtered (HIGHLY_RESTRICTED excluded unless cleared)
+4. Agent responds using the context pack.
+5. Async writeback (non-blocking):
+- Agent own memory (always, immediate)
+- Learner namespace (permitted write slots only, via Kafka)
+6. Session close:
+- Episodic summary written from session working memory
+- Cross-learner patterns updated (anonymised, HIGHLY_RESTRICTED excluded)
+- Working memory cleared; Redis session cache invalidated
+Page 14
+[[PAGE 15]]
+SIT Institutional Memory Platform - Detailed Design
+15. Memory Access Gateway
+Pre-retrieval checks are executed in order. Any failure denies the request and logs the reason. There are no
+silent errors.
+Check 1 -- Agent registered?
+Is agent_id in /institution/sit/agent_registry/?
+FAIL -> denied. Unknown agent cannot access any memory.
+Check 2 -- Learner authenticated?
+Is learner_id + auth token present in request?
+FAIL -> denied. Cannot access learner memory without identity.
+Check 3 -- Token valid?
+ACTIVE -> proceed
+EXPIRED -> prompt learner to re-authenticate.
+Continue session using agent backup (degraded mode).
+Log: re-auth required.
+REVOKED -> inform learner (token revoked, contact support).
+Agent backup only. No re-auth path.
+Log: access attempt on revoked token.
+Check 4 -- Slot exists in learner's namespace?
+Exists -> proceed
+Not exists + auto-provisionable slot type -> MMP provisions slot, proceed
+Not exists + invalid slot path -> denied. Log: unknown slot.
+Check 5 -- Agent permitted for this operation on this slot?
+Read permission != Write permission (checked separately)
+FAIL -> denied. Log: permission violation.
+Check 6 -- Sensitivity clearance?
+HIGHLY_RESTRICTED slots: hard block for all agents not in an
+explicit named_agents list. No override. No exception.
+FAIL -> denied. Log: sensitivity clearance failure.
+The six ordered Gateway checks (Section 15 implements FR-4).
+Access control is pre-retrieval. The namespace check gates the query itself - not the returned results.
+16. Policy Engine
+Seven policy dimensions are evaluated on every operation (this section implements FR-8):
+Dimension Question
+Storage Is this content allowed to be remembered at all?
+Sensitivity Is this confidential, personal, regulated, or restricted?
+Retention How long should this memory live? When does it expire?
+Recall Can this specific agent/user retrieve this memory at this time?
+Redaction Should part of the memory be masked before serving to this agent?
+Deletion Can this be forgotten or purged on learner/admin request?
+Purpose Is this memory being used for its original allowed purpose?
+Page 15
+[[PAGE 16]]
+SIT Institutional Memory Platform - Detailed Design
+Decisions are logged. Denials always include a reason code. Policy decisions are not cached - they are
+evaluated fresh on every request, so that a rule change takes effect immediately rather than waiting for a cache
+expiry.
+17. Memory Router - Five Components
+All memory operations flow through the router. No agent touches a store directly.
+[1] Gate
+The Memory Access Gateway checks from Section 15. Executes first on every request.
+[2] Validator (write path only)
+Validates the write request against the slot template before any storage occurs.
+- Is this key defined in the slot template for this slot_path?
+Strict mode (prod): unknown key -> REJECT
+Lenient mode (dev): unknown key -> WARN + log + surface in MMP dashboard
+- Is the memory_type declared consistent with this key's type in template?
+Mismatch -> REJECT
+- Is the declared sensitivity within the slot ceiling?
+e.g. writing HIGHLY_RESTRICTED to an INTERNAL slot -> REJECT
+- Template version: validate against current published template version
+Validator logic. Controlled by the MEMORY_STRICT_MODE=true/false environment variable (implements FR-11).
+[3] Embedder
+Generates vector embeddings for semantic memory operations.
+Runs on:
+- Write (semantic / procedural memory) -> store vector with record
+- Semantic search (read) -> generate query vector before search
+Skips on:
+- Exact key lookup (key= specified, no vector needed)
+- Episodic event writes (not vector-indexed)
+- Meta-memory writes
+Model: Azure OpenAI text-embedding-3-small (1536-dim)
+Fallback path (embedding service unavailable):
+- Flag record as unembedded (embedded: false)
+- Fall back to BM25 keyword search for retrieval
+- Add to MMP ingestion backlog for re-embed
+- Log: embedding failure
+[4] Dispatcher
+Routes the operation to the correct store type and store instance.
+Route by memory type:
+WORKING -> In-memory store (no persistence, no Kafka)
+EPISODIC -> PostgreSQL event table
+Page 16
+[[PAGE 17]]
+SIT Institutional Memory Platform - Detailed Design
+SEMANTIC -> PostgreSQL vector table (pgvector)
+PROCEDURAL -> PostgreSQL vector table (pgvector)
+META -> PostgreSQL document table
+Route by sensitivity tier:
+PUBLIC + INTERNAL + RESTRICTED -> memory_standard schema
+HIGHLY_RESTRICTED -> memory_sensitive schema (separate credentials)
+Read source priority:
+1. Learner namespace (authoritative, if token ACTIVE)
+2. Agent global (always)
+3. Agent per-learner backup (fills gaps, backup only)
+Conflict: learner namespace wins.
+[5] Auditor
+Logs every operation. Non-negotiable for PDPA compliance (implements FR-13).
+Every log entry contains:
+agent_id, learner_id, slot_path, key, operation_type,
+timestamp, outcome (ALLOWED | DENIED), denial_reason (if denied),
+sensitivity_tier, memory_type, source (namespace | backup | global)
+Logged operations:
+- Every read (including cache hits)
+- Every write (including async Kafka enqueue)
+- Every denial (with reason)
+- Token validation outcomes
+- Slot provisioning events
+- Compaction and deletion events
+- Escalation writes and reads
+Audit logs are append-only. Never modified. Retained per PDPA requirements.
+18. Separate Read and Write Paths
+Write Path - Async via Kafka
+Agent writes memory
+|
+Memory Access Gateway (auth + policy check -- synchronous)
+|
+Kafka topic: memory.write.standard | memory.write.sensitive
+<- Agent receives immediate ACK -- non-blocking
+|
+Write Consumer (background worker)
++-- Classify (confirm memory type, sensitivity, retention)
++-- Embed (Azure OpenAI text-embedding-3-small)
++-- Validate against slot template (Validator)
++-- Route to correct table (Dispatcher)
++-- Update namespace record
++-- Write audit log
+Why Kafka: writes never block the agent response; write spikes (15,000 learners at term start) do not
+overwhelm the store; failed writes queue and retry automatically; multiple independent consumers (audit,
+embedding, SIS sync) read the same event stream; separate topics per sensitivity tier keep HIGHLY_RESTRICTED
+writes physically isolated in transit.
+Page 17
+[[PAGE 18]]
+SIT Institutional Memory Platform - Detailed Design
+Read Path - Cached via Redis + PostgreSQL
+Agent requests context
+|
+Memory Access Gateway (auth + policy check -- pre-retrieval)
+|
+Redis L1 cache check
+HIT -> serve cached context pack (session TTL)
+MISS |
+Memory Router Dispatcher
++-- Semantic / procedural -> PostgreSQL vector table (pgvector similarity)
++-- Episodic / events -> PostgreSQL event table (time-ordered)
++-- Meta / namespace -> PostgreSQL document table
+|
+Rank (relevance + recency) -> Budget (token limit) -> Redact (sensitivity)
+|
+Write result to Redis (TTL = session duration)
+|
+Serve context pack to agent
+Why Redis: core/ identity and agent_global/rules/ are read on every request and must be cached; the persession context pack is cached so repeated queries within a session skip PostgreSQL entirely; TTL is aligned to
+session duration and invalidated on session close or token expiry.
+Store architecture summary
+Memory type Write path Read path Cached in Redis
+Working In-memory (no Kafka) In-memory Per-session dict
+Episodic Kafka → PostgreSQL event table PostgreSQL (time-range query) Recent sessions
+Semantic Kafka → PostgreSQL vector table pgvector similarity search core/ + rules
+Procedural Kafka → PostgreSQL vector table pgvector similarity search Agent rules
+Kafka → PostgreSQL document
+Meta-memory PostgreSQL (key lookup) Namespace map
+table
+19. Memory Governance
+Roles and access
+Role What they can access
+Learner Own namespace (permitted slots only) + anonymised aggregate
+Agent (serving learner) That learner's permitted slots + agent global + anonymised aggregate
+Agent (no active session) Agent global + anonymised aggregate only
+Institution Admin MMP config + aggregate + specific learner record (always audit-logged)
+Super Admin Everything - always audit-logged, mandatory reason required
+Counselling hard wall
+wellbeing/counselling/ is HIGHLY_RESTRICTED. This is a hard architectural constraint (implements FR-5):
+● No cross-domain read by any other agent, including advisory, career, or tutor.
+Page 18
+[[PAGE 19]]
+SIT Institutional Memory Platform - Detailed Design
+● No MMP override capability.
+● No exceptions regardless of stated reason.
+● Counsellor agent reads only. Human counsellors may access via a separate clinical system.
+Cross-agent sharing
+The learner namespace is the only authorised bridge between agents (implements FR-6): Agent A writes to a
+permitted slot in the learner namespace; Agent B reads from that slot only if Agent B has read permission for it.
+Agents never access each other's per-learner or global memory spaces directly.
+Escalations
+escalations/<id>/ slots behave as follows (implements FR-7):
+● Write: any registered agent can write an escalation.
+● Read: only human reviewers and the target domain agent can read.
+● Feedback loop blocked: the agent that triggered the escalation cannot read it back.
+● Retention: retained in the audit log after RESOLVED status; the slot itself expires.
+20. Memory Lifecycle
+Memory area Type Lifecycle rule
+core/ identity Permanent Never expires while the learner is at SIT
+orientation/ Time-bounded Expires: event-driven close OR 30-day wall-clock fallback
+modules/<code>/tutor, lab Term-scoped End of term: compacted to episodic summary; raw archived
+modules/<code>/assessment,
+Term-scoped Retained as institutional record (not user-deletable)
+interview
+academic/advisory/ Episodic-based Accumulates across degree; compacted periodically
+wellbeing/counselling/ Case-based Case-lifetime retention; strict; not user-deletable
+career/ Episodic-based Accumulates; user-deletable (except institutional records)
+escalations/ Event-driven Retained in audit log after RESOLVED
+Mirrors
+Agent per-learner backup Survives learner self-deletion; enables session resume
+namespace
+21. Memory Management Plane (MMP)
+The MMP is a standalone admin service. It is not an agent and is not in the critical request path. It is the
+institution-level authority for designing, provisioning, and governing the memory structure.
+Who uses the MMP
+User What they do
+Platform architect Designs slot templates - defines what each domain can remember
+Page 19
+[[PAGE 20]]
+SIT Institutional Memory Platform - Detailed Design
+Data governance officer /
+Sets sensitivity levels, retention policies, sharing rules
+DPO
+System administrator Provisions learner namespaces, manages slot lifecycle
+SIS (automated) Sends enrolment events that trigger slot provisioning
+Super admin Overrides, corrections, emergency access (always audit-logged)
+Components
+MMP
++-- TemplateRegistry -- define / edit / publish slot templates (YAML)
++-- NamespaceRegistry -- create / read / update learner namespaces
++-- SlotProvisioner -- add / remove / expire slot instances
++-- PolicyEngine -- cross-slot read permission decisions
++-- AuditStore -- append-only log of every operation
++-- AdminAPI (port 8003) -- FastAPI REST interface for all MMP operations
+Admin capabilities
+Capability Implementation
+Memory inventory Namespace map per learner
+Namespace management NamespaceRegistry + SlotProvisioner
+Access policy management PolicyEngine + Admin API
+Retention rule enforcement retention_policy field in slot templates
+Audit trails AuditStore (append-only)
+Memory quality monitoring Flag stale, low-confidence, conflicting records
+PII / sensitive data review pii: true flag; dashboard review queue
+Manual correction / deletion Admin API DELETE endpoint
+Usage analytics Agent access patterns, query frequency per slot
+Cost + token monitoring Embedding costs, retrieval token counts
+Ingestion backlog monitoring Unembedded records; re-embed job trigger
+Admin API endpoints (port 8003)
+POST /templates # register new slot template
+GET /templates/{domain} # read template
+PUT /templates/{domain} # update template (versioned)
+POST /namespaces # create namespace for learner
+GET /namespaces/{learner_id} # read full namespace map
+POST /namespaces/{learner_id}/slots # add slot
+DELETE /namespaces/{learner_id}/slots/{path} # expire / remove slot
+GET /audit/{learner_id} # audit log for a learner
+GET /audit/agent/{agent_id} # audit log for an agent
+GET /policy/check # dry-run a cross-domain read decision
+GET /dashboard/quality # memory quality flags
+Page 20
+[[PAGE 21]]
+SIT Institutional Memory Platform - Detailed Design
+GET /dashboard/pii # PII review queue
+GET /dashboard/usage # usage analytics
+GET /dashboard/cost # token + embedding cost
+GET /dashboard/warnings # unknown key warnings from Validator
+Endpoint paths and methods are specified; request/response JSON schemas and auth on the Admin API itself are not yet specified (see
+Section 28).
+Provisioning triggers
+SIS webhook (automated):
+- Learner registration -> create_namespace() + provision core/ + orientation/
+- Programme enrolment -> add_programme_slot()
+- Module registration -> add_module_slot()
+- Module withdrawal -> expire_slot() for that module
+- Graduation -> trigger compaction + archive
+Admin API (manual override):
+- Emergency slot provision
+- Manual expiry
+- Correction of SIS sync failures
+22. Institution-Level Memory
+Readable by all authorised agents. Writable by the MMP only.
+/institution/sit/
+policies/ Academic policies, code of conduct, disciplinary rules
+programme_catalogue/ All programmes, structures, requirements, progression
+module_catalogue/ All modules, learning outcomes, prerequisites, credits
+academic_calendar/ Terms, key dates, assignment deadlines, exam periods
+escalation_contacts/ Who to refer for counselling, financial aid, disability
+agent_registry/ All registered agents, permitted slots, versions, owners
+anonymised_aggregate/ Cross-learner patterns (sensitivity-stripped); all agents
+/cohort/{cohort_id}/
+Group-level patterns not tied to individuals.
+Example: ICT-2024-intake concept difficulty patterns from AI Tutor aggregate.
+Provisioned and managed by MMP.
+Page 21
+[[PAGE 22]]
+SIT Institutional Memory Platform - Detailed Design
+23. Domain Slot Templates
+Each domain defines a SlotTemplate - the canonical set of memory keys, their types, sensitivity, and retention.
+Templates are defined in YAML and registered in the MMP TemplateRegistry.
+core (Fixed)
+domain: core
+slot_type: FIXED
+stackable: false
+sensitivity: INTERNAL
+retention: INSTITUTIONAL
+keys:
+- key: learner_id
+memory_type: SEMANTIC
+pii: false
+required: true
+- key: entra_object_id
+memory_type: SEMANTIC
+pii: false
+required: true
+- key: email
+memory_type: SEMANTIC
+pii: true
+required: true
+- key: full_name
+memory_type: SEMANTIC
+pii: true
+- key: programme_enrolments
+memory_type: SEMANTIC
+- key: module_enrolments
+memory_type: SEMANTIC
+- key: language_preference
+memory_type: SEMANTIC
+retention: USER_DELETABLE
+- key: accessibility_needs
+memory_type: SEMANTIC
+sensitivity: RESTRICTED
+retention: USER_DELETABLE
+advisory (Fixed, RESTRICTED)
+Key Memory type Sensitivity Notes
+academic_standing SEMANTIC INTERNAL Synced from SIS
+gpa_trend SEMANTIC INTERNAL Computed
+at_risk_flags SEMANTIC RESTRICTED Advisory agent only
+module_withdrawal_history EPISODIC INTERNAL
+advisor_notes EPISODIC RESTRICTED Advisor-written
+counselling (Fixed, HIGHLY_RESTRICTED)
+Key Memory type Sensitivity Notes
+presenting_concern EPISODIC HIGHLY_RESTRICTED Never shared
+risk_level SEMANTIC HIGHLY_RESTRICTED
+Page 22
+[[PAGE 23]]
+SIT Institutional Memory Platform - Detailed Design
+session_summaries EPISODIC HIGHLY_RESTRICTED Counsellor-written
+referral_status SEMANTIC HIGHLY_RESTRICTED
+Zero cross-domain reads. The advisory agent cannot access this slot even for the same learner_id.
+career (Independent, user-deletable)
+Key Memory type Sensitivity
+target_sector SEMANTIC INTERNAL
+resume_version EPISODIC INTERNAL
+job_applications EPISODIC INTERNAL
+career_goals SEMANTIC INTERNAL
+tutor (Module-structured, stackable, term-scoped)
+One instance per module enrolment. Separate from tutor_shared/.
+Key Memory type Sensitivity Notes
+learning_objectives_mastered SEMANTIC INTERNAL Per module
+misconceptions SEMANTIC INTERNAL Per module
+quiz_history EPISODIC INTERNAL Per module
+Shared - lives in
+tutoring_style_preference SEMANTIC INTERNAL
+tutor_shared/
+orientation (Fixed, time-bounded)
+Key Memory type Sensitivity Notes
+onboarding_progress WORKING INTERNAL Expires at orientation end
+campus_questions EPISODIC INTERNAL
+buddy_assigned SEMANTIC INTERNAL
+buddy (Independent, stackable)
+Key Memory type Sensitivity
+shared_interests SEMANTIC INTERNAL
+conversation_topics EPISODIC INTERNAL
+check_in_history EPISODIC INTERNAL
+24. Prior Art and Reference Architecture
+There is no open-source Memory Management Plane for agent memory. The closest analogues are datagovernance platforms built for data lakes and ML pipelines - not for governed agent memory in an educational
+institution.
+Page 23
+[[PAGE 24]]
+SIT Institutional Memory Platform - Detailed Design
+Reference What it governs Concept match Gap
+Sensitivity classification, Governs data tables/pipelines,
+Data assets in data lakes
+Apache Atlas retention policies, audit not memory records. No agent
+(Hadoop ecosystem)
+trails, lineage concept. Heavy Java stack.
+Data catalog, sensitivity Same gap as Atlas - data
+Data pipelines, tables,
+OpenMetadata tagging, policy assets, not memory
+dashboards
+management, admin UI namespaces. No SIS integration.
+Governs ML models, not
+ML models and Model registry, versioning,
+MLflow memory records. No namespace
+experiments lifecycle, admin UI
+model.
+Traces LLM calls, not memory
+LLM calls (tracing, Audit trails, usage analytics,
+Langfuse operations. No write
+observability) token cost monitoring
+governance.
+Policy enforcement,
+Guardrails AI / Output-level guardrails only.
+LLM outputs content classification,
+LlamaGuard Not memory-level governance.
+redaction
+No namespace model, no policy
+Per-agent memory (single Memory storage, basic
+Mem0 / Zep / Letta engine, no MMP, no institution
+agent, single user) retrieval
+config, no PDPA audit.
+Capability gap
+Capability Apache Atlas OpenMetadata Mem0 / Zep Our MMP
+Memory namespace design
+✕ ✕ ✕ ✓
+Slot templates (YAML config) schemas schemas
+⚠ ⚠ ✕ ✓
+SIS-triggered provisioning
+✕ ✕ ✕ ✓
+Pre-retrieval access control partial partial
+⚠ ⚠ ✕ ✓
+7-dimension policy engine
+✕ ✕ ✕ ✓
+Counselling hard wall
+✕ ✕ ✕ ✓
+Agent registry + versioning
+✕ ✕ ✕ ✓
+PDPA audit trails (memory ops)
+✓ ✓ ✕ ✓
+PII review dashboard
+✓ ✓ ✕ ✓
+Learner self-service deletion
+✕ ✕ ✕ ✓
+What we borrow from each reference
+From Borrowed for our MMP
+Sensitivity taxonomy design (PUBLIC/INTERNAL/RESTRICTED/HIGHLY_RESTRICTED), audit log
+Apache Atlas
+schema, retention rule state machine
+OpenMetadata Admin dashboard UI patterns, template registry UX, policy management interface
+Langfuse Audit trail schema, usage analytics dashboard, token cost monitoring patterns
+MLflow Template versioning approach (draft → published → deprecated), lifecycle state machine
+Page 24
+[[PAGE 25]]
+SIT Institutional Memory Platform - Detailed Design
+Guardrails AI Policy engine dimension design - redaction and purpose limitation patterns
+What is genuinely novel
+The following have no direct precedent in open-source tooling:
+● Learner memory namespace - a structured address space organised by life area, academic domain, and
+stackable modules.
+● Slot templates with SIS-triggered provisioning - namespace slots auto-created on enrolment events.
+● Pre-retrieval access control - the namespace restriction gates the query, not the results.
+● Counselling hard wall - an architectural constraint with no MMP override path.
+● Cross-agent sharing via namespace only - no direct agent-to-agent memory access.
+● Two-tier sensitivity store with separate credentials per tier.
+● Escalation slot semantics - write-only for the triggering agent, read-only for the target domain.
+25. Confirmed Decisions
+Decision Answer
+learner_id UPN format: a103605@singaporetech.edu.sg
+Identity fields learner_id (UPN) + entra_object_id (oid) + email (pii:true)
+Vector store PostgreSQL + pgvector on Azure Database for PostgreSQL
+Azure SKU Memory Optimised, 16 vCores, 128 GB RAM
+HNSW params m=16, ef_construction=64
+Vector count estimate ~9.5M for 15,000 learners
+Azure AI Search Ruled out - RAG use case only (SIT-AI-Factory-RAG)
+Write path Async via Kafka (Azure Event Hubs)
+Read path Redis L1 → PostgreSQL (pgvector + event + doc tables)
+memory_standard (INTERNAL+RESTRICTED) / memory_sensitive
+Two sensitivity tiers
+(HIGHLY_RESTRICTED)
+Orientation expiry Event-driven + 30-day wall-clock fallback
+Template strictness MEMORY_STRICT_MODE=true (prod) / false (dev)
+Buddy slot Stackable - multiple sessions
+MMP provisioning SIS webhook (auto) + Admin API (manual override)
+Tutor style preference Shared in tutor_shared/ across all module instances
+Auth token window 48 hours; EXPIRED → re-auth + agent backup; REVOKED → backup only
+Write-back Automatic, no learner confirmation, permission-bounded
+Access control timing Pre-retrieval - namespace restriction gates the query
+Counselling Hard wall - no cross-domain reads, no MMP override, no exceptions
+Page 25
+[[PAGE 26]]
+SIT Institutional Memory Platform - Detailed Design
+Cross-agent sharing Learner namespace is the only authorised bridge
+Escalations Any agent writes, human + target domain reads, triggering agent cannot read back
+Unknown key in dev Warning logged + surfaced in MMP admin dashboard
+26. Pending Backlog
+Items confirmed as in-scope but not yet fully designed:
+● Non-SIT / lifelong learner identity - platform-level unique ID, social-auth mapping to learner_id.
+● Cohort namespace design - group-level memory structure, provisioning rules.
+● Memory Router Component 4 (Dispatcher) - full internal design including conflict-resolution edge cases.
+● Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.
+● Context Management - how the context pack evolves turn-by-turn within a session; mid-session
+compaction.
+● Agent Dimension (full) - agent registration, versioning, multiple instances of the same agent type.
+● Memory Compaction - who triggers it, what rules apply, fidelity loss, what is retained versus archived.
+● MMP in detail - template versioning conflict resolution, SIS integration failure handling.
+● Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.
+● Redis - confirm Azure Cache for Redis versus local Redis for development environments.
+27. Validation and Acceptance Criteria
+Each requirement from Section 2 is validated by a specific method with a concrete pass/fail acceptance criterion.
+This table is the basis for the test plan in Section 29 (Build Phase 9).
+27.1 Functional requirements
+ID Validation method Acceptance criteria
+Given a fresh learner registration event, all nine top-level areas exist in the
+FR-1 Namespace inventory test
+namespace map within one provisioning cycle.
+One automated test per slot type creates, and (where applicable) stacks, a
+FR-2 Slot-type unit tests
+slot instance and confirms schema enforcement matches the declared type.
+Every record written through the Router carries exactly one memory_type
+FR-3 Classification unit test value from the five-value enum; writes with an invalid or missing value are
+rejected.
+Six test cases, one per check, each asserting a DENY with the correct reason
+FR-4 Gateway integration test suite
+code when that check alone fails, and ALLOW when all six pass.
+An automated test authenticates as the advisory, tutor, and career agents in
+FR-5 Cross-domain read attempt test turn and attempts to read wellbeing/counselling/; all three attempts return
+DENIED with no MMP override path exercised.
+A code-level check (or architecture test) confirms no agent module imports
+FR-6 Static access-path audit another agent's memory client directly; all cross-agent data flows are traced
+through a namespace slot.
+Page 26
+[[PAGE 27]]
+SIT Institutional Memory Platform - Detailed Design
+Agent A writes an escalation; Agent A's own read attempt is denied; the
+FR-7 Escalation lifecycle test named target-domain agent's read succeeds; a human-reviewer role read
+succeeds.
+A test matrix exercises all seven dimensions independently (one violating
+FR-8 Policy dimension coverage test condition per dimension) and confirms each produces a DENY attributable to
+that dimension.
+Under load, the p99 agent-visible latency for a write call is within the Kafka
+FR-9 Write-path latency test
+enqueue time budget (no correlation with embedding or storage duration).
+A repeated identical read within one session is served from Redis on the
+FR-10 Read-path cache test second call (cache HIT logged); a cold read after TTL expiry produces a cache
+MISS and re-populates Redis.
+With MEMORY_STRICT_MODE=true, a write with an undeclared key is
+FR-11 Validator strict/lenient test rejected; with =false, the same write succeeds but produces a dashboard
+warning entry.
+Simulated registration, enrolment, withdrawal, and graduation webhook
+FR-12 SIS event simulation test payloads each produce the documented provisioning or expiry side-effect,
+verified against the namespace map.
+For a scripted sequence of reads, writes, denials, and an escalation, the audit
+FR-13 Audit completeness test log contains exactly one entry per operation with all required fields
+populated.
+Each documented endpoint (Section 21) returns the expected status code and
+FR-14 Admin API contract test
+payload shape for a valid and an invalid request.
+A learner-initiated deletion request removes user-deletable records and
+FR-15 Deletion boundary test leaves institutional records (assessment, counselling case records) intact and
+unchanged.
+With the learner namespace made artificially unreachable, the agent
+FR-16 Degraded-mode failover test continues serving from its own backup memory and does not attempt to
+write conflicting data back once the namespace is restored.
+27.2 Non-functional requirements
+ID Validation method Acceptance criteria
+Synthetic load of 15,000 learner namespaces and ~9.5M vectors is created
+NFR-1 Load / scale test
+and queried without engine-level errors or a required schema migration.
+p95 filtered similarity query latency ≤ 15 ms, p50 ≤ 10 ms, measured against
+NFR-2 Latency benchmark
+the full synthetic dataset.
+Agent-observed write latency tracks Kafka enqueue time within an agreed
+NFR-3 Write non-blocking benchmark tolerance (e.g. ±10%), independent of downstream consumer processing
+time.
+With the MMP process stopped, a scripted sequence of agent reads and
+NFR-4 MMP-down chaos test
+writes completes successfully; only MMP-specific admin calls fail.
+A credential valid for memory_standard is confirmed to fail authentication
+NFR-5 Schema isolation test
+against memory_sensitive, and vice versa.
+Tokens issued at T are ACTIVE until T+48h, then transition to EXPIRED; a
+NFR-6 Token lifecycle test
+REVOKED token is rejected regardless of remaining validity window.
+A schema scan confirms every field tagged pii: true in a template is stored in
+NFR-7 PDPA field audit a column/JSONB key flagged accordingly, and that a sample deletion request
+is fully logged.
+Page 27
+[[PAGE 28]]
+SIT Institutional Memory Platform - Detailed Design
+A new domain is onboarded by adding one YAML template and one
+NFR-8 Onboarding dry run agent_registry entry, with zero changes to Gateway, Policy Engine, or Router
+source code.
+A write validated against a draft template is rejected; the same write
+NFR-9 Template version test succeeds once the template is published; writes against a deprecated
+template are flagged.
+Projected monthly cost at 15,000-learner scale, computed from the actual
+NFR-10 Cost model check provisioned Azure SKU and measured embedding volume, falls within SGD
+800-1,200.
+Page 28
+[[PAGE 29]]
+SIT Institutional Memory Platform - Detailed Design
+28. Code-Generation Readiness Assessment
+This section directly answers the question: could an AI coding assistant fully generate working code from this
+design document alone, with no further clarification? The honest answer is partial - strong in some areas, not
+yet sufficient in others. This is not a criticism of the design; it reflects that some sections (schemas, DDL, YAML
+templates) were specified to implementation level, while others (cross-dimension policy logic, admin API
+contracts, the SDK) were specified to architectural level only. The table below is component-by-component.
+Component Ready? What an AI coding assistant would still need to decide or ask about
+Database schema (3 table Nothing further needed - DDL is concrete and complete (Section
+Ready
+types × 2 schemas) 11). An AI assistant can generate migrations directly.
+Concrete keys, types, sensitivity per domain are given (Section 23).
+YAML slot templates (7 The remaining domain templates (campus_life, cocurricular,
+Ready
+domains shown) escalations, industry_attachment) follow the same pattern but are
+not yet written out - mechanical to produce by analogy.
+Memory Access Gateway Check order, pass/fail behaviour, and logging requirements are
+Ready
+(6 checks) explicit (Section 15). Directly codeable as a middleware chain.
+Memory Router - Gate, Behaviour, fallback paths, and controlling environment variables are
+Ready
+Validator, Embedder specified (Section 17). Directly codeable.
+Routing rules by memory type and sensitivity tier are explicit.
+Memory Router - Conflict-resolution edge cases (e.g. namespace and backup disagree
+Mostly ready
+Dispatcher on a non-identity field) are named as a policy but not reduced to an
+algorithm - flagged in the Pending Backlog (Section 26, item 3).
+Log entry shape and the list of logged operations are explicit
+Memory Router -
+Mostly ready (Section 17). Exact retention duration and PDPA sign-off language
+Auditor
+are not yet specified - Pending Backlog item 4.
+Each dimension is named with a one-line question (Section 16), but
+the decision algorithm - how the seven dimensions combine into a
+Policy Engine (7
+Partial single ALLOW/DENY/REDACT outcome, and their precedence when
+dimensions)
+they disagree - is not specified. An AI assistant would have to
+invent this logic rather than translate it.
+Async write / cached read Both paths are specified step-by-step with the technology at each
+Ready
+paths step (Section 18). Directly codeable.
+Endpoint paths and HTTP methods are listed (Section 21), but
+request/response JSON schemas, validation rules, error codes, and
+MMP Admin API Partial
+the Admin API's own authentication/authorisation are not specified.
+An AI assistant would have to design these from scratch.
+Referenced by name only (as a build-phase deliverable and in the
+MemoryClient SDK repository structure) with no method signatures, error model, or
+Not ready
+(slot_path= interface) usage examples. This needs a dedicated interface specification
+before code generation.
+The /institution/sit/ and /cohort/{cohort_id}/ namespace shapes
+Cohort / institution-level
+Partial are given (Section 22), but provisioning rules for cohort namespaces
+memory
+are explicitly in the Pending Backlog (item 2).
+Referenced as a lifecycle rule ("compacted to episodic summary")
+Compaction jobs (term- and a provisioning trigger, but the compaction algorithm - what is
+Not ready
+end, graduation) summarised, what fidelity is lost, what triggers it - is explicitly in
+the Pending Backlog (item 7).
+Page 29
+[[PAGE 30]]
+SIT Institutional Memory Platform - Detailed Design
+Non-SIT / lifelong learner Explicitly deferred (Section 6 and Pending Backlog item 1). No
+Not ready
+identity schema or mapping is defined yet.
+Overall conclusion
+An AI coding assistant working from this document could reliably generate, with little or no clarification needed:
+the database schema and migrations, the YAML slot templates, the Gateway middleware, and the
+Validator/Embedder/Dispatcher/Auditor components of the Memory Router, plus the async write and cached
+read pipelines. This covers Build Phases 1, 2 (partially), 4 (partially), 5, and 8 in Section 29.
+Before an AI coding assistant could generate the remaining components without inventing unstated design
+decisions, three specification gaps should be closed first:
+● A Policy Engine decision table or pseudocode - precedence rules across the seven dimensions, expressed as
+an explicit algorithm or truth table, not just seven named questions.
+● MMP Admin API request/response schemas - JSON Schema or Pydantic-model-level detail for every
+endpoint in Section 21, including error responses and the Admin API's own auth model.
+● A MemoryClient SDK interface specification - method signatures, parameter types, error/exception model,
+and at least one worked example per memory type.
+Recommendation: treat this as the first deliverable of Build Phase 3 (Policy Engine) and Build Phase 7
+(MemoryClient SDK) - close these three gaps in a short, focused specification pass before generating code for
+those components. The remaining Pending Backlog items (cohort namespace, compaction, non-SIT identity) can
+reasonably be deferred to a later build phase, as they are not required for the initial six agents' launch scope.
+29. Build Phases
+Nine phases take the platform from schema design to a tested, demoable system.
+# Phase Depends on spec gaps being closed first?
+Schema + Identity - SlotDescriptor, MemoryNamespace,
+1 No - ready
+learner_id (UPN)
+Namespace + Provisioning - NamespaceRegistry,
+2 No - ready
+TemplateRegistry, SlotProvisioner
+3 Policy Engine - the 7-dimension cross-slot decision logic Yes - needs decision table (Section 28)
+Memory Router - Gateway, Validator, Embedder, Dispatcher,
+4 Partially - Gate/Validator/Embedder ready
+Auditor
+5 Store Layer - pgvector + event table + document table No - ready
+6 MMP Admin Service - FastAPI on port 8003, plus dashboard Yes - needs API schemas (Section 28)
+7 MemoryClient SDK - slot_path= interface for agent developers Yes - needs interface spec (Section 28)
+YAML Slot Templates - core, advisory, counselling, career,
+8 No - ready (remaining domains by analogy)
+tutor, orientation, buddy
+Tests + Demos - including cross-domain policy and escalation
+9 Follows Section 27 validation matrix
+demos
+This document, together with its companion Conceptual Design, represents the design phase in full. No
+implementation has begun.
+Page 30
