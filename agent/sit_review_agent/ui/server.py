@@ -16,6 +16,8 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/export.html     the review as one self-contained HTML file (``?download=1`` saves it)
     GET  /runs/<id>/report.md       the run's report.md, as a download
     GET  /runs/<id>/report.json     the run's report.json, as a download
+    GET  /runs/<id>/outputs         whether Email is configured, and the share link (or how to get one)
+    POST /runs/<id>/email           the export and report.md to one address (``ui.mail``)
     POST /runs/<id>/stop            SIGINT to a run this server started
     GET  /runs/<id>/chat            chat history and budget
     POST /runs/<id>/chat            one question, one model call (``ui.chat``)
@@ -39,7 +41,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from sit_review_agent.ui import chat, events, export, rundata
+from sit_review_agent.ui import chat, events, export, mail, rundata
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -84,6 +86,8 @@ class UIState:
     tools: list[dict[str, Any]] = field(default_factory=list)
     commit: str | None = None
     poll_s: float = 0.25
+    smtp: mail.SmtpConfig | None = None
+    smtp_detail: str = ""
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -255,6 +259,36 @@ def build_app(state: UIState) -> Starlette:
                                 headers={"Content-Disposition": f'attachment; filename="{rd.name}_{name}"'})
         return handler
 
+    async def run_outputs(request: Request) -> Response:
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        return _json({"email": mail.status(state.smtp, state.smtp_detail)})
+
+    async def run_email(request: Request) -> Response:
+        from starlette.concurrency import run_in_threadpool
+
+        rd = run_dir_of(request)
+        if rd is None or not (rd / "report.md").is_file():
+            return _err(404, "This run has no report.md to send.")
+        try:
+            body = await request.json()
+        except ValueError:
+            return _err(400, "Expected a JSON body with the address.")
+        to = str((body or {}).get("to") or "")
+        html = export.export_html(rd, replayed=rundata.summary(rd)["replayed"])
+        info = rundata.summary(rd)
+        attachments = [(export.export_name(rd.name), html.encode("utf-8"), "text", "html"),
+                       (f"{rd.name}_report.md", (rd / "report.md").read_bytes(), "text", "markdown")]
+        try:
+            row = await run_in_threadpool(mail.send, rd, to, state.smtp, title=str(info["document"] or rd.name),
+                                          attachments=attachments)
+        except mail.EmailRefused as exc:
+            if exc.status == 409:
+                return _err(409, f"{mail.NOT_CONFIGURED} ({mail.status(state.smtp, state.smtp_detail)['detail']}).")
+            return _err(exc.status, exc.message)
+        return _json(row)
+
     async def run_stop(request: Request) -> Response:
         rd = run_dir_of(request)
         if rd is None:
@@ -301,6 +335,8 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/export.html", run_export),
         Route("/runs/{run_id}/report.md", raw_file("report.md", "text/markdown; charset=utf-8")),
         Route("/runs/{run_id}/report.json", raw_file("report.json", "application/json")),
+        Route("/runs/{run_id}/outputs", run_outputs),
+        Route("/runs/{run_id}/email", run_email, methods=["POST"]),
         Route("/runs/{run_id}/stop", run_stop, methods=["POST"]),
         Route("/runs/{run_id}/chat", chat_get, methods=["GET"]),
         Route("/runs/{run_id}/chat", chat_post, methods=["POST"]),
@@ -362,10 +398,11 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
         note = (f"Runs start in the configured run root ({run_root}); this server reads {rd}, so the Start button "
                 "is off. Serve the run root to start runs here.")
     tools = [{"name": s.name, "enabled": s.enabled} for s in cfg.tools.servers]
+    smtp, smtp_detail = mail.load_smtp(Path(cfg.config_root) / "ui.yaml")
     return UIState(runs_dir=rd, repo_root=root, launcher=launcher or Launcher(repo_root=root),
                    chat_client=chat_client or chat.ClaudeCodeChatClient.from_config(cfg),
                    can_launch=can_launch, launch_note=note, profiles=_profiles(config_path), tools=tools,
-                   commit=_git_commit(root))
+                   commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail)
 
 
 def serve(*, host: str, port: int, runs_dir: Path | None, config_path: Path | None, allow_remote: bool,

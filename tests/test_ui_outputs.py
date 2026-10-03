@@ -195,3 +195,195 @@ def test_export_and_raw_downloads_are_served(flow_runs: Path) -> None:
     (flow_runs / "ui_flow_1" / "report.md").unlink()
     assert client.get("/runs/ui_flow_1/export.html").status_code == 404
     assert client.get("/runs/ui_flow_1/report.md").status_code == 404
+
+
+# ------------------------------------------------------------------ item 2: email through config/ui.yaml
+
+
+class FakeSMTP:
+    """A local SMTP server for one test: EHLO, AUTH PLAIN, MAIL, RCPT, DATA, QUIT, and nothing else (no
+    STARTTLS). ``refuse_auth`` answers 535 to AUTH."""
+
+    def __init__(self, *, refuse_auth: bool = False) -> None:
+        import socketserver
+        import threading
+
+        self.messages: list[dict[str, object]] = []
+        self.auth: list[bytes] = []
+        self.connections = 0
+        outer = self
+
+        class Handler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                outer.connections += 1
+                send = lambda line: self.wfile.write(line.encode() + b"\r\n")  # noqa: E731
+                send("220 fake ESMTP")
+                env: dict[str, object] = {"rcpt": []}
+                while True:
+                    raw = self.rfile.readline()
+                    if not raw:
+                        return
+                    line = raw.decode().rstrip("\r\n")
+                    cmd = line.split(" ", 1)[0].upper()
+                    if cmd in ("EHLO", "HELO"):
+                        send("250-fake")
+                        send("250 AUTH PLAIN")
+                    elif cmd == "AUTH":
+                        import base64
+
+                        outer.auth.append(base64.b64decode(line.split()[2]))
+                        send("535 authentication refused" if refuse_auth else "235 ok")
+                    elif cmd == "MAIL":
+                        env["from"] = line
+                        send("250 ok")
+                    elif cmd == "RCPT":
+                        env["rcpt"].append(line)  # type: ignore[union-attr]
+                        send("250 ok")
+                    elif cmd == "DATA":
+                        send("354 go")
+                        data = b""
+                        while not data.endswith(b"\r\n.\r\n"):
+                            chunk = self.rfile.readline()
+                            if not chunk:
+                                return
+                            data += chunk
+                        env["data"] = data
+                        outer.messages.append(dict(env))
+                        send("250 queued")
+                    elif cmd == "QUIT":
+                        send("221 bye")
+                        return
+                    else:
+                        send("502 not here")
+
+        class Server(socketserver.ThreadingTCPServer):
+            allow_reuse_address = True
+            daemon_threads = True
+
+        self.server = Server(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+PASSWORD = "pw-never-written-7Q"
+
+
+@pytest.fixture
+def smtp():
+    s = FakeSMTP()
+    yield s
+    s.close()
+
+
+def smtp_cfg(port: int, *, starttls: bool = False):
+    from sit_review_agent.ui.mail import SmtpConfig
+
+    return SmtpConfig(host="127.0.0.1", port=port, starttls=starttls, username="reviewer", sender="sit@example.org")
+
+
+def test_the_shipped_config_leaves_email_off_with_the_reason(tmp_path: Path, monkeypatch) -> None:
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    cfg, detail = mail.load_smtp(REPO / "config" / "ui.yaml")
+    assert cfg is None and "host" in detail
+    assert mail.NOT_CONFIGURED == "Email is not configured: see config/ui.yaml"
+    missing, detail = mail.load_smtp(tmp_path / "ui.yaml")
+    assert missing is None and "no config/ui.yaml" in detail
+    full = tmp_path / "full.yaml"
+    full.write_text("email:\n  host: smtp.example.org\n  port: 587\n  starttls: true\n  username: me\n"
+                    "  from: me@example.org\n", encoding="utf-8")
+    cfg, detail = mail.load_smtp(full)
+    assert cfg == mail.SmtpConfig(host="smtp.example.org", port=587, starttls=True, username="me",
+                                  sender="me@example.org") and detail == ""
+
+
+def test_email_is_shown_disabled_with_the_reason_without_config_or_password(flow_runs: Path, smtp: FakeSMTP,
+                                                                           monkeypatch) -> None:
+    from sit_review_agent.ui import mail
+
+    monkeypatch.delenv(mail.PASSWORD_ENV, raising=False)
+    for state in (make_state(flow_runs), make_state(flow_runs, smtp=smtp_cfg(smtp.port))):
+        client = TestClient(build_app(state))
+        email = client.get("/runs/ui_flow_1/outputs").json()["email"]
+        assert email["enabled"] is False and email["reason"] == mail.NOT_CONFIGURED and email["detail"]
+        res = client.post("/runs/ui_flow_1/email", json={"to": "someone@example.org"})
+        assert res.status_code == 409 and res.json()["error"].startswith(mail.NOT_CONFIGURED)
+    assert smtp.connections == 0
+    assert not (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).exists()
+
+
+def test_email_sends_the_export_and_report_md_and_logs_no_content(flow_runs: Path, smtp: FakeSMTP,
+                                                                  monkeypatch) -> None:
+    import email as email_lib
+    from email import policy
+
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    client = TestClient(build_app(make_state(flow_runs, smtp=smtp_cfg(smtp.port))))
+    status = client.get("/runs/ui_flow_1/outputs").json()["email"]
+    assert status == {"enabled": True, "reason": None, "detail": None, "from": "sit@example.org",
+                      "host": "127.0.0.1"}
+    res = client.post("/runs/ui_flow_1/email", json={"to": "Reader@Example.org"})
+    assert res.status_code == 200, res.text
+    assert res.json()["result"] == "sent"
+    assert smtp.auth == [b"\0reviewer\0" + PASSWORD.encode()]
+    (msg_env,) = smtp.messages
+    assert "reader@example.org" in str(msg_env["rcpt"]).lower()
+    msg = email_lib.message_from_bytes(msg_env["data"], policy=policy.default)  # type: ignore[arg-type]
+    names = {p.get_filename(): p.get_content() for p in msg.iter_attachments()}
+    assert set(names) == {"ui_flow_1_review.html", "ui_flow_1_report.md"}
+    raw = {p.get_filename(): p.get_payload(decode=True) for p in msg.iter_attachments()}
+    assert raw["ui_flow_1_report.md"] == (FLOW / "report.md").read_bytes()
+    assert names["ui_flow_1_report.md"] == (FLOW / "report.md").read_text(encoding="utf-8")
+    assert export.CHAT_HEADING in names["ui_flow_1_review.html"]
+    assert msg["From"] == "sit@example.org" and msg["To"] == "Reader@Example.org"
+    rows = [json.loads(ln) for ln in (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).read_text().splitlines()]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["to"] == "Reader@Example.org" and row["result"] == "sent" and row["error"] is None
+    assert {a["name"] for a in row["attachments"]} == set(names)
+    assert all(isinstance(a["bytes"], int) and a["bytes"] > 1000 for a in row["attachments"])
+    assert set(row) == {"at", "to", "from", "smtp_host", "attachments", "message_bytes", "result", "error"}
+    for p in (flow_runs / "ui_flow_1").rglob("*"):
+        if p.is_file():
+            assert PASSWORD.encode() not in p.read_bytes(), p
+    assert PASSWORD not in json.dumps(client.get("/runs/ui_flow_1/outputs").json())
+
+
+@pytest.mark.parametrize("to", ["", "nobody", "a@b", "a@b.org, c@d.org", "a@b.org\r\nBcc: x@y.org", "a b@c.org",
+                                "x" * 250 + "@b.org"], ids=range(7))
+def test_a_bad_address_is_refused_before_any_connection(flow_runs: Path, smtp: FakeSMTP, monkeypatch,
+                                                        to: str) -> None:
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    client = TestClient(build_app(make_state(flow_runs, smtp=smtp_cfg(smtp.port))))
+    res = client.post("/runs/ui_flow_1/email", json={"to": to})
+    assert res.status_code == 400
+    assert smtp.connections == 0
+    assert not (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).exists()
+
+
+def test_a_refused_login_or_a_missing_starttls_is_logged_as_failed(flow_runs: Path, monkeypatch) -> None:
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    bad = FakeSMTP(refuse_auth=True)
+    try:
+        for cfg in (smtp_cfg(bad.port), smtp_cfg(bad.port, starttls=True)):
+            client = TestClient(build_app(make_state(flow_runs, smtp=cfg)))
+            res = client.post("/runs/ui_flow_1/email", json={"to": "someone@example.org"})
+            assert res.status_code == 502 and res.json()["error"].startswith("The mail was not sent")
+        assert bad.messages == []
+        assert len(bad.auth) == 1                    # with starttls the server's lack of STARTTLS stops it first
+    finally:
+        bad.close()
+    rows = [json.loads(ln) for ln in (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).read_text().splitlines()]
+    assert [r["result"] for r in rows] == ["failed", "failed"]
+    assert all(r["error"] and PASSWORD not in r["error"] for r in rows)
