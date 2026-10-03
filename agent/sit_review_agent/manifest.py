@@ -212,6 +212,28 @@ def logged_shard(entry: dict[str, Any]) -> str | None:
     return str(raw)
 
 
+def measured_output_rate(entries: list[dict[str, Any]]) -> tuple[float | None, int]:
+    """The run's own output rate, for the estimate of a cut call: the MEDIAN output tokens per second of
+    the attempts that reported usage (a logged ``usage`` with output tokens above 0 and wall seconds above 0;
+    unsent, faulted, replayed and fake entries are left out), with the number of attempts it rests on.
+    ``(None, 0)`` when no attempt qualifies. The median, not the mean, so one odd call (a short answer
+    after a long wait) does not pull the rate."""
+    rates: list[float] = []
+    for e in entries:
+        if e.get("sent") is False or "fault" in e or e.get("replayed") or e.get("fake") or unrecorded_reason(e):
+            continue
+        out = _count((e.get("usage") or {}).get("output_tokens")) if isinstance(e.get("usage"), dict) else None
+        wall = _offset(e.get("elapsed_s"))
+        if out and wall:
+            rates.append(out / wall)
+    if not rates:
+        return None, 0
+    rates.sort()
+    mid = len(rates) // 2
+    median = rates[mid] if len(rates) % 2 else (rates[mid - 1] + rates[mid]) / 2
+    return median, len(rates)
+
+
 def _estimate_cost(tot: dict[str, int]) -> float:
     p = PRICE_TABLE["usd_per_mtok"]
     return (tot["input_tokens"] * p["input"] + tot["cache_creation_input_tokens"] * p["cache_write"]
@@ -240,7 +262,10 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
     calls = 0
     truncations: list[dict[str, Any]] = []
     unrecorded: list[dict[str, Any]] = []
-    for e in JsonlWriter(run_dir.llm_log).read():
+    entries = list(JsonlWriter(run_dir.llm_log).read())
+    rate, rate_calls = measured_output_rate(entries)
+    bases: set[str] = set()
+    for e in entries:
         calls += 1
         if e.get("outcome") == "LLMTruncatedError":
             truncations.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose")})
@@ -253,8 +278,16 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
                                "reason": reason})
             est = logged_estimate(e)
             if est is not None:
+                logged_out = est["output_tokens"]
+                wall_s = _offset(wall)
+                if rate is not None and wall_s:
+                    est["output_tokens"], basis = round(rate * wall_s), "measured_rate"
+                else:
+                    basis = "constant"                 # the logged figure (streamed characters at a constant)
+                bases.add(basis)
                 est_rows.append({"call_id": e.get("call_id"), "stage": e.get("phase"), "purpose": e.get("purpose"),
-                                 "attempt": e.get("attempt"), "reason": reason, "estimated": True, **est})
+                                 "attempt": e.get("attempt"), "reason": reason, "estimated": True, **est,
+                                 "logged_output_tokens": logged_out, "output_basis": basis})
                 for k in USAGE_FIELDS:
                     est_tot[k] += est[k]
         items = logged_salvage(e)
@@ -277,7 +310,11 @@ def journal_usage(run_dir: RunDir) -> dict[str, Any]:
             "calls_with_unrecorded_usage": unrecorded,
             "estimated_usage_of_unrecorded_calls": est_rows,
             "estimated_totals": {"estimated": True, "calls": len(est_rows), **est_tot,
-                                 "cost_usd": round(_estimate_cost(est_tot), 6), "cost_source": "price table estimate"},
+                                 "cost_usd": round(_estimate_cost(est_tot), 6), "cost_source": "price table estimate",
+                                 "output_basis": (bases.pop() if len(bases) == 1 else "mixed") if bases
+                                 else ("measured_rate" if rate is not None else "constant"),
+                                 "output_tokens_per_s": round(rate, 3) if rate is not None else None,
+                                 "output_rate_calls": rate_calls},
             "salvaged_calls": salvaged_calls, "salvaged_items": salvaged_items,
             "assess_shards": len(shards),
             "cost_usd": round(cost_logged if have_cost else estimate, 6),
