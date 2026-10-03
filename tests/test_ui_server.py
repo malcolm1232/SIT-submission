@@ -141,6 +141,10 @@ def test_run_path_rejects_names_outside(tmp_path: Path) -> None:
     assert rundata.run_path(tmp_path, "ok") == (tmp_path / "ok").resolve()
     for bad in ("..", "../ok", "ok/..", "/etc", ".ok", "a..b", ""):
         assert rundata.run_path(tmp_path, bad) is None
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    (tmp_path / "escape").symlink_to(outside, target_is_directory=True)
+    assert rundata.run_path(tmp_path, "escape") is None           # a symlink out of the runs dir
 
 
 def test_report_payload_carries_report_json_unchanged(live_client: TestClient) -> None:
