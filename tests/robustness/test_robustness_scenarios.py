@@ -446,16 +446,29 @@ def _persistent_truncation(data: dict[str, Any]) -> None:
 
 
 def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """max_tokens on the first assess call (nth 0: shard 1, launched first): one retry for that
+    shard, the other three shards untouched, findings as in the control. Persistent (every assess
+    call truncated): each of the K = 4 shards is truncated twice and makes no third call, each
+    shard's note names it and its two call IDs, no finding, verdict not_assessed, exit 0."""
     rec, twice = recs
     ok(rec)
     entries = llm_calls(rec, "assess")
-    assert [e.get("outcome") for e in entries if e.get("fault")] == ["LLMTruncatedError"]
-    retry = [e for e in entries if e.get("outcome") == "ok"]
-    assert retry[0]["purpose"] == "assess:max_tokens_retry"
+    faulted = [e for e in entries if e.get("fault")]
+    assert [e.get("outcome") for e in faulted] == ["LLMTruncatedError"] and faulted[0]["shard"] == 1
+    retry = [e for e in shard_calls(rec, 1) if e.get("outcome") == "ok"]
+    assert len(retry) == 1 and retry[0]["purpose"] == "assess:max_tokens_retry"
+    assert all(len(shard_calls(rec, s)) == 1 for s in SHARDS[1:])            # the other shards untouched
     assert titles(rec) == titles(control)                                   # no truncated object accepted
     # persistent: truncated on the call and on its one retry -> degrades like a deadline cut (exit 0)
     r = ok(twice)
-    assert [e.get("outcome") for e in llm_calls(twice, "assess")] == ["LLMTruncatedError"] * 2
+    for s in SHARDS:
+        calls = shard_calls(twice, s)
+        assert [e.get("outcome") for e in calls] == ["LLMTruncatedError"] * 2, s
+        assert [e.get("purpose") for e in calls] == ["assess", "assess:max_tokens_retry"], s
+        notes = [d for d in degs(twice) if d.startswith(f"assess shard {s}/4 (")
+                 and "the assess answer was truncated twice at the output cap" in d]
+        assert len(notes) == 1 and all(e["call_id"] in notes[0] for e in calls), (s, notes)
+    assert len(llm_calls(twice, "assess")) == 2 * len(SHARDS)
     assert any(d.startswith("the assess answer was truncated twice at the output cap") for d in degs(twice))
     assert r["verdict"]["label"] == "not_assessed" and r["findings"] == [] and not llm_calls(twice, "report")
     assert "Not assessed (answer truncated twice at the output cap)" in md(twice)
