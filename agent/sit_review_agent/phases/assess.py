@@ -56,7 +56,11 @@ from sit_review_agent.config import AssessShard
 from sit_review_agent.context import RunContext
 from sit_review_agent.errors import AssessShardsFailed, ExitCode, LLMError, LLMSchemaError
 from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage, FindingDraft, SoundAreaDraft
-from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT, truncated_twice_event
+from sit_review_agent.llm.runtime import (
+    DECLINED_EVERY_ASSESS_SHARD,
+    OUT_OF_TIME_BEFORE_ASSESSMENT,
+    truncated_twice_event,
+)
 from sit_review_agent.models import SEVERITY_RANK, DegradationType, finding_id
 from sit_review_agent.phases._isolation import StateDelta, apply_delta, guarded, isolate, state_delta
 from sit_review_agent.phases._model_calls import (
@@ -379,7 +383,7 @@ class AssessPhase:
             if PhaseName.ASSESS.value not in ctx.state.declined_sections:
                 ctx.state.declined_sections.append(PhaseName.ASSESS.value)
             ctx.state.add_degradation(DegradationType.OTHER,
-                                      "the model declined every assess shard; no shard produced an assessment", impact)
+                                      f"{DECLINED_EVERY_ASSESS_SHARD}; no shard produced an assessment", impact)
 
 
 def rank_by_severity(findings: Sequence[FindingDraft]) -> list[FindingDraft]:

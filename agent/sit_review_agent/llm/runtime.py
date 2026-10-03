@@ -59,6 +59,10 @@ OUT_OF_TIME_BEFORE_ASSESSMENT = "out of time before assessment"
 #: Degradation text when a stage's answer was cut off at ``max_tokens`` on its call and on the one
 #: retry (robustness LLM-07, persistent variant). The stage then degrades like a deadline cut.
 TRUNCATED_TWICE = "truncated twice at the output cap"
+#: Start of the stage-level degradation event when the model declined every assess shard (the
+#: sharded form of ``declined_sections`` "assess"; ``report.render`` infers the not-assessed reason
+#: from the report's events, so it must recognise this text).
+DECLINED_EVERY_ASSESS_SHARD = "the model declined every assess shard"
 
 
 def truncated_twice_event(phase: PhaseName | str) -> str:

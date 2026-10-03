@@ -140,10 +140,12 @@ def not_assessed(review: Review) -> bool:
 def verdict_label_text(review: Review) -> str:
     """The verdict label as shown in ``report.md``; a not-assessed verdict names its reason."""
     if not_assessed(review):
+        from sit_review_agent.llm.runtime import DECLINED_EVERY_ASSESS_SHARD
         from sit_review_agent.phases.report import NOT_ASSESSED_WHY, assessment_missing
 
         events = [d.event for d in review.research_log.degradations]
-        declined = ["assess"] if any(e.startswith("the model declined the assess call") for e in events) else []
+        declined = ["assess"] if any(e.startswith(DECLINED_EVERY_ASSESS_SHARD)
+                                     or e.startswith("the model declined the assess call") for e in events) else []
         missing = assessment_missing(events, declined)
         return f"not assessed ({NOT_ASSESSED_WHY[missing]})" if missing else "not assessed"
     return review.verdict.label.value.replace("_", " ")

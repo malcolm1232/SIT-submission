@@ -405,22 +405,36 @@ def check_llm03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """Refusal on every assess call. Persistent: each of the K = 4 shards gets one reframed retry
+    (2 K refusals, no third call per shard), each shard's refusal disclosed naming the shard, every
+    criterion not assessed, verdict not_assessed with no verdict call, the other stages complete.
+    Once (nth [0]: shard 1's first call): its reframed retry succeeds, findings as in the control."""
     persistent, once = recs
     r = ok(persistent)
     assert persistent.state["declined_sections"] == ["assess"]
-    refusals = [e for e in llm_calls(persistent, "assess") if e.get("outcome") == "LLMRefusalError"]
-    assert len(refusals) == 2                                               # original + one reframed retry
-    assert any("declined the assess call" in d for d in degs(persistent))
+    for s in SHARDS:
+        entries = shard_calls(persistent, s)
+        assert [e.get("outcome") for e in entries] == ["LLMRefusalError"] * 2, s     # original + one reframed retry
+        assert [e.get("purpose") for e in entries] == ["assess", "assess:refusal_retry"], s
+        assert any(d.startswith(f"the model declined assess shard {s}/4 (") and "after a reframed retry" in d
+                   for d in degs(persistent)), s
+    assert len(llm_calls(persistent, "assess")) == 2 * len(SHARDS)
+    assert any(d.startswith("the model declined every assess shard") for d in degs(persistent))
     assert "declined" in limitations(persistent)
+    cov = persistent.state["coverage"]
+    assert cov and all(c["outcome"] == "not_applicable" and "declined" in c["note"] for c in cov), cov
     assert r["intent_summary"]["statement"] and r["verdict"]["rationale"] and r["findings"] == []
     # no assessment, so no verdict call and no fitness verdict (the model could only invent one)
     assert r["verdict"]["label"] == "not_assessed" and not llm_calls(persistent, "report")
     assert "Not assessed (the model declined the assessment)" in md(persistent)
     r2 = ok(once)
-    retry = [e for e in llm_calls(once, "assess") if e.get("outcome") == "ok"]
-    assert retry and retry[0]["purpose"] == "assess:refusal_retry"
+    refused = [e for e in llm_calls(once, "assess") if e.get("outcome") == "LLMRefusalError"]
+    assert [e.get("shard") for e in refused] == [1] and refused[0]["purpose"] == "assess"
+    retry = [e for e in shard_calls(once, 1) if e.get("outcome") == "ok"]
+    assert len(retry) == 1 and retry[0]["purpose"] == "assess:refusal_retry"
+    assert all(len(shard_calls(once, s)) == 1 for s in SHARDS[1:])            # the other shards untouched
     assert titles(once) == titles(control)
-    return Metric("declined stage disclosed; other stages complete", len(r2["findings"]), "reframed retry recovers")
+    return Metric("declined shards disclosed; other stages complete", len(r2["findings"]), "reframed retry recovers")
 
 
 def _once(data: dict[str, Any]) -> None:
