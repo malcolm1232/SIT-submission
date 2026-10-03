@@ -122,7 +122,15 @@ def _md(text: str | None, indent: str = "") -> str:
 _NUMBER_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
                  "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
 _SEVERITY_COUNT = re.compile(r"\b(\d{1,3}|" + "|".join(_NUMBER_WORDS) + r")(\s+)(critical|high|medium|low)"
-                             r"(?=[- ]severity\b)", re.IGNORECASE)
+                             r"([- ]severity\b)"
+                             r"(?:(\s+)(finding|issue|risk|gap|item|concern|defect|problem)(s?)\b"
+                             r"(?:(\s+)(is|are|was|were|remains|remain|has|have)\b)?)?", re.IGNORECASE)
+# The verb right after the counted noun, as (singular, plural): "finding remains", "findings remain".
+_VERB_FORMS = (("is", "are"), ("was", "were"), ("remains", "remain"), ("has", "have"))
+
+
+def _match_case(word: str, like: str) -> str:
+    return word.capitalize() if like[:1].isupper() else word
 
 
 def severity_counts(review: Review) -> dict[str, int]:
@@ -138,7 +146,10 @@ def reconcile_severity_counts(text: str, counts: dict[str, int]) -> str:
     """Make a "<n> high-severity" count in model prose equal the findings' own count. The verdict
     call wrote "seven high-severity findings are still open" in sit_sample_tools_1, where the
     review holds six; the number is computed from the findings, in the prose's own style (digits or
-    a word, capitalised or not). Text with no such count is returned unchanged."""
+    a word, capitalised or not). A counted noun right after the count ("findings", "issues") and a
+    verb right after that ("remain", "are") are made to agree with the new number, so a count
+    rewritten to one reads "One high-severity finding remains". Text with no such count is
+    returned unchanged."""
 
     def fix(m: re.Match[str]) -> str:
         n = counts.get(m.group(3).lower())
@@ -151,7 +162,16 @@ def reconcile_severity_counts(text: str, counts: dict[str, int]) -> str:
             new = _NUMBER_WORDS[n] if n < len(_NUMBER_WORDS) else str(n)
             if num[:1].isupper():
                 new = new.capitalize()
-        return f"{new}{m.group(2)}{m.group(3)}"
+        out = f"{new}{m.group(2)}{m.group(3)}{m.group(4)}"
+        if m.group(6) is None:
+            return out
+        singular = n == 1
+        out += f"{m.group(5)}{m.group(6)}{'' if singular else ('S' if m.group(6).isupper() else 's')}"
+        if m.group(9) is not None:
+            verb = m.group(9).lower()
+            form = next(pair[0] if singular else pair[1] for pair in _VERB_FORMS if verb in pair)
+            out += f"{m.group(8)}{_match_case(form, m.group(9))}"
+        return out
 
     return _SEVERITY_COUNT.sub(fix, text)
 

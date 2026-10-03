@@ -112,8 +112,9 @@ def test_fixture_count_version_and_lists(review_dict: dict[str, Any]) -> None:
     md = render_markdown(review)
     fitness = _section(md, "Fitness for purpose")
     word = _NUMBER_WORDS[counts["high"]].capitalize()
-    assert f"{word} high-severity findings remain:" in fitness and "Eleven" not in fitness
-    assert ("Fit once the open items close. " + f"{word} high-severity findings remain:\n\n"
+    noun = "finding remains" if counts["high"] == 1 else "findings remain"
+    assert f"{word} high-severity {noun}:" in fitness and "Eleven" not in fitness
+    assert ("Fit once the open items close. " + f"{word} high-severity {noun}:\n\n"
             "- the reminder volume exceeds the provider limit\n"
             "- the region is not named in the deployment section\n\n"
             "Both are cheap to fix.") in fitness
@@ -143,3 +144,16 @@ def test_counts_keep_the_prose_style() -> None:
         "six high-severity and 2 low severity"
     assert reconcile_severity_counts("Seven high-severity", counts) == "Six high-severity"
     assert reconcile_severity_counts("seven high risks", counts) == "seven high risks"   # not a severity count
+
+
+def test_counted_noun_and_verb_agree_with_the_new_number() -> None:
+    one = {"critical": 0, "high": 1, "medium": 2, "low": 0}
+    six = {"critical": 0, "high": 6, "medium": 1, "low": 0}
+    assert reconcile_severity_counts("Seven high-severity findings remain open.", one) == \
+        "One high-severity finding remains open."
+    assert reconcile_severity_counts("One high-severity finding is still open.", six) == \
+        "Six high-severity findings are still open."
+    assert reconcile_severity_counts("7 high severity issues were found", one) == "1 high severity issue was found"
+    assert reconcile_severity_counts("three medium-severity risks have owners", one) == \
+        "two medium-severity risks have owners"
+    assert reconcile_severity_counts("Zero critical-severity findings", one) == "Zero critical-severity findings"
