@@ -78,3 +78,49 @@ Its content was not resent, and seam h was left incomplete instead.
 - Re-check the `shard` and `start_offset_s` values on a live claude_code log, since only fake runs were checked here.
 - Re-check that adding `start_offset_s` does not change how a recorded live run replays (`ReplayClock.at_recorded` now takes the exact path).
 - Not verified: anything live, the timed rehearsal, the Anthropic API gateway's cut salvage, and `make test` green (it exits 2 on the same 10 failures).
+
+## Seam h finished (second worker, 2026-10-03 08:50)
+
+Branch `s4/integration2`, dcd31a2 to ae08a08 (sixteen commits, all `malcolm1232`, no attribution lines), tree clean, not pushed.
+Gates: `ruff check agent harness tests` 0; `pytest -q` from the repo root 0 (1547 passed) and from `/Users/malco` 0 (1547 passed); `sit-review selftest` 0; `make smoke` 0 (238 passed); `make test` 0 (1547 passed); the robustness runner 0 (159 passed); `convert_answer_keys.py --tier synthetic --check --verify-anchors` 0; the prompt lock test 0; `leakage_grep.py` 0.
+No em dash on any added line.
+
+### Row by row
+
+- Regression `test_a_stage_that_truncates_twice...[assess]`: defect in the agent. The per-shard truncation note did not name its call IDs. `PhaseCall.truncated_ids` and the shard note now does; the test asserts 4 x 2 calls, one note per shard naming its IDs, one stage-level note. PASS.
+- LLM-01: restated. The 429 hits attempt 0 of each of the four shards' calls; each waits >= 15 s; findings as in the control. PASS.
+- LLM-02: restated. Each of the six stage 1 calls (understand, plan, four shards) makes max_retries + 1 attempts and no more; exit 3 once; checkpoint. PASS.
+- LLM-03: restated per the ruling. Recovering: 529 on attempts 0-3 of every shard, every shard completes, no model switch. Persistent: `AssessShardsFailed` (exit 3, resumable), `report.partial.md` written and disclosed (each shard and its error), `failure.json` names it and the shards, resume completes. PASS.
+- LLM-06: restated, and a defect in the report renderer: with every shard declined `report.md` showed a bare "not assessed" because the renderer keyed on the sequential event text. Shared constant now. Per shard: 2 refusals, no third call, each shard's refusal disclosed by name, every criterion not assessed; once: shard 1 recovers on its reframed retry, the other shards untouched. PASS.
+- LLM-07: restated. nth 0 is shard 1's call (one retry, the others untouched); persistent: every shard truncated twice with no third call, each note naming the shard and its two IDs, verdict not_assessed. PASS.
+- LLM-10: restated. Six unsent over-limit refusals (one per concurrent first call), nothing sent, exit 2. PASS.
+- LLM-11: restated. Six auth refusals, one per call, none retried, exit 3 within 10 s. PASS.
+- NET-02: defect per the ruling. The window applied to the first call started only; the other five retried on the full budget until cancelled, and under the serial `FakeClock` their sleeps summed to 112 s. `FirstCallNetwork` now windows every call started before the API has answered one (a result or an HTTP error status), in all three gateways; the first to give up exits 3 once and the rest are cancelled (asserted: one error line, no call at its budget, nothing started after the exit). NET-02 and its drill run on the scheduling clock. PASS, 4.8 s virtual.
+- BEH-25: restated. Understand, plan and assess start together; the crash at assess's start is handled once understand and plan have ended and before research starts: exit 4, plan checkpoint, completed phases ingest to plan, no research call, partial report, resume completes; `stage1_ready` checks. PASS.
+- LLM-13 (new): PASS once the end-to-end runs use the scheduling clock. On the serial clock shard 3's hang moved virtual time past the stage limit before shard 4 started, so shard 4 was cut without a fault (a harness artefact, the one INF-01 already avoids).
+- LLM-14, LLM-15 (new): defect. The scripted backend answers without suspending, so shard 1's retry reached the fault wrapper before shard 2's first call and `nth` 4 hit shard 4. `call_model` yields once before every logical call; the first calls are now `nth` 0..K-1 in launch order. PASS.
+- LLM-16, LLM-17 (new): PASS as built.
+- BEH-29 (new): defect. A `process:` fault with `shard` wrapped the whole member (exit 4). It now wraps that shard's `run_shard`, and a shard's unexpected exception ends that shard only (outcome error, disclosed by name and class, criteria not assessed); every shard crashing is a `StageCrash`. Unit tests in `tests/test_orchestrator.py`. PASS.
+- LLM-05: it passed on the serial clock for the wrong reason (the hang cut all four shards, so the old "no finding, not_assessed" check held). Restated to the stated expectation on the scheduling clock: shard 1 cut at 265 s and disclosed, criteria not assessed, three shards' findings kept, verdict assessed; default deadline: full timeout, then retry. PASS.
+- LLM-08, NET-01, OPS-04: strengthened to the shard form. BEH-10 already asserted the revision form. PASS.
+- Oracle contract: `NOT_ASSESSED` confirmed against the orchestrator: the schema allows `findings`, `no_issue`, `not_applicable` only, so a not-assessed criterion is `not_applicable` with a note starting "not assessed"; `concurrent_oracles.is_not_assessed` is the predicate, the fixtures write that form, and a direct test guards it against a model-reported not-applicable criterion.
+
+### Results CSV against 7be556d
+
+87 rows (81 + 6). Six new rows LLM-13 to LLM-17 and BEH-29: PASS. No status change among the 81 (49 PASS, 32 BLOCKED, the laptop and static rows). Key metrics restated on LLM-01, LLM-02, LLM-05, LLM-06, LLM-08, LLM-11, NET-02, OPS-04 (listed in the edit log). No regression.
+
+### Decisions needed
+
+- None blocking. The one left from the first pass (`recommendation` and `no_change_rationale` on a revision) stands as it was.
+
+### Refused
+
+One turn (the README table edit of step 3) was ended by a safety stop; its content was not resent. The same edit was redone in smaller steps.
+
+### For the verifier
+
+- Cold-read `phases/assess.py` (`_shard`, `_crashed`, the all-failed branch) against the BEH-29 row: a shard's unexpected exception is contained; `LLMError`s that mean a defect (bad request, exhausted fake script, strict-replay miss), cancellation and `MemberInterrupted` still propagate.
+- The `await asyncio.sleep(0)` at the top of `call_model`'s loop is a scheduling guarantee for the `nth` contract; confirm it is acceptable in production (it is a no-op in cost).
+- `FirstCallNetwork.answered` is set in each gateway on a result and on an HTTP error status; confirm on a live `claude_code` run that an API error answer is classified as not a connection error (its classifier is text-based).
+- Re-check the `shard` and `start_offset_s` values on a live `claude_code` log; the cut salvage of the Anthropic gateway; the timed rehearsal; W3a's replay matching mutation round (still deferred).
+- `make test` is green now (it exited 2 on the ten failures before).
