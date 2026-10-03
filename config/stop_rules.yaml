@@ -33,6 +33,7 @@ refine_reserve_seconds: 600        # stage 1 (research and the assess shards) en
 # seconds, not a fraction of the deadline, because the thinking block of a model call is a fixed cost
 # (about 105 s per assess shard at medium, whatever the deadline), so a fraction would silently move
 # the limits when --deadline changes; a profile that changes the deadline sets its own three values.
+# A --deadline other than refine_end + report_reserve_seconds scales all three by that ratio, down or up, announced.
 # Each profile's limits must increase and all lie below its deadline_seconds; a profile without the
 # block inherits these. These defaults keep the demo shape at 3600 s with the reserves above:
 # stage_1_end = 3600 - 180 - 600, refine_end = 3600 - 180, verdict_end = 3600 - 60 (render and invariants).

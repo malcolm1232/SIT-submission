@@ -120,9 +120,9 @@ Then show it: the new value is in the next run's `effective_config.json` and man
 | A severity weight | none exists in the agent: severity is a closed enum the model assigns | Nearest knob: `config/agent.yaml` line 91 `report.min_severity: medium` moves low findings to the appendix | Yes; say plainly that there is no weight to change |
 | The effort level | `config/profiles/demo.yaml` lines 19-24 (the profile overrides `config/agent.yaml` lines 4-9) | e.g. line 21 `assess: high` | Yes; `high` measured 780.3 s, past the 540 s deadline (`docs/live_runs/QUALITY_COMPARISON.md`) |
 | A disabled tool | `config/tools.yaml` line 6 (search) or 9 (research), or no edit: `--disable-tool mcp-internet-search` | `enabled: false` | Yes; the report header lists the disabled tool |
-| The deadline | `config/profiles/demo.yaml` line 27, or `--deadline N` on the command line | e.g. `deadline_seconds: 300` | Yes; at or below 530 s the three stage limits scale (300 s gives 147 / 258 / 294 s, runbook §4, not rehearsed) |
+| The deadline | `config/profiles/demo.yaml` line 27, or `--deadline N` on the command line | e.g. `deadline_seconds: 300` | Yes; at or below 530 s the three stage limits scale down and above 540 s they scale up, announced (300 s gives 147 / 258 / 294 s, 900 s gives 441 / 775 / 883 s; runbook §4, not rehearsed) |
 
-A longer deadline alone does not lengthen the stages: above 530 s the limits stay at 265 / 465 / 530 s (`agent/sit_review_agent/llm/runtime.py` `effective_stage_limits`), so for more time also raise lines 42-44 of the profile.
+A longer deadline lengthens the stages in proportion: above 540 s the runtime scales the three limits by the deadline over 540 s and announces it (`agent/sit_review_agent/llm/runtime.py` `effective_stage_limits`), so lines 42-44 of the profile need no edit.
 Code changes offered only if time allows: the "two sources agree" stop rule, about 8 lines appended to `agent/sit_review_agent/stop_rules.py`, at most 5 minutes (runbook §4.2 row 2b).
 Declined live, with the sentence to say:
 "Another provider is a new gateway and a new evaluation, so I will show you the seam in `llm/backend.py` instead of changing it under you." (ADR-001)
@@ -143,7 +143,7 @@ Rule: no draft finding by run 265 s (runbook §5), or no review by run 540 s, or
 Does: press Enter on the typed `dra replay runs/demo_backup_sit_v1` in Window 2, then walk `dra explain` and `dra coverage` on it while the live run finishes.
 Says, exactly: "The live run is late, so while it finishes I am showing a recorded run of the SIT sample, replayed offline; it is stamped replayed evidence and it is not a review of your document."
 A partial live review is shown first, with its disclosed cuts, and the replay only for depth (runbook §5).
-A `not_assessed` verdict: show the replay, and rerun during questions without `--profile demo` if time allows, because a longer `--deadline` keeps the demo stage limits.
+A `not_assessed` verdict: show the replay, and rerun during questions with `--profile demo --deadline 900` if time allows; the stage limits scale up to 441 / 775 / 883 s (runbook §5, not rehearsed).
 No internet at all: say the agent cannot review an unseen PDF offline, show both replays, and offer to run their PDF and send the outputs when the network returns (runbook §6).
 
 ## After the session
