@@ -68,7 +68,8 @@
 [00:00] research   | iteration 1/4: 1 open question(s), 30 tool call(s) left
 [00:00] research   | tool round: 1 call(s) (mcp-internet-search__search)
 [00:00] research   | tool round: 1 call(s) (mcp-internet-search__fetch)
-[00:00] research   | OK research stopped: sufficient_evidence (sufficient_evidence); 1/1 answered, 2 tool call(s), 2 ledger entr(y/ies)
+[00:00] research   | WARN research stop sufficient_evidence recorded as no_marginal_gain: 1 of 11 plan question(s) answered, 0 external source(s) cited by a finding
+[00:00] research   | OK research stopped: no_marginal_gain (sufficient_evidence not met (sufficient_evidence): 1 of 11 plan question(s) answered, 0 external source(s) cited by a finding); 1/1 answered, 2 tool call(s), 2 ledger entr(y/ies)
 [00:00] research   | OK done in 0.0s
 [00:00] assess     | OK merged 6 shard(s): 4 findings (1 gap, 1 risk, 1 strength, 1 validation_need); 1 sound areas; coverage: 4 findings, 7 no_issue; evidence: 3 doc and 0 inference entries added to the ledger
 [00:00] assess     | OK done in 0.0s; stage 1 closed, merged in 0.0s

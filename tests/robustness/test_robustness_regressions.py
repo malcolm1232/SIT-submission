@@ -56,6 +56,7 @@ from sit_review_agent.state.decision_registry import DecisionRegistry
 from sit_review_agent.state.evidence_ledger import EvidenceLedger
 from sit_review_agent.state.run_state import RunState
 from sit_review_agent.states import PHASE_ORDER, PhaseName
+from sit_review_agent.stop_rules import NO_EXTERNAL_QUESTIONS
 from sit_review_agent.tools.faults import FaultSchedule
 from sit_review_agent.tools.gateway import PolicyToolGateway
 from sit_review_agent.tools.mcp_client import find_layer
@@ -287,8 +288,10 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
     else:
         assert f"{stage}: answer truncated twice at the output cap" in progress
     stop = report["stop_reason"]                     # research's own stop reason, never a deadline
-    assert stop["code"] == truncation_controls["stop_reason"]["code"] and "deadline" not in stop["detail"]
-    if stage != "plan":                              # a code-built plan has no external question
+    assert "deadline" not in stop["detail"]
+    if stage == "plan":                              # a code-built plan has no external question: research
+        assert (stop["code"], stop["detail"]) == ("sufficient_evidence", NO_EXTERNAL_QUESTIONS)  # skipped (#40)
+    else:
         assert stop == truncation_controls["stop_reason"]
 
     if stage == "assess":
