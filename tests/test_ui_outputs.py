@@ -684,6 +684,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     pg, ctx, base, runs, fake, state = browser_page
     pg.goto(base + "/?run=ui_flow_1")
     pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     heads = pg.locator("#outputs h3").all_inner_texts()
     assert heads == ["Download", "Email", "Share"]
     # 1. Download: the HTML file saves under its name; "Open it in a new tab" shows the same review.
@@ -724,6 +725,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     state.bind_host, state.lan_ip = "0.0.0.0", lambda: "192.168.1.23"
     pg.reload()
     pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     pg.click("#share-btn")
     assert pg.locator("#share-line").inner_text() == f"http://192.168.1.23:{state.port}/?run=ui_flow_1"
     assert pg.locator("#share-text").inner_text() == share.SHARE_TEXT
@@ -733,6 +735,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     del os.environ[mail.PASSWORD_ENV]
     pg.goto(base + "/?run=no_mail")
     pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     assert pg.locator("#email-send").is_disabled() and pg.locator("#email-to").is_disabled()
     assert pg.locator("#email-help").inner_text().startswith(mail.NOT_CONFIGURED + " (")
 
