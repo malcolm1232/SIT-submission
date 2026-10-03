@@ -30,7 +30,7 @@ and spend chat budget; that is the documented limitation.
 from __future__ import annotations
 
 import ipaddress
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -41,7 +41,7 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from sit_review_agent.ui import chat, events, export, mail, rundata
+from sit_review_agent.ui import chat, events, export, mail, rundata, share
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -88,6 +88,11 @@ class UIState:
     poll_s: float = 0.25
     smtp: mail.SmtpConfig | None = None
     smtp_detail: str = ""
+    bind_host: str = "127.0.0.1"
+    port: int = 8765
+    #: ``--runs-dir`` / ``--config`` as the server was started, repeated in the share restart line.
+    ui_args: list[str] = field(default_factory=list)
+    lan_ip: Callable[[], str | None] = share.lan_ipv4
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -263,7 +268,9 @@ def build_app(state: UIState) -> Starlette:
         rd = run_dir_of(request)
         if rd is None:
             return _err(404, "No such run.")
-        return _json({"email": mail.status(state.smtp, state.smtp_detail)})
+        return _json({"email": mail.status(state.smtp, state.smtp_detail),
+                      "share": share.share_info(bind_host=state.bind_host, port=state.port, run_id=rd.name,
+                                                ui_args=state.ui_args, lan_ip=state.lan_ip)})
 
     async def run_email(request: Request) -> Response:
         from starlette.concurrency import run_in_threadpool
@@ -414,5 +421,8 @@ def serve(*, host: str, port: int, runs_dir: Path | None, config_path: Path | No
 
     state = build_state(runs_dir=runs_dir, config_path=config_path)
     state.runs_dir.mkdir(parents=True, exist_ok=True)
+    state.bind_host, state.port = host, port
+    state.ui_args = [*(["--runs-dir", str(runs_dir)] if runs_dir is not None else []),
+                     *(["--config", str(config_path)] if config_path is not None else [])]
     echo(f"SIT review UI on http://{host}:{port}/  (runs: {state.runs_dir}; Ctrl-C stops the server, not the runs)")
     uvicorn.run(build_app(state), host=host, port=port, log_level="warning")

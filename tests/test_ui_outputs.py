@@ -387,3 +387,60 @@ def test_a_refused_login_or_a_missing_starttls_is_logged_as_failed(flow_runs: Pa
     rows = [json.loads(ln) for ln in (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).read_text().splitlines()]
     assert [r["result"] for r in rows] == ["failed", "failed"]
     assert all(r["error"] and PASSWORD not in r["error"] for r in rows)
+
+
+# ------------------------------------------------------------------ item 3: the share link on this network
+
+
+def test_a_loopback_server_shows_the_restart_line_not_a_link(flow_runs: Path) -> None:
+    from sit_review_agent.ui import share
+
+    called: list[int] = []
+    state = make_state(flow_runs, bind_host="127.0.0.1", port=8771, lan_ip=lambda: called.append(1) or "10.1.2.3")
+    s = TestClient(build_app(state)).get("/runs/ui_flow_1/outputs").json()["share"]
+    assert s == {"mode": "loopback", "url": None, "text": share.LOOPBACK_TEXT,
+                 "restart": "dra ui --host 0.0.0.0 --allow-remote --port 8771"}
+    assert called == []                                # no address is looked up for a loopback server
+    state = make_state(flow_runs, bind_host="localhost", port=8765, ui_args=["--runs-dir", "my runs"])
+    s = TestClient(build_app(state)).get("/runs/ui_flow_1/outputs").json()["share"]
+    assert s["restart"] == "dra ui --host 0.0.0.0 --allow-remote --port 8765 --runs-dir 'my runs'"
+
+
+def test_a_remote_server_shows_the_page_address_on_this_network(flow_runs: Path) -> None:
+    from sit_review_agent.ui import share
+
+    assert share.SHARE_TEXT == ("Anyone on this network can open this link while this laptop serves it; there is no "
+                                "login, and the link dies when the server stops.")
+    state = make_state(flow_runs, bind_host="0.0.0.0", port=8771, lan_ip=lambda: "192.168.1.23")
+    s = TestClient(build_app(state)).get("/runs/ui_flow_1/outputs").json()["share"]
+    assert s == {"mode": "network", "url": "http://192.168.1.23:8771/?run=ui_flow_1", "text": share.SHARE_TEXT,
+                 "restart": None}
+    state = make_state(flow_runs, bind_host="10.0.0.5", port=9000, lan_ip=lambda: "192.168.1.23")
+    s = TestClient(build_app(state)).get("/runs/ui_flow_1/outputs").json()["share"]
+    assert s["url"] == "http://10.0.0.5:9000/?run=ui_flow_1"
+    state = make_state(flow_runs, bind_host="0.0.0.0", port=8771, lan_ip=lambda: None)
+    s = TestClient(build_app(state)).get("/runs/ui_flow_1/outputs").json()["share"]
+    assert s["mode"] == "no_address" and s["url"] is None and s["text"] == share.NO_ADDRESS_TEXT
+
+
+def test_the_lan_address_is_a_non_loopback_ipv4_or_none() -> None:
+    import ipaddress
+
+    from sit_review_agent.ui import share
+
+    ip = share.lan_ipv4()
+    assert ip is None or (ipaddress.ip_address(ip).version == 4 and not ipaddress.ip_address(ip).is_loopback)
+
+
+def test_serve_hands_its_host_port_and_arguments_to_the_page(monkeypatch, tmp_path: Path) -> None:
+    import uvicorn
+
+    from sit_review_agent.ui import server
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: seen.update(state=app.state.ui, **kw))
+    runs = tmp_path / "runs"
+    server.serve(host="0.0.0.0", port=8799, runs_dir=runs, config_path=None, allow_remote=True,
+                 echo=lambda s: None)
+    st = seen["state"]
+    assert (st.bind_host, st.port, st.ui_args) == ("0.0.0.0", 8799, ["--runs-dir", str(runs)])  # type: ignore[attr-defined]
