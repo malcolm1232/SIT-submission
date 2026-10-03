@@ -511,7 +511,8 @@ async def test_a_hash_match_with_another_purpose_diverges(tmp_path: Path) -> Non
     req = _stage_request(PhaseName.ASSESS, "assess-0-s1", "brief for assess-0-s1")
     source = _source(tmp_path, [_recorded(cfg, rd, "llm-0003", req, start=3.6, elapsed=200.0, purpose="assess")])
     gw = ReplayLLMGateway(source, RunDir(tmp_path / "rp").create(), cfg)
-    with pytest.raises(ReplayDivergence, match=r"asked for assess/assess:refusal_retry, the recording has assess/assess"):
+    with pytest.raises(ReplayDivergence,
+                       match=r"asked for assess/assess:refusal_retry, the recording has assess/assess"):
         await gw.call(replace(req, purpose="assess:refusal_retry"))
     assert gw.served == 0
     assert (await gw.call(replace(req, purpose="assess"))).call_id == "llm-0003"

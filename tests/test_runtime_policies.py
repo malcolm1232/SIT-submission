@@ -401,10 +401,9 @@ async def test_an_anthropic_cut_has_no_partial_and_the_shard_degrades_honestly(t
     """Judgement call 2 of the latency verifier: only the claude_code backend salvages a cut stream.
     The Anthropic gateway's cut raises ``LLMDeadlineError`` with no ``partial`` and no measured usage;
     a shard so cut keeps no finding, its criteria are not assessed, and the cut is disclosed."""
-    from test_llm_phases import make_ctx, shard_cfg
-
     from sit_review_agent.models import DegradationType
     from sit_review_agent.phases.assess import AssessPhase
+    from test_llm_phases import make_ctx, shard_cfg
 
     c1 = shard_cfg(base, {"a": ["verifiability", "security_and_privacy"]})
     ctx = make_ctx(tmp_path, c1, {})
