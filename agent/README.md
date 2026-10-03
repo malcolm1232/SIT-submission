@@ -24,8 +24,9 @@ sit-review selftest
 `ingest -> understand -> plan -> research -> assess -> refine -> verify -> report`
 (`states.py`: `PHASE_ORDER`, `EFFORT_KEY`, `PROVENANCE_PHASE`, and the stage tables below).
 
-Latency redesign (2026-10-03, `docs/DECISIONS.md` ADR-011; pending integration of the W1 and W2
-branches, so the code in this tree still runs the sequential order above): stage 1 is concurrent.
+Latency redesign (2026-10-03, `docs/DECISIONS.md` ADR-011; integrated, so the order above is the
+phase numbering, not the run order: `orchestrator.Orchestrator.run` walks `states.STAGE_ORDER`,
+which is ingest, stage 1, refine, verify, report): stage 1 is concurrent.
 `understand`, `plan` and one `assess` call per criterion group (`config/agent.yaml` `assess.shards`,
 four groups) start together after `ingest`; each shard reads only the document and its own criteria,
 and a bounded `research` (effort `low`) starts when `understand` and `plan` are both done. Stage 1

@@ -215,7 +215,7 @@ Also drilled, lower priority: Ctrl-C then `resume` (OPS-04; `--faults OPS-04` in
 ## 8. Talking points for part (a), in order
 
 1. The problem framed as the lab frames it (lab §1.2-1.4): review against objectives; recommend only when justified; explain "no change" when the design is fine.
-2. Architecture: the state machine diagram printed from `agent/sit_review_agent/states.py`; the two gateways; the ledger; the registry of approved decisions; checkpoints (`agent/README.md`, sections "State machine", "Module map" and "The phase contract").
+2. Architecture: `docs/ARCHITECTURE.md` is the document to study for this part (its §13 is a 15-point walkthrough script naming the file to open at each point); the state machine diagram printed from `agent/sit_review_agent/states.py`; the two gateways; the ledger; the registry of approved decisions; checkpoints (`agent/README.md`, sections "State machine", "Module map" and "The phase contract").
 3. Why a custom loop and why all Opus 5.5 (`docs/DECISIONS.md` ADR-001, ADR-002).
 4. How documents are read and quotes anchored (ADR-006, ADR-007).
 5. How it decides to stop researching (`config/stop_rules.yaml`, the stop-reason enum).
