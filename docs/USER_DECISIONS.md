@@ -177,6 +177,15 @@ Row 36 covers the three outputs of a finished review only; this row covers the i
 |---|---|---|---|
 | 39 | How does the day's artefact reach the agent when SIT hands it over as a link rather than a file? | SIT FABLE for the owner, 2026-10-03: a pasted https link on the `dra ui` drop screen is the hand-over path for the day's artefact (the owner's words on 3 Oct 2026: "download link"). The server fetches it before the run starts, with these guards: https only, no user name or password in the link, a host whose every address is public (checked again on each redirect), the URL policy of `config/url_policy.yaml`, at most 50 MB, and a body that must be a PDF (`%PDF-`). | Built in `agent/sit_review_agent/ui/fetch.py` (`MAX_BYTES`, `MAX_REDIRECTS`), which now cites this row; the file is saved under `runs/<id>/ui/input/`, so the command the page shows names it. Known limit, from the module: DNS rebinding between the check and the fetch is not caught. A file dropped or given by USB stays the first path; `docs/DEMO_DAY_SCRIPT.md` names both. |
 
+## 2026-10-03 (the owner, the v2 look of the review page)
+
+Recorded by the UI v2 verifier from the planner's brief.
+Row 40 is not in this file at the time of writing; the number 41 is the one the brief assigned.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 41 | Is the v2 mockup of the review page (the DBSearch idiom: a dark rail, a top bar, a composer at the foot of the review) the look to build? | The owner, 2026-10-03, on the v2 mockup (`docs/design/ui_mockup_v2/frame_1_review.png`, `frame_2_run.png`, `frame_3_finished.png`): "ok it looks good". | The v2 look is the review UI; the v1 look is not kept. Built in `agent/sit_review_agent/ui/static/` (`index.html`, `app.css`, `tokens.css`, `app.js`) and merged with the Delta tab fixes on `s4/final2`; the merged page is shot in `docs/design/ui_mockup_v2/merged_1_review.png`, `merged_2_finished.png` and `merged_3_delta.png`. |
+
 ## 2026-10-03 (the owner, the LangGraph comparison)
 
 Recorded by the verifier of the LangGraph variant from the planner's brief.

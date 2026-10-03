@@ -12,6 +12,7 @@ resource. A replayed run carries the "replayed evidence" stamp, as on the page. 
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from functools import lru_cache
 from html import escape
@@ -38,7 +39,11 @@ def _md() -> MarkdownIt:
 
 @lru_cache(maxsize=1)
 def _css() -> str:
-    return "\n".join((STATIC_DIR / n).read_text(encoding="utf-8") for n in ("tokens.css", "export.css"))
+    """``tokens.css`` without its ``@font-face`` (the page's vendored serif is a file beside it; the export
+    loads nothing, so it falls back to the system serif of the same stack), then ``export.css``."""
+    tokens = (STATIC_DIR / "tokens.css").read_text(encoding="utf-8")
+    tokens = re.sub(r"@font-face\s*\{[^}]*\}\s*", "", tokens)
+    return "\n".join((tokens, (STATIC_DIR / "export.css").read_text(encoding="utf-8")))
 
 
 def export_name(run_id: str) -> str:

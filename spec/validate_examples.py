@@ -127,6 +127,7 @@ ENUM_PAIRS = {
     "source_authority": FD["SourceAuthority"], "stop_reasons": FD["StopReasonCode"],
     "decision_relations": FD["DecisionRelation"], "registry_entry_types": FD["RegistryEntryType"],
     "phases": FD["Phase"], "reassessment_statuses": FD["ReassessmentStatus"],
+    "prior_finding_statuses": FD["PriorFindingStatus"],
     "degradation_types": FD["DegradationType"], "tool_call_statuses": FD["ToolCallStatus"],
     "credit_modes": KD["CreditMode"], "v2_statuses": KD["V2Status"], "splits": KD["Split"], "author_types": KD["AuthorType"],
 }

@@ -65,7 +65,8 @@ from typing import Any
 VERSION = 1
 #: The schema's ``type`` enum, in its order (pinned to the schema file by ``tests/test_ui_events.py``).
 TYPES = (
-    "anchor_repair", "anchors_verified", "answer_unusable", "assess_started", "call_bounded", "call_closed",
+    "anchor_repair", "anchors_verified", "answer_incomplete", "answer_unusable", "assess_started", "call_bounded",
+    "call_closed",
     "call_cut", "call_opened", "call_retry", "call_status", "citations_dropped", "cost_lower_bound",
     "deadline_warning", "declined", "document_ingested", "draft_item", "fault_injected", "fault_schedule",
     "heartbeat", "intent_ready", "interrupted", "mcp_warmup", "milestone", "not_assessed", "phase_done",

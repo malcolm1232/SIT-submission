@@ -49,9 +49,10 @@ def replayed(tmp_path_factory: pytest.TempPathFactory) -> Path:
     root = tmp_path_factory.mktemp("replay_root")
     out = asyncio.run(replay_run(REHEARSAL, run_root=str(root), run_id="rehearsal_replay", pdf=REHEARSAL_PDF))
     # A record replays exactly at its own commit; later code that rewrites merged-away finding IDs in
-    # report text (finding_refs.py) may change those text fields and nothing else.
+    # report text (finding_refs.py) may change those text fields and nothing else; the delta table
+    # (``prior_findings``, 2026-10-03) is new, and empty for this full review.
     assert out.report_md is not None and not out.message.startswith("replay failed"), out.message
-    assert all(re.fullmatch(r"\$\.(findings|sound_areas)\[\d+\]\.(statement|why_sound)", d)
+    assert all(re.fullmatch(r"\$\.(findings|sound_areas)\[\d+\]\.(statement|why_sound)|\$\.prior_findings", d)
                for d in out.differences), out.differences
     return Path(out.run_dir)
 

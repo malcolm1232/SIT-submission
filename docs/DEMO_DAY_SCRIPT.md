@@ -75,14 +75,14 @@ If the evaluators interrupt with questions, drop points 6, 13 and 14 first; they
 
 ## S+09:00 to S+19:00: the live run on SIT's artefact
 
-S+09:00, opens: browser tab 1, the drop screen.
+S+09:00, opens: browser tab 1, the Review page (the rail's first entry; the drop zone is its centre).
 Does: drop their PDF on the drop zone, or paste their https link (`docs/USER_DECISIONS.md` #39: https only, public hosts, URL policy, at most 50 MB, must be a PDF).
 Does: look at the title page and revision history; if it is an updated SIT design, go to the re-assessment block now and use this slot for it.
 Does: choose profile `demo`, leave tools on, press Start review at about S+09:30 (run 0:00); the page shows the equivalent command.
 Window 2: type `dra replay runs/demo_backup_sit_v1` and leave it unstarted (runbook §5).
 Says: "The agent never saw this file; the page is the same `dra review` subprocess, so nothing here is outside the evaluated agent."
 S+09:30 to S+13:55 (run 0:00 to 4:25, stage 1), points at the shard tracks: "Design content and research are kept apart; the four assessors read only the document and their own criteria, so they do not wait for the plan."
-S+10:41 to S+11:35 (run 71 s to about 125 s): the first draft finding arrives in the right column, marked draft and unverified; say "IDs, ranks and severities can still change in refine."
+S+10:41 to S+11:35 (run 71 s to about 125 s): the first draft finding arrives in the right column under the amber "draft, unverified" pill, and the rail's Runs entry shows the stage and the run clock; say "IDs, ranks and severities can still change in refine."
 While research runs, name its stop reason when it shows; on the lab sample it stopped after one of four iterations (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Tools").
 S+13:55 to S+17:15 (run 265 to 465 s, merge and refine): "The deadline is enforced inside each model call, so one slow call cannot take the report with it."
 S+15:52 to S+16:38 (run 382 to 428 s, the two measured runs): the review appears; it must appear by S+18:30 (run 540 s) at the latest.
@@ -95,7 +95,7 @@ If it fails: see the fallback block; the trigger is no draft finding by run 265 
 
 ## S+19:00 to S+27:00: the re-assessment of their updated artefact
 
-S+19:00, opens: the drop screen.
+S+19:00, opens: the Review page (Review in the rail).
 Does: drop their updated PDF as the document and the version you reviewed as "previous version" (the run gets `--v1`), profile `demo`, Start review at about S+19:30.
 CLI equivalent if the page fails: `dra review inbox/<updated>.pdf --profile demo --previous runs/sit_v1_frozen` for an update of the SIT sample (runbook §5).
 Says: "This is the brief's re-assessment case: the agent takes the updated version and the earlier review and says what changed."

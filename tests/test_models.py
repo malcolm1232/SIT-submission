@@ -84,6 +84,7 @@ def _schema_enum(name: str) -> set[str]:
     ("DecisionRelation", m.DecisionRelation, "decision_relations"),
     ("RegistryEntryType", m.RegistryEntryType, "registry_entry_types"), ("Phase", m.ProvenancePhase, "phases"),
     ("ReassessmentStatus", m.ReassessmentStatus, "reassessment_statuses"),
+    ("PriorFindingStatus", m.PriorFindingStatus, "prior_finding_statuses"),
     ("DegradationType", m.DegradationType, "degradation_types"),
     ("ToolCallStatus", m.ToolCallStatus, "tool_call_statuses"),
 ])

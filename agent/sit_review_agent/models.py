@@ -159,6 +159,17 @@ class ReassessmentStatus(StrEnum):
     RESOLVED = "resolved"
 
 
+class PriorFindingStatus(StrEnum):
+    # The one status every finding of the previous review gets in a delta review
+    # (``Review.prior_findings``; lab §1.5). ``new_in_update`` is not one: it belongs to a finding of
+    # this review that the previous review did not have. (A comment, not a docstring: the enum's
+    # docstring would be sent to the model as a schema description.)
+    RESOLVED = "resolved"
+    PARTIALLY_ADDRESSED = "partially_addressed"
+    STILL_OPEN = "still_open"
+    WITHDRAWN_ON_REASSESSMENT = "withdrawn_on_reassessment"
+
+
 class DegradationType(StrEnum):
     TOOL_UNAVAILABLE = "tool_unavailable"
     TOOL_ERROR = "tool_error"
@@ -331,14 +342,48 @@ class Provenance(SpecModel):
 
 
 class Reassessment(SpecModel):
+    """``prior_finding_id`` is the finding's ID in the previous review (its ``prior_id``), beside its
+    own ``Finding.id`` in this one; the two numberings are independent."""
+
     prior_finding_id: FindingId | None
     status: ReassessmentStatus
     note: str | None
+    #: A ``new_in_update`` finding anchored in a section the update changed (computed by code from the
+    #: two canonical texts, never by the model). Optional in the schema: reports before 2026-10-03 lack it.
+    regression: bool = False
 
     @model_validator(mode="after")
     def _prior_needed(self) -> Reassessment:
         if self.status is not ReassessmentStatus.NEW_IN_UPDATE and self.prior_finding_id is None:
             raise ValueError(f"reassessment status {self.status} needs prior_finding_id")
+        if self.regression and self.status is not ReassessmentStatus.NEW_IN_UPDATE:
+            raise ValueError("only a new_in_update finding can be a regression")
+        return self
+
+
+class PriorFindingEntry(SpecModel):
+    """One row of the delta table (``Review.prior_findings``), keyed on the previous review's
+    finding ID. ``finding_ids`` are the findings of this review that carry it forward
+    (``reassessment.prior_finding_id``); empty for a prior finding resolved or withdrawn without a
+    successor, or not re-examined (``re_examined`` false: recorded as ``still_open`` by code and
+    disclosed as a degradation)."""
+
+    prior_id: FindingId
+    prior_title: str
+    status: PriorFindingStatus
+    finding_ids: list[FindingId]
+    note: str | None
+    re_examined: bool
+
+    @model_validator(mode="after")
+    def _entry_rules(self) -> PriorFindingEntry:
+        if self.status is PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT:
+            if not (self.note or "").strip():
+                raise ValueError(f"{self.prior_id}: withdrawn_on_reassessment needs a one-line reason in note")
+            if self.finding_ids:
+                raise ValueError(f"{self.prior_id}: a withdrawn prior finding has no successor finding")
+        if not self.re_examined and (self.status is not PriorFindingStatus.STILL_OPEN or self.finding_ids):
+            raise ValueError(f"{self.prior_id}: a prior finding not re-examined is still_open with no successor")
         return self
 
 
@@ -742,6 +787,34 @@ class Review(SpecModel):
     limitations: list[Limitation]
     stop_reason: StopReason
     run_manifest: RunManifest
+    #: Delta reviews: one entry per finding of the previous review (INV-13 checks the set against that
+    #: review). Optional in the schema: reports before 2026-10-03 lack it; empty in a full review.
+    prior_findings: list[PriorFindingEntry] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _prior_table_rules(self) -> Review:
+        if not self.prior_findings:
+            return self
+        if self.metadata.review_mode is not ReviewMode.DELTA:
+            raise ValueError("full review must have no prior_findings")
+        seen: set[str] = set()
+        for e in self.prior_findings:
+            if e.prior_id in seen:
+                raise ValueError(f"prior finding {e.prior_id} has more than one status")
+            seen.add(e.prior_id)
+        carried = {f.id: f.reassessment.prior_finding_id for f in self.findings
+                   if f.reassessment is not None and f.reassessment.prior_finding_id is not None
+                   and f.reassessment.status is not ReassessmentStatus.NEW_IN_UPDATE}
+        listed: dict[str, str] = {}
+        for e in self.prior_findings:
+            for fid in e.finding_ids:
+                if carried.get(fid) != e.prior_id:
+                    raise ValueError(f"prior finding {e.prior_id} lists {fid}, which does not carry it forward")
+                listed[fid] = e.prior_id
+        missing = sorted(fid for fid, pid in carried.items() if pid in seen and fid not in listed)
+        if missing:
+            raise ValueError(f"findings {', '.join(missing)} carry a prior finding forward but are not in its entry")
+        return self
 
     @model_validator(mode="after")
     def _delta_rules(self) -> Review:

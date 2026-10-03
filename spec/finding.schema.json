@@ -19,6 +19,7 @@
     "RegistryEntryType": {"enum": ["approved_decision", "pending_decision", "constraint", "requirement"]},
     "Phase": {"enum": ["understand", "assess", "research", "verify", "revise", "delta_review"]},
     "ReassessmentStatus": {"enum": ["new_in_update", "still_open", "partially_addressed", "resolved"]},
+    "PriorFindingStatus": {"enum": ["resolved", "partially_addressed", "still_open", "withdrawn_on_reassessment"]},
     "DegradationType": {"enum": ["tool_unavailable", "tool_error", "model_fallback", "ocr_used", "input_degraded", "budget_or_deadline_hit", "other"]},
     "ToolCallStatus": {"enum": ["ok", "error", "timeout", "blocked"]},
 
@@ -128,11 +129,35 @@
       "properties": {
         "prior_finding_id": {"anyOf": [{"$ref": "#/$defs/FindingId"}, {"type": "null"}]},
         "status": {"$ref": "#/$defs/ReassessmentStatus"},
-        "note": {"type": ["string", "null"]}
+        "note": {"type": ["string", "null"]},
+        "regression": {"type": "boolean", "description": "A new_in_update finding anchored in a section the update changed; computed by code from the two canonical texts. Optional: reports before 2026-10-03 lack it (read as false)."}
       },
       "allOf": [
         {"if": {"properties": {"status": {"enum": ["still_open", "partially_addressed", "resolved"]}}},
-         "then": {"properties": {"prior_finding_id": {"$ref": "#/$defs/FindingId"}}}}
+         "then": {"properties": {"prior_finding_id": {"$ref": "#/$defs/FindingId"}}}},
+        {"if": {"properties": {"regression": {"const": true}}, "required": ["regression"]},
+         "then": {"properties": {"status": {"const": "new_in_update"}}}}
+      ]
+    },
+
+    "PriorFindingEntry": {
+      "type": "object",
+      "description": "One row of the delta table: the one status of one finding of the previous review, keyed on its ID there (prior_id). finding_ids are the findings of this review that carry it forward (reassessment.prior_finding_id). re_examined false = recorded as still_open by code and disclosed as a degradation.",
+      "additionalProperties": false,
+      "required": ["prior_id", "prior_title", "status", "finding_ids", "note", "re_examined"],
+      "properties": {
+        "prior_id": {"$ref": "#/$defs/FindingId"},
+        "prior_title": {"type": "string"},
+        "status": {"$ref": "#/$defs/PriorFindingStatus"},
+        "finding_ids": {"type": "array", "items": {"$ref": "#/$defs/FindingId"}},
+        "note": {"type": ["string", "null"]},
+        "re_examined": {"type": "boolean"}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "withdrawn_on_reassessment"}}},
+         "then": {"properties": {"note": {"type": "string", "pattern": "\\S"}, "finding_ids": {"maxItems": 0}}}},
+        {"if": {"properties": {"re_examined": {"const": false}}},
+         "then": {"properties": {"status": {"const": "still_open"}, "finding_ids": {"maxItems": 0}}}}
       ]
     },
 
@@ -408,7 +433,9 @@
           "items": {"type": "object", "additionalProperties": false, "required": ["text", "degradation_ids"],
             "properties": {"text": {"$ref": "#/$defs/NonEmpty"}, "degradation_ids": {"type": "array", "items": {"$ref": "#/$defs/DegradationId"}}}}},
         "stop_reason": {"$ref": "#/$defs/StopReason"},
-        "run_manifest": {"$ref": "#/$defs/RunManifest"}
+        "run_manifest": {"$ref": "#/$defs/RunManifest"},
+        "prior_findings": {"type": "array", "items": {"$ref": "#/$defs/PriorFindingEntry"},
+          "description": "Delta reviews: exactly one entry per finding of the previous review (INV-13 checks the set against that review; prior_id unique). Empty in a full review. Optional: reports before 2026-10-03 lack it."}
       },
       "allOf": [
         {"$comment": "Delta reviews (lab §1.5) need the prior review, the prior document and a reassessment on every finding; full reviews have none (verify_spec edit E6).",
@@ -420,7 +447,8 @@
          "else": {"properties": {
            "metadata": {"properties": {"prior_review_id": {"type": "null"},
                                        "documents": {"not": {"contains": {"properties": {"role": {"const": "prior_version"}}, "required": ["role"]}}}}},
-           "findings": {"items": {"properties": {"reassessment": {"type": "null"}}}}}}},
+           "findings": {"items": {"properties": {"reassessment": {"type": "null"}}}},
+           "prior_findings": {"maxItems": 0}}}},
         {"$comment": "A review whose verdict is not_assessed has no findings and no sound areas, and discloses why in a degradation (cited by a limitation, INV-07).",
          "if": {"properties": {"verdict": {"properties": {"label": {"const": "not_assessed"}}, "required": ["label"]}}, "required": ["verdict"]},
          "then": {"properties": {"findings": {"maxItems": 0}, "sound_areas": {"maxItems": 0},
