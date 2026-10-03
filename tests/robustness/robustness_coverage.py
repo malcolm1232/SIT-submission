@@ -322,8 +322,10 @@ CONCURRENT: dict[str, Coverage] = {
                  "assessed, the findings of shards 0, 2 and 3 survive, verdict assessed, report, exit 0",
                  schedule=True),
     "LLM-16": _o("demo profile: the refine call hangs: cut at stage_limits_s.refine_end (465 s), not retried; the "
-                 "merged findings stand, ordered by severity then confidence, none revised; the fallback disclosed "
-                 "as budget_or_deadline_hit naming refine; verdict assessed, report, exit 0", schedule=True),
+                 "merged findings stand, ordered by severity then confidence, none revised (the hang returned no "
+                 "revision; revisions a cut call already returned are applied, tests/test_refine_salvage.py); the "
+                 "fallback disclosed as budget_or_deadline_hit naming refine; verdict assessed, report, exit 0",
+                 schedule=True),
     "LLM-17": _o("demo profile: research's second model call hangs: cut at stage_limits_s.stage_1_end (265 s), not "
                  "retried; stop reason deadline; the ledger keeps the first round's external evidence and replays "
                  "exactly; the cut disclosed as budget_or_deadline_hit naming research; the assess shards' findings "
