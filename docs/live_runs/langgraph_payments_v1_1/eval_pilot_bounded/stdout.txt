@@ -1,0 +1,33 @@
+17:36:13 start
+WARNING: eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim
+EXPLORATORY: this run was started with --exploratory (eval/prereg.yaml LC12 override); these scores are exploratory and may not be reported as confirmatory
+the agent run's cost is a lower bound: unrecorded_usage: 1 model call with unrecorded usage (llm-0002 assess attempt 0, deadline cut, 263.212 s); their tokens and cost are not in the totals, so the recorded cost and tokens are lower bounds
+{
+ "status": "pilot_unfrozen",
+ "exploratory": true,
+ "exploratory_note": "EXPLORATORY: this run was started with --exploratory (eval/prereg.yaml LC12 override); these scores are exploratory and may not be reported as confirmatory",
+ "outside_preregistered_analysis": false,
+ "scores_json": "runs/langgraph_payments_v1_1/eval_pilot_bounded/scores.json",
+ "scores_md": "runs/langgraph_payments_v1_1/eval_pilot_bounded/scores.md",
+ "headline": {
+  "recall": 0.8571428571428571,
+  "lenient_recall": 1.0,
+  "precision_adjudicated": 0.9444444444444444,
+  "severity_weighted_recall": 0.8666666666666667,
+  "hallucinated_finding_rate": 0.0
+ },
+ "cost": {
+  "usage_completeness": "unrecorded",
+  "cost_usd": null,
+  "cost_usd_lower_bound": 4.714814,
+  "calls_with_unrecorded_usage": 1
+ },
+ "calls": {
+  "calls_total": 86,
+  "calls_live": 86,
+  "calls_failed": 0,
+  "cost_usd_reported": 9.44575
+ }
+}
+exit 0
+17:42:26 end
