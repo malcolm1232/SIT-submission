@@ -43,7 +43,8 @@ Rules kept from the earlier refine:
   names each missing prior ID (``prompts/refine.md`` is unchanged: the rule reaches the model through
   the field's schema description and that correction, since a prompt edit would stop the replay of
   committed runs); what the repair answer still leaves out is filled in by the report as
-  ``still_open``, "not re-examined", disclosed (``delta.build_prior_table``). The usable statuses go to ``state.prior_statuses``.
+  ``still_open``, "not re-examined", disclosed (``delta.build_prior_table``). The usable statuses go
+  to ``state.prior_statuses``.
 
 Fallback (cut by the stage limit or the deadline, truncated twice, declined twice, or revisions that
 still cannot be applied after the repair call): the merged findings stay as merged, ranked by
