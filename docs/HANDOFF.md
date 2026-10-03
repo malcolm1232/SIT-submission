@@ -57,12 +57,16 @@ What stays the owner's: the scored pilot and the with-tools rehearsal (which wai
 
 ## Owner tasks on the critical path (cannot be delegated)
 
-1. Run `scripts/probe_mcp_servers.py` on a laptop (see `scripts/README.md`) and
-   commit the redacted `mcp_probe_results.json` under `research/robustness/`.
+1. DONE 2026-10-03: the owner ran `scripts/probe_mcp_servers.py` on his Mac at 11:24.
+   Results: `research/robustness/mcp_probe_results.redacted.json` (the raw
+   `mcp_probe_results.json` name stays gitignored); findings:
+   `research/robustness/mcp_probe_findings.md`. `Authorization: Bearer` works on all
+   four servers and is now `config/tools.yaml` `auth_header`.
 2. Report which API keys exist (Anthropic / OpenAI / Google) so the judge branch
    in `docs/DECISIONS.md` ADR-003 can be closed.
-3. Write the human answer key for the SIT Memory Platform PDF BEFORE any agent
-   run on it, per `eval/human_labelling_protocol.md`.
+3. SUPERSEDED 2026-10-03 (`docs/USER_DECISIONS.md` #35): there is no answer key
+   for the SIT Memory Platform PDF; it is a demo and rehearsal document, and the agent
+   may run on it.
 4. Approve the Tier A budget in `docs/BUDGET.md` §6.
 
 ## Open P0/P1 items

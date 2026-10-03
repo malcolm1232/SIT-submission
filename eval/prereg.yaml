@@ -72,7 +72,7 @@ analysis_sets:
   heldout_only: The 2 S-heldout documents (28 flaws), runs of the frozen agent (line A-4).
   dev_only: The 3 S-dev v1 documents (42 flaws), runs of the frozen agent (line A-3). In-sample - the agent was tuned on these.
   v2_pairs: The 3 S-dev v2 documents (line A-5); diff key from v2_status per flaw.
-  real_dev: The SIT sample artefact v1 (line A-6) and the owner-written SIT v2 fixture (line A-7).
+  real_dev: Withdrawn 2026-10-03 (UD #35, deviations entry 12). The SIT sample has no answer key; it is a demo and rehearsal document, not an evaluation item. Formerly lines A-6 and A-7.
 
 hypotheses:
   - id: H1
@@ -172,6 +172,7 @@ hypotheses:
       from it (MR §5, L32).
   - id: H9
     family: exploratory
+    status: withdrawn 2026-10-03 (UD #35, deviations entry 12) - the owner writes no SIT key, so nothing is tested or reported under H9
     claim: On the SIT document the agent finds most of what the owner finds, and the owner finds things the model family misses.
     metric: Recall   # against the owner's independent SIT key, matched by the validated matcher and checked by the owner
     comparison: FULL (3 runs) vs the owner-written SIT key (descriptive, n = 1 document)
@@ -284,7 +285,7 @@ secondary_metrics:
     - name: claimed_fix_verification_accuracy
       source: FE R-05
       definition: Share of "fixed per review" claims in the owner-written SIT v2 that the agent correctly classifies as made, partly made or not made.
-      status: exploratory, SIT v2 only, counts reported
+      status: withdrawn 2026-10-03 with the SIT v2 fixture (UD #35, deviations entry 12)
   blocked_metrics:   # reported as BLOCKED, not as zero
     - name: Action-type accuracy
       reason: expected_disposition is not authored in any key (spec C8)
@@ -354,10 +355,8 @@ eval_tiers:
     access_budget: 1 evaluation, after this file is frozen
   real_dev:
     split_name: Real-dev
-    items:
-      - SIT sample artefact v1 (not committed; ADR-005)
-      - SIT v2 fixture written by the owner to FE R-06, with a gold diff written before any agent run on it
-    use: descriptive only (H9, H7 extras); never a generalisation claim (MR L39)
+    items: []   # withdrawn 2026-10-03 (UD #35, deviations entry 12); the SIT sample is a demo and rehearsal document
+    use: none; never a generalisation claim (MR L39)
     leakage_rule: distinctive SIT terms never appear in prompts (MR R5)
   rehearsal_pool:
     items: [AI-platform-family rehearsal document (Tier B; FE R-07)]
@@ -411,7 +410,7 @@ conditions:
   tier_A:
     - id: FULL
       description: The full agent, frozen
-      documents: keyed_frozen, v2_pairs (fresh and with-context), real_dev
+      documents: keyed_frozen, v2_pairs (fresh and with-context)
       predicted_outcome: Reference
     - id: B0
       description: Single call, no tools, whole document plus the same task prompt and output schema (MR §4); the single call is the assess brief with all criteria in one call (with FULL's assess split into concurrent shards, ADR-011; deviations entry 11)
@@ -597,7 +596,7 @@ minimum_detectable_effect:
 # ----------------------------------------------------------------------------------
 stop_rule:
   done_when:
-    - Every Tier A scored cell (EVAL_PLAN.md lines A-3 to A-7) has k = 3 launched runs, counted intention-to-treat.
+    - Every Tier A scored cell (EVAL_PLAN.md lines A-3 to A-5; A-6 and A-7 withdrawn, deviations entry 12) has k = 3 launched runs, counted intention-to-treat.
     - H10 has a recorded outcome (validated, tentative, or failed with the protocol §7 fallback applied).
     - Owner adjudication of S-heldout VALID_UNPLANTED and HALLUCINATED labels is complete.
     - The leakage audit and the runtime access scan are recorded.
@@ -649,7 +648,6 @@ reporting:
     - Efficiency (MR Table 9) - cost, tokens, tool calls, wall time median and IQR over fully accounted runs, with the count and share of runs excluded for unrecorded usage, a lower-bound median over all runs, and the share of runs with any cut model call (intention-to-treat); stop reasons; for FULL runs, the share with any deadline cut (a stage limit or the run deadline cut a shard, research, refine or the verdict call) and the count of salvaged assess shards (cut, findings kept), both intention-to-treat (ADR-011, deviations entry 11)
     - Adjudication counts (MR Table 10)
     - Run outcome counts per condition, ITT and per-protocol, including every crashed or re-launched run
-    - SIT document comparison with the owner's key - both-found, owner-only, model-only items
     - The rater statement and L34 disclosure (human_labelling_protocol.md §9)
     - The list of Tier C items as limitations
   wording_rules:

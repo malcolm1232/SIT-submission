@@ -23,6 +23,14 @@ The Tier A figures in §1.2 are not recomputed here; `docs/BUDGET.md` is redone 
 
 ## 1. Tier A: minimum research-grade core (must finish before submission)
 
+**Real-dev withdrawn (2026-10-03, `docs/USER_DECISIONS.md` #35).**
+The owner: "lets assume there is not answer key" for the SIT Memory Platform PDF.
+The SIT sample is a demo and rehearsal document, not an evaluation item, and the agent may run on it.
+Tier A rests on the three S-dev synthetic items and the two sealed S-heldout items.
+Lines A-6 and A-7, tasks T1 and T8, claim CL9 and hypothesis H9 below are withdrawn and are kept in the tables only as a record; the T1 gate in the schedule (§1.6) and in §1.7 no longer blocks any run.
+The Tier A run count and cost in §1.2 still include A-6 and A-7 (6 runs); the budget lane recomputes them (`docs/BUDGET.md`).
+The pre-registration follows in `eval/prereg_deviations.md` entry 12.
+
 ### 1.1 What is in it
 
 | Area | Tier A content |

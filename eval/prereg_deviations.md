@@ -335,3 +335,27 @@ already happened (none had for entries made before the freeze).
   default of #1, and the owner may reverse it).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). The pilot scores under
   `docs/live_runs/live_cc_opus_payments_v1/` are exploratory (ruling #26) and describe the old agent.
+
+## 12. 2026-10-03: real-dev withdrawn (no answer key for the SIT sample)
+
+- **Fields:** `analysis_sets.real_dev`, `hypotheses` H9 (a new `status` line), the `claimed_fix_verification_accuracy`
+  metric `status`, `splits.real_dev.items` and `use`, `conditions.tier_A` FULL `documents`, `stop_rule.done_when`
+  (first item), and the reporting list (the SIT comparison item removed).
+- **Old text:** `real_dev: The SIT sample artefact v1 (line A-6) and the owner-written SIT v2 fixture (line A-7).`;
+  H9 had no `status`; `status: exploratory, SIT v2 only, counts reported`; `splits.real_dev.items` listed
+  `SIT sample artefact v1 (not committed; ADR-005)` and `SIT v2 fixture written by the owner to FE R-06, with a gold
+  diff written before any agent run on it`, with `use: descriptive only (H9, H7 extras); never a generalisation claim
+  (MR L39)`; FULL `documents: keyed_frozen, v2_pairs (fresh and with-context), real_dev`; `Every Tier A scored cell
+  (EVAL_PLAN.md lines A-3 to A-7) has k = 3 launched runs, counted intention-to-treat.`; reporting item `SIT document
+  comparison with the owner's key - both-found, owner-only, model-only items`.
+- **New text:** `real_dev` is marked withdrawn (formerly lines A-6 and A-7); H9 `status: withdrawn 2026-10-03`;
+  the SIT v2 metric `status: withdrawn 2026-10-03 with the SIT v2 fixture`; `splits.real_dev.items: []` with
+  `use: none`; FULL documents `keyed_frozen, v2_pairs (fresh and with-context)`; the stop rule counts lines A-3 to
+  A-5; the reporting item is removed. `eval/EVAL_PLAN.md` carries a note under §1; its tables keep A-6, A-7, T1, T8
+  and CL9 as a record, and the Tier A run count and cost are recomputed by the budget lane.
+- **Reason:** the owner, 2026-10-03, verbatim: "lets assume there is not answer key" for the SIT Memory Platform
+  PDF. Without an owner key there is nothing to score the SIT sample against, so it becomes a demo and rehearsal
+  document, not an evaluation item, and the agent may run on it. Tier A rests on the three S-dev synthetic items and
+  the two sealed S-heldout items.
+- **Decided by:** the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #35, which supersedes #32).
+- **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`; no SIT run was ever scored).
