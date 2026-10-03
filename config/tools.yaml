@@ -1,6 +1,6 @@
 # config/tools.yaml - line numbers pinned by tests/test_config_layout.py
 auth_env: SIT_MCP_API_KEY
-auth_header: X-API-Key            # UNVERIFIED until the laptop probe (audit U1)
+auth_header: Authorization        # sent as "Bearer <key>"; probe 2026-10-03, all four servers
 servers:
   - name: mcp-internet-search
     enabled: true
@@ -16,8 +16,11 @@ servers:
     allow_tools: []
 url_policy: url_policy.yaml
 # ---- Lines 1-17 are pinned (docs/DEMO_DAY_RUNBOOK.md §4.1). Free layout below this line. ----
-# Browser is off by default until the probe shows per-client isolation (fresh_eyes N15).
-# Document intelligence is off: it rejects every input (ADR-006 item 4).
+# Browser stays off: the probe of 2026-10-03 shows ONE global browser session per server, not one
+# per client, and no domain allowlist (fresh_eyes N15; research/robustness/mcp_probe_findings.md).
+# Document intelligence stays off: the probe of 2026-10-03 reached it, but its one sample (plain
+# text, no URI scheme) was rejected ("only file:// and https:// are accepted"), so a real https
+# document has still never been read through it (ADR-006 item 4, not yet refuted).
 connect_timeout_s: 150            # cold-start allowance for initialize (scale-to-zero containers)
 call_timeout_s: 60
 cold_start_retries: 1             # one retry on a cold-start-like failure (timeout, 502/503/504)

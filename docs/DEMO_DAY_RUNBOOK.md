@@ -19,6 +19,7 @@ CLI (one entry point, `dra`, alias of `sit-review`; all built, see `dra --help`)
 - [ ] Fresh tool cassettes recorded on the laptop within the last 7 days for the SIT sample (`--transport record`, servers warm).
 - [ ] Rehearsal log shows the last 3 rehearsals (robustness DEMO-05 on the rehearsal pool, never on Blind) finished inside 10 minutes, and each §4 modification was timed (≤ 3 min config, ≤ 5 min code; audit C23).
 - [ ] Printed one-page cheat sheet: §4 table, §5 command, §7 drills.
+- [ ] Plan to warm all four MCP servers before the slot, not only the two enabled ones. The owner's probe of 2026-10-03 measured cold starts of 34.4 s (internet search), 29.3 s (browser), 39.5 s (research) and 70.1 s (document intelligence), against 0.04 s warm (`research/robustness/mcp_probe_findings.md`). `dra preflight --warm` warms only the servers enabled in `config/tools.yaml`, so a server switched on live in §4 starts cold: either enable it before the T−10 warm-up, or accept up to 70 s of cold start on its first call.
 
 ## 2. Environment checklist (laptop)
 
@@ -85,7 +86,7 @@ Line 6 is the default for runs without `--deadline` or a profile (3600 s since 2
 ```yaml
  1  # config/tools.yaml - line numbers pinned by tests/test_config_layout.py
  2  auth_env: SIT_MCP_API_KEY
- 3  auth_header: X-API-Key            # UNVERIFIED until the laptop probe (audit U1)
+ 3  auth_header: Authorization        # sent as "Bearer <key>"; probe 2026-10-03, all four servers
  4  servers:
  5    - name: mcp-internet-search
  6      enabled: true
@@ -237,4 +238,4 @@ Verified on 2026-10-02 by walking the runbook as the participant (`research/audi
 | `inbox/` and `outputs/lab_session/` directories | §3, §5 | DOCUMENTATION_MAP §2 |
 | The rehearsal pool (not the Blind set) and a rehearsal log | §1 | ADR-004 |
 
-Open points the build must settle: `auth_header` (`X-API-Key` is UNVERIFIED until the laptop probe, audit U1); per-stage effort is kept (settled 2026-10-03: every call is its own conversation and on the `claude_code` backend phases never share a cache entry, ADR-002 amendment note); `max_tokens` is one value in `config/agent.yaml` while the manifest records `max_tokens_by_stage` (apply the single value to every stage, or add per-stage keys **below** line 12 so the pinned lines do not move).
+Open points the build must settle: `auth_header` is settled (`Authorization`, sent as `Bearer <key>`; the owner's probe of 2026-10-03 reached all four servers with it and got HTTP 401 without it, audit U1 closed); per-stage effort is kept (settled 2026-10-03: every call is its own conversation and on the `claude_code` backend phases never share a cache entry, ADR-002 amendment note); `max_tokens` is one value in `config/agent.yaml` while the manifest records `max_tokens_by_stage` (apply the single value to every stage, or add per-stage keys **below** line 12 so the pinned lines do not move).

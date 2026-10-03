@@ -120,10 +120,24 @@ async def test_mcp_cold_start_retry_then_ok() -> None:
     assert [a.error_class for a in res.attempts] == [ToolErrorClass.COLD_START, None]
     assert clock.monotonic() >= 15.0                                       # COLD_RETRY_DELAY_S on the virtual clock
     assert any("waking mcp-internet-search" in e.message for e in progress.events)
-    assert headers[0] == {"X-API-Key": KEY}                                # tools.yaml auth_header
+    assert headers[0] == {"Authorization": f"Bearer {KEY}"}                # tools.yaml auth_header
     assert gw.protocol_versions["mcp-internet-search"] == "2025-11-25"
     again = await gw.call(SEARCH, {"query": "q2"})
     assert again.ok and scripts["mcp-internet-search"]["inits"] == 2       # session reused
+    await gw.aclose()
+
+
+async def test_mcp_auth_header_is_bearer_built_from_the_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The shipped tools.yaml sends ``Authorization: Bearer <SIT_MCP_API_KEY>`` and nothing else
+    (probe 2026-10-03: Bearer answered HTTP 200 on all four servers, no auth got HTTP 401)."""
+    fake = "fake-value-for-the-header-test-0123456789"
+    monkeypatch.setenv("SIT_MCP_API_KEY", fake)
+    c = cfg()
+    assert c.tools.auth_env == "SIT_MCP_API_KEY" and c.tools.auth_header == "Authorization"
+    gw, headers, _ = mcp_gateway({"mcp-internet-search": {}}, FakeClock(), key=None)
+    res = await gw.call(SEARCH, {"query": "q"})
+    assert res.ok
+    assert headers == [{"Authorization": f"Bearer {fake}"}]
     await gw.aclose()
 
 
@@ -211,7 +225,8 @@ def test_classify_exception_shapes() -> None:
 
 
 def asgi_server(gate: dict[str, Any]) -> tuple[Any, Any]:
-    """An in-process MCPServer behind an auth gate (X-API-Key) that can also return a scripted
+    """An in-process MCPServer behind an auth gate (``Authorization: Bearer <key>``, the shape the
+    owner's probe of 2026-10-03 found on all four SIT servers) that can also return a scripted
     status once (``gate["once"]``). Served through httpx2.ASGITransport: no sockets."""
     from mcp.server.mcpserver import MCPServer
 
@@ -228,7 +243,7 @@ def asgi_server(gate: dict[str, Any]) -> tuple[Any, Any]:
         if scope["type"] == "http":
             h = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
             status = None
-            if h.get("x-api-key") != gate["key"]:
+            if h.get("authorization") != f"Bearer {gate['key']}":
                 status = 401
             elif gate.get("once") and (gate["once"][0] != 404 or "mcp-session-id" in h):
                 status = gate.pop("once")[0]
@@ -359,6 +374,12 @@ async def test_policy_url_deny_and_allow_modes() -> None:
     assert "not in url_policy.yaml allow_domains" in check_urls({"url": "https://evil.example/a"}, allow, seen)
     assert check_urls({"query": "no urls here"}, allow, seen) is None    # searches are not fetches
     assert "scheme" in check_urls({"url": "file:///etc/passwd"}, base, seen)
+    # The real fetch tool (probe 2026-10-03: internet-search `fetch_url`) takes a `urls` array;
+    # every element is policed, and read_document's `uri` is a fetch key too.
+    assert "denied" in check_urls({"urls": ["https://docs.vendor.example/limits", "https://evil.example/a"]},
+                                  deny, seen)
+    assert check_urls({"urls": ["https://docs.vendor.example/limits"], "max_chars": 4000}, deny, seen) is None
+    assert "scheme" in check_urls({"uri": "file:///etc/passwd"}, base, seen)
 
 
 async def test_policy_fetch_only_from_results_and_added_query_strings() -> None:
