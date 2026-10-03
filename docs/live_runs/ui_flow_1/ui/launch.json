@@ -1,0 +1,20 @@
+{
+ "run_id": "ui_flow_1",
+ "display": "dra review runs/ui_flow_1/ui/input/design_v1.pdf --profile demo --no-tools --run-id ui_flow_1",
+ "args": [
+  "review",
+  "/Users/malco/Desktop/SIT-wt/uiint/runs/ui_flow_1/ui/input/design_v1.pdf",
+  "--profile",
+  "demo",
+  "--no-tools",
+  "--run-id",
+  "ui_flow_1"
+ ],
+ "started_at": "2026-10-03T04:25:12Z",
+ "pid": 85296,
+ "document": "/Users/malco/Desktop/SIT-wt/uiint/runs/ui_flow_1/ui/input/design_v1.pdf",
+ "document_name": "design_v1.pdf",
+ "v1": null,
+ "profile": "demo",
+ "no_tools": true
+}
