@@ -41,3 +41,7 @@ The fetch itself had already failed on the credential helper (`git: 'credential-
   `llm/runtime.py` said the refine reserve lets "assess keep its time" and its short-deadline warning called the reserve "for assess"; both now say refine.
   `config/stop_rules.yaml` said "Until W1 reads stage_limits_s"; it now says each call is bounded by `stage_limits_s` and the reserve still bounds research.
   Test: `tests/test_runtime_policies.py` asserts the warning names refine, not assess.
+- J (judgement calls):
+  (1) The `await asyncio.sleep(0)` at the top of `call_model`'s loop is documented at the call site with its reason; removing it failed `test_concurrent_scenario_end_to_end[LLM-14]`, `[LLM-15]` and `tests/test_llm_phases.py::test_one_failed_shard_leaves_a_partial_review`; restored from a `cp` backup. Ruled acceptable in production, kept.
+  (2) Test added: `tests/test_runtime_policies.py::test_an_anthropic_cut_has_no_partial_and_the_shard_degrades_honestly` drives a one-shard assess through the Anthropic gateway cut at the deadline: `LLMDeadlineError` with `partial` None and `usage` None, one attempt, the log entry with `usage: null` and no `partial`, no finding, both criteria "not assessed: out of time before assessment (stage 1 limit)", and the cut disclosed naming the shard and the cut call.
+  (3) See D: the validator refuses a move across `no_change`, `prompts/refine.md` rule 3 says to keep the drafted disposition, and `agent/README.md` now labels it a known limitation.

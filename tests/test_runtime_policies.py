@@ -396,6 +396,50 @@ async def test_anthropic_attempt_is_cut_at_the_deadline(tmp_path: Path, base: Ef
     assert msgs.calls == 1                                            # never retried
 
 
+async def test_an_anthropic_cut_has_no_partial_and_the_shard_degrades_honestly(tmp_path: Path,
+                                                                               base: EffectiveConfig) -> None:
+    """Judgement call 2 of the latency verifier: only the claude_code backend salvages a cut stream.
+    The Anthropic gateway's cut raises ``LLMDeadlineError`` with no ``partial`` and no measured usage;
+    a shard so cut keeps no finding, its criteria are not assessed, and the cut is disclosed."""
+    from test_llm_phases import make_ctx, shard_cfg
+
+    from sit_review_agent.models import DegradationType
+    from sit_review_agent.phases.assess import AssessPhase
+
+    c1 = shard_cfg(base, {"a": ["verifiability", "security_and_privacy"]})
+    ctx = make_ctx(tmp_path, c1, {})
+    msgs = _Messages(["hang", "hang"])
+    gw = AnthropicGateway(c1, ctx.run_dir, clock=FakeClock(),
+                          client=SimpleNamespace(messages=msgs, beta=SimpleNamespace(messages=msgs)))
+    lim, _ = deadline(540 - 120 - 0.2, min_attempt=0.05)               # 0.2 s of real time left
+    attach_runtime(gw, lim)
+    ctx.llm = gw
+    seen: list[LLMDeadlineError] = []
+    real = gw.call
+
+    async def call(request: LLMRequest) -> Any:
+        try:
+            return await real(request)
+        except LLMDeadlineError as exc:
+            seen.append(exc)
+            raise
+
+    gw.call = call  # type: ignore[method-assign]
+    await asyncio.wait_for(AssessPhase().run(ctx), 5)
+    [err] = seen
+    assert err.partial is None and err.usage is None and msgs.calls == 1      # no salvage, never retried
+    entry = log(ctx.run_dir)[-1]
+    assert entry["outcome"] == "LLMDeadlineError" and entry["usage"] is None and "partial" not in entry
+    s = ctx.state
+    assert s.finding_drafts == []
+    assert {c.criterion_id: c.note for c in s.coverage} == {
+        c: "not assessed: out of time before assessment (stage 1 limit)" for c in ("verifiability",
+                                                                                  "security_and_privacy")}
+    [d] = [d for d in s.degradations if d.event.startswith("assess shard 1/1 (a) was cut")]
+    assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT and "0 finished finding(s) kept" in d.event
+    assert d.event.endswith(f"(cut call {err.call_id})") and err.call_id
+
+
 async def test_fault_wrapper_hang_is_cut_on_the_run_clock(tmp_path: Path, base: EffectiveConfig) -> None:
     clock = FakeClock()
     inner = FakeGateway({"assess": [FakeResponse(text="late")]}, run_dir=RunDir(tmp_path / "r").create(), clock=clock)
