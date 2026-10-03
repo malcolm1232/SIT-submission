@@ -14,13 +14,21 @@ read from the HEAD blobs, so an uncommitted edit, an untracked file or an ignore
 except the files matched by :data:`RULES`. Every exclusion is logged file by file with its rule
 (the sealed ``eval/blind/`` names are withheld from the log: only a count is printed).
 
+Redaction on the way out: in every text file written (:data:`REDACT_SUFFIXES`), the exporting user's
+home path and every home prefix named in a committed ``effective_config.json`` (a run made on another
+machine names that machine's) become ``~``, and the bare account name (a whole word, as in a scrub list
+or an audit note) becomes ``<account>``. Only counts are printed.
+
 The scan (count-only; a value is never printed, only the rule, the file, the field or line and the
 length): 64-character ``[A-Za-z0-9_-]`` tokens (``hex64`` for pure lower-case hex such as sha256
 digests, ``token64`` otherwise), 32-character hex tokens, ``Bearer`` values, ``sk-`` keys, ``api_key``
 assignments, the word oauth, e-mail addresses, the exporting user's name and any home path,
 claude.ai session links, MCP session id values, and ``scripts/leakage_grep.py`` of the export run
 with the answer keys from HEAD (written to a temporary directory outside the export). A finding fails
-the run (exit 1) unless ``--allow RULE:GLOB`` names it; ``--init-git`` only commits a clean scan.
+the run (exit 1) unless ``--allow RULE:GLOB`` names it; the user's name (``owner-user``) and home path
+(``owner-home``) can never be allowed: the redaction removes them, so a hit is a bug to fix, not a
+finding to accept. ``--init-git`` only commits a clean scan, with the identity the source repository
+commits with.
 
 Exit codes: 0 export good, 1 unallowed scan finding or leakage failure, 2 usage error (dirty
 worktree without ``--allow-dirty``, target not empty or inside the repository, git failure).
@@ -150,6 +158,8 @@ RULES: tuple[Rule, ...] = (
     Rule("answer-keys", "eval/KEY_SIGNOFF.md", _glob("eval/KEY_SIGNOFF.md")),
     Rule("answer-keys", "named key draft", lambda p, _b: p in KEY_DRAFT_FILES),
     Rule("recorded-streams", "tests/fixtures/stream/**", _glob("tests/fixtures/stream/*")),
+    Rule("recorded-streams", "tests/test_stream_fixtures.py (its scrub list names the account; its fixtures are out)",
+         _glob("tests/test_stream_fixtures.py")),
     Rule("recorded-streams", "**/cassettes/** (recorded tool and model responses)",
          _glob("tests/fixtures/cassettes/*", "**/cassettes/*")),
     Rule("transcripts", "docs/transcripts/** (session transcripts and raw subagent logs)",
@@ -182,6 +192,64 @@ def _j(*parts: str) -> str:
     return "".join(parts)
 
 
+# ----------------------------------------------------------------------------------------- redaction
+
+#: Text files whose home paths are rewritten to ``~`` on the way out.
+REDACT_SUFFIXES = frozenset({".json", ".jsonl", ".md", ".yaml", ".yml", ".py", ".log", ".txt", ".toml", ".cfg"})
+
+#: A home prefix as it appears in a committed ``effective_config.json`` (macOS or Linux).
+_HOME_PREFIX = re.compile(("(?:/" + _j("Us", "ers") + "/|/home/)[A-Za-z0-9._\\-]+").encode())
+
+#: The characters that may continue a path segment: a prefix is only replaced at the end of a segment,
+#: so one user's home never eats the start of a longer user name.
+_SEGMENT_END = rb"(?![A-Za-z0-9._\-])"
+
+
+def home_prefixes(entries: Iterable[Entry], home: str | None) -> list[bytes]:
+    """The home paths to redact: ``home`` plus every ``/<Users|home>/<name>`` named in a committed
+    ``effective_config.json`` (longest first, so a longer name is matched before a shorter one it starts with)."""
+    found: set[bytes] = set()
+    if home and home.rstrip("/") not in ("", "/"):
+        found.add(home.rstrip("/").encode())
+    for e in entries:
+        if e.kind == "blob" and PurePosixPath(e.path).name == "effective_config.json":
+            found.update(m.group(0) for m in _HOME_PREFIX.finditer(e.blob))
+    return sorted(found, key=lambda b: (-len(b), b))
+
+
+def redact_home(blob: bytes, prefixes: Iterable[bytes]) -> tuple[bytes, int]:
+    """``blob`` with every prefix (at a segment end) replaced by ``~``, and the number of replacements."""
+    n = 0
+    for pre in prefixes:
+        blob, k = re.subn(re.escape(pre) + _SEGMENT_END, b"~", blob)
+        n += k
+    return blob, n
+
+
+#: What the bare account name becomes in every text file written.
+ACCOUNT_PLACEHOLDER = "<account>"
+
+#: The characters that continue a word: the account name is only matched as a whole word, so ``malc``
+#: never matches inside ``malcolm`` and a name never matches inside a longer identifier.
+_WORD = r"[A-Za-z0-9_]"
+
+
+def _account_rx(user: str) -> re.Pattern[str]:
+    """A pattern matching ``user`` as a whole word in any case (the scan's ``owner-user`` rule)."""
+    return re.compile(rf"(?<!{_WORD}){re.escape(user)}(?!{_WORD})", re.I)
+
+
+def redact_account(blob: bytes, user: str | None) -> tuple[bytes, int]:
+    """``blob`` with every whole-word ``user`` replaced by :data:`ACCOUNT_PLACEHOLDER`, and the number of
+    replacements. Runs after :func:`redact_home`, so a home path is already ``~`` and only the bare name
+    (a scrub list, an audit note, a user name in a log) is left for this pass. No ``user``: unchanged."""
+    if not user:
+        return blob, 0
+    return re.subn(_account_rx(user).pattern.encode(), ACCOUNT_PLACEHOLDER.encode(), blob, flags=re.I)
+
+
+# ---------------------------------------------------------------------------------------------- scan
+
 @dataclass
 class Finding:
     rule: str
@@ -206,9 +274,9 @@ def _scan_rules(user: str | None, home: str | None) -> list[tuple[str, re.Patter
                                       re.I)),
     ]
     if user:
-        rules.append(("owner-user", re.compile(rf"(?<![A-Za-z0-9]){re.escape(user)}(?![A-Za-z0-9])", re.I)))
-    if home and home not in ("/", ""):
-        rules.append(("owner-home", re.compile(re.escape(home))))
+        rules.append(("owner-user", _account_rx(user)))
+    if home and home.rstrip("/") not in ("/", ""):          # at a segment end: /x/ab is not the home /x/a
+        rules.append(("owner-home", re.compile(re.escape(home.rstrip("/")) + _SEGMENT_END.decode())))
     return rules
 
 
@@ -373,8 +441,8 @@ def snapshot_note(sha: str, date: str, counts: Counter[str], included: int) -> s
             lines.append(f"- {why[g]} ({counts.get(g, 0)} files)")
     lines += [
         "",
-        "Some tests and the agent's offline self-test read fixtures or answer keys that were removed, so they "
-        "do not all run from this snapshot.",
+        "The test suite is not expected to pass in this snapshot: recorded fixtures and answer keys are removed "
+        "by design.",
         "",
         "## Reading the numbers",
         "",
@@ -382,10 +450,11 @@ def snapshot_note(sha: str, date: str, counts: Counter[str], included: int) -> s
         "were scored against was not signed off, the preregistration was not frozen, and no scored run had "
         "been made.",
         "",
-        "## The lab's MCP key",
+        "## Credentials, history and links",
         "",
-        "The lab's MCP API key is not in this tree and never was in the private repository's tree: the probe "
-        "script reads it from the environment and redacts it from everything it writes.",
+        "No credential is in this snapshot, and the snapshot carries no git history.",
+        "Links into docs/transcripts/ do not resolve here; those are private process records.",
+        "Home paths in the exported files are written as `~`, and the exporting account's name as `<account>`.",
         "",
     ]
     return "\n".join(lines)
@@ -393,7 +462,13 @@ def snapshot_note(sha: str, date: str, counts: Counter[str], included: int) -> s
 
 # ---------------------------------------------------------------------------------------------- main
 
+#: Scan rules that no allow entry may accept: the redaction removes these values, so a hit is a bug.
+NEVER_ALLOWED = frozenset({"owner-user", "owner-home"})
+
+
 def _allowed(f: Finding, allows: list[tuple[str, str]]) -> bool:
+    if f.rule in NEVER_ALLOWED:
+        return False
     return any(f.rule == r and fnmatch.fnmatchcase(f.path, g) for r, g in allows)
 
 
@@ -416,7 +491,21 @@ def _parse_allow(items: Iterable[str]) -> list[tuple[str, str]]:
         rule, sep, glob = a.partition(":")
         if not sep or not rule or not glob:
             raise UsageError(f"--allow {a!r}: expected RULE:GLOB, e.g. hex64:docs/live_runs/*/manifest.json")
+        if rule in NEVER_ALLOWED:
+            raise UsageError(f"--allow {a!r}: {rule} findings can never be allowed; the export redacts the account "
+                             "name and home path, so a hit is a bug in the redaction, not a finding to accept")
         out.append((rule, glob))
+    return out
+
+
+def _source_identity(repo: Path) -> list[str]:
+    """``-c user.name=... -c user.email=...`` as the source repository resolves them (its local config first),
+    so the snapshot commit carries the same identity as the private history, or nothing when unset."""
+    out = []
+    for key in ("user.name", "user.email"):
+        cp = subprocess.run(["git", "-C", str(repo), "config", key], capture_output=True, text=True, check=False)
+        if cp.returncode == 0 and cp.stdout.strip():
+            out += ["-c", f"{key}={cp.stdout.strip()}"]
     return out
 
 
@@ -438,12 +527,16 @@ def export(repo: Path, target: Path, *, ref: str = "HEAD", allow: Iterable[str] 
         out(f"note: worktree dirty ({len(dirty)} paths); exporting the committed HEAD only")
     sha = _git(repo, "rev-parse", ref).decode().strip()
     entries = head_entries(repo, sha)
+    prefixes = home_prefixes(entries, home)
 
     target.mkdir(parents=True, exist_ok=True)
     counts: Counter[str] = Counter()
     by_rule: Counter[tuple[str, str]] = Counter()
     sealed = 0
     included = 0
+    redacted_files = 0
+    redactions = 0
+    account_redactions = 0
     keys: dict[str, bytes] = {}
     for e in entries:
         if e.kind != "blob":
@@ -465,12 +558,22 @@ def export(repo: Path, target: Path, *, ref: str = "HEAD", allow: Iterable[str] 
         if e.mode == "120000":
             os.symlink(e.blob.decode(), dst)
         else:
-            dst.write_bytes(e.blob)
+            blob = e.blob
+            if PurePosixPath(e.path).suffix in REDACT_SUFFIXES:
+                blob, n = redact_home(blob, prefixes)
+                blob, k = redact_account(blob, user)
+                if n or k:
+                    redacted_files += 1
+                    redactions += n
+                    account_redactions += k
+            dst.write_bytes(blob)
             if e.mode == "100755":
                 dst.chmod(0o755)
         included += 1
     if sealed:
         out(f"EXCLUDE  {'sealed':<16} eval/blind/** ({sealed} files, names withheld)")
+    out(f"REDACT   {len(prefixes)} home prefixes -> ~ : {redactions} occurrences; account name -> <account> : "
+        f"{account_redactions} occurrences; {redacted_files} files touched")
 
     date = today or dt.date.today().isoformat()
     (target / SNAPSHOT_NOTE).write_text(snapshot_note(sha, date, counts, included + 1), encoding="utf-8")
@@ -519,7 +622,7 @@ def export(repo: Path, target: Path, *, ref: str = "HEAD", allow: Iterable[str] 
     if init_git:
         _git(target, "init", "-q", "-b", "main")
         _git(target, "add", "--all", ".")
-        _git(target, "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify",
+        _git(target, *_source_identity(repo), "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify",
              "-m", f"Public snapshot of {REPO_SLUG} at {sha[:12]}")
         out(_git(target, "log", "--oneline").decode().rstrip())
     return 0

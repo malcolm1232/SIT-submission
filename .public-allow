@@ -55,7 +55,6 @@ oauth:research/frameworks/comparison.md  # framework comparison prose
 oauth:scripts/leakage_grep.py  # a generic-word list entry
 oauth:scripts/export_public_snapshot.py  # the scanner's own rule name and docstring
 oauth:tests/test_claude_code_gateway.py  # an error message in a test case
-oauth:tests/test_stream_fixtures.py  # a scrub needle list
 
 # The MCP session id header named in a comment, no value.
 mcp-session-id:agent/sit_review_agent/tools/gateway.py  # a comment naming the header
@@ -65,13 +64,6 @@ email:eval/synthetic/research_lakehouse/design_v*.md  # an example user principa
 
 # The account name and home path of the machine the work was done on, in worktree paths.
 # FOR THE OWNER: accept, or ask for these files to be redacted or dropped before publishing.
-home-path:docs/live_runs/*/effective_config.json  # config_root of the run
-owner-home:docs/live_runs/*/effective_config.json  # config_root of the run
-owner-user:docs/live_runs/*/effective_config.json  # config_root of the run
-home-path:research/audit/*_editlog.md  # the worktree path in an edit log's scope line
-owner-home:research/audit/*_editlog.md  # the worktree path in an edit log's scope line
-owner-user:research/audit/*_editlog.md  # the worktree path, or the name in a list of scan needles
-owner-user:tests/test_stream_fixtures.py  # the account name in a scrub needle list
 
 # Reserved example domains (example.com/org/net, .test, .invalid) in fixtures and tests.
 email-example:*  # reserved example domains, never real addresses

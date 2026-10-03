@@ -54,6 +54,8 @@ EXCLUDED = {
     "docs/SIT_Memory_notes.md": "lab-material",
     "docs/Lab Exercise brief.pdf": "lab-material",
     "tests/fixtures/stream/haiku.jsonl": "recorded-streams",
+    "tests/test_stream_fixtures.py": "recorded-streams",   # its scrub list names the account
+
     "tests/fixtures/cassettes/tools/x.json": "recorded-streams",
     "tests/robustness/fixtures/cassettes/tools_list/y.json": "recorded-streams",
     ".claude/settings.json": "local-secrets",
@@ -151,7 +153,11 @@ def test_export_drops_every_excluded_kind_and_keeps_the_rest(tmp_path: Path) -> 
     note = (target / "PUBLIC_SNAPSHOT.md").read_text(encoding="utf-8")
     sha = _git(repo, "rev-parse", "HEAD").strip()
     assert sha in note and "2026-10-03" in note and "QUALITY_COMPARISON.md" in note and "exploratory" in note
-    assert "MCP API key is not in this tree" in note
+    assert "No credential is in this snapshot, and the snapshot carries no git history." in note
+    assert "Links into docs/transcripts/ do not resolve here; those are private process records." in note
+    assert ("The test suite is not expected to pass in this snapshot: recorded fixtures and answer keys are "
+            "removed by design.") in note
+    assert "MCP" not in note
 
 
 def test_export_reads_head_not_the_working_tree(tmp_path: Path) -> None:
@@ -182,11 +188,53 @@ def test_scanner_reports_json_fields_and_owner_paths(tmp_path: Path) -> None:
     home = "/" + "Users/someone"
     files = {"a.json": json.dumps({"run": {"config_root": f"{home}/repo/config"}})}
     repo = _make_repo(tmp_path / "repo", files)
-    rc, lines = _run(repo, tmp_path / "out", user="someone", home=home)
+    findings, n = eps.scan_tree(repo, user="someone", home=home)
+    assert n == 1
+    assert {(f.rule, f.path, f.where) for f in findings} == {
+        ("owner-home", "a.json", "$.run.config_root"),
+        ("owner-user", "a.json", "$.run.config_root"),
+        ("home-path", "a.json", "$.run.config_root"),
+    }
+
+
+def test_home_paths_are_redacted_on_the_way_out(tmp_path: Path) -> None:
+    home = "/" + "Users/someone"
+    other = "/" + "Users/othermachine"
+    files = {
+        "a.json": json.dumps({"run": {"config_root": f"{home}/repo/config"}}),
+        "docs/live_runs/run_b/effective_config.json": json.dumps({"root": f"{other}/proj", "h": "/home/runner/x"}),
+        "notes.md": f"see {home}/repo/x and {other}/proj and {home}else/y and /home/runner/x\n",
+        "agent/a.py": f"ROOT = '{home}/repo'\n",
+        "audit/scrub_editlog.md": "grep -c for `sk-`, `Someone`, `someone`, `someone2` and `/Users/`: 0 each\n",
+    }
+    repo = _make_repo(tmp_path / "repo", files)
+    target = tmp_path / "out"
+    rc, lines = _run(repo, target, user="someone", home=home, allow=["home-path:notes.md"])
+    log = "\n".join(lines)
+    assert rc == 0, log                                      # the account's hits are gone, not allowed
+    assert ("REDACT   3 home prefixes -> ~ : 7 occurrences; account name -> <account> : 2 occurrences; "
+            "5 files touched") in log
+    assert json.loads((target / "a.json").read_text())["run"]["config_root"] == "~/repo/config"
+    assert json.loads((target / "docs/live_runs/run_b/effective_config.json").read_text()) == {"root": "~/proj",
+                                                                                               "h": "~/x"}
+    assert (target / "notes.md").read_text() == f"see ~/repo/x and ~/proj and {home}else/y and ~/x\n"
+    assert (target / "agent/a.py").read_text() == "ROOT = '~/repo'\n"
+    assert (target / "audit/scrub_editlog.md").read_text() == \
+        "grep -c for `sk-`, `<account>`, `<account>`, `someone2` and `/Users/`: 0 each\n"
+    assert "FINDING owner" not in log and "allowed home-path:notes.md" in log
+
+
+def test_an_account_hit_outside_the_text_types_fails_and_cannot_be_allowed(tmp_path: Path) -> None:
+    home = "/" + "Users/someone"
+    repo = _make_repo(tmp_path / "repo", {"config/a.ini": f"root = {home}/repo\n"})
+    rc, lines = _run(repo, tmp_path / "out", user="someone", home=home, allow=["home-path:config/a.ini"])
     log = "\n".join(lines)
     assert rc == 1
-    assert "FINDING owner-home:a.json" in log and "at $.run.config_root" in log
-    assert "FINDING owner-user:a.json" in log and "FINDING home-path:a.json" in log
+    assert "FINDING owner-home:config/a.ini" in log and "FINDING owner-user:config/a.ini" in log
+    assert "allowed home-path:config/a.ini" in log
+    for bad in ("owner-home:*", "owner-user:config/a.ini"):
+        with pytest.raises(eps.UsageError, match="never be allowed"):
+            _run(repo, tmp_path / "out2", user="someone", home=home, allow=[bad])
 
 
 def test_scanner_passes_a_clean_tree_and_init_git_makes_one_commit(tmp_path: Path) -> None:
@@ -198,6 +246,8 @@ def test_scanner_passes_a_clean_tree_and_init_git_makes_one_commit(tmp_path: Pat
     log = _git(target, "log", "--format=%s").splitlines()
     sha = _git(repo, "rev-parse", "HEAD").strip()
     assert log == [f"Public snapshot of malcolm1232/SIT at {sha[:12]}"]
+    assert _git(target, "log", "--format=%an <%ae> %cn <%ce>").strip() == "Test <test@example.invalid> " \
+                                                                            "Test <test@example.invalid>"
     assert _git(target, "remote").strip() == ""             # nothing to push to
 
 

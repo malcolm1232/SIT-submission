@@ -93,12 +93,15 @@ What is left out, logged file by file with its rule (the names under `eval/blind
 - answer keys: `**/answer_key*.json|yaml` (not `*.schema.json`), `eval/KEY_SIGNOFF.md`, the named key drafts, and any file that names `core_insight` or `scored_run_ready` outside the reviewed list `KEY_FIELD_REVIEWED` (a new file that names a key field stays out until it is reviewed and added);
 - transcripts: `docs/transcripts/**`, `**/llm.jsonl`, judge, grader and UI chat logs, every `eval_pilot*/` and `grade_pilot*/` folder under `docs/live_runs/`, and every file of a run folder that is not one of `report.md`, `report.json`, `manifest.json`, `MEASUREMENT.md`, `effective_config.json`, `anchors.json`;
 - the lab's material: `docs/live_runs/sit_sample*/**`, `research/robustness/mcp_probe_results*.json`, and files whose name contains `SIT_Memory` or `Lab Exercise`;
-- recorded streams: `tests/fixtures/stream/**` and every `cassettes/` folder;
+- recorded streams: `tests/fixtures/stream/**`, every `cassettes/` folder, and `tests/test_stream_fixtures.py` (its scrub list names the account, and its fixtures are out);
 - local and secret-shaped files: `.claude/`, `.env*`, `*.pem`, `*.key`; compressed archives (the scan cannot read them); and `.public-allow` itself.
+
+On the way out, every text file (`.json`, `.jsonl`, `.md`, `.yaml`, `.yml`, `.py`, `.log`, `.txt`, `.toml`, `.cfg`) has the exporting account's home path, and every home prefix named in a committed `effective_config.json` (a run made on another machine names that machine's), rewritten to `~`, and the account's bare name (a whole word, as in a scrub list or an audit note) rewritten to `<account>`; the log gives counts only.
 
 The scan runs over the export before it is declared good and prints counts only: a value is never printed, only the rule, the file, the JSON field or line, and the length.
 It looks for 64-character tokens (`hex64` for sha256-shaped hex, `token64` otherwise), 32-character hex, bearer values, `sk-` keys, `api_key` assignments, the word for the delegated-auth protocol, e-mail addresses, the account name and any home path, session links, MCP session id values, and it runs the export's own `leakage_grep.py` with HEAD's synthetic answer keys in a temporary mirror.
 A finding fails the run (exit 1) unless `--allow RULE:GLOB` or a line of `--allow-file` names it; `.public-allow` is the reviewed list, one reason per line.
-`--init-git` commits only after a clean scan, one commit with no history ("Public snapshot of malcolm1232/SIT at <sha>").
+The account name (`owner-user`) and home path (`owner-home`) can never be allowed: the redaction removes them, so a hit is a bug in the redaction, and an allow line naming either is refused.
+`--init-git` commits only after a clean scan, one commit with no history ("Public snapshot of malcolm1232/SIT at <sha>"), with the identity the source repository commits with.
 
-The export root gets `PUBLIC_SNAPSHOT.md`: the date, the source commit, what was removed and why, that the numbers in `docs/live_runs/QUALITY_COMPARISON.md` are exploratory, and that the lab's MCP key is not in the tree.
+The export root gets `PUBLIC_SNAPSHOT.md`: the date, the source commit, what was removed and why, that the numbers in `docs/live_runs/QUALITY_COMPARISON.md` are exploratory, that no credential is in the snapshot and it carries no git history, that links into `docs/transcripts/` do not resolve there, and that the test suite is not expected to pass in the snapshot: recorded fixtures and answer keys are removed by design.
