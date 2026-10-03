@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_llm_phases import Q_LOAD, Q_NOTIFY, gone, keep, make_ctx, one_shard, shard_finding
 
 from sit_review_agent.config import EffectiveConfig, load_config
 from sit_review_agent.context import RunContext
@@ -29,6 +28,7 @@ from sit_review_agent.phases.refine import RefinePhase
 from sit_review_agent.states import PhaseName
 from sit_review_agent.tools.gateway import FakeToolGateway, qualify
 from sit_review_agent.tools.sources import ExternalSource
+from test_llm_phases import Q_LOAD, Q_NOTIFY, gone, keep, make_ctx, one_shard, shard_finding
 
 N = 20
 
