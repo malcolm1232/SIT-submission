@@ -112,3 +112,50 @@ def test_the_schema_requires_the_key_and_allows_null() -> None:
     branches = rev["properties"]["next_step"]["anyOf"]
     assert {"type": "null"} in branches and any("$ref" in b for b in branches)
 
+
+
+# ---------------------------------------------------------------------------- verifier's own set
+
+THREE = [_draft("FND-001"), _draft("FND-002", next_step=True), _draft("FND-003")]
+THREE_BY_ID = {d.id: d for d in THREE}
+THREE_IDS = [d.id for d in THREE]
+
+
+@pytest.mark.parametrize(("revs", "needle"), [
+    # a move to a disposition that needs a next step, without one
+    ((_keep("FND-001", 1, "governance_decision"), _keep("FND-002", 2, "refinement_now"),
+      _keep("FND-003", 3, "refinement_now")), "FND-001 after keep: disposition governance_decision requires next_step"),
+    # a next step where the new disposition forbids one
+    ((_keep("FND-001", 1, "refinement_now"), _keep("FND-002", 2, "refinement_now"),
+      _keep("FND-003", 3, "refinement_now", STEP)), "FND-003 sets next_step, but refinement_now needs none"),
+    # a merge into a withdrawn finding
+    ((_keep("FND-001", 1, "refinement_now"), _gone("FND-002", "withdraw"), _gone("FND-003", "merge", "FND-002")),
+     "FND-003: merge into FND-002, which is not kept"),
+    # two kept findings with the same rank
+    ((_keep("FND-001", 1, "refinement_now"), _keep("FND-002", 1, "refinement_now"),
+      _keep("FND-003", 2, "refinement_now")), "ranks of kept findings must be 1..3 with no gaps or repeats"),
+    # a revision for a finding that does not exist
+    ((_keep("FND-001", 1, "refinement_now"), _keep("FND-002", 2, "refinement_now"),
+      _keep("FND-003", 3, "refinement_now"), _keep("FND-009", 4, "refinement_now")),
+     "revision for unknown finding FND-009"),
+    # a move across the no_change boundary: the draft's recommendation stays, so the move is refused
+    ((_keep("FND-001", 1, "no_change"), _keep("FND-002", 2, "refinement_now"),
+      _keep("FND-003", 3, "refinement_now")), "FND-001 after keep: no_change forbids a recommendation"),
+])
+def test_verifier_adversarial_revisions_are_refused(revs: tuple[dict[str, Any], ...], needle: str) -> None:
+    problems = revision_problems(_out(*revs), THREE_IDS, drafts=THREE_BY_ID)
+    assert any(needle in p for p in problems), problems
+    with pytest.raises(ValueError, match="cannot be applied"):
+        apply_revisions(THREE, _out(*revs))
+
+
+def test_verifier_valid_set_applies_exactly() -> None:
+    out = _out(_keep("FND-003", 1, "needs_testing", STEP), _gone("FND-001", "merge", "FND-003"),
+               _keep("FND-002", 2, "refinement_now"))
+    assert revision_problems(out, THREE_IDS, drafts=THREE_BY_ID) == []
+    kept = apply_revisions(THREE, out)
+    assert [(f.id, f.rank, f.disposition.value) for f in kept] == [("FND-003", 1, "needs_testing"),
+                                                                    ("FND-002", 2, "refinement_now")]
+    assert kept[0].next_step is not None and kept[0].next_step.model_dump() == STEP
+    assert kept[1].next_step is not None and kept[1].next_step == THREE[1].next_step     # never replaced
+    assert kept[0].criterion_ids == ["verifiability"]                                  # no duplicate criterion

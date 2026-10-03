@@ -262,6 +262,9 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   keep rule; lock regenerated), `selftest.refine_answer`, the scripted revisions in `tests/test_llm_phases.py`,
   `tests/test_e2e_synthetic.py`, `tests/test_interfaces_w0.py`. Readers: `revision_problems`,
   `apply_revisions`, `phases/refine.py`. Tests: `tests/test_refine_next_step.py`.
+  Known limitation: refine cannot move a finding across the `no_change` boundary. `revision_problems` refuses
+  such a move ("no_change forbids a recommendation", or the spec rule that the other dispositions need a
+  recommendation), so the repair call and then the fallback keep the drafted disposition.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are
