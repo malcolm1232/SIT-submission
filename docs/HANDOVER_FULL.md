@@ -1,3 +1,5 @@
+SUPERSEDED by docs/HANDOVER_261003_PLANNER.md on 03 Oct 2026.
+
 # Full handover from the coordinating session
 
 Written by the coordinator (Claude Fable 5.1 acting as delegator) on 2026-10-02 at the end of the research and design phase. `docs/HANDOFF.md` is the short version; this is the explicit one.

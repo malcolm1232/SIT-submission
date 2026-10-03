@@ -1,3 +1,5 @@
+SUPERSEDED by docs/HANDOVER_261003_PLANNER.md on 03 Oct 2026.
+
 # Handover: the SIT FABLE advisor session (2026-10-02, evening)
 
 For the next session that takes the "SIT FABLE" role. Read this, then `docs/HANDOVER_FULL.md`
