@@ -93,6 +93,13 @@ def test_an_unsupported_answer_renders_with_no_prose(run: Path) -> None:
     assert "does not answer" in turn["unsupported_reason"]
 
 
+def test_an_answer_the_model_marks_unsupported_shows_no_prose_even_with_a_resolving_citation(run: Path) -> None:
+    fake = FakeChat(answer("FND-005 hints at it, but the review does not say.", fnd=["FND-005"], supported=False))
+    turn = client_for(run, fake).post("/runs/rehearsal_concurrent_1/chat", json={"question": "q"}).json()["turn"]
+    assert turn["rendered_as"] == "unsupported" and turn["answer"] == ""
+    assert "does not answer" in turn["unsupported_reason"]
+
+
 def test_a_supported_answer_with_no_resolving_citation_is_unsupported(run: Path) -> None:
     fake = FakeChat(answer("FND-777 says so.", fnd=["FND-777"]))
     turn = client_for(run, fake).post("/runs/rehearsal_concurrent_1/chat", json={"question": "q"}).json()["turn"]
