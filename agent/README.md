@@ -267,6 +267,17 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   Known limitation: refine cannot move a finding across the `no_change` boundary. `revision_problems` refuses
   such a move ("no_change forbids a recommendation", or the spec rule that the other dispositions need a
   recommendation), so the repair call and then the fallback keep the drafted disposition.
+- 2026-10-03, MCP session recovery (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` defect 1).
+  Additive; no existing constructor call changes.
+  - `tools/gateway.py` `ToolErrorClass.SESSION_CLOSED` (`session_closed`): a call that failed because the
+    server closed the session (mcp `MCPError` -32000 "Connection closed", a closed or ended stream, a reset
+    connection). Writer: `tools/mcp_client.classify_exception`. Readers: `MCPToolGateway.call` (reopen
+    once and retry once), `PolicyToolGateway` (breaker and the disable rule), `FaultInjectingGateway`,
+    `phases/research.py` (disclosure text).
+  - `tools/faults.py` `FaultType.SESSION_CLOSED`: closes the live session below the injector so the next
+    call meets a closed session (robustness NET-06). Reader: `FaultInjectingGateway`.
+  - `config.py` `ToolsConfig.session_idle_reopen_s` (default 60, `config/tools.yaml` below the pinned
+    lines): a session idle longer than this is reopened before the next call. Reader: `MCPToolGateway`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

@@ -72,6 +72,7 @@ class ToolErrorClass(StrEnum):
     HTTP_5XX = "http_5xx"
     AUTH = "auth"                        # 401 / 403: shared key, disables every server (INF-07)
     SESSION_EXPIRED = "session_expired"  # 404 on a stale Mcp-Session-Id: re-initialize (INF-09)
+    SESSION_CLOSED = "session_closed"    # -32000 "Connection closed", EOF, reset: reopen once (NET-06)
     TOOL_ERROR = "tool_error"            # isError: true from the server
     MALFORMED = "malformed"
     BLOCKED = "blocked"                  # URL policy or sanitiser

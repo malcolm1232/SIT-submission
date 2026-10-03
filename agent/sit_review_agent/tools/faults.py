@@ -30,6 +30,7 @@ class FaultType(StrEnum):
     MALFORMED_BODY = "malformed_body"
     TOOL_ERROR = "tool_error"
     SESSION_EXPIRED = "session_expired"
+    SESSION_CLOSED = "session_closed"
     SCHEMA_DRIFT = "schema_drift"
     EMPTY_RESULT = "empty_result"
     PARTIAL_RESULT = "partial_result"

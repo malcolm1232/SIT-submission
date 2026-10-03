@@ -323,6 +323,9 @@ class ToolsConfig(_Cfg):
     connect_timeout_s: float = 150.0
     call_timeout_s: float = 60.0
     cold_start_retries: int = Field(1, ge=0)
+    #: Reopen a server's session before a call when it has been idle longer than this (0 = never);
+    #: sit_sample_tools_1 lost every web search to a session held idle for 130 s (NET-06).
+    session_idle_reopen_s: float = Field(60.0, ge=0)
     capabilities: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
