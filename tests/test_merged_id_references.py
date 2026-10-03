@@ -188,7 +188,9 @@ async def test_no_dangling_finding_reference_in_report_json_or_md(run: RunDir) -
     md = run.report_md.read_text(encoding="utf-8")
     md_dangling = sorted({t for t in TOKEN.findall(md) if t not in FINAL})
     assert md_dangling == [], md_dangling
-    assert [(r.inv_id, r.problems) for r in check_all(report, run.root, canaries=[CANARY]) if not r.passed] == []
+    results = check_all(report, run.root, canaries=[CANARY])
+    assert "INV-12" in {r.inv_id for r in results}
+    assert [(r.inv_id, r.problems) for r in results if not r.passed] == []
 
 
 async def test_each_reference_follows_its_finding(run: RunDir) -> None:
@@ -220,3 +222,20 @@ async def test_each_reference_follows_its_finding(run: RunDir) -> None:
     unverified = [u["text"] for u in report["unresolved"] if u["text"].startswith("Unverified")]
     assert len(unverified) == 1 and "The catalog has no owner. Same root cause as FND-004." in unverified[0]
     assert report["run_manifest"]["extra"]["finding_ids"]["rewrites"]["removed"] >= 3
+
+
+async def test_the_report_gate_refuses_a_dangling_reference(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without the rewrite, the report phase refuses the report (exit 4, ``report.invalid.json``):
+    INV-12 names the dangling references of report.json, and the coverage check those of report.md."""
+    from sit_review_agent.phases import report as report_phase
+
+    monkeypatch.setenv("SIT_MCP_API_KEY", CANARY)
+    monkeypatch.setattr(report_phase, "settle_refs", lambda ctx, body: body)
+    cfg = config(tmp_path)
+    out = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="refs-gate"), llm_factory=factory(cfg),
+                           clock=FakeClock(), progress=NullProgress())
+    rd = RunDir(out.run_dir)
+    assert out.exit_code == 4 and not rd.report_json.exists()
+    problems = json.loads(rd.failure.read_text(encoding="utf-8"))["problems"]
+    assert "INV-12: $.sound_areas[0].why_sound: FND-002 is not a finding of this review" in problems
+    assert any(p.startswith("INV-12 (report.md): $.coverage[") for p in problems)
