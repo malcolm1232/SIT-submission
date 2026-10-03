@@ -1,0 +1,772 @@
+{
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "8c7850e04ab0f44723fc5620c62ec5a18e5725804a2923840a4c7b5cdca07ffa",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0004",
+  "criteria": [
+   "requirement_completeness",
+   "internal_consistency",
+   "verifiability"
+  ],
+  "delta": {
+   "budget": {},
+   "declined_sections": [],
+   "degradations": [
+    {
+     "event": "assess shard 2/4 (requirements_and_consistency) was cut by the stage 1 limit at 265 s; 8 finished finding(s) kept (cut call llm-0004)",
+     "id": "DEG-002",
+     "impact": "every criterion of the shard has a finding; the shard's lower-ranked findings, if any, are missing",
+     "type": "budget_or_deadline_hit"
+    }
+   ],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0004"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 2,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "requirements_and_consistency",
+  "outcome": "cut",
+  "output": {
+   "coverage": [],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "MMP downtime shall not affect agent read or write availability",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 15,
+       "quote": "Not exists + auto-provisionable slot type -> MMP provisions slot, proceed",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "15"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "Memory Management Plane - TemplateRegistry, NamespaceRegistry, SlotProvisioner, PolicyEngine, AuditStore, Admin API (port 8003)",
+       "requirement_ids": [],
+       "section_ref": "5"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "MMP downtime shall not affect agent read or write availability",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "Not exists + auto-provisionable slot type -> MMP provisions slot, proceed",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-3",
+       "quote": "Policy decisions are not cached - they are evaluated fresh on every request",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2",
+        "NEW-3"
+       ],
+       "evidence_id": "NEW-4",
+       "quote": "If the PolicyEngine is hosted in the MMP and every request goes to it uncached, and if slot provisioning happens inline through the MMP, then MMP availability is on the request path.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "risk",
+     "next_step": {
+      "action": "Fix the runtime deployment boundary of the PolicyEngine and SlotProvisioner, then update the NFR-4 chaos test.",
+      "owner": "Platform architect"
+     },
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 5, 16 and 21, state that runtime policy evaluation runs in the Gateway or Router data plane, reading policy data replicated from the MMP, and that the MMP only authors policy. In Section 15 Check 4, define the behaviour when the MMP is unavailable: either deny with reason 'slot not provisioned' or provision through a data-plane provisioner. Extend the NFR-4 test to cover a first write to an unprovisioned auto-provisionable slot.",
+      "expected_benefit": "NFR-4 becomes achievable and testable, and agent availability no longer depends on the admin plane.",
+      "issue": "The deployment boundary of the PolicyEngine and the inline slot provisioning in Check 4 contradict NFR-4.",
+      "objective_refs": [
+       "NFR-4",
+       "FR-4",
+       "FR-8"
+      ],
+      "rationale": "The document has a per-request policy engine and inline provisioning while also claiming the MMP can be down without affecting agents.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3",
+       "NEW-4"
+      ],
+      "verification": "NFR-4 chaos test, with the MMP stopped, includes policy-evaluated reads and writes and a Check-4 auto-provision case."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "NFR-4 and Section 21 say the MMP is not in the critical request path. However, the MMP's component list includes the PolicyEngine, Section 16 says policy decisions are evaluated fresh on every request, and Gateway Check 4 calls the MMP to provision missing slots during a live request. Read together, an MMP outage would block reads and writes. That breaks NFR-4 and would fail the NFR-4 chaos test.",
+     "tags": [
+      "mmp",
+      "policy-engine",
+      "availability"
+     ],
+     "title": "MMP placed in the live request path despite NFR-4"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "internal_consistency",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "wellbeing/counselling/ shall be classified HIGHLY_RESTRICTED with zero cross-domain reads and no",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 18,
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "requirement_ids": [],
+       "section_ref": "19"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "An automated test authenticates as the advisory, tutor, and career agents in",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "Super admin Overrides, corrections, emergency access (always audit-logged)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-7",
+       "quote": "An automated test authenticates as the advisory, tutor, and career agents in",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "risk",
+     "next_step": {
+      "action": "Confirm that no admin role has emergency access to counselling memory, and record any case-management exception outside the platform.",
+      "owner": "Data governance officer / DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 19 and 21, explicitly exclude memory_sensitive from Super Admin and Institution Admin scope. The MMP service identity should hold no memory_sensitive credentials, and Admin API endpoints should reject wellbeing/counselling/ paths. Extend the FR-5 test to call the Admin API GET and DELETE and /policy/check as a super admin against counselling paths, and to confirm that MMP credentials fail against memory_sensitive.",
+      "expected_benefit": "FR-5 and P4 become enforceable and verifiable.",
+      "issue": "Admin roles have override and emergency rights that conflict with FR-5, and the FR-5 test does not exercise admin paths.",
+      "objective_refs": [
+       "FR-5",
+       "NFR-5",
+       "P4"
+      ],
+      "rationale": "Under P3, a principle wins over a later section, but the conflict should be resolved in the text, not left for implementers to decide.",
+      "supporting_evidence_ids": [
+       "NEW-5",
+       "NEW-6",
+       "NEW-7"
+      ],
+      "verification": "The extended FR-5 test returns DENIED for every admin path, and a credential scan shows no MMP access to memory_sensitive."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "high",
+     "statement": "FR-5 and P4 forbid any MMP override path for wellbeing/counselling/. Section 19, however, grants Super Admin access to 'Everything', and Section 21 gives the super admin 'Overrides, corrections, emergency access'. On top of that, the Admin API DELETE and GET /audit endpoints are not scoped to exclude the sensitive schema. The FR-5 acceptance test only tries reads as three agents, so it cannot show that no MMP or admin override path exists.",
+     "tags": [
+      "counselling",
+      "hard-wall",
+      "admin"
+     ],
+     "title": "Super-admin 'Everything'/emergency access contradicts the counselling 'no MMP override' wall"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "requirement_completeness",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "overwhelm the store; failed writes queue and retry automatically; multiple independent consumers",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "The Validator shall reject (strict mode) or warn-and-log (lenient mode) any write containing a key not",
+       "requirement_ids": [
+        "FR-11"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-8",
+       "quote": "overwhelm the store; failed writes queue and retry automatically; multiple independent consumers",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-9",
+       "quote": "Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-8",
+        "NEW-9"
+       ],
+       "evidence_id": "NEW-10",
+       "quote": "Because rejection happens after the ACK and retries are automatic, a deterministic validation failure has no defined terminal state or feedback to the agent.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "gap",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18, add the following: classify consumer failures as permanent (validation) or transient (embedding, DB); send permanent failures to a dead-letter topic per tier with an audit DENIED entry and a dashboard warning; set a retry limit and backoff for transient failures; and either define a write-status callback or query for agents, or have the Gateway pre-validate template keys synchronously before enqueueing. Update the FR-11 acceptance test to state where the rejection is observed.",
+      "expected_benefit": "FR-11 rejections can be observed and acted on, and the consumer cannot get stuck on poison messages (FR-9).",
+      "issue": "Rejected and poison writes have no defined handling after the ACK.",
+      "objective_refs": [
+       "FR-9",
+       "FR-11",
+       "FR-13"
+      ],
+      "rationale": "The async design moves validation after the acknowledgement, so the failure path has to be designed explicitly.",
+      "supporting_evidence_ids": [
+       "NEW-8",
+       "NEW-9",
+       "NEW-10"
+      ],
+      "verification": "A test injects an undeclared-key write in strict mode and asserts a dead-letter entry, a single audit DENIED entry, and no repeated retries."
+     },
+     "secondary_dispositions": [],
+     "severity": "high",
+     "statement": "Writes are ACKed when they are enqueued. Validation (FR-11 strict rejection, memory_type mismatch, sensitivity ceiling) happens later in the background consumer. The design has no dead-letter queue, no notification back to the agent, and no rule separating validation rejections from transient failures. Since 'failed writes queue and retry automatically', a write that will always be rejected could retry forever. Meanwhile the agent believes the memory was persisted, which undermines FR-9 and FR-11, and the FR-11 test does not say where the rejection is observable.",
+     "tags": [
+      "kafka",
+      "validator",
+      "dead-letter"
+     ],
+     "title": "No error path for async writes rejected after ACK"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "requirement_completeness",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 13,
+       "quote": "the agent backup survives learner deletion of their own memory (enabling session resume)",
+       "requirement_ids": [
+        "FR-16"
+       ],
+       "section_ref": "13"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "A learner-initiated deletion request removes user-deletable records and",
+       "requirement_ids": [
+        "FR-15"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-11",
+       "quote": "the agent backup survives learner deletion of their own memory (enabling session resume)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-12",
+       "quote": "Agent own memory (always, immediate)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-13",
+       "quote": "A learner-initiated deletion request removes user-deletable records and",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "gap",
+     "next_step": {
+      "action": "Decide whether learner deletion cascades to agent backups and record the retention basis.",
+      "owner": "Data governance officer / DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 13 and 20, specify where per-learner agent backups are stored (schema and tier), require the counselling agent's backup to sit in memory_sensitive, and decide whether learner deletion cascades to backups. The DPO should decide whether the 'session resume' benefit justifies keeping the data. Extend the FR-15 and NFR-5 tests to include agent backups.",
+      "expected_benefit": "FR-15 deletion becomes complete and checkable, and the NFR-5 isolation also covers backups.",
+      "issue": "Agent backups are a second store of personal data, with no defined storage tier, retention or deletion semantics.",
+      "objective_refs": [
+       "FR-15",
+       "FR-16",
+       "NFR-5",
+       "NFR-7"
+      ],
+      "rationale": "FR-15, NFR-5 and NFR-7 apply to all personal data. The test covers only the namespace, so retained backups would go undetected.",
+      "supporting_evidence_ids": [
+       "NEW-11",
+       "NEW-12",
+       "NEW-13"
+      ],
+      "verification": "The FR-15 test asserts that after deletion no user-deletable data remains in any agent backup, or that retention matches a documented DPO decision."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "high",
+     "statement": "Every agent writes to its own per-learner backup 'always, immediate', and that backup survives a learner's self-deletion. The FR-15 test, however, only checks the namespace. The design never says where agent backups are stored, whether the counselling agent's backup sits in the memory_sensitive tier (NFR-5), or how retention, PII and deletion rules apply to backups. As written, a learner's deletion request leaves copies of the data behind, and highly restricted content can live outside the two-tier store.",
+     "tags": [
+      "deletion",
+      "backup",
+      "pdpa"
+     ],
+     "title": "Agent backup copies are outside deletion, tiering and the FR-15 test"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "internal_consistency",
+      "requirement_completeness"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "Nothing further needed - DDL is concrete and complete",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "All operations on personal data shall be logged; retention rules shall be enforceable per slot; PII-bearing",
+       "requirement_ids": [
+        "NFR-7"
+       ],
+       "section_ref": "2.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-14",
+       "quote": "Nothing further needed - DDL is concrete and complete",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "Flag record as unembedded (embedded: false)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-14",
+        "NEW-15"
+       ],
+       "evidence_id": "NEW-16",
+       "quote": "The Section 11 DDL for memory_events has no key, pii, retention or expires_at column and memory_vectors has no embedded column, so the requirements quoted cannot be met by the schema as written.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 11, add key, pii, retention and expires_at to memory_events, and pii, retention and expires_at to memory_documents. Add embedded BOOLEAN to memory_vectors, and add template_version and writer agent_id to all three tables. In Section 28, change the DDL rating to 'Mostly ready' until this is done.",
+      "expected_benefit": "NFR-7 retention and PII enforcement, and the Embedder fallback, become implementable.",
+      "issue": "The schema does not support the Embedder fallback, NFR-7, or key validation for episodic keys.",
+      "objective_refs": [
+       "NFR-7",
+       "FR-11",
+       "FR-3"
+      ],
+      "rationale": "Section 28 marks the DDL ready for direct migration generation, so any gaps will carry into the build.",
+      "supporting_evidence_ids": [
+       "NEW-14",
+       "NEW-15",
+       "NEW-16"
+      ],
+      "verification": "The NFR-7 schema scan covers all three table types, and an Embedder-outage test persists embedded=false."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Section 28 calls the DDL 'concrete and complete', but other sections rely on columns it lacks. memory_events and memory_documents have no pii, retention or expires_at columns, so the per-slot retention and PII flagging in NFR-7 cannot be enforced for episodic or meta records. memory_events has no key column, although templates define EPISODIC keys (e.g. advisor_notes) that the Validator checks. memory_vectors has no 'embedded' flag, which the Embedder fallback needs. No table records template version or agent_id/source. Code generated from this DDL 'directly' would miss these behaviours.",
+     "tags": [
+      "ddl",
+      "schema",
+      "retention"
+     ],
+     "title": "DDL declared 'complete' lacks columns other sections require"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "A test matrix exercises all seven dimensions independently (one violating",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "the decision algorithm - how the seven dimensions combine into a",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "28"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-17",
+       "quote": "condition per dimension) and confirms each produces a DENY attributable to",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "Redaction Should part of the memory be masked before serving to this agent?",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "validation_need",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Rewrite the FR-8 criterion in Section 27.1 to assert the expected outcome per dimension (DENY, REDACT, EXPIRE/FILTER, PURGE) as set out in the Phase 3 decision table, including precedence cases where dimensions conflict.",
+      "expected_benefit": "FR-8 becomes verifiable against the planned Phase 3 decision table.",
+      "issue": "The FR-8 criterion assumes the same outcome for every dimension.",
+      "objective_refs": [
+       "FR-8"
+      ],
+      "rationale": "Redaction and retention have outcomes other than deny, so the test would either fail correct behaviour or force incorrect behaviour.",
+      "supporting_evidence_ids": [
+       "NEW-17",
+       "NEW-18"
+      ],
+      "verification": "The test matrix rows map one-to-one to the decision table entries."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "The FR-8 test requires each of the seven dimensions to produce a DENY. But Redaction masks content, Retention sets expiry, and Section 28 itself names a REDACT outcome. The test therefore cannot check correct behaviour for those dimensions. The underlying cause, the missing algorithm for combining dimensions, is already acknowledged in Section 28. This review adds that the acceptance criterion itself has to change, and should be derived from the decision table.",
+     "tags": [
+      "policy-engine",
+      "test"
+     ],
+     "title": "FR-8 test expects DENY from every dimension, including Redaction and Retention"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "ambiguous_requirement",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "at any check denies the request and logs the reason",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "On revocation: inform the learner, serve from agent backup only, no re-authentication path is offered.",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "6"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-19",
+       "quote": "at any check denies the request and logs the reason",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-20",
+       "quote": "On revocation: inform the learner, serve from agent backup only, no re-authentication path is offered.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "status: ACTIVE | EXPIRED | REFRESHING | REVOKED",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "ambiguity",
+     "next_step": {
+      "action": "Decide whether learner data in agent backups may be served after token revocation.",
+      "owner": "Data governance officer / DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 15 and 2.1, state that Check 3 denies namespace access while the agent may serve from its backup. Add an explicit governance decision on whether a REVOKED state also blocks backup use. Define how REFRESHING is handled. Align the FR-4 and NFR-6 tests with these rules.",
+      "expected_benefit": "FR-4, NFR-6 and FR-16 are consistent and testable.",
+      "issue": "Behaviour on token failure, and whether backup serving is allowed after revocation, is ambiguous.",
+      "objective_refs": [
+       "FR-4",
+       "NFR-6",
+       "FR-16"
+      ],
+      "rationale": "A revoked token normally signals that access should stop, but the design keeps serving data from the backup.",
+      "supporting_evidence_ids": [
+       "NEW-19",
+       "NEW-20",
+       "NEW-21"
+      ],
+      "verification": "The token lifecycle test asserts the namespace is DENIED and backup behaviour matches the decision for each of ACTIVE, EXPIRED, REFRESHING and REVOKED."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "medium",
+     "statement": "FR-4 says failure at any check denies the request, and the FR-4 test expects a DENY when the token check alone fails. Section 15 and Section 6 instead say that EXPIRED and REVOKED tokens continue in degraded mode using the agent's backup, which for REVOKED means serving the learner's data after revocation. Section 13 also defines a REFRESHING state that Check 3 does not handle. These readings lead to different implementations and different test outcomes.",
+     "tags": [
+      "auth",
+      "degraded-mode"
+     ],
+     "title": "Token-check failure: deny (FR-4) or degraded serving (Section 15)?"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Policy decisions are not cached - they are evaluated fresh on every request",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "16"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 18,
+       "quote": "context pack is cached so repeated queries within a session skip PostgreSQL entirely",
+       "requirement_ids": [
+        "FR-10"
+       ],
+       "section_ref": "18"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-22",
+       "quote": "Policy decisions are not cached - they are evaluated fresh on every request",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-23",
+       "quote": "context pack is cached so repeated queries within a session skip PostgreSQL entirely",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18, key the cache by (agent_id, learner_id, session_id, policy_version). Invalidate on policy publish, deletion, and writes to cached slots. Add an FR-10 test case where a policy change mid-session causes a cache MISS.",
+      "expected_benefit": "FR-8 immediacy and FR-15 deletion apply to served content, not only to stored content.",
+      "issue": "There are no cache invalidation rules for policy changes, deletions or writes, and no cache-key scope.",
+      "objective_refs": [
+       "FR-8",
+       "FR-10",
+       "FR-15"
+      ],
+      "rationale": "Without them the immediacy claim in Section 16 is not true for cached content.",
+      "supporting_evidence_ids": [
+       "NEW-22",
+       "NEW-23"
+      ],
+      "verification": "An extended FR-10 test checks a mid-session policy change and a mid-session deletion."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Section 16 says policy is never cached, so that rule changes take effect immediately. But the read path serves an already ranked and redacted context pack from Redis for the whole session TTL, and it is invalidated only on session close or token expiry. Policy changes, permission revocations, FR-15 deletions and new async writes are therefore not reflected until the session ends. The cache key, and whether one agent's pack could be served to another agent, is also not specified.",
+     "tags": [
+      "redis",
+      "cache",
+      "policy"
+     ],
+     "title": "Session-TTL context-pack cache undermines 'policy takes effect immediately' and deletion"
+    }
+   ],
+   "sound_areas": []
+  },
+  "prompt_hash": "42d033bf2276348df314b868ba6314386916ba5025b3ab01797e24685dc380a2",
+  "salvaged": 8
+ }
+}

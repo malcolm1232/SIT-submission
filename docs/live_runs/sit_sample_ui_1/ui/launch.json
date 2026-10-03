@@ -1,0 +1,20 @@
+{
+ "run_id": "ui-261003-082941-36e8",
+ "display": "dra review runs/ui-261003-082941-36e8/ui/input/sit_sample_v1.pdf --profile demo --run-id ui-261003-082941-36e8",
+ "args": [
+  "review",
+  "/Users/malco/Desktop/SIT-wt/final/runs/ui-261003-082941-36e8/ui/input/sit_sample_v1.pdf",
+  "--profile",
+  "demo",
+  "--run-id",
+  "ui-261003-082941-36e8"
+ ],
+ "started_at": "2026-10-03T08:29:41Z",
+ "pid": 42828,
+ "document": "/Users/malco/Desktop/SIT-wt/final/runs/ui-261003-082941-36e8/ui/input/sit_sample_v1.pdf",
+ "document_name": "sit_sample_v1.pdf",
+ "v1": null,
+ "profile": "demo",
+ "no_tools": false,
+ "source_url": null
+}
