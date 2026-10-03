@@ -113,3 +113,44 @@ def test_c_tools_used_lists_only_servers_that_received_a_call(review_dict: dict[
     d["research_log"]["tool_calls_by_tool"] = {}
     md = render_markdown(Review.model_validate(d))
     assert _header_row(md, "Tools used") == "none"
+
+
+# ------------------------------------------------------------------------------ D: session reopens
+
+
+def test_d_manifest_counts_the_session_reopens_of_the_gateway_stack() -> None:
+    from types import SimpleNamespace
+
+    from sit_review_agent.manifest import session_reopens
+
+    base = SimpleNamespace(session_events=[
+        {"server": "mcp-search", "reason": "closed by the server: x", "idle_s": 3.0, "at_s": 40.0},
+        {"server": "mcp-search", "reason": "idle", "idle_s": 130.0, "at_s": 300.0},
+        {"server": "mcp-standards", "reason": "idle", "idle_s": 140.0, "at_s": 310.0}])
+    stack = SimpleNamespace(inner=SimpleNamespace(inner=base))
+    assert session_reopens(SimpleNamespace(tools=stack)) == {
+        "session_reopens": 3, "session_reopens_by_server": {"mcp-search": 2, "mcp-standards": 1}}
+    assert session_reopens(SimpleNamespace(tools=SimpleNamespace(inner=None, session_events=[])))["session_reopens"] == 0
+    assert session_reopens(SimpleNamespace(tools=None)) == {"session_reopens": 0, "session_reopens_by_server": {}}
+
+
+def test_d_report_shows_the_session_reopen_line_zero_included(review_dict: dict[str, Any]) -> None:
+    from sit_review_agent.models import Review
+    from sit_review_agent.report.render import render_markdown
+
+    d = json.loads(json.dumps(review_dict))
+    tools = d["run_manifest"]["extra"].setdefault("tools", {})
+    tools.update(session_reopens=0, session_reopens_by_server={})
+    assert _header_row(render_markdown(Review.model_validate(d)), "Tool session reopens") == "0"
+    tools.update(session_reopens=2, session_reopens_by_server={"mcp-search": 2})
+    assert _header_row(render_markdown(Review.model_validate(d)), "Tool session reopens") == "2 (mcp-search: 2)"
+    tools.pop("session_reopens")
+    assert _header_row(render_markdown(Review.model_validate(d)), "Tool session reopens") == "not recorded"
+
+
+async def test_d_a_run_records_the_reopen_count_in_its_manifest_and_report(tmp_path: Path) -> None:
+    await scenario("selftest", tmp_path)
+    run_dir = tmp_path / "pc-selftest"
+    tools = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))["extra"]["tools"]
+    assert tools["session_reopens"] == 0 and tools["session_reopens_by_server"] == {}
+    assert _header_row((run_dir / "report.md").read_text(encoding="utf-8"), "Tool session reopens") == "0"

@@ -271,6 +271,7 @@ No coverage map was recorded. Criteria configured: {{ run.criteria }}.
 | Model | requested {{ run.requested_model }}; served {{ run.served_models }}; effort {{ run.effort }} |
 | Persona | {{ run.persona }} |
 | Tool transport | {{ run.transport }} |
+| Tool session reopens | {{ run.session_reopens }} |
 | Research stop | {{ run.stop }}; {{ run.iterations }} iteration(s); {{ run.sources }} |
 | Tool calls | {% for k, v in run.tool_calls | dictsort %}{{ k }}: {{ v }}{{ ", " if not loop.last }}{% else %}none{% endfor %} |
 | Tokens | input {{ run.usage.input_tokens }}, cached {{ run.usage.cached_tokens }}, output {{ run.usage.output_tokens }}; cost ~${{ "%.2f" | format(run.usage.cost_usd) }} (price table {{ run.usage.price_table_date }}){% if run.unrecorded %}; a lower bound: {{ run.unrecorded }}{% endif %} |
