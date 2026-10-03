@@ -237,3 +237,40 @@ def test_e_other_reasons_pass_unchanged() -> None:
 
     cap = StopReason.of(StopReasonCode.DEADLINE, "stage_limits_s.refine_end")
     assert settle_sufficient_evidence(cap, _state(["unanswered"] * 6), PARAMS, _ledger()) is cap
+
+
+# ------------------------------------------------------------------------------ G: launch record
+
+
+def test_g_the_launch_record_carries_no_path_under_the_home_folder(tmp_path: Path, monkeypatch: Any) -> None:
+    import hashlib
+
+    from sit_review_agent.ui.launcher import Launcher, LaunchSpec
+    from sit_review_agent.ui.rundata import reviewed_pdf
+    from test_ui_server import FakePopen
+
+    home = tmp_path / "Users" / "someone"
+    monkeypatch.setenv("HOME", str(home))
+    runs, repo, elsewhere = home / "runs", home / "repo", home / "Downloads"
+    run_dir = runs / "ui-run-1"
+    doc = run_dir / "ui" / "input" / "design.pdf"
+    for d in (doc.parent, repo, elsewhere):
+        d.mkdir(parents=True)
+    doc.write_bytes(b"%PDF-1.4 under review")
+    v1 = elsewhere / "old.pdf"
+    v1.write_bytes(b"%PDF-1.4 old")
+    Launcher(repo_root=repo, popen=FakePopen()).start(
+        LaunchSpec(run_id="ui-run-1", document=doc, v1=v1, profile="demo"), run_dir)
+    text = (run_dir / "ui" / "launch.json").read_text(encoding="utf-8")
+    rec = json.loads(text)
+    assert str(home) not in text and "someone" not in text
+    assert rec["document"] == "ui-run-1/ui/input/design.pdf"
+    assert rec["v1"] == "~/Downloads/old.pdf"
+    assert rec["args"] == ["review", "~/runs/ui-run-1/ui/input/design.pdf", "--profile", "demo",
+                           "--v1", "~/Downloads/old.pdf", "--run-id", "ui-run-1"]
+    assert rec["display"] == "dra review ~/runs/ui-run-1/ui/input/design.pdf --profile demo --v1 " \
+                             "~/Downloads/old.pdf --run-id ui-run-1"
+    # The UI still finds the reviewed PDF from the relative record.
+    sha = hashlib.sha256(doc.read_bytes()).hexdigest()
+    (run_dir / "manifest.json").write_text(json.dumps({"extra": {"doc": {"sha256_pdf": sha}}}), encoding="utf-8")
+    assert reviewed_pdf(run_dir, repo) == doc

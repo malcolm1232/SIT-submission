@@ -287,10 +287,12 @@ def reviewed_pdf(run_dir: Path, repo_root: Path) -> Path | None:
     extra = manifest.get("extra") or {}
     doc = extra.get("doc") or {}
     want = doc.get("sha256_pdf")
+    from sit_review_agent.ui.launcher import resolve_recorded
+
     cands: list[Path] = []
     launch = read_json(run_dir / UI_DIR / "launch.json") or {}
     if launch.get("document"):
-        cands.append(Path(launch["document"]))
+        cands += resolve_recorded(str(launch["document"]), run_dir.parent, repo_root)
     argv = (extra.get("code") or {}).get("argv") or []
     if len(argv) >= 2 and argv[0] in ("run", "review") and not str(argv[1]).startswith("-"):
         cands.append(Path(argv[1]))
