@@ -447,8 +447,14 @@ def announce_bound(progress: Any, runtime: RuntimeLimits | None, phase: PhaseNam
     ``llm.timeout_s``): ``llm-0003 bounded at 165 s by the stage 1 limit (265 s on the run clock; ...)``."""
     if progress is None or runtime is None or runtime.deadline is None:
         return
-    progress.emit(_phase(phase).value, f"{call_id} bounded at {timeout_s:.0f} s "
-                                       f"{runtime.deadline.describe_bound(phase)}", "step")
+    from sit_review_agent.progress import emit_event
+
+    d = runtime.deadline
+    limit = d._limit(phase)
+    emit_event(progress, _phase(phase).value, f"{call_id} bounded at {timeout_s:.0f} s {d.describe_bound(phase)}",
+               "step", event="call_bounded", call_id=call_id, timeout_s=timeout_s,
+               bound=limit[0] if limit is not None and d.deadline_s is not None and limit[1] < d.deadline_s
+               else "deadline", limit_s=limit[1] if limit is not None else None, deadline_s=d.deadline_s)
 
 
 def attempt_timeout(runtime: RuntimeLimits | None, phase: PhaseName | str, configured_s: float) -> tuple[float, bool]:

@@ -46,7 +46,7 @@ from sit_review_agent.context import RunContext
 from sit_review_agent.errors import AgentError, AssessShardsFailed, ExitCode, LLMError, RunInterrupted, StageCrash
 from sit_review_agent.models import DegradationType, DocumentRole, StopReason, StopReasonCode
 from sit_review_agent.phases.base import Phase
-from sit_review_agent.progress import milestone
+from sit_review_agent.progress import bind_run_clock, ctx_event, emit_event, milestone, record_event
 from sit_review_agent.rundir import RunDir, write_json_atomic
 from sit_review_agent.state.checkpoint import Checkpoint, PinnedHashes, journal_offsets, write_checkpoint
 from sit_review_agent.state.run_state import RunMode
@@ -134,6 +134,7 @@ class Orchestrator:
         ``REPORT``, or to the end of ``PLAN`` when ``ctx.plan_only``."""
         if not ctx.state.completed_phases and ctx.state.budget.started_monotonic == 0.0:
             ctx.state.budget.started_monotonic = ctx.clock.monotonic()
+        bind_run_clock(ctx.progress, ctx.elapsed_s)     # run_s of every progress.jsonl record from here
         stage: Stage | None = stage_of(start_at)
         while stage is not None:
             if stage is Stage.STAGE_1:
@@ -179,8 +180,9 @@ class Orchestrator:
             ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
                                       f"stop rule {cap.detail} ({cap.code}) before {name}",
                                       f"skipped to {target.value}; {REFINE_FALLBACK_IMPACT}")
-        ctx.progress.emit(STAGE_MEMBERS[stage][0].value, f"stop rule {cap.code} fired; skipping to {target.value}",
-                          "warn")
+        emit_event(ctx.progress, STAGE_MEMBERS[stage][0].value,
+                   f"stop rule {cap.code} fired; skipping to {target.value}", "warn",
+                   event="stop_rule", code=cap.code, detail=cap.detail, stage=stage.value, to=target.value)
         return target
 
     # ------------------------------------------------------------------ one-phase stages
@@ -189,21 +191,22 @@ class Orchestrator:
         stage = stage_of(phase)
         nxt = STAGE_TRANSITIONS[stage]
         if not ctx.config.agent.phases.enabled(phase):
-            ctx.progress.emit(phase.value, "skipped (disabled in config/agent.yaml)")
+            emit_event(ctx.progress, phase.value, "skipped (disabled in config/agent.yaml)", event="phase_skipped",
+                       reason="disabled", stage=stage.value)
             return nxt
         if stage in STAGE_ON_CAP:
             cap = self._cap(ctx, stage)
             if cap is not None:
                 return self._skip_on_cap(ctx, stage, cap)
         ctx.state.current_phase = phase
-        ctx.progress.emit(phase.value, "started")
+        emit_event(ctx.progress, phase.value, "started", event="phase_started", stage=stage.value)
         t0 = ctx.clock.monotonic()
         try:
             out = await self.phases[phase].run(ctx)
         except (KeyboardInterrupt, asyncio.CancelledError) as exc:
             self._flush_state(ctx)
-            ctx.progress.emit(phase.value, "interrupted; state flushed (resume continues from the last "
-                              "completed phase)", "warn")
+            emit_event(ctx.progress, phase.value, "interrupted; state flushed (resume continues from the last "
+                       "completed phase)", "warn", event="interrupted", where=phase.value)
             raise RunInterrupted(f"interrupted during {phase.value}") from exc
         except AgentError:
             self._flush_state(ctx)
@@ -221,7 +224,9 @@ class Orchestrator:
         if phase not in ctx.state.completed_phases:
             ctx.state.completed_phases.append(phase)
         self.checkpoint(ctx, phase)
-        ctx.progress.emit(phase.value, f"done in {ctx.state.budget.phase_seconds[phase.value]:.1f}s{note}", "done")
+        seconds = ctx.state.budget.phase_seconds[phase.value]
+        emit_event(ctx.progress, phase.value, f"done in {seconds:.1f}s{note}", "done", event="phase_done",
+                   stage=stage_of(phase).value, seconds=seconds, stopped_at_limit=bool(note), stage_closed=False)
         if not note:                            # a member stopped at the stage 1 limit reaches no milestone
             self._milestone(ctx, phase)
 
@@ -260,13 +265,16 @@ class Orchestrator:
                 return self._skip_on_cap(ctx, Stage.STAGE_1, cap)
             if ctx.state.stop_reason is None:           # resumed after the limit with finished shards:
                 ctx.state.stop_reason = cap             # merge what finished, start nothing new
-            ctx.progress.emit("stage_1", f"stop rule {cap.code} fired; merging the finished shards only", "warn")
+            emit_event(ctx.progress, "stage_1", f"stop rule {cap.code} fired; merging the finished shards only", "warn",
+                       event="stop_rule", code=cap.code, detail=cap.detail, stage=Stage.STAGE_1.value, to="merge",
+                       shards_kept=sorted(shard_results))
             self._close(ctx, sharded, shard_results, ended, fired=True)
             return STAGE_ON_CAP[Stage.STAGE_1]
         for p in STAGE_1:
             if p not in ended and not ctx.config.agent.phases.enabled(p):
                 ended[p] = "done"
-                ctx.progress.emit(p.value, "skipped (disabled in config/agent.yaml)")
+                emit_event(ctx.progress, p.value, "skipped (disabled in config/agent.yaml)", event="phase_skipped",
+                           reason="disabled", stage=Stage.STAGE_1.value)
 
         running: dict[asyncio.Task[Any], PhaseName] = {}
         isos: dict[PhaseName, Isolated] = {}
@@ -292,7 +300,7 @@ class Orchestrator:
                 coro = phase.run_shards(iso.ctx, done=dict(shard_results), on_end=store)  # type: ignore[attr-defined]
             else:
                 coro = phase.run(iso.ctx)
-            ctx.progress.emit(p.value, "started")
+            emit_event(ctx.progress, p.value, "started", event="phase_started", stage=Stage.STAGE_1.value)
             running[asyncio.create_task(timed(p, coro), name=f"stage1-{p.value}")] = p
 
         def may_start(p: PhaseName) -> bool:
@@ -316,8 +324,10 @@ class Orchestrator:
                         continue
                     fired = True
                     names = ", ".join(sorted(p.value for p in running.values()))
-                    ctx.progress.emit("stage_1", f"stage 1 limit passed by {self.stage1_grace_s:.0f} s; stopping "
-                                      f"{names}", "warn")
+                    emit_event(ctx.progress, "stage_1",
+                               f"stage 1 limit passed by {self.stage1_grace_s:.0f} s; stopping {names}", "warn",
+                               event="stage_limit_passed", limit="stage_1_end", limit_s=limit,
+                               grace_s=self.stage1_grace_s, stopped=sorted(p.value for p in running.values()))
                     for t in running:
                         t.cancel()
                     continue
@@ -332,11 +342,13 @@ class Orchestrator:
             if isinstance(exc, AgentError | _StageFailure):
                 raise exc.error if isinstance(exc, _StageFailure) else exc from None
             self._flush_state(ctx)
-            ctx.progress.emit("stage_1", "interrupted; state flushed (resume re-runs the unfinished members)", "warn")
+            emit_event(ctx.progress, "stage_1", "interrupted; state flushed (resume re-runs the unfinished members)",
+                       "warn", event="interrupted", where=Stage.STAGE_1.value)
             raise RunInterrupted("interrupted during stage 1") from exc
         if ctx.plan_only:
             if PhaseName.PLAN in ended:
-                ctx.progress.emit(PhaseName.PLAN.value, "--plan-only: stopping after the plan (zero tool calls)")
+                emit_event(ctx.progress, PhaseName.PLAN.value, "--plan-only: stopping after the plan (zero tool calls)",
+                           event="plan_only_stop")
             return None
         if fired:
             outcomes = stage1_close(ended, [])
@@ -363,8 +375,8 @@ class Orchestrator:
             from sit_review_agent.phases._isolation import MemberInterrupted
 
             if isinstance(exc, MemberInterrupted):
-                ctx.progress.emit(p.value, "interrupted; state flushed (resume re-runs the unfinished members)",
-                                  "warn")
+                emit_event(ctx.progress, p.value, "interrupted; state flushed (resume re-runs the unfinished members)",
+                           "warn", event="interrupted", where=p.value)
                 raise _StageFailure(RunInterrupted(f"interrupted during {p.value}"))
             if isinstance(exc, asyncio.CancelledError):
                 raise _StageFailure(RunInterrupted(f"interrupted during {p.value}"))
@@ -376,8 +388,10 @@ class Orchestrator:
             for r in task.result():
                 shard_results[r.index] = r
             ctx.state.budget.phase_seconds[p.value] = seconds
-            ctx.progress.emit(p.value, f"{len(shard_results)} shard(s) ended in "
-                              f"{ctx.state.budget.phase_seconds[p.value]:.1f}s; merged when stage 1 closes")
+            emit_event(ctx.progress, p.value, f"{len(shard_results)} shard(s) ended in "
+                       f"{ctx.state.budget.phase_seconds[p.value]:.1f}s; merged when stage 1 closes",
+                       event="shards_ended", shards=len(shard_results), seconds=seconds,
+                       outcomes={str(i): r.outcome for i, r in sorted(shard_results.items())})
             return
         merge_member(ctx, iso)
         if p is PhaseName.ASSESS:               # a phase without shards: merged now, checkpointed at the close
@@ -435,16 +449,20 @@ class Orchestrator:
                 ctx.state.completed_phases.append(p)
             self.checkpoint(ctx, p)
             # the member's done line (robustness OPS-10: every completed phase has started and done)
-            ctx.progress.emit(p.value, f"done in {spent:.1f}s; stage 1 closed, merged in "
-                              f"{ctx.clock.monotonic() - t0:.1f}s", "done")
+            merge_s = ctx.clock.monotonic() - t0
+            emit_event(ctx.progress, p.value, f"done in {spent:.1f}s; stage 1 closed, merged in "
+                       f"{merge_s:.1f}s", "done", event="phase_done", stage=Stage.STAGE_1.value, seconds=spent,
+                       stopped_at_limit=fired, stage_closed=True, merge_s=merge_s, shards=len(results),
+                       outcomes={str(r.index): r.outcome for r in results})
             milestone(ctx.progress, "merged", PhaseName.REFINE.value, findings=len(ctx.state.finding_drafts),
                       shards=len(results))
         elif p in ended:
             if p not in ctx.state.completed_phases:
                 ctx.state.completed_phases.append(p)
             self.checkpoint(ctx, p)
-            ctx.progress.emit(p.value, f"done in {ctx.state.budget.phase_seconds.get(p.value, 0.0):.1f}s; stage 1 "
-                              "closed", "done")
+            spent = ctx.state.budget.phase_seconds.get(p.value, 0.0)
+            emit_event(ctx.progress, p.value, f"done in {spent:.1f}s; stage 1 closed", "done", event="phase_done",
+                       stage=Stage.STAGE_1.value, seconds=spent, stopped_at_limit=fired, stage_closed=True)
 
     # ------------------------------------------------------------------ finished shards on disk
 
@@ -483,8 +501,9 @@ class Orchestrator:
             if s.name == r.name and list(s.criteria) == r.criteria:
                 out[r.index] = r
         if out:
-            ctx.progress.emit(PhaseName.ASSESS.value, f"{len(out)} finished shard(s) kept from before the "
-                              "interruption: " + ", ".join(str(i) for i in sorted(out)))
+            emit_event(ctx.progress, PhaseName.ASSESS.value, f"{len(out)} finished shard(s) kept from before the "
+                       "interruption: " + ", ".join(str(i) for i in sorted(out)), event="shards_kept",
+                       shards=sorted(out))
         return out
 
 
@@ -589,6 +608,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
                      k_index=request.k_index, documents=refs)
+    _run_started(prog, cfg, rd, state, resumed=False, plan_only=request.plan_only)
     ctx: RunContext | None = None
     warm: asyncio.Task[None] | None = None
     try:
@@ -597,6 +617,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         ctx = RunContext(config=cfg, run_dir=rd, state=state, llm=llm, tools=tools,
                          ledger=EvidenceLedger(rd, clock=clk), registry=DecisionRegistry(), prompts=prompts,
                          clock=clk, progress=prog, plan_only=request.plan_only)  # type: ignore[arg-type]
+        _run_label_shards(ctx)
         # Right after the tool stack exists, so cold starts overlap models.retrieve, the LLM
         # preflight, ingest and understand (robustness §10 item 2, runbook §7 drill 1).
         warm = _run_start_warmup(ctx)
@@ -609,17 +630,19 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
                      else {"status": "not retrieved (LLM preflight failed)"})
         start_manifest(ctx, models_retrieve=retrieved)
         _run_attach_runtime(ctx, retrieved)
-        ctx.emit(f"run {run_id}: {rd.root}")
+        ctx_event(ctx, f"run {run_id}: {rd.root}", event="run_dir", run_id=run_id, run_dir=str(rd.root))
     except BaseException as exc:  # noqa: BLE001 - recorded in failure.json (INV-02), re-raised typed
         err = await _run_setup_failed(rd, run_id, ctx, warm, exc)
+        _run_finished(prog, rd, run_id, int(err.exit_code), None)
         if err is exc:
             raise
         raise err from exc
     if failed is not None:
         await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
-        return _run_fail(ctx, failed)
-    return await _run_execute(ctx, _run_process_faults(ctx, sched, phases), PhaseName.INGEST, stdin, stdout, warm)
+        return _run_finished_outcome(prog, rd, run_id, _run_fail(ctx, failed))
+    out = await _run_execute(ctx, _run_process_faults(ctx, sched, phases), PhaseName.INGEST, stdin, stdout, warm)
+    return _run_finished_outcome(prog, rd, run_id, out)
 
 
 async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bool = False,
@@ -695,6 +718,7 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
     state.budget.started_monotonic = clk.monotonic() - spent        # type: ignore[attr-defined]
     state.current_phase = None
     prog = progress or _run_console_progress(clk, rd)
+    _run_started(prog, config, rd, state, resumed=True, start_at=start_at.value if start_at else None)
     sched = _run_fault_schedule(config)
     if start_at is not None:
         _run_check_tool_key(config)                                 # robustness INF-08
@@ -716,6 +740,7 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
         ctx = RunContext(config=config, run_dir=rd, state=state, llm=llm, tools=tools,
                          ledger=EvidenceLedger.load(rd, upto=ledger_upto, clock=clk), registry=registry,
                          prompts=prompts, clock=clk, progress=prog)    # type: ignore[arg-type]
+        _run_label_shards(ctx)
         ctx.documents = _run_load_documents(rd, state)
         if start_at is not None:
             warm = _run_start_warmup(ctx)
@@ -724,34 +749,108 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
         start_manifest(ctx, deviations=deviations)
         _run_attach_runtime(ctx, None)
         if sched is not None and getattr(sched, "process", None):
-            ctx.emit("fault schedule: process faults are not re-applied on resume (the interruption is over)")
-        ctx.emit(f"resuming run {state.run_id} at {start_at.value if start_at else 'end'}"
-                 + (f" (accepted drift: {'; '.join(d for d in deviations if d.startswith('--accept'))})"
-                    if accept_drift and any(d.startswith("--accept") for d in deviations) else ""))
+            ctx_event(ctx, "fault schedule: process faults are not re-applied on resume (the interruption is over)",
+                      event="fault_schedule", schedule=getattr(sched, "id", None), armed=False)
+        ctx_event(ctx, f"resuming run {state.run_id} at {start_at.value if start_at else 'end'}"
+                  + (f" (accepted drift: {'; '.join(d for d in deviations if d.startswith('--accept'))})"
+                     if accept_drift and any(d.startswith("--accept") for d in deviations) else ""),
+                  event="run_resuming", run_id=state.run_id, start_at=start_at.value if start_at else None,
+                  accepted_drift=bool(accept_drift and any(d.startswith("--accept") for d in deviations)))
         if start_at is None:                                        # pragma: no cover - report checkpoint w/o file
             await _run_close_tools(ctx)
-            return RunOutcome(run_dir=rd.root, exit_code=0,
-                              report_md=rd.report_md if rd.report_md.exists() else None)
+            return _run_finished_outcome(prog, rd, state.run_id, RunOutcome(
+                run_dir=rd.root, exit_code=0, report_md=rd.report_md if rd.report_md.exists() else None))
         failed = await _run_llm_preflight(ctx)
     except BaseException as exc:  # noqa: BLE001 - recorded in failure.json (INV-02), re-raised typed
         err = await _run_setup_failed(rd, state.run_id, ctx, warm, exc)
+        _run_finished(prog, rd, state.run_id, int(err.exit_code), None)
         if err is exc:
             raise
         raise err from exc
     if failed is not None:
         await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
-        return _run_fail(ctx, failed)
-    return await _run_execute(ctx, phases, start_at, stdin, stdout, warm)
+        return _run_finished_outcome(prog, rd, state.run_id, _run_fail(ctx, failed))
+    out = await _run_execute(ctx, phases, start_at, stdin, stdout, warm)
+    return _run_finished_outcome(prog, rd, state.run_id, out)
 
 
 # ------------------------------------------------------------------------- run_review helpers
 
 
 def _run_console_progress(clock: object, rd: RunDir) -> object:
-    from sit_review_agent.progress import ConsoleProgress
+    from sit_review_agent.progress import PROGRESS_JSONL, ConsoleProgress
 
-    return ConsoleProgress(clock=clock, log_path=rd.progress_log)  # type: ignore[arg-type]
+    return ConsoleProgress(clock=clock, log_path=rd.progress_log,  # type: ignore[arg-type]
+                           jsonl_path=rd.root / PROGRESS_JSONL)
+
+
+def _run_started(progress: object, cfg: EffectiveConfig, rd: RunDir, state: object, *, resumed: bool,
+                 start_at: str | None = None, plan_only: bool = False) -> None:
+    """The ``run_started`` event (``progress.jsonl`` only; UI design note section 5 item 4): what a
+    reader needs to draw the run without ``effective_config.json``: the documents, the profile, the
+    deadline and the stage limits the runtime will use (scaled when ``--deadline`` is below them),
+    and the assess shard groups in launch order."""
+    from sit_review_agent.llm.runtime import effective_stage_limits
+
+    sr = cfg.stop_rules
+    limits, note = effective_stage_limits(sr)
+    docs = [{"doc_id": getattr(d, "doc_id", None), "role": getattr(getattr(d, "role", None), "value", None),
+             "title": getattr(d, "title", None) or None, "version": getattr(d, "version", None),
+             "file": Path(str(getattr(d, "pdf_path", "") or "")).name or None,
+             "pages": getattr(d, "page_count", None)}
+            for d in getattr(state, "documents", [])]
+    shards = [{"index": i, "name": s.name, "criteria": list(s.criteria)}
+              for i, s in enumerate(cfg.agent.assess.shards_for(cfg.criteria.ids()), start=1)]
+    run_id = getattr(state, "run_id", rd.root.name)
+    record_event(progress, "run", "run_started", f"run {run_id} started" + (" (resumed)" if resumed else ""),  # type: ignore[arg-type]
+                 run_id=run_id, run_dir=str(rd.root), mode=getattr(state, "mode", None),
+                 review_mode=getattr(getattr(state, "review_mode", None), "value", None), resumed=resumed,
+                 start_at=start_at, plan_only=plan_only, documents=docs, profile=cfg.cli_args.get("profile"),
+                 model=cfg.agent.model, backend=cfg.agent.llm.backend, transport=cfg.agent.transport.value,
+                 deadline_active="deadline" in sr.active, deadline_s=sr.deadline_seconds,
+                 stage_limits_s=limits, stage_limits_scaled=note is not None,
+                 report_reserve_s=sr.report_reserve_seconds, criteria=cfg.criteria.ids(), shards=shards,
+                 phases_enabled=[p.value for p in PHASE_ORDER if cfg.agent.phases.enabled(p)])
+
+
+def _run_label_shards(ctx: RunContext) -> None:
+    """Let the call-events layer name each assess call's shard (``call_opened``/``call_closed``)."""
+    from sit_review_agent.progress import CallEventsGateway
+
+    if isinstance(ctx.llm, CallEventsGateway):
+        from sit_review_agent.phases.assess import AssessPhase
+
+        ctx.llm.shard_names = lambda: [s.name for s in AssessPhase.shards(ctx)]
+
+
+def _run_finished(progress: object, rd: RunDir, run_id: str, exit_code: int, report_md: Path | None) -> None:
+    """The ``run_finished`` event (``progress.jsonl`` only; UI design note section 5 item 2): outcome
+    and cost from the manifest as written at exit, the exit code, the report path and the run clock."""
+    import json as _json
+
+    from sit_review_agent.progress import _run_s
+
+    manifest: dict[str, Any] = {}
+    try:
+        manifest = dict(_json.loads(rd.manifest.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        manifest = {}
+    usage = manifest.get("usage") or {}
+    model = (manifest.get("extra") or {}).get("model") or {}
+    partial = rd.root / "report.partial.md"
+    record_event(progress, "run", "run_finished", f"run {run_id} finished: exit {exit_code}",  # type: ignore[arg-type]
+                 kind="done" if exit_code == 0 else "warn", run_id=run_id, outcome=manifest.get("outcome"),
+                 exit_code=exit_code, report_md=str(report_md) if report_md is not None else None,
+                 report_json=str(rd.report_json) if report_md is not None and rd.report_json.is_file() else None,
+                 partial_report=str(partial) if partial.is_file() else None,
+                 wall_s=_run_s(getattr(progress, "run_clock", None)), cost_usd=usage.get("cost_usd"),
+                 cost_is_lower_bound=bool(model.get("cost_usd_lower_bound")))
+
+
+def _run_finished_outcome(progress: object, rd: RunDir, run_id: str, out: RunOutcome) -> RunOutcome:
+    _run_finished(progress, rd, run_id, out.exit_code, out.report_md)
+    return out
 
 
 def _run_previous_ref(previous: Path, taken: set[str]) -> tuple[object, str]:
@@ -810,7 +909,7 @@ def _run_attach_runtime(ctx: RunContext, retrieved: Mapping[str, object] | None)
 
     state, clk = ctx.state, ctx.clock
     for warning in deadline_warnings(ctx.config.stop_rules):
-        ctx.emit(warning, "warn")
+        ctx_event(ctx, warning, "warn", event="deadline_warning", deadline_s=ctx.config.stop_rules.deadline_seconds)
 
     def elapsed() -> float:
         return clk.monotonic() - state.budget.started_monotonic
@@ -876,13 +975,15 @@ class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule
                 advance(seconds)                                    # a virtual clock: everything sees the jump
             else:
                 ctx.state.budget.started_monotonic -= seconds       # the run clock jumps forward
-            ctx.emit(f"injected fault: clock jump of {seconds:g} s before {self.name.value}", "warn")
+            ctx_event(ctx, f"injected fault: clock jump of {seconds:g} s before {self.name.value}", "warn",
+                      event="fault_injected", fault=kind.value, where=self.name.value, seconds=seconds)
             return await work()
         out = None
         if str(extra.get("at", "end")) == "end":
             out = await work()
         where = where or self.name.value
-        ctx.emit(f"injected fault: {kind.value} in {where}", "warn")
+        ctx_event(ctx, f"injected fault: {kind.value} in {where}", "warn", event="fault_injected", fault=kind.value,
+                  where=where)
         if kind is FaultType.SIGINT_IN_STAGE:
             raise KeyboardInterrupt
         del out
@@ -904,8 +1005,10 @@ def _run_process_faults(ctx: RunContext, sched: object,
         stage = PhaseName(str((spec.model_extra or {}).get("stage")))
         out[stage] = _run_ProcessFault(out[stage], spec)
         at = (spec.model_extra or {}).get("at", "end")
-        ctx.emit(f"fault schedule {getattr(sched, 'id', '?')}: {spec.type.value} armed "
-                 f"({'before' if spec.type.value == 'clock_jump' else f'at the {at} of'} {stage.value})", "warn")
+        ctx_event(ctx, f"fault schedule {getattr(sched, 'id', '?')}: {spec.type.value} armed "
+                  f"({'before' if spec.type.value == 'clock_jump' else f'at the {at} of'} {stage.value})", "warn",
+                  event="fault_schedule", schedule=getattr(sched, "id", None), armed=True, fault=spec.type.value,
+                  target=stage.value, at="before" if spec.type.value == "clock_jump" else str(at))
     return out
 
 
@@ -928,7 +1031,10 @@ def _run_build_llm(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: ob
     if sched is not None:
         gw = FaultInjectingLLMGateway(gw, sched, clock=clock, policy=cfg.agent.llm)  # type: ignore[arg-type]
         # The wrapper forwards ``native_pdf`` from the backend it wraps (llm.backend.supports_native_pdf).
-    return gw
+    from sit_review_agent.progress import CallEventsGateway
+
+    # Outermost: call_opened / call_closed for every model call (progress.jsonl only).
+    return CallEventsGateway(gw, progress, clock)  # type: ignore[arg-type]
 
 
 def _run_build_tools(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: object, sched: object,
@@ -938,8 +1044,11 @@ def _run_build_tools(cfg: EffectiveConfig, rd: RunDir, clock: object, progress: 
     ``replay.fixtures`` when given (selftest), else an empty fake. On resume, ``resume_offset``
     adds the ``SelfReplayGateway`` and new call IDs continue after the highest logged one."""
     from sit_review_agent.config import Transport
+    from sit_review_agent.progress import ToolProgress
     from sit_review_agent.tools.gateway import CallIds, FakeToolGateway, ReplayGateway, build_tool_gateway
 
+    if progress is not None:
+        progress = ToolProgress(progress)  # type: ignore[arg-type]
     if factory is not None:
         gw = factory(rd, resume_offset, clock, progress)  # type: ignore[operator]
     elif not cfg.tools.enabled_servers():
@@ -1063,7 +1172,8 @@ async def _run_llm_preflight(ctx: RunContext) -> AgentError | None:
         except AgentError as exc:
             return exc
         except NotImplementedError:
-            ctx.emit("LLM preflight not implemented by this backend; skipped", "warn")
+            ctx_event(ctx, "LLM preflight not implemented by this backend; skipped", "warn", event="preflight",
+                      status="skipped")
         except Exception as exc:  # noqa: BLE001 - an unusable backend is reported, never a traceback
             from sit_review_agent.errors import LLMUnavailableError
 
@@ -1083,14 +1193,17 @@ def _run_start_warmup(ctx: RunContext) -> object:
             async def _warm(fn: object = fn) -> None:
                 try:
                     health = await fn()  # type: ignore[operator]
-                    ctx.progress.emit("run", f"MCP warm-up done: {health}")
+                    emit_event(ctx.progress, "run", f"MCP warm-up done: {health}", event="mcp_warmup", status="done")
                 except NotImplementedError:
-                    ctx.progress.emit("run", "MCP warm-up not implemented by the tool gateway; skipped", "warn")
+                    emit_event(ctx.progress, "run", "MCP warm-up not implemented by the tool gateway; skipped", "warn",
+                               event="mcp_warmup", status="skipped")
                 except Exception as exc:  # noqa: BLE001 - warm-up is best effort
-                    ctx.progress.emit("run", f"MCP warm-up failed ({type(exc).__name__}); servers start cold", "warn")
+                    emit_event(ctx.progress, "run", f"MCP warm-up failed ({type(exc).__name__}); servers start cold",
+                               "warn", event="mcp_warmup", status="failed", error=type(exc).__name__)
 
             return asyncio.create_task(_warm())
-    ctx.progress.emit("run", "no MCP warm-up for this tool transport; skipped")
+    emit_event(ctx.progress, "run", "no MCP warm-up for this tool transport; skipped", event="mcp_warmup",
+               status="none")
     return None
 
 
@@ -1209,17 +1322,19 @@ class _run_PlanGate:  # private helper: `_run_` prefix by workstream rule
         inp = self.stdin or sys.stdin
         interactive = bool(getattr(inp, "isatty", lambda: False)())
         if not interactive and self.stdin is None:
-            ctx.emit("plan_approval: stdin is not a terminal; plan approved automatically (non-interactive)", "warn")
+            ctx_event(ctx, "plan_approval: stdin is not a terminal; plan approved automatically (non-interactive)",
+                      "warn", event="plan_approval", approved=True, interactive=False)
             return ctx
         print("Approve this plan and start research? [y/N] ", end="", file=out, flush=True)  # type: ignore[call-overload]
         answer = (inp.readline() or "").strip().lower()  # type: ignore[attr-defined]
         if answer in ("y", "yes"):
-            ctx.emit("plan approved")
+            ctx_event(ctx, "plan approved", event="plan_approval", approved=True, interactive=True)
             return ctx
         if ctx.state.plan is not None:
             ctx.state.plan.approved = False
         ctx.plan_only = True
-        ctx.emit("plan not approved: stopping after the plan (`sit-review resume` continues with research)", "warn")
+        ctx_event(ctx, "plan not approved: stopping after the plan (`sit-review resume` continues with research)",
+                  "warn", event="plan_approval", approved=False, interactive=True)
         return ctx
 
 
@@ -1250,13 +1365,14 @@ async def _run_execute(ctx: RunContext, phases: Mapping[PhaseName, Phase] | None
         await _run_stop_warmup(warm)
         await _run_close_tools(ctx)
     if rd.report_json.is_file() and PhaseName.REPORT in ctx.state.completed_phases:
-        ctx.emit(f"report: {rd.report_md}", "done")
+        ctx_event(ctx, f"report: {rd.report_md}", "done", event="report_written", report_md=str(rd.report_md),
+                  report_json=str(rd.report_json))
         return RunOutcome(run_dir=rd.root, exit_code=0, report_md=rd.report_md)
     try:
         finalise_manifest(ctx, Outcome.ABORTED_GRACEFUL)
     except Exception:  # noqa: BLE001 - best effort; the run itself succeeded
         pass
-    ctx.emit("stopped after the plan; no report written", "done")
+    ctx_event(ctx, "stopped after the plan; no report written", "done", event="stopped_after_plan")
     return RunOutcome(run_dir=rd.root, exit_code=0, report_md=None)
 
 
@@ -1306,9 +1422,14 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     except Exception:  # noqa: BLE001 - the failure record above is what matters
         pass
     if lower is not None:
-        ctx.progress.emit(phase or "run", lower, "warn")
-    ctx.progress.emit(phase or "run", f"error ({type(exc).__name__}, exit {int(code)}): {str(exc)[:300]}; "
-                      f"state saved; resume with `sit-review resume {rd.root}`", "warn")
+        emit_event(ctx.progress, phase or "run", lower, "warn", event="cost_lower_bound")
+    # The JSONL line leaves out the error text, which can quote model output (a schema error).
+    emit_event(ctx.progress, phase or "run", f"error ({type(exc).__name__}, exit {int(code)}): {str(exc)[:300]}; "
+               f"state saved; resume with `sit-review resume {rd.root}`", "warn", event="run_error",
+               public=f"error ({type(exc).__name__}, exit {int(code)}); state saved; resume with "
+                      f"`sit-review resume {rd.root}`",
+               error=type(exc).__name__, exit_code=int(code), resumable=bool(record.get("resumable")),
+               resume=f"sit-review resume {rd.root}")
     return RunOutcome(run_dir=rd.root, exit_code=int(code), report_md=None)
 
 
