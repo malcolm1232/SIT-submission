@@ -452,3 +452,33 @@ async def test_recorded_session_errors_of_sit_sample_tools_1_replay_as_recorded(
             assert res.error_class is ToolErrorClass.TOOL_ERROR               # as recorded, not reclassified
             assert "-32000" in (res.error_message or "")
     assert gw.pending == []
+
+
+async def test_reopen_lines_reach_progress_jsonl_as_schema_valid_tool_status(tmp_path: Any) -> None:
+    """The reopen lines go through the run's sink chain (ToolProgress into ConsoleProgress with
+    progress.jsonl) and every record validates against spec/progress_event.schema.json."""
+    import io
+    import json
+    from pathlib import Path
+
+    import jsonschema
+
+    from sit_review_agent.progress import ConsoleProgress, ToolProgress
+
+    clock = FakeClock()
+    srv = FakeServer(clock, idle_close_s=100.0, close_after=1)
+    gw = gateway(srv, clock)
+    jsonl = Path(tmp_path) / "progress.jsonl"
+    gw.progress = ToolProgress(ConsoleProgress(clock=clock, stream=io.StringIO(), jsonl_path=jsonl))
+    await gw.list_tools()
+    clock.advance(130.0)
+    assert (await gw.call(SEARCH, {"query": "q"})).ok           # idle reopen before the call
+    assert (await gw.call(SEARCH, {"query": "q2"})).ok          # closed after one call: reopen and retry
+    await gw.aclose()
+    schema = json.loads((Path(__file__).resolve().parents[1] / "spec" / "progress_event.schema.json")
+                        .read_text(encoding="utf-8"))
+    records = [json.loads(ln) for ln in jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    reopened = [r for r in records if "session reopened" in r["message"]]
+    assert len(reopened) == 2 and {r["type"] for r in reopened} == {"tool_status"}
+    for r in records:
+        jsonschema.validate(r, schema)

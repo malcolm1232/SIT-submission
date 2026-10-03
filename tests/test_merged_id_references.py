@@ -239,3 +239,38 @@ async def test_the_report_gate_refuses_a_dangling_reference(tmp_path: Path, monk
     problems = json.loads(rd.failure.read_text(encoding="utf-8"))["problems"]
     assert "INV-12: $.sound_areas[0].why_sound: FND-002 is not a finding of this review" in problems
     assert any(p.startswith("INV-12 (report.md): $.coverage[") for p in problems)
+
+
+async def test_the_id_rewrite_and_the_renderer_fixes_meet_in_one_report(tmp_path: Path,
+                                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both branches of 2026-10-03 rewrite the report text: the ID map (finding_refs) and the renderer
+    (a severity count in prose made equal to the findings, bullet lists kept). One run through both:
+    the verdict cites IDs that are no final finding inside a wrong count and a list."""
+    monkeypatch.setenv("SIT_MCP_API_KEY", CANARY)
+    cfg = config(tmp_path)
+    shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
+
+    def scripted(rd: Any, clock: Any, progress: Any) -> FakeGateway:
+        script = build(shards)
+        verdict = copy.deepcopy(script["report"][0].parsed)
+        verdict["verdict"]["rationale"] = ("Three high-severity findings remain open (FND-007, FND-008):\n"
+                                           "- the generation model (FND-007)\n- the answer cache (FND-005)")
+        script["report"] = [FakeResponse(parsed=verdict)]
+        return FakeGateway(script, run_dir=rd, clock=clock)
+
+    out = await run_review(RunRequest(pdf=PDF, config=cfg, run_id="refs-render"), llm_factory=scripted,
+                           clock=FakeClock(), progress=NullProgress())
+    rd = RunDir(out.run_dir)
+    assert out.exit_code == 0, rd.failure.read_text(encoding="utf-8") if rd.failure.exists() else ""
+    report = json.loads(rd.report_json.read_text(encoding="utf-8"))
+    assert {f["id"] for f in report["findings"]} == FINAL
+    high = sum(f.get("severity") == "high" for f in report["findings"])
+    assert high == 1
+    review = {k: v for k, v in report.items() if k not in ("run_manifest", "evidence_ledger")}
+    assert [(p, t) for p, t in cited(review) if t not in FINAL] == []
+    md = rd.report_md.read_text(encoding="utf-8")
+    assert sorted({t for t in TOKEN.findall(md) if t not in FINAL}) == []
+    assert "One high-severity findings remain open" in md and "Three high-severity" not in md
+    # The verdict call reads the final numbering: an ID that is no final finding is removed with its
+    # brackets, a final one stays, and the list survives the rewrite.
+    assert "remain open:\n\n- the generation model\n- the answer cache (FND-005)" in md
