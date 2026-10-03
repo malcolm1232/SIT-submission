@@ -20,3 +20,14 @@ email:
   starttls: true
   username: ""
   from: ""
+
+# documents: sample design documents the Review page offers as chips under the drop zone. A chip fills the form
+# with the file (the same path as a drop); it never starts a run. Paths are relative to the repository root; a
+# path that does not exist is left out of the list.
+documents:
+  - label: Payments orchestration
+    path: eval/synthetic/payments_orchestration/design_v1.pdf
+  - label: Clinical RPM
+    path: eval/synthetic/clinical_rpm/design_v1.pdf
+  - label: Research lakehouse
+    path: eval/synthetic/research_lakehouse/design_v1.pdf

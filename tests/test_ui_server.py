@@ -354,3 +354,171 @@ def test_the_reader_takes_every_line_of_the_recorded_fixture() -> None:
     assert [e["seq"] for e in evs] == list(range(1, len(evs) + 1))
     assert evs[0]["type"] == events.STARTED and evs[-1]["type"] == events.FINISHED
     assert all(e["t"] <= f["t"] for e, f in zip(evs, evs[1:], strict=False))
+
+
+# ------------------------------------------------------------------ v2: what the rail reads (ui_restyle.md section 4)
+
+
+def test_a_running_row_carries_its_stage_clock_and_open_calls_from_the_records(tmp_path: Path) -> None:
+    rd = fixture_run(tmp_path, lines=70)
+    evs = events.read_all(rd / "progress.jsonl")
+    row = next(r for r in TestClient(build_app(make_state(tmp_path))).get("/runs").json()["runs"]
+               if r["run_id"] == "fixture_run")
+    assert row["status"] == "running"
+    # The last record names the stage (refine, its call just opened) and the run clock is its run_s.
+    assert row["stage"] == next(e["phase"] for e in reversed(evs) if e["phase"] not in rundata.NOT_A_STAGE)
+    assert row["run_s"] == evs[-1]["run_s"]
+    opened = {e["fields"]["call_id"] for e in evs if e["type"] == "call_opened"}
+    closed = {e["fields"]["call_id"] for e in evs if e["type"] in ("call_closed", "call_cut")}
+    assert row["open_calls"] == len(opened - closed) == 1
+    # The whole stream: nothing open, the report stage last, the clock at the final record.
+    (rd / "progress.jsonl").write_text(FIXTURE_EVENTS.read_text(encoding="utf-8"), encoding="utf-8")
+    full = events.read_all(rd / "progress.jsonl")
+    state = rundata.progress_state(full)
+    assert state == {"stage": "report", "run_s": full[-1]["run_s"], "open_calls": 0}
+
+
+def test_a_finished_row_carries_verdict_confidence_wall_and_the_recorded_command(live_client: TestClient) -> None:
+    rows = {r["run_id"]: r for r in live_client.get("/runs").json()["runs"]}
+    r = rows["sit_sample_tools_1"]
+    report = json.loads((LIVE_RUNS / "sit_sample_tools_1" / "report.json").read_text(encoding="utf-8"))
+    manifest = json.loads((LIVE_RUNS / "sit_sample_tools_1" / "manifest.json").read_text(encoding="utf-8"))
+    assert (r["verdict"], r["confidence"]) == (report["verdict"]["label"], report["verdict"]["confidence"])
+    assert r["wall_s"] == manifest["extra"]["timing"]["wall_clock_s"]
+    assert r["model_calls"] == manifest["extra"]["model"]["calls_logged"]
+    assert r["started_at"] == manifest["timestamps"]["start_utc"]
+    assert r["version"] == report["metadata"]["documents"][0]["version"]
+    assert r["argv"] == "dra " + " ".join(manifest["extra"]["code"]["argv"])
+    assert r["stage"] is None and r["run_s"] is None and r["open_calls"] == 0   # no progress.jsonl was recorded
+
+
+def test_meta_states_the_backend_version_and_config_files() -> None:
+    from sit_review_agent import __version__
+    from sit_review_agent.ui.server import build_state
+
+    state = build_state(runs_dir=LIVE_RUNS, chat_client=NoChat())
+    meta = TestClient(build_app(state)).get("/meta").json()
+    assert meta["backend"] in ("claude_code", "anthropic_api") and meta["version"] == __version__
+    assert meta["model"] and meta["auth_env"] == "SIT_MCP_API_KEY"
+    assert "config/agent.yaml" in meta["config_files"] and "config/tools.yaml" in meta["config_files"]
+    assert meta["config_files"][-1] == "config/ui.yaml"
+    assert [t["name"] for t in meta["tools"]][:2] == ["mcp-internet-search", "mcp-research-information"]
+    assert state.probe is not None
+
+
+SERVERS = [{"name": "mcp-internet-search", "enabled": True}, {"name": "mcp-research-information", "enabled": True},
+           {"name": "mcp-browser-automation-pw", "enabled": False},
+           {"name": "mcp-document-intelligence", "enabled": False}]
+
+
+def tools_state(runs: Path, **kw: Any) -> UIState:
+    st = make_state(runs, **kw)
+    st.tools = list(SERVERS)
+    return st
+
+
+def test_tools_read_the_newest_run_that_recorded_a_warm_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = tmp_path / "runs"
+    sample = LIVE_RUNS / "sit_sample_tools_1"
+    rd = copy_run(sample, runs / "sit_sample_tools_1")
+    for name in ("tools_list.jsonl", "tools.jsonl"):
+        shutil.copy2(sample / name, rd / name)
+    copy_run(REHEARSAL, runs / "rehearsal_concurrent_1")       # no tool records: never the source
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    out = TestClient(build_app(tools_state(runs))).get("/tools").json()
+    assert out["from_run"] == "sit_sample_tools_1" and out["key_present"] is False and out["probe"] is None
+    listed = json.loads((sample / "tools_list.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    by_server: dict[str, int] = {}
+    for t in listed["tools"]:
+        by_server[t["server"]] = by_server.get(t["server"], 0) + 1
+    calls = [json.loads(ln) for ln in (sample / "tools.jsonl").read_text(encoding="utf-8").splitlines()]
+    rows = {r["name"]: r for r in out["servers"]}
+    assert list(rows) == [s["name"] for s in SERVERS]
+    for name, n in by_server.items():
+        assert rows[name]["warm"] is True and rows[name]["tools"] == n and rows[name]["at"] == listed["listed_at"]
+        assert rows[name]["calls_failed"] == sum(1 for c in calls if c["server"] == name and c["is_error"])
+        assert rows[name]["calls_ok"] == sum(1 for c in calls if c["server"] == name and not c["is_error"])
+    for name in ("mcp-browser-automation-pw", "mcp-document-intelligence"):
+        assert rows[name] == {"name": name, "enabled": False, "warm": None, "at": None, "tools": None, "status": None,
+                              "calls_ok": 0, "calls_failed": 0}
+
+
+def test_tools_with_no_recorded_warm_up_claim_nothing(tmp_path: Path) -> None:
+    copy_run(REHEARSAL, tmp_path / "rehearsal_concurrent_1")
+    out = TestClient(build_app(tools_state(tmp_path))).get("/tools").json()
+    assert out["from_run"] is None
+    assert all(r["warm"] is None and r["at"] is None and r["tools"] is None for r in out["servers"])
+
+
+def test_tools_take_the_warm_up_record_time_from_the_run_start(tmp_path: Path) -> None:
+    rd = fixture_run(tmp_path)                                  # mcp_warmup "none" at t=0.5, no tools_list.jsonl
+    (rd / "manifest.json").write_text(json.dumps({"timestamps": {"start_utc": "2026-10-03T04:24:22Z"}}),
+                                      encoding="utf-8")
+    client = TestClient(build_app(tools_state(tmp_path)))
+    assert client.get("/tools").json()["from_run"] is None       # "none": no warm-up was attempted in that run
+    lines = (rd / "progress.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+    for i, ln in enumerate(lines):
+        ev = json.loads(ln)
+        if ev["type"] == "mcp_warmup":
+            ev["fields"]["status"] = "failed"
+            lines[i] = json.dumps(ev) + "\n"
+    (rd / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
+    out = client.get("/tools").json()
+    assert out["from_run"] == "fixture_run"
+    row = next(r for r in out["servers"] if r["name"] == "mcp-internet-search")
+    assert row["status"] == "failed"
+    assert row["warm"] is False and row["at"] is None            # no tools/list answer was recorded for it
+    assert rundata._iso_plus("2026-10-03T04:24:22Z", 0.5) == "2026-10-03T04:24:22Z"
+    assert rundata._iso_plus("2026-10-03T04:24:22Z", 61) == "2026-10-03T04:25:23Z"
+    assert rundata._iso_plus(None, 61) is None
+
+
+def test_the_probe_runs_only_with_the_key_in_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    async def fake_probe() -> dict[str, Any]:
+        calls.append(1)
+        return {"at": "2026-10-03T08:00:00Z", "servers": [{"name": "mcp-internet-search", "warm": True, "tools": 3,
+                                                           "health": "ok", "error": None}], "auth_failed": False,
+                "lines": []}
+
+    st = tools_state(tmp_path)
+    st.probe = fake_probe
+    client = TestClient(build_app(st))
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    res = client.post("/tools/probe")
+    assert res.status_code == 409 and "SIT_MCP_API_KEY is not set" in res.json()["error"] and calls == []
+    monkeypatch.setenv("SIT_MCP_API_KEY", "k")
+    res = client.post("/tools/probe")
+    assert res.status_code == 200 and calls == [1] and res.json()["servers"][0]["warm"] is True
+    assert client.get("/tools").json()["probe"] == res.json()      # the last probe travels with the status
+    st.tools = [dict(s, enabled=False) for s in SERVERS]
+    assert client.post("/tools/probe").status_code == 409 and calls == [1]
+    st.probe = None
+    st.tools = list(SERVERS)
+    assert client.post("/tools/probe").status_code == 409 and calls == [1]
+
+
+def test_the_sample_documents_come_from_ui_yaml_and_missing_files_are_left_out(tmp_path: Path) -> None:
+    from sit_review_agent.ui.server import load_documents
+
+    pdf = REPO / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
+    (tmp_path / "ui.yaml").write_text(
+        "email:\n  host: ''\ndocuments:\n"
+        f"  - label: Payments orchestration\n    path: {pdf.relative_to(REPO)}\n"
+        "  - label: Missing\n    path: eval/nowhere/design_v1.pdf\n"
+        "  - label: Not a document\n    path: pyproject.toml\n"
+        "  - path: no-label.pdf\n", encoding="utf-8")
+    docs = load_documents(tmp_path / "ui.yaml", REPO)
+    assert [d["label"] for d in docs] == ["Payments orchestration"]
+    assert docs[0] == {"name": "doc-1", "label": "Payments orchestration", "path": str(pdf.relative_to(REPO)),
+                       "file": "payments_orchestration_design_v1.pdf", "abspath": str(pdf)}
+    assert load_documents(tmp_path / "absent.yaml", REPO) == []
+    st = make_state(tmp_path)
+    st.documents = docs
+    client = TestClient(build_app(st))
+    assert client.get("/documents").json() == {"items": [{k: docs[0][k] for k in ("name", "label", "file", "path")}]}
+    res = client.get("/documents/doc-1")
+    assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
+    assert res.content == pdf.read_bytes()
+    assert client.get("/documents/doc-2").status_code == 404

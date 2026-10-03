@@ -1,8 +1,8 @@
-/* Tokens for the SIT review UI, v2: the DBSearch.AI idiom (docs/design/ui_restyle.md, docs/design/ui_mockup_v2/tokens.css).
+/* Tokens for the SIT review UI, v2: the DBSearch.AI idiom.
    Section 1 is copied from DBSearch.AI/src/dbsearch/server/static/css/tokens.css and css/rail.css so the
    two products read as one family (same paper ramp, same ink action pill, same signal green, same rail).
-   Section 2 maps the SIT page's own role names onto that palette, so app.css and export.css keep
-   their names and only this file changes. Section 3 is SIT content colour: severity and run state.
+   Section 2 maps the SIT page's own role names (ui/static/tokens.css) onto that palette, so app.css keeps
+   its names and only this file changes. Section 3 is SIT content colour: severity and run state.
    Light theme only; dark is authored separately later, never inverted (craft 3.3). No hex outside this
    file (craft 8.1). */
 :root {
@@ -21,8 +21,6 @@
   /* the rail (rail.css .navrail), the app's one inverted band */
   --navrail-bg:#16161A; --navrail-fg:#9A9AA2; --navrail-fg-strong:#FAF9F7; --navrail-muted:#6B6B73;
   --navrail-active-bg:#FAF9F7; --navrail-active-fg:#16161A; --navrail-w:248px;
-  --navrail-rule:rgba(255,255,255,.07); --navrail-row:rgba(255,255,255,.06);
-  --navrail-note-bg:rgba(255,255,255,.04); --navrail-note-border:rgba(255,255,255,.06);
   --shadow-sm:0 1px 2px rgba(22,22,26,.04);
   --shadow:0 1px 2px rgba(22,22,26,.04), 0 1px 3px rgba(22,22,26,.05);
   --shadow-lg:0 12px 32px -12px rgba(22,22,26,.14), 0 4px 10px -4px rgba(22,22,26,.08);
@@ -32,7 +30,7 @@
   --mono:ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   --ease:cubic-bezier(.16,1,.3,1);
 
-  /* 2. SIT role names mapped onto the paper palette (app.css and export.css keep these names) */
+  /* 2. SIT role names mapped onto the paper palette (app.css keeps these names) */
   --bg-app:var(--paper); --bg-surface:var(--white); --bg-subtle:var(--paper-2); --bg-control:var(--paper-2);
   --bg-hover:#ECEAE5; --bg-active:#E4E2DD;
   --border-subtle:var(--rule); --border-control:var(--rule-strong); --border-hover:#C4C1B9;
