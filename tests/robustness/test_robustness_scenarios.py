@@ -476,13 +476,21 @@ def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """Shard 1's first assess answer (nth 0) misses `findings`: one repair turn for that shard (its
+    second call), the repaired answer used, the other three shards' answers untouched (one call
+    each), findings as in the fault-free run."""
     rec = recs[0]
     ok(rec)
     entries = llm_calls(rec, "assess")
-    assert [e.get("outcome") for e in entries if e.get("fault")] == ["LLMSchemaError"]
-    assert any(e.get("purpose") == "assess:schema_repair" and e.get("outcome") == "ok" for e in entries)
+    faulted = [e for e in entries if e.get("fault")]
+    assert [e.get("outcome") for e in faulted] == ["LLMSchemaError"] and faulted[0]["shard"] == 1
+    repair = [e for e in shard_calls(rec, 1) if e.get("purpose") == "assess:schema_repair"]
+    # the corrupted answer is logged by the inner gateway and as the fault entry under one call ID
+    assert len(repair) == 1 and repair[0]["outcome"] == "ok" and len({e["call_id"] for e in shard_calls(rec, 1)}) == 2
+    assert all([e.get("purpose") for e in shard_calls(rec, s)] == ["assess"] for s in SHARDS[1:])
+    assert len({e["call_id"] for e in entries}) == len(SHARDS) + 1
     assert titles(rec) == titles(control)
-    return Metric("repair turns", 1, "== 1; repaired answer used")
+    return Metric("repair turns", 1, "== 1 (shard 1); repaired answer used; the other shards untouched")
 
 
 PLACEHOLDER = "TBD"
@@ -640,9 +648,18 @@ def check_inf08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_net01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """The network drops at 205 s for 120 s while research runs (plan delayed 200 s; the assess
+    shards, started with it, have finished): exit 3 with the checkpoints of understand and plan and
+    the four finished shards on disk; resume re-runs neither a completed member nor a shard, serves
+    research's completed tool call from tools.jsonl and completes with no duplicate ledger entry."""
     rec = recs[0]
     assert oracles.exit_code(rec) == 3 and rec.failure["resumable"] and rec.failure["phase"] == "research"
+    assert rec.failure["completed_phases"] == ["ingest", "understand", "plan"]
     assert sorted(p.name for p in rec.run_dir.checkpoints.iterdir())[-1] == "03-plan.json"
+    shards_dir = rec.run_dir.root / "shards"
+    assert sorted(int(p.name.split("-", 1)[0]) for p in shards_dir.glob("*.json")) == SHARDS   # every shard finished
+    first_assess = llm_calls(rec, "assess")
+    assert len(first_assess) == len(SHARDS) and all(e.get("outcome") == "ok" for e in first_assess)
     calls = tool_calls(rec)
     done = [e for e in calls if e["status"] == "ok"]
     lost = [e for e in calls if e["status"] != "ok"]
@@ -652,6 +669,8 @@ def check_net01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     oracles.assert_oracles(again)
     assert oracles.exit_code(again) == 0
     assert not [o for o in again.outbound if o["tool"] == "search"]         # the completed call is not repeated
+    assert len(llm_calls(again, "assess")) == len(first_assess)             # no shard re-run
+    assert not [e for e in llm_calls(again) if e.get("resumed") and e.get("phase") != "research"]
     ids = [e["evidence_id"] for e in again.report["evidence_ledger"]]
     # a page seen as a snippet and then read in full is two entries by design (research.py); anything
     # else repeated would be a duplicate
@@ -683,10 +702,13 @@ def check_ops04(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert oracles.exit_code(again) == 0
     assert again.outbound == []                                             # no completed tool call repeated live
     phases = [e["phase"] for e in llm_calls(again) if e.get("outcome") == "ok"]
-    assert phases.count("understand") == 1 and phases.count("plan") == 1   # completed stages not re-run
+    assert phases.count("understand") == 1 and phases.count("plan") == 1   # completed members not re-run
+    assert phases.count("assess") == len(SHARDS)                            # the four finished shards neither
+    assert sorted(int(p.name.split("-", 1)[0]) for p in (rec.run_dir.root / "shards").glob("*.json")) == SHARDS
     assert any(e.get("resumed") for e in llm_calls(again, "research"))
+    assert not [e for e in llm_calls(again) if e.get("resumed") and e.get("phase") != "research"]
     assert titles(again) == titles(control)
-    return Metric("tool calls repeated live after resume", 0, "0")
+    return Metric("tool calls repeated live after resume", 0, "0; no completed member or shard re-run")
 
 
 def check_ops10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
