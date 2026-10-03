@@ -6,7 +6,8 @@ Routes (design note section 9, W2)::
     GET  /static/<file>             index.html, tokens.css, app.css, app.js
     GET  /meta                      profiles, tools, whether runs can be started here
     GET  /runs                      run directories under --runs-dir, newest first
-    POST /runs                      start ``dra review`` as a subprocess (multipart upload)
+    POST /runs                      start ``dra review`` as a subprocess (multipart upload, or a pasted
+                                    https link to a PDF in ``document_url``, fetched by ``ui.fetch``)
     GET  /runs/<id>                 one run's summary and status
     GET  /runs/<id>/events          progress.jsonl as server-sent events (Last-Event-ID or ?after=N)
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
@@ -41,7 +42,8 @@ from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, R
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from sit_review_agent.ui import chat, events, export, mail, rundata, share
+from sit_review_agent.config import UrlPolicy
+from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -93,6 +95,9 @@ class UIState:
     #: ``--runs-dir`` / ``--config`` as the server was started, repeated in the share restart line.
     ui_args: list[str] = field(default_factory=list)
     lan_ip: Callable[[], str | None] = share.lan_ipv4
+    url_policy: UrlPolicy = field(default_factory=UrlPolicy)
+    fetch_transport: Any = None
+    resolve: Callable[[str], list[str]] = fetch.resolve_host
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -117,6 +122,7 @@ def build_app(state: UIState) -> Starlette:
         return _json({"profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
                       "launch_note": state.launch_note, "commit": state.commit,
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
+                      "link_max_mb": fetch.MAX_BYTES // (1024 * 1024),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
                                "max_cost_usd": chat.MAX_COST_USD, "label": chat.LABEL}})
 
@@ -130,11 +136,16 @@ def build_app(state: UIState) -> Starlette:
             return _err(409, "A run started here is still in progress; stop it or wait for it to finish.")
         form = await request.form(max_part_size=MAX_UPLOAD_BYTES)
         doc = form.get("document")
-        if doc is None or isinstance(doc, str) or not doc.filename:
+        has_file = doc is not None and not isinstance(doc, str) and bool(doc.filename)
+        link = str(form.get("document_url") or "").strip()
+        if has_file and link:
+            return _err(400, "Give a file or a link, not both.")
+        if not has_file and not link:
             return _err(400, "No document was uploaded.")
-        name = safe_name(doc.filename)
-        if Path(name).suffix.lower() not in DOC_SUFFIXES:
-            return _err(400, "The document must be a PDF, or a page-marked .txt or Markdown file.")
+        if has_file:
+            name = safe_name(doc.filename)  # type: ignore[union-attr]
+            if Path(name).suffix.lower() not in DOC_SUFFIXES:
+                return _err(400, "The document must be a PDF, or a page-marked .txt or Markdown file.")
         prev = form.get("previous")
         prev_name = None
         if prev is not None and not isinstance(prev, str) and prev.filename:
@@ -152,17 +163,29 @@ def build_app(state: UIState) -> Starlette:
         run_dir = state.runs_dir / run_id
         if run_dir.exists():
             return _err(409, f"A run directory named {run_id!r} already exists; choose another run ID.")
+        if link:
+            try:
+                got = await fetch.fetch_pdf(link, state.url_policy, transport=state.fetch_transport,
+                                            resolve=state.resolve)
+            except fetch.LinkRefused as exc:
+                return _err(400, exc.message)
+            name, content = got.name, got.data
+        else:
+            content = await doc.read()  # type: ignore[union-attr]
+        if run_dir.exists():
+            return _err(409, f"A run directory named {run_id!r} already exists; choose another run ID.")
         inputs = run_dir / rundata.UI_DIR / "input"
         inputs.mkdir(parents=True, exist_ok=False)
         doc_path = inputs / name
-        doc_path.write_bytes(await doc.read())
+        doc_path.write_bytes(content)
         v1_path = None
         if prev_name is not None and not isinstance(prev, str) and prev is not None:
             v1_dir = inputs / "previous"
             v1_dir.mkdir()
             v1_path = v1_dir / prev_name
             v1_path.write_bytes(await prev.read())
-        spec = LaunchSpec(run_id=run_id, document=doc_path, profile=profile, v1=v1_path, no_tools=no_tools)
+        spec = LaunchSpec(run_id=run_id, document=doc_path, profile=profile, v1=v1_path, no_tools=no_tools,
+                          source_url=link or None)
         launched = state.launcher.start(spec, run_dir)
         return _json({"run_id": run_id, "command": launched.display}, 201)
 
@@ -409,7 +432,7 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
     return UIState(runs_dir=rd, repo_root=root, launcher=launcher or Launcher(repo_root=root),
                    chat_client=chat_client or chat.ClaudeCodeChatClient.from_config(cfg),
                    can_launch=can_launch, launch_note=note, profiles=_profiles(config_path), tools=tools,
-                   commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail)
+                   commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy)
 
 
 def serve(*, host: str, port: int, runs_dir: Path | None, config_path: Path | None, allow_remote: bool,

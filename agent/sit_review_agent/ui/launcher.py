@@ -35,6 +35,8 @@ class LaunchSpec:
     profile: str | None = None
     v1: Path | None = None
     no_tools: bool = False
+    #: The pasted link the document was downloaded from (``ui.fetch``); kept in ``ui/launch.json`` only.
+    source_url: str | None = None
 
     def args(self) -> list[str]:
         """The arguments after ``dra``, exactly as a CLI user would type them."""
@@ -112,7 +114,8 @@ class Launcher:
             "run_id": spec.run_id, "display": display, "args": spec.args(), "started_at": started,
             "pid": getattr(proc, "pid", None), "document": str(spec.document),
             "document_name": spec.document.name, "v1": str(spec.v1) if spec.v1 else None,
-            "profile": spec.profile, "no_tools": spec.no_tools}, indent=1), encoding="utf-8")
+            "profile": spec.profile, "no_tools": spec.no_tools, "source_url": spec.source_url}, indent=1),
+            encoding="utf-8")
         item = Launched(spec.run_id, proc, display, started)
         self.runs[spec.run_id] = item
         return item

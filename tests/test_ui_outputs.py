@@ -444,3 +444,174 @@ def test_serve_hands_its_host_port_and_arguments_to_the_page(monkeypatch, tmp_pa
                  echo=lambda s: None)
     st = seen["state"]
     assert (st.bind_host, st.port, st.ui_args) == ("0.0.0.0", 8799, ["--runs-dir", str(runs)])  # type: ignore[attr-defined]
+
+
+# ------------------------------------------------------------------ item 4: a pasted https link to a PDF
+
+
+class FakePopen:
+    def __init__(self) -> None:
+        self.argvs: list[list[str]] = []
+
+    def __call__(self, argv: list[str], **kw: object) -> object:
+        self.argvs.append(argv)
+
+        class P:
+            pid = 4243
+
+            def poll(self) -> None:
+                return None
+        return P()
+
+
+PDF = b"%PDF-1.7\n" + b"x" * 2000 + b"\n%%EOF\n"
+PUBLIC = {"docs.example.org": ["93.184.215.14"], "cdn.example.net": ["151.101.1.1"],
+          "intranet.example.org": ["10.20.30.40"], "meta.example.org": ["169.254.169.254"],
+          "local.example.org": ["127.0.0.1"], "mixed.example.org": ["93.184.215.15", "192.168.0.7"]}
+
+
+def link_state(runs: Path, handler, *, policy=None, popen: FakePopen | None = None) -> tuple[UIState, list[str]]:
+    import httpx
+
+    from sit_review_agent.config import UrlPolicy
+
+    seen: list[str] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return handler(request)
+
+    def resolve(host: str) -> list[str]:
+        return PUBLIC.get(host, [])
+
+    launcher = Launcher(repo_root=REPO, popen=popen or FakePopen())
+    state = UIState(runs_dir=runs.resolve(), repo_root=REPO, launcher=launcher, chat_client=NoChat(),  # type: ignore[arg-type]
+                    profiles=[], tools=[], url_policy=policy or UrlPolicy(),
+                    fetch_transport=httpx.MockTransport(record), resolve=resolve)
+    return state, seen
+
+
+def pdf_handler(request):
+    import httpx
+
+    return httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"})
+
+
+def test_a_pasted_link_is_fetched_saved_with_the_run_and_named_in_the_argv(tmp_path: Path) -> None:
+    popen = FakePopen()
+    state, seen = link_state(tmp_path, pdf_handler, popen=popen)
+    client = TestClient(build_app(state))
+    url = "https://docs.example.org/specs/Payments%20Design%20v2.pdf?dl=1"
+    res = client.post("/runs", data={"document_url": url, "run_id": "from_link"})
+    assert res.status_code == 201, res.text
+    saved = tmp_path.resolve() / "from_link" / "ui" / "input" / "Payments_Design_v2.pdf"
+    assert saved.read_bytes() == PDF
+    assert popen.argvs[0][3:5] == ["review", str(saved)]
+    assert str(saved) in res.json()["command"] or "from_link/ui/input/Payments_Design_v2.pdf" in res.json()["command"]
+    launch = json.loads((tmp_path / "from_link" / "ui" / "launch.json").read_text(encoding="utf-8"))
+    assert launch["source_url"] == url and launch["document_name"] == "Payments_Design_v2.pdf"
+    assert seen == [url]
+    meta = TestClient(build_app(state)).get("/meta").json()
+    assert meta["link_max_mb"] == 50
+
+
+@pytest.mark.parametrize(("url", "why"), [
+    ("http://docs.example.org/a.pdf", "Only an https:// link"),
+    ("ftp://docs.example.org/a.pdf", "Only an https:// link"),
+    ("https://user:pw@docs.example.org/a.pdf", "user name or password"),
+    ("https://local.example.org/a.pdf", "loopback, private or link-local"),
+    ("https://intranet.example.org/a.pdf", "loopback, private or link-local"),
+    ("https://meta.example.org/latest/a.pdf", "loopback, private or link-local"),
+    ("https://mixed.example.org/a.pdf", "loopback, private or link-local"),
+    ("https://127.0.0.1/a.pdf", "loopback, private or link-local"),
+    ("https://nowhere.example.org/a.pdf", "could not be resolved"),
+    ("https://docs.example.org/a b.pdf", "not one link"),
+], ids=range(10))
+def test_a_link_outside_the_policy_is_refused_before_any_request(tmp_path: Path, url: str, why: str) -> None:
+    state, seen = link_state(tmp_path, pdf_handler)
+    res = TestClient(build_app(state)).post("/runs", data={"document_url": url})
+    assert res.status_code == 400 and why in res.json()["error"], res.text
+    assert seen == [] and list(tmp_path.iterdir()) == []
+
+
+def test_the_url_policy_domains_apply_to_a_pasted_link(tmp_path: Path) -> None:
+    from sit_review_agent.config import UrlPolicy
+
+    deny = UrlPolicy(mode="deny", deny_domains=["example.org"])
+    state, seen = link_state(tmp_path, pdf_handler, policy=deny)
+    res = TestClient(build_app(state)).post("/runs", data={"document_url": "https://docs.example.org/a.pdf"})
+    assert res.status_code == 400 and "url_policy.yaml" in res.json()["error"] and seen == []
+    allow = UrlPolicy(mode="allow", allow_domains=["example.net"])
+    state, seen = link_state(tmp_path, pdf_handler, policy=allow)
+    res = TestClient(build_app(state)).post("/runs", data={"document_url": "https://docs.example.org/a.pdf"})
+    assert res.status_code == 400 and "allow_domains" in res.json()["error"] and seen == []
+    res = TestClient(build_app(state)).post("/runs", data={"document_url": "https://cdn.example.net/a.pdf"})
+    assert res.status_code == 201, res.text
+
+
+def test_each_redirect_is_checked_again(tmp_path: Path) -> None:
+    import httpx
+
+    hops = {"https://docs.example.org/a.pdf": "https://intranet.example.org/a.pdf",
+            "https://docs.example.org/b.pdf": "http://docs.example.org/b.pdf",
+            "https://docs.example.org/c.pdf": "https://cdn.example.net/c.pdf"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = str(request.url)
+        if u in hops:
+            return httpx.Response(302, headers={"location": hops[u]})
+        if u.startswith("https://docs.example.org/loop"):
+            return httpx.Response(302, headers={"location": u + "x"})
+        return pdf_handler(request)
+
+    state, seen = link_state(tmp_path, handler)
+    client = TestClient(build_app(state))
+    for url, why in (("https://docs.example.org/a.pdf", "loopback, private or link-local"),
+                     ("https://docs.example.org/b.pdf", "Only an https:// link"),
+                     ("https://docs.example.org/loop", "more than 5 redirects")):
+        res = client.post("/runs", data={"document_url": url})
+        assert res.status_code == 400 and why in res.json()["error"], (url, res.text)
+    assert not any("intranet" in u or u.startswith("http://") for u in seen)
+    res = client.post("/runs", data={"document_url": "https://docs.example.org/c.pdf", "run_id": "hop"})
+    assert res.status_code == 201 and (tmp_path / "hop" / "ui" / "input" / "c.pdf").read_bytes() == PDF
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["hop"]
+
+
+def test_the_size_cap_stops_a_large_download(tmp_path: Path, monkeypatch) -> None:
+    import httpx
+
+    from sit_review_agent.ui import fetch
+
+    assert fetch.MAX_BYTES == 50 * 1024 * 1024
+    declared = TestClient(build_app(link_state(tmp_path, lambda r: httpx.Response(
+        200, headers={"content-length": str(fetch.MAX_BYTES + 1)}, content=b""))[0]))
+    res = declared.post("/runs", data={"document_url": "https://docs.example.org/big.pdf"})
+    assert res.status_code == 400 and "larger than 50 MB" in res.json()["error"]
+    monkeypatch.setattr(fetch, "MAX_BYTES", 1000)
+
+    async def chunks():
+        for part in (PDF[:600], PDF[600:1200], PDF[1200:]):
+            yield part
+
+    def streamed(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=chunks())                  # no declared length
+
+    res = TestClient(build_app(link_state(tmp_path, streamed)[0])).post(
+        "/runs", data={"document_url": "https://docs.example.org/big.pdf"})
+    assert res.status_code == 400 and "larger than" in res.json()["error"]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_link_that_is_not_a_pdf_or_fails_is_refused(tmp_path: Path) -> None:
+    import httpx
+
+    for handler, why in ((lambda r: httpx.Response(200, content=b"<html>login</html>"), "is not a PDF"),
+                         (lambda r: httpx.Response(404, content=b"no"), "HTTP 404")):
+        res = TestClient(build_app(link_state(tmp_path, handler)[0])).post(
+            "/runs", data={"document_url": "https://docs.example.org/a.pdf"})
+        assert res.status_code == 400 and why in res.json()["error"], res.text
+    res = TestClient(build_app(link_state(tmp_path, pdf_handler)[0])).post(
+        "/runs", files={"document": ("d.pdf", PDF, "application/pdf")},
+        data={"document_url": "https://docs.example.org/a.pdf"})
+    assert res.status_code == 400 and "not both" in res.json()["error"]
+    assert list(tmp_path.iterdir()) == []
