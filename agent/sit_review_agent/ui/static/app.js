@@ -47,7 +47,7 @@ async function api(url, opts) {
   return body;
 }
 
-const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, synthetic: null };
+const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -242,20 +242,20 @@ async function showDrop() {
     }
   });
   refresh();
-  // The synthetic documents as chips: a chip fetches the file from this server and fills the form with it
-  // (the same path as a drop); it never submits. The run starts only with the Start review button.
-  if (!S.synthetic) S.synthetic = (await api("/synthetic")).items;
+  // The sample documents of config/ui.yaml as chips: a chip fetches the file from this server and fills the form
+  // with it (the same path as a drop); it never submits. The run starts only with the Start review button.
+  if (!S.samples) S.samples = (await api("/documents")).items;
   const starters = $("starters");
   if (!starters) return;
-  for (const item of S.synthetic) {
+  for (const item of S.samples) {
     starters.append(h("button", { class: "starter", type: "button", "data-file": item.file, "aria-pressed": "false", title: item.path, text: item.label, onclick: async (e) => {
       const chip = e.currentTarget;
       chip.disabled = true;
       try {
-        const res = await fetch("/synthetic/" + encodeURIComponent(item.name));
+        const res = await fetch("/documents/" + encodeURIComponent(item.name));
         if (!res.ok) throw new Error("HTTP " + res.status);
-        choose(new File([await res.blob()], item.file, { type: "application/pdf" }));
-      } catch (err) { const box = $("start-error"); box.hidden = false; box.textContent = "The synthetic document could not be read: " + err.message; }
+        choose(new File([await res.blob()], item.file, { type: res.headers.get("content-type") || "" }));
+      } catch (err) { const box = $("start-error"); box.hidden = false; box.textContent = "The sample document could not be read: " + err.message; }
       chip.disabled = false;
     } }));
   }
@@ -389,7 +389,7 @@ function showDeveloper() {
     h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
     h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
     h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
-  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /synthetic. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
 }
 
 // ------------------------------------------------------------------ the run, from the event stream

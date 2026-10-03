@@ -41,7 +41,7 @@
   <main id="app" class="surface"></main>
 </div>
 
-<!-- The Review page: DBSearch's empty state, the drop zone, the synthetic chips and the start form. One primary action (craft 4.5, 5.1). -->
+<!-- The Review page: DBSearch's empty state, the drop zone, the sample-document chips and the start form. One primary action (craft 4.5, 5.1). -->
 <template id="tpl-drop">
   <div class="empty">
     <h1>Review a design document</h1>
@@ -59,7 +59,7 @@
       <div class="micro muted" id="link-help">A pasted link is fetched by this server when the review starts: public hosts only, under config/url_policy.yaml, at most <span id="link-max"></span> MB, saved with the run's inputs.</div>
       <div class="micro error" id="link-error" hidden>Paste one https link to a PDF; other schemes are not fetched.</div>
     </div>
-    <div class="starters" id="starters"><span class="lead">or a synthetic document from eval/synthetic:</span></div>
+    <div class="starters" id="starters"><span class="lead">or a sample document from config/ui.yaml:</span></div>
     <div class="form">
       <div class="field">
         <span class="label">Previous version (optional)</span>

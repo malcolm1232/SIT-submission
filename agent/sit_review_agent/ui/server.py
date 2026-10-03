@@ -9,8 +9,8 @@ Routes (design note section 9, W2)::
     POST /tools/probe               the preflight warm-up of the enabled servers, on demand (never on page load)
     GET  /runs                      run directories under --runs-dir, newest first (a running row carries its
                                     stage, run clock and open calls from the last progress.jsonl records)
-    GET  /synthetic                 the synthetic documents offered as chips on the Review page
-    GET  /synthetic/<item>          one of them (``eval/synthetic/<item>/design_v1.pdf``), for the chip to fill the form
+    GET  /documents                 the sample documents of config/ui.yaml, offered as chips on the Review page
+    GET  /documents/<name>          one of them, for the chip to fill the form (never to start a run)
     POST /runs                      start ``dra review`` as a subprocess (multipart upload, or a pasted
                                     https link to a PDF in ``document_url``, fetched by ``ui.fetch``)
     GET  /runs/<id>                 one run's summary and status
@@ -56,10 +56,6 @@ from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 FINDING_ID_RE = r"^FND-\d+$"
-#: The synthetic documents offered as chips on the Review page (``eval/synthetic/<item>/``), by their titles.
-SYNTHETIC_FILE = "design_v1.pdf"
-SYNTHETIC_LABELS = {"payments_orchestration": "Payments orchestration", "clinical_rpm": "Clinical RPM",
-                    "research_lakehouse": "Research lakehouse"}
 
 
 class RemoteHostRefused(ValueError):
@@ -121,6 +117,8 @@ class UIState:
     #: no agent configuration to probe with.
     probe: Callable[[], Awaitable[dict[str, Any]]] | None = None
     last_probe: dict[str, Any] | None = None
+    #: The sample documents of ``config/ui.yaml`` ``documents:`` (:func:`load_documents`): the Review page's chips.
+    documents: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -155,29 +153,6 @@ def build_app(state: UIState) -> Starlette:
     async def list_runs(request: Request) -> Response:
         return _json({"runs": rundata.list_runs(state.runs_dir, alive=state.launcher.alive())})
 
-    def synthetic_dir() -> Path:
-        return state.repo_root / "eval" / "synthetic"
-
-    async def synthetic_list(request: Request) -> Response:
-        """The synthetic documents the Review page offers as chips (``eval/synthetic/<item>/design_v1.pdf``):
-        a chip fills the form with the file and never starts a run."""
-        root = synthetic_dir()
-        items = []
-        for p in sorted(root.iterdir()) if root.is_dir() else []:
-            if p.is_dir() and (p / SYNTHETIC_FILE).is_file() and rundata.RUN_ID_RE.match(p.name):
-                items.append({"name": p.name, "label": SYNTHETIC_LABELS.get(p.name, p.name.replace("_", " ")),
-                              "file": f"{p.name}_{SYNTHETIC_FILE}",
-                              "path": f"eval/synthetic/{p.name}/{SYNTHETIC_FILE}"})
-        return _json({"items": items})
-
-    async def synthetic_pdf(request: Request) -> Response:
-        name = request.path_params["name"]
-        p = synthetic_dir() / name / SYNTHETIC_FILE
-        if not rundata.RUN_ID_RE.match(name) or ".." in name or not p.is_file():
-            return _err(404, "No such synthetic document.")
-        return FileResponse(p, media_type="application/pdf",
-                            headers={"Content-Disposition": f'inline; filename="{name}_{SYNTHETIC_FILE}"'})
-
     async def tools_get(request: Request) -> Response:
         out = rundata.tools_status(state.runs_dir, state.tools)
         out.update(auth_env=state.auth_env, key_present=bool(os.environ.get(state.auth_env, "").strip()),
@@ -196,6 +171,20 @@ def build_app(state: UIState) -> Starlette:
                              "that starts dra ui, then probe again. The page never reads the key.")
         state.last_probe = await state.probe()
         return _json(state.last_probe)
+
+    async def documents_list(request: Request) -> Response:
+        """The sample documents offered as chips on the Review page: a chip fills the form with the file and
+        never starts a run (the run starts only with the Start review button, as every run does)."""
+        return _json({"items": [{k: d[k] for k in ("name", "label", "file", "path")} for d in state.documents]})
+
+    async def document_file(request: Request) -> Response:
+        name = request.path_params["name"]
+        d = next((d for d in state.documents if d["name"] == name), None)
+        if d is None or not Path(d["abspath"]).is_file():
+            return _err(404, "No such sample document.")
+        media = "application/pdf" if d["file"].lower().endswith(".pdf") else "text/plain; charset=utf-8"
+        return FileResponse(d["abspath"], media_type=media,
+                            headers={"Content-Disposition": f'inline; filename="{d["file"]}"'})
 
     async def start_run(request: Request) -> Response:
         if not state.can_launch:
@@ -429,8 +418,8 @@ def build_app(state: UIState) -> Starlette:
         Route("/meta", meta),
         Route("/tools", tools_get, methods=["GET"]),
         Route("/tools/probe", tools_probe, methods=["POST"]),
-        Route("/synthetic", synthetic_list, methods=["GET"]),
-        Route("/synthetic/{name}", synthetic_pdf, methods=["GET"]),
+        Route("/documents", documents_list, methods=["GET"]),
+        Route("/documents/{name}", document_file, methods=["GET"]),
         Route("/runs", list_runs, methods=["GET"]),
         Route("/runs", start_run, methods=["POST"]),
         Route("/runs/{run_id}", run_info),
@@ -516,7 +505,32 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
                    can_launch=can_launch, launch_note=note, profiles=_profiles(config_path), tools=tools,
                    commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy,
                    backend=cfg.agent.llm.backend, model=cfg.agent.model, config_files=files,
-                   auth_env=cfg.tools.auth_env, probe=probe_with(cfg))
+                   auth_env=cfg.tools.auth_env, probe=probe_with(cfg),
+                   documents=load_documents(Path(cfg.config_root) / "ui.yaml", root))
+
+
+def load_documents(path: Path, repo_root: Path) -> list[dict[str, Any]]:
+    """``documents:`` of ``config/ui.yaml``: ``label`` and ``path`` (relative to the repository root) per
+    sample document. An entry whose file is missing or is not a reviewable document is left out. The file the
+    form will carry is named after the label and the file (``payments_orchestration_design_v1.pdf``)."""
+    import yaml
+
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return []
+    out: list[dict[str, Any]] = []
+    for i, d in enumerate(doc.get("documents") or [] if isinstance(doc, dict) else []):
+        if not isinstance(d, dict) or not d.get("label") or not d.get("path"):
+            continue
+        p = Path(str(d["path"]))
+        p = p if p.is_absolute() else repo_root / p
+        if not p.is_file() or p.suffix.lower() not in DOC_SUFFIXES:
+            continue
+        slug = safe_name(str(d["label"]).lower().replace(" ", "_"), "document")
+        out.append({"name": f"doc-{i + 1}", "label": str(d["label"]), "file": safe_name(f"{slug}_{p.name}"),
+                    "path": str(d["path"]), "abspath": str(p)})
+    return out
 
 
 def probe_with(cfg: Any) -> Callable[[], Awaitable[dict[str, Any]]]:

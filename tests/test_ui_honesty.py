@@ -180,8 +180,12 @@ def served(tmp_path: Path):
         probes.append(1)
         return {"at": "", "servers": [], "auth_failed": False, "lines": []}
 
+    sample_pdf = REPO / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
     state = UIState(runs_dir=runs.resolve(), repo_root=REPO, launcher=Launcher(repo_root=REPO), chat_client=None,
-                    profiles=[], tools=list(SERVERS), probe=probe)  # type: ignore[arg-type]
+                    profiles=[], tools=list(SERVERS), probe=probe,
+                    documents=[{"name": "doc-1", "label": "Payments orchestration", "file": "payments_design_v1.pdf",
+                                "path": "eval/synthetic/payments_orchestration/design_v1.pdf",
+                                "abspath": str(sample_pdf)}])  # type: ignore[arg-type]
     state.probes = probes  # type: ignore[attr-defined]
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(build_app(state), host="127.0.0.1", port=port, log_level="warning"))
@@ -313,7 +317,13 @@ def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_prob
 
         # 3. No page load probes: the Review page, a run, a review and the Tools page send no POST at all.
         page.goto(base + "/")
-        page.wait_for_selector("#doc-link")
+        page.wait_for_selector(".starter")
+        # A chip fills the form with the file and never starts a run (no POST below).
+        page.click(".starter")
+        page.wait_for_function("document.querySelector('#doc-chosen').textContent === 'payments_design_v1.pdf'")
+        assert page.locator("#start-btn").is_enabled()
+        assert "review runs/<new run>/ui/input/payments_design_v1.pdf " in page.locator("#cmd-preview").inner_text()
+        assert page.locator(".starter").get_attribute("aria-pressed") == "true"
         page.goto(base + f"/?run={REHEARSAL.name}")
         page.wait_for_selector("#chat-budget")
         page.goto(base + "/?page=tools")

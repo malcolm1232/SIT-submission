@@ -495,3 +495,28 @@ def test_the_probe_runs_only_with_the_key_in_the_environment(tmp_path: Path, mon
     st.probe = None
     st.tools = list(SERVERS)
     assert client.post("/tools/probe").status_code == 409 and calls == [1]
+
+
+def test_the_sample_documents_come_from_ui_yaml_and_missing_files_are_left_out(tmp_path: Path) -> None:
+    from sit_review_agent.ui.server import load_documents
+
+    pdf = REPO / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
+    (tmp_path / "ui.yaml").write_text(
+        "email:\n  host: ''\ndocuments:\n"
+        f"  - label: Payments orchestration\n    path: {pdf.relative_to(REPO)}\n"
+        "  - label: Missing\n    path: eval/nowhere/design_v1.pdf\n"
+        "  - label: Not a document\n    path: pyproject.toml\n"
+        "  - path: no-label.pdf\n", encoding="utf-8")
+    docs = load_documents(tmp_path / "ui.yaml", REPO)
+    assert [d["label"] for d in docs] == ["Payments orchestration"]
+    assert docs[0] == {"name": "doc-1", "label": "Payments orchestration", "path": str(pdf.relative_to(REPO)),
+                       "file": "payments_orchestration_design_v1.pdf", "abspath": str(pdf)}
+    assert load_documents(tmp_path / "absent.yaml", REPO) == []
+    st = make_state(tmp_path)
+    st.documents = docs
+    client = TestClient(build_app(st))
+    assert client.get("/documents").json() == {"items": [{k: docs[0][k] for k in ("name", "label", "file", "path")}]}
+    res = client.get("/documents/doc-1")
+    assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
+    assert res.content == pdf.read_bytes()
+    assert client.get("/documents/doc-2").status_code == 404
