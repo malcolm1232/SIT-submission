@@ -18,6 +18,8 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip("langgraph", reason="the parity checklist needs the optional [langgraph] extra")
+
 sys.path.insert(0, str(Path(__file__).parent / "robustness"))
 
 from concurrent_schedules import load_concurrent_schedule, schedule_path  # noqa: E402
