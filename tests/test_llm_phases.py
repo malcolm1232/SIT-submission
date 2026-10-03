@@ -583,7 +583,8 @@ async def test_a_cut_shard_keeps_its_finished_findings(tmp_path: Path, cfg: Effe
     validated on its own; the shard's criteria without a finding are not assessed; disclosed."""
     c2 = shard_cfg(cfg, {"a": ["claims_and_external_constraints", "verifiability", "security_and_privacy"]})
     kept = finding("FND-001", 1, criterion_ids=["claims_and_external_constraints"])
-    cut = LLMDeadlineError("cut at the stage 1 limit", partial={"findings": [kept, {"id": "FND-002", "rank": 2}]})
+    cut = LLMDeadlineError("cut at the stage 1 limit", call_id="llm-0007",
+                           partial={"findings": [kept, {"id": "FND-002", "rank": 2}]})
     ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(raises=cut)]})
     await AssessPhase().run(ctx)
     s = ctx.state
@@ -594,6 +595,9 @@ async def test_a_cut_shard_keeps_its_finished_findings(tmp_path: Path, cfg: Effe
         "not assessed: out of time before assessment (stage 1 limit)"
     [d] = s.degradations
     assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT and "1 finished finding(s) kept" in d.event
+    # the disclosure names the shard and the cut call (verifier B)
+    assert d.event.startswith("assess shard 1/1 (a) was cut by the stage 1 limit")
+    assert d.event.endswith("(cut call llm-0007)")
     assert "verifiability, security_and_privacy" in d.impact
     assert not d.event.startswith("out of time before assessment")           # the design was assessed
 

@@ -112,6 +112,8 @@ class PhaseCall:
     truncated_ids: tuple[str | None, ...] = ()
     #: What a cut stream had finished (``LLMDeadlineError.partial``; latency redesign), else ``None``.
     partial: dict[str, Any] | None = None
+    #: The call ID of the attempt the deadline cut, when ``cut`` (``None`` if no attempt had started).
+    cut_id: str | None = None
     #: Problems ``check`` still found after the one repair call (the answer is not used).
     invalid: tuple[str, ...] = ()
 
@@ -353,7 +355,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             add_usage(ctx.state.budget, exc.usage)       # measured usage only; never estimated_usage
             if disclose:
                 deadline_cut(ctx, phase, exc)
-            return PhaseCall(result=None, brief=brief, cut=True, partial=getattr(exc, "partial", None))
+            return PhaseCall(result=None, brief=brief, cut=True, partial=getattr(exc, "partial", None),
+                             cut_id=exc.call_id)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
             add_usage(ctx.state.budget, exc.usage)

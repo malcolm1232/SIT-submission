@@ -300,7 +300,8 @@ class AssessPhase:
             missing = [c for c in shard.criteria if c not in covered]
             sctx.state.add_degradation(
                 DegradationType.BUDGET_OR_DEADLINE_HIT,
-                f"{label} was cut by the stage 1 limit at {sctx.elapsed_s():.0f} s; {n} finished finding(s) kept",
+                f"{label} was cut by the stage 1 limit at {sctx.elapsed_s():.0f} s; {n} finished finding(s) kept "
+                f"(cut call {call.cut_id or 'none started'})",
                 _not_assessed_impact(missing) if missing else "every criterion of the shard has a finding; the shard's "
                 "lower-ranked findings, if any, are missing")
             sctx.emit(f"{label} cut by the stage 1 limit; {n} finished finding(s) kept", "warn")
