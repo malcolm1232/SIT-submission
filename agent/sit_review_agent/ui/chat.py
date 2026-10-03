@@ -12,7 +12,9 @@
   the tail of the system prompt (``--system-prompt-file``), the question the whole user turn: the
   system prompt is where the CLI sets a cache breakpoint, so the second question of a run reads the
   cache the first wrote. In the user turn (the first live pair) a byte-identical corpus prefix was
-  written again on the second call (71,451 then 70,511 tokens written, 943 read).
+  written again on the second call (71,451 then 70,511 tokens written, 943 read); in the system
+  prompt (the second live pair, docs/live_runs/ui_flow_1) the second call read 54,984 tokens and
+  wrote 705 (0.45 then 0.03 USD).
 * Citations are checked against the run: an ID that does not resolve is dropped and the answer is
   flagged; an answer with ``supported: false``, or with no citation left, is shown as
   :data:`UNSUPPORTED_TEXT` with no prose.
