@@ -19,3 +19,7 @@ The fetch itself had already failed on the credential helper (`git: 'credential-
   `PhaseCall.cut_id` now carries the cut attempt's call ID (`LLMDeadlineError.call_id`), and the shard's degradation event ends with `(cut call <id>)`, or `(cut call none started)` when no attempt had started.
   Files: `agent/sit_review_agent/phases/_model_calls.py`, `agent/sit_review_agent/phases/assess.py`.
   Test: `tests/test_llm_phases.py::test_a_cut_shard_keeps_its_finished_findings` now asserts the shard label and the call ID in the event.
+- C (determinism): the 120-order test passed (120 of 120).
+  Mutating the shard results to completion order, in the orchestrator's merge call and in `AssessPhase.merge`, failed 100 of the 120 orders; restored from a `cp` backup.
+  Mutating only the sort inside `AssessPhase.merge` survived, because the orchestrator already passes the results in plan order.
+  Test added: `tests/test_llm_phases.py::test_merge_orders_the_shards_itself` merges the same shard results forward and reversed and asserts equal finding and ledger IDs; it fails under that mutation.

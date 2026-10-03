@@ -727,6 +727,23 @@ async def test_finding_and_ledger_ids_do_not_depend_on_completion_order(tmp_path
     assert ledger[2][1] == Q_NOTIFY and ledger[4][1] == Q_A11Y and ledger[6][1] == Q_OVERVIEW
 
 
+async def test_merge_orders_the_shards_itself(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """``merge`` sorts its results by shard index, so a caller that hands them over in completion
+    order gets the same finding and ledger IDs (the orchestrator passes them in plan order today)."""
+    c3 = shard_cfg(cfg, GROUPS)
+    got = []
+    for name, flip in (("fwd", False), ("rev", True)):
+        ctx = make_ctx(tmp_path / name, c3, {})
+        ctx.llm = ShardGateway({k: [FakeResponse(parsed=v)] for k, v in SHARD_ANSWERS.items()},
+                               run_dir=ctx.run_dir, clock=ctx.clock)
+        phase = AssessPhase()
+        results = await phase.run_shards(ctx)
+        phase.merge(ctx, list(reversed(results)) if flip else results)
+        got.append(([(f.id, f.title) for f in ctx.state.finding_drafts],
+                    [(e.evidence_id, e.excerpt) for e in ctx.ledger]))
+    assert got[0] == got[1] and got[0][0]
+
+
 # ------------------------------------------------------------------------------ refine
 
 
