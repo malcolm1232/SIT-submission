@@ -111,14 +111,19 @@ def _profile(d: Path, body: str) -> None:
     (d / "profiles" / "t.yaml").write_text(body, encoding="utf-8")
 
 
-def test_assess_shards_are_the_four_groups_of_design_section_4() -> None:
-    """Design section 4: intent and fitness (3 criteria), requirements and consistency (3), claims and
-    assumptions (2), risk and operations (3); every shipped criterion is in exactly one group."""
+def test_assess_shards_are_the_six_groups_of_decision_40() -> None:
+    """USER_DECISIONS #40 (the K = 6 tuning step of #31 ruling 3): six groups, none with more than two
+    criteria; every shipped criterion is in exactly one group."""
     cfg = load_config()
     shards = cfg.agent.assess.shards
-    assert [(s.name, len(s.criteria)) for s in shards] == [
-        ("intent_and_fitness", 3), ("requirements_and_consistency", 3), ("claims_and_assumptions", 2),
-        ("risk_and_operations", 3)]
+    assert [(s.name, s.criteria) for s in shards] == [
+        ("intent_and_fitness", ["design_intent", "fitness_for_objectives"]),
+        ("decisions_and_governance", ["decision_preservation", "operability_and_governance"]),
+        ("requirements_and_consistency", ["requirement_completeness", "internal_consistency"]),
+        ("verifiability", ["verifiability"]),
+        ("claims_and_assumptions", ["claims_and_external_constraints", "assumptions_and_dependencies"]),
+        ("security_and_failure", ["security_and_privacy", "scalability_and_failure_modes"])]
+    assert max(len(s.criteria) for s in shards) <= 2
     grouped = [c for s in shards for c in s.criteria]
     assert sorted(grouped) == sorted(cfg.criteria.ids()) and len(grouped) == len(set(grouped)) == 11
     assert cfg.agent.assess.shards_for(cfg.criteria.ids()) == list(shards)
@@ -135,7 +140,7 @@ def test_a_criterion_in_no_group_forms_its_own_shard() -> None:
     assert out[:-1] == list(cfg.agent.assess.shards)
     partial = cfg.agent.assess.shards_for(["verifiability", "new_one", "design_intent"])
     assert [(s.name, s.criteria) for s in partial] == [
-        ("intent_and_fitness", ["design_intent"]), ("requirements_and_consistency", ["verifiability"]),
+        ("intent_and_fitness", ["design_intent"]), ("verifiability", ["verifiability"]),
         ("new_one", ["new_one"])]
     assert cfg.agent.assess.shards_for([]) == []
 

@@ -57,15 +57,22 @@ assess:                            # the concurrent assess stage (design 2026-10
   # plan. Each criterion of config/criteria.yaml is in exactly one group (a criterion in two groups,
   # an unknown id, an empty group or no group at all is a config error). A criterion appended live
   # (runbook §4.2 #1) that is in no group forms its own shard, so it adds a parallel call, not wall time.
+  # Six groups since USER_DECISIONS #40 (the K = 6 step of #31 ruling 3, taken after stage 1 ran 265.2 s
+  # and 255 s on the lab document): intent and fitness, decisions and governance, requirements and
+  # consistency, verifiability, claims and assumptions, security and failure; at most two criteria each.
   shards:
     - name: intent_and_fitness
-      criteria: [design_intent, fitness_for_objectives, decision_preservation]
+      criteria: [design_intent, fitness_for_objectives]
+    - name: decisions_and_governance
+      criteria: [decision_preservation, operability_and_governance]
     - name: requirements_and_consistency
-      criteria: [requirement_completeness, internal_consistency, verifiability]
+      criteria: [requirement_completeness, internal_consistency]
+    - name: verifiability
+      criteria: [verifiability]
     - name: claims_and_assumptions
       criteria: [claims_and_external_constraints, assumptions_and_dependencies]
-    - name: risk_and_operations
-      criteria: [security_and_privacy, scalability_and_failure_modes, operability_and_governance]
+    - name: security_and_failure
+      criteria: [security_and_privacy, scalability_and_failure_modes]
 
 phases:                            # only research and refine may be disabled
   ingest: true
