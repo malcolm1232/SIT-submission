@@ -7,7 +7,7 @@ Writes ``built_1_drop.png``, ``built_2_running.png``, ``built_3_review.png`` and
 
 Data, all offline: a scratch runs directory holding the recorded fixture stream
 ``tests/fixtures/ui/progress.jsonl`` (a fixture run on the fake gateway, ``tests/fixtures/ui/record_fixtures.py``)
-cut at the run clock 01:00 (frame 2, served over SSE as a run still in progress) and the report files
+cut at the run clock 01:06 (frame 2, served over SSE as a run still in progress) and the report files
 of ``docs/live_runs/rehearsal_concurrent_1`` (frames 1 and 3). No model call is made and no run is started. Before each picture the script checks the page
 against the run directory and prints counts only: the findings' titles and statements in the DOM
 equal ``report.json``, and the draft rows equal the fixture's draft events.
@@ -31,7 +31,7 @@ REPO = HERE.parents[2]
 REHEARSAL = REPO / "docs" / "live_runs" / "rehearsal_concurrent_1"
 FIXTURE = REPO / "tests" / "fixtures" / "ui" / "progress.jsonl"
 RUN_FILES = ("report.json", "manifest.json", "anchors.json", "ledger.json", "state.json", "effective_config.json")
-RUNNING_UNTIL_T = 60.0    # run-clock seconds: stage 1 of the fixture run is still open at 01:00
+RUNNING_UNTIL_T = 66.0    # run-clock seconds: every shard has drafted, understand and plan are still open
 EXPAND = "FND-005"        # the finding frame 3 of the mockup shows expanded
 
 

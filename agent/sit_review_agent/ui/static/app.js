@@ -220,11 +220,9 @@ function applyEvent(m, ev) {
     case "call_retry": { const t = track(m, ev.phase); t.strong = null; t.text = "retry: " + words(f.reason); break; }
     case "call_closed": {
       const t = m.byCall.get(f.call_id); if (!t) break;
-      t.end = now;
-      if (f.outcome === "cut") { t.status = "cut"; t.cutAt = now; t.strong = null; t.text = typeof f.kept_items === "number" ? "kept " + intl(f.kept_items) + " finished item(s)" : t.text; }
-      else if (f.outcome === "replaced") { t.end = null; }
-      else if (CALL_FAILED.includes(f.outcome)) { t.status = "failed"; t.strong = null; t.text = words(f.outcome); }
-      else if (t.key.startsWith("assess ")) t.status = "done";
+      if (f.outcome === "cut") { t.status = "cut"; t.cutAt = now; t.end = now; t.strong = null; t.text = typeof f.kept_items === "number" ? "kept " + intl(f.kept_items) + " finished item(s)" : t.text; }
+      else if (CALL_FAILED.includes(f.outcome)) { t.status = "failed"; t.end = now; t.strong = null; t.text = words(f.outcome); }
+      else if (t.key.startsWith("assess ")) { t.status = "done"; t.end = now; }
       break;
     }
     case "draft_item":
