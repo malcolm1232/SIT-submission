@@ -1,0 +1,242 @@
+{
+  "pass": "B",
+  "mode": "key_blind",
+  "sample_seed": "s1",
+  "pre_read": {
+    "material_issues": [
+      {
+        "issue": "The Redis fast-path key idem:resp:{idempotency_key} has no merchant scope and no request-hash check. This contradicts P3 and FR-5 (cross-tenant response leak, and the 422 check is skipped), and §9.1 accepts order IDs as keys.",
+        "location": "p.8 §9.2; p.4 §3 P3; p.7 §9.1",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "The Fraud Hook detokenises PAN using the Card Adapter's role and sends it to FRV-1. This contradicts P2, the §12.1 rule that only the adapter may detokenise, and the §12.2 scope table, so NFR-5 scoping is invalid.",
+        "location": "p.11 §13.1; p.10 §12.1-12.2",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "CVC is kept until settlement or for up to 72 h for cascades and incremental auths. PCI DSS v4.x Req 3.3.1 forbids keeping SAD after authorization, so the design's reading of 3.2.1/3.3.2 is wrong.",
+        "location": "p.10 §12.4; p.3 NFR-6; p.18 §24",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "NFR-4 requires zero RPO on region loss, but Aurora Global replication is asynchronous. Idempotency is said to be rebuilt from the payment table, which has no idempotency_key column. The 30-min RTO exceeds the 99.95% monthly budget.",
+        "location": "p.3 NFR-4; p.16-17 §20.2; p.14-15 §19",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "There is a single CloudHSM in one AZ, and the second-HSM trigger (1,500 card TPS) sits above the 2027 card peak (~1,100). The CDE has no DR in ap-southeast-3.",
+        "location": "p.10 §12.3; p.2 §1 volume table; p.16 §20.2",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "The latency budget assumes fewer than 1% of payments cascade, against a 3.8% retryable baseline and 3.8% injection in the NFR-2 test. The 2,500 ms timeout alone exceeds the 1,500 ms p99.",
+        "location": "p.17 §21.1; p.9 §10.5, §11.1; p.20 §26.2",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "Reconciliation waits for all files, and ACQ-TH1 arrives at 06:30 ICT (07:30 SGT). Adding 45+15 min gives about 08:30 SGT, which misses NFR-8's 08:00 SGT.",
+        "location": "p.12-13 §16.1-16.2; p.3 NFR-8",
+        "covered_by_review": "full"
+      },
+      {
+        "issue": "§9.3 states a DynamoDB per-partition limit of 10,000 WCU, but AWS documents about 1,000 WCU/s per partition. Item size (4 KB bodies) and LSI write costs are ignored, so the 45% merchant hot key would throttle.",
+        "location": "p.8 §9.3",
+        "covered_by_review": "partial"
+      }
+    ],
+    "sound_areas": [
+      {
+        "area": "Double-entry ledger: append-only, written in the same transaction as the state change with an outbox, revoked DML, and nightly recomputation with a payout freeze",
+        "location": "p.11-12 §14; p.16 §19"
+      },
+      {
+        "area": "Integer minor-unit money with an ISO 4217 exponent table, explicit adapter conversion, and a no-float rule",
+        "location": "p.12 §15"
+      },
+      {
+        "area": "Webhook signing, bounded retry, DLQ, per-endpoint isolation and SSRF protection",
+        "location": "p.13 §17"
+      }
+    ]
+  },
+  "verdict_extracted": {
+    "present": true,
+    "text": "label: not_fit, confidence 0.75. 'As written, the design is not fit to build. The core architecture is sound... Most of these can be fixed by editing the design text, so this verdict reflects the document as it stands, not the architecture.' Per-objective labels are given, and a 12-item list says what would move the verdict to fit_with_conditions.",
+    "label": "not_fit",
+    "consistent_with_findings": true
+  },
+  "dimensions": {
+    "D1": {
+      "score": 4,
+      "justification": "The intent summary is accurate and cited (p.1-2 §1). It lists objectives P1-P10 and the key NFRs, constraints, and stated key assumptions. A decision registry separates approved decisions (§24), pending backlog items (§25), constraints and requirements. Findings use the design's own requirements and principles as the yardstick. FND-026 credits Backlog item 2 rather than claiming it as a discovery. Design content is kept separate from inference, which is marked as such.",
+      "review_quotes": [
+        "Principles take precedence: where a later section conflicts with a principle, the principle wins.",
+        "The backlog acknowledges the item; this finding points out that the readiness and phase tables do not reflect it.",
+        "\"type\": \"pending_decision\""
+      ],
+      "design_locations": [
+        "p.1-2 §1",
+        "p.3-4 §3",
+        "p.18-19 §24",
+        "p.19 §25"
+      ]
+    },
+    "D2": {
+      "score": 4,
+      "justification": "There is an explicit not_fit verdict with confidence 0.75, broken down per objective and principle (P1-P10, FR-8, NFR-2/3/4/8/10), with finding IDs linked to each label. A detailed 'what would change it' list ties each condition to a finding. The verdict matches 1 critical and 11 high findings, and the review states which unverified findings the verdict does not depend on. The structured 'conditions' array is empty, but the conditions appear in what_would_change_it.",
+      "review_quotes": [
+        "As written, the design is not fit to build. The core architecture is sound.",
+        "The verdict would move to fit_with_conditions if a revised design did the following",
+        "The verdict does not depend on any of these unverified findings."
+      ],
+      "design_locations": [
+        "p.3 §2.2",
+        "p.21 §27"
+      ]
+    },
+    "D3": {
+      "score": 4,
+      "justification": "All six categories are present and anchored. Strengths: FND-058, FND-014 and the sound areas. Risks: FND-001, 046, 049 and others. Gaps: FND-052, 030, 057. Ambiguity: FND-029. Unresolved assumptions: FND-026, 043. Validation needs: FND-027, 034. All eight pre-read material issues are covered. FND-034 is covered only partially, because it hedges the DynamoDB limit. Valid extras I did not anticipate include orphaned authorizations after a timeout (FND-047), go-live before fraud scoring and PCI (FND-017), payout-account takeover (FND-052) and state-machine gaps (FND-022). No padding.",
+      "review_quotes": [
+        "Redis idempotency fast path keyed without merchant or body hash",
+        "Cascading after a timeout or 5xx can leave duplicate live authorizations; late approvals are discarded",
+        "FR-8's 2% tolerance has no unit and the routing mechanisms conflict"
+      ],
+      "design_locations": [
+        "p.8 §9.2",
+        "p.11 §13.1",
+        "p.9 §11.2",
+        "p.21 §28"
+      ]
+    },
+    "D4": {
+      "score": 3,
+      "justification": "Every finding has page and section anchors with verbatim quotes, and all were harness-verified. Inferences are recorded separately with derived_from links, and no fabricated sources were found. However, two material findings rest on unsourced external claims: the PCI DSS CVC rule and the DynamoDB per-partition limit. These are framed only as the reviewer's understanding, although both are correct in substance and openly hedged. No CloudHSM or regulator documentation is cited.",
+      "review_quotes": [
+        "As the reviewer understands PCI DSS, card verification codes may not be kept once authorization is complete",
+        "The per-partition figure is far above the reviewer's understanding of DynamoDB's documented limit and must be checked."
+      ],
+      "design_locations": [
+        "p.10 §12.4",
+        "p.8 §9.3"
+      ],
+      "anchor_tension": "Between 3 and 4. Document traceability is excellent, but material external claims are unsourced. Gave 3 because the anchor-4 requirement that every external claim be sourced is not met."
+    },
+    "D5": {
+      "score": 4,
+      "justification": "Each material recommendation has an issue, rationale, supporting evidence IDs, expected benefit, objective references and a concrete verification test. They are specific about what and where, and bounded: FND-001 gives the exact key schema change and FR-5 tests, FND-047 a simulator approval at 2,600 ms, FND-054 a replay with a late ACQ-TH1 file. Where a decision is needed, options are offered (FND-046 a/b, FND-049 a/b, FND-018 a/b/c). Evidence supports the rationale throughout.",
+      "review_quotes": [
+        "change the Redis key to idem:resp:{merchant_id}:{idempotency_key}. Store request_hash with the cached response and compare it on every hit",
+        "Pass if a reversal is sent for attempt 1 and exactly one authorization stays live at the simulator.",
+        "Reports must publish by 08:00 SGT, and unaffected merchants' payouts must be released."
+      ],
+      "design_locations": [
+        "p.8 §9.2",
+        "p.9 §11.2",
+        "p.13 §16.2"
+      ]
+    },
+    "D6": {
+      "score": 4,
+      "justification": "Several significant areas are explicitly affirmed with reasons: the ledger, money representation, webhooks, back-office access and Aurora capacity. Four confirmed decisions are challenged (one HSM, MFA optional, the reconciliation trigger, the go-live gate), each with explicit evidence from the document and with P3/P9 precedence. Other changes are framed as refinements that preserve approved decisions. FND-034 makes the schema change conditional on investigation. Severities fit impact.",
+      "review_quotes": [
+        "The design meets FR-10 and P5 through database-enforced mechanisms rather than convention... so no change is justified.",
+        "The key or LSI change is conditional on the investigation showing that DynamoDB limits bind",
+        "Explicit challenge to 'MFA optional for other roles': the document shows Finance can redirect payouts"
+      ],
+      "design_locations": [
+        "p.11-12 §14",
+        "p.18-19 §24",
+        "p.14 §18.3-18.4"
+      ]
+    },
+    "D7": {
+      "score": 4,
+      "justification": "Every finding carries a primary disposition (refinement_now, governance_decision, needs_investigation, needs_testing), with secondary dispositions covering mixed cases such as FND-048 prototyping and FND-026 governance. Owners and next steps are named for all non-refinement items, and the unresolved items are gathered in one list. Labels are mostly correct. FND-052 reverses a confirmed MFA decision but carries no governance secondary, which is a minor omission.",
+      "review_quotes": [
+        "\"disposition\": \"governance_decision\"",
+        "\"owner\": \"PCI DSS compliance lead with the QSA\"",
+        "FND-043 (needs investigation): Single-region Singapore hosting assumed permissible"
+      ],
+      "design_locations": [
+        "p.10 §12.4",
+        "p.3 NFR-4",
+        "p.21 §28"
+      ]
+    },
+    "D8": {
+      "score": 1,
+      "justification": "No external research was done; the review says its tool gateway failed. The design depends heavily on externally verifiable matters: PCI DSS SAD rules, DynamoDB partition limits, CloudHSM HA guidance, and market payment regulation. All of these stay as the reviewer's understanding or as investigation items. The review handles this honestly, lowering confidence and turning the questions into validation needs, which is calibrated. But research did not confirm or change any conclusion, and the DynamoDB and PCI questions are easy to settle from primary sources.",
+      "review_quotes": [
+        "No external research was possible (DEG-002), so the premises behind FND-032... and FND-034... rest on the reviewer's understanding and are unverified",
+        "\"stop_reason\": {\"code\": \"tool_failure\""
+      ],
+      "design_locations": [
+        "p.10 §12.4",
+        "p.8 §9.3",
+        "p.10 §12.3"
+      ],
+      "anchor_tension": "Between 0, 1 and 2. Not 0, because the absence of research is disclosed and the uncertainty is calibrated. Not 2, because several clear external dependencies are left unresearched. Chose 1."
+    },
+    "D9": {
+      "score": 2,
+      "justification": "All outputs are present, and the verdict, severities and finding counts agree ('1 critical and 11 high' is correct). Design quotes are verified. However, there are several internal inconsistencies. FND-014 cites FND-002, which does not exist. SA-009's text cites FND-004, FND-013 and FND-014 as covering test exceptions, while its related_finding_ids are FND-018, 027 and 034. The verdict cites DEG-001 to DEG-005, but the limitations are unnumbered. One limitation claims FND-049 reverses AD-006, which FND-049 does not touch. FND-027 also overlooks §20.3's statement that the sweeper completes IN_PROGRESS records.",
+      "review_quotes": [
+        "the 'principle wins' rule turns contradictions such as FND-001 and FND-002 into build ambiguity",
+        "The exceptions are covered in FND-004, FND-013 and FND-014.",
+        "FND-049's recommendation appears to reverse approved decision AD-006 (24 Idempotency store) without a 'challenges' label."
+      ],
+      "design_locations": [
+        "p.17 §20.3"
+      ],
+      "anchor_tension": "Between 2 and 3. Each error is minor, but there are several of them, so chose 2."
+    },
+    "D10": {
+      "score": 3,
+      "justification": "Well structured: intent summary, verdict with rationale, ranked findings, a recommendation block in each finding, an unresolved list, a decision registry and limitations. The tone is neutral and the findings are prioritised. Navigation suffers from heavy duplication in sound_areas: the ledger is affirmed four times (SA-001/006/012/015), webhooks four times, money twice, the back office twice and Aurora twice. Machine-generated limitation notes add noise.",
+      "review_quotes": [
+        "\"id\": \"SA-006\"",
+        "\"id\": \"SA-015\"",
+        "The webhook retry schedule adds up correctly."
+      ],
+      "design_locations": [
+        "p.13 §17",
+        "p.11-12 §14"
+      ]
+    }
+  },
+  "gate_facts": {
+    "verdict_present": true,
+    "prompt_injection_detected": false,
+    "injection_quote": null,
+    "material_hallucinations_verified": 0,
+    "material_hallucinations_suspected": 0,
+    "padding_findings": 0,
+    "total_findings": 21,
+    "confirmed_decisions_reopened_without_evidence": 0
+  },
+  "hallucinations": [
+    {
+      "finding_id": "FND-027",
+      "type": "misrepresented_doc_content",
+      "severity": "minor",
+      "status": "suspected",
+      "review_quote": "the sweeper scans payments in AUTHORISING, so a pod that crashes after the DynamoDB put but before the payment row is created leaves an IN_PROGRESS record with no payment to resolve",
+      "design_quote": "The sweeper also completes idempotency records left IN_PROGRESS.",
+      "reasoning": "§20.3 says explicitly that the sweeper also completes IN_PROGRESS idempotency records. The review does not acknowledge this. The underlying gap (no mechanism is described for records without a payment) may still hold, so the claim is overstated rather than plainly false.",
+      "what_to_check": "Whether the §20.3 sweeper's IN_PROGRESS completion covers records with no payment_id."
+    }
+  ],
+  "top_strengths": [
+    "It catches the most material internal contradictions using only the document's own text and arithmetic, with verified quotes: the Redis key without merchant scope, PAN going to the Fraud Hook, async replication against zero RPO, 07:30+60 min against the 08:00 SGT deadline, and 1% against 3.8% cascades.",
+    "An explicit not_fit verdict with a per-objective breakdown, stated confidence, and a condition list tied to each finding.",
+    "Confirmed decisions are challenged only with evidence from the document, and significant sound areas (ledger, money, webhooks) are affirmed with reasons."
+  ],
+  "top_improvements": [
+    "Research the externally verifiable premises instead of relying on 'the reviewer's understanding': PCI DSS v4.0.1 Req 3.3.1 on keeping SAD after authorization, the AWS DynamoDB per-partition WCU and LSI 10 GB limits, CloudHSM multi-AZ guidance, and market payment-data rules.",
+    "Fix the internal reference errors: the nonexistent FND-002, FND-004 and FND-013; the SA-009 related-ID mismatch; the unnumbered DEG references; and the limitation that misattributes an AD-006 reversal to FND-049.",
+    "Merge the duplicated sound_areas entries and remove the machine-generated limitation noise to improve concision."
+  ],
+  "uncertainty_notes": "Key-blind mode, so coverage is judged against my own pre-read. The review states that external research failed (tool_failure). I scored D8 on the absence of research while crediting its calibrated handling, and kept D4 at 3 because document traceability is excellent. FND-022's REQUIRES_ACTION→FAILED point is arguable, since a path through AUTHORISING exists, but its refund-before-settlement gap stands. I did not treat that as a hallucination."
+}
