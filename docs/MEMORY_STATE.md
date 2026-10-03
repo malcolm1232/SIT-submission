@@ -16,7 +16,7 @@ The architecture text is `docs/ARCHITECTURE.md` §7 (state, checkpoints, resume 
 | The registry of the document's approved decisions, frozen and hashed after understand | `agent/sit_review_agent/state/decision_registry.py` |
 | The manifest, written before the first call and finalised at exit | `agent/sit_review_agent/manifest.py` |
 | Resume from the last checkpoint, and replay of a recorded run | `agent/sit_review_agent/orchestrator.py` `resume_run`, `agent/sit_review_agent/replay.py` |
-| Re-assessment against a previous run (`--previous`) | `agent/sit_review_agent/orchestrator.py` `RunRequest.previous_run` |
+| Re-assessment against a previous run (`--previous`), run live once in `docs/live_runs/reassess_payments_v2_1/` | `agent/sit_review_agent/orchestrator.py` `RunRequest.previous_run` |
 
 ## The settings that configure it
 

@@ -34,7 +34,10 @@ The real idle timeout of the SIT servers is not known, so the 60 s reopen thresh
 
 ### Re-assessment of an updated document
 
-No live re-assessment run with `--previous` is committed; the path is covered by offline tests and its rehearsal on the synthetic payments v1 and v2 pair is still in progress (`tests/test_run_and_resume.py`, `eval/synthetic/payments_orchestration/`).
+The re-assessment path (`--previous`) has been run live once, document-only, on the synthetic payments v1 and v2 pair, and never on the lab's document or with tools (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md`).
+That run was not graded against the answer key, so its resolved and still-open classification is unscored (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Not verified").
+Nothing requires every prior finding to be classified, so a reader cannot tell a fixed prior finding from one that was not re-examined; three were left out in that run (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Prior findings not accounted for").
+Three of its assess calls were cut by the stage limit, so its cost of $4.50 is a lower bound (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Result").
 
 ### Scope of the build
 

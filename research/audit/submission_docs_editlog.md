@@ -60,11 +60,19 @@ Final result: 222 paths checked, 3 missing, all expected: `.env` (in `README.md`
 `ruff check agent harness tests`: exit 0.
 `pytest -q`: exit 0, 1836 passed, 0 failed (also 1836 passed at the base before any edit).
 `make smoke`: exit 0, 249 passed.
+After the merge: ruff exit 0; `pytest -q` exit 0, 1837 passed, 0 failed; `make smoke` exit 0, 249 passed; link check 223 paths, the same 3 expected misses.
 
 ## Incidents
 
 - One replay check used a broad `grep` over the replay's console output and printed one recorded model line (a plan question) to this session; later checks printed only lines starting `replay`, `replayed` or `error`.
 - One commit command used `cd` in a compound command rather than `git -C`; it ran in the worktree and committed only `docs/LIMITATIONS.md`.
+
+## Merge with the moved remote
+
+`git fetch` found `origin/claude/happy-darwin-d0bl94` moved to `718a396` (deadline scaling, and the live re-assessment run `docs/live_runs/reassess_payments_v2_1/`), so it was merged with a merge commit, without conflict.
+After the merge, `docs/LIMITATIONS.md`, `README.md` "Status" and `docs/MEMORY_STATE.md` cite that run instead of calling the re-assessment path untested live.
+Its figures (422.8 s, `not_fit` 0.75, 2 resolved, 4 partially addressed, 10 still open, 3 new, $4.50 lower bound) are copied from `docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Result" and "Delta classification".
+The gates and the link check were run again after the merge (see the report).
 
 ## Left open
 

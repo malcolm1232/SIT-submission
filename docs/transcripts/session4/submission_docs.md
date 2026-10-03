@@ -15,14 +15,16 @@ Six §5.3 topic files were added (`docs/TECHNOLOGIES.md`, `docs/CONTEXT_MANAGEME
 
 ## Key findings
 
+The remote moved during the work and was merged without conflict; it brought the live re-assessment run `docs/live_runs/reassess_payments_v2_1/`, which `docs/LIMITATIONS.md` and the README now cite.
+
 No committed run under `docs/live_runs/` replays byte for byte at the tip: three diverge on a finding statement (exit 4) and three are refused (exit 2).
 `ui_flow_1` replays exactly at its recorded commit `5f62065`, and the README gives that recipe, run verbatim with exit 0.
 The cause of the divergence at the tip was not investigated.
 
 ## Gates
 
-`ruff check agent harness tests` exit 0; `pytest -q` exit 0 with 1836 passed and 0 failed; `make smoke` exit 0 with 249 passed, also on a fresh clone.
-The link check found 222 paths and 3 missing, all expected (`.env` twice, and a pre-existing optional `docs/slides/`).
+`ruff check agent harness tests` exit 0; `pytest -q` exit 0 with 1837 passed and 0 failed after merging the moved remote; `make smoke` exit 0 with 249 passed, also on a fresh clone.
+The link check found 223 paths and 3 missing, all expected (`.env` twice, and a pre-existing optional `docs/slides/`).
 
 ## Not verified
 
