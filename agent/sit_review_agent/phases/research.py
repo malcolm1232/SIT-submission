@@ -42,8 +42,9 @@ How the loop works (decisions the docs left open are marked *decision*):
   except ``deadline``, which ends at once to keep the report reserve); all active rules plus the
   always-on iteration cap after every iteration. *Decision:* the model's ``stop_requested`` is
   honoured only when no external question is still ``open`` and at least one tool call was made
-  (BEH-03); it is reported as ``sufficient_evidence`` with detail ``model_stop_vote`` (``tool_failure``
-  or ``no_marginal_gain`` when no external evidence was gathered). When every
+  (BEH-03); it is reported as ``sufficient_evidence`` with detail ``model_stop_vote`` only when at
+  least one question was answered; otherwise ``tool_failure`` (every call failed, or a tool was
+  disabled for the run) or ``no_marginal_gain`` (``_vote_stop``; sit_sample_tools_1). When every
   external question is ``answered`` the phase stops with ``sufficient_evidence`` /
   ``all_questions_answered`` even if that rule is not active.
 * Degradations: no tools / tools all down / auth cascade -> ``tool_unavailable`` ("No external
@@ -231,17 +232,36 @@ class _ResearchRun:
             if stop is None and outcome.output is not None and outcome.output.stop_requested:
                 still_open = [q.id for q in external if q.status == "open"]
                 if not still_open and self.calls_this_phase > 0:
-                    stop = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "model_stop_vote")
-                    if not any(e.source_type is SourceType.EXTERNAL for e in ctx.ledger):
-                        # Zero external evidence is never "sufficient": every call failed, or none found anything.
-                        failed = not any(c.status is ToolCallStatus.OK for c in state.tool_calls)
-                        stop = StopReason.of(StopReasonCode.TOOL_FAILURE if failed else StopReasonCode.NO_MARGINAL_GAIN,
-                                             "model_stop_vote with no external evidence")
+                    stop = self._vote_stop(external)
                 else:
                     ctx.emit(f"model asked to stop; ignored ({len(still_open)} question(s) never attempted, "
                              f"{self.calls_this_phase} tool call(s) so far)", "warn")
         self._finish(stop, external)
         return ctx
+
+    def _vote_stop(self, external: list[ResearchQuestion]) -> StopReason:
+        """The stop reason of an honoured model stop vote. ``sufficient_evidence`` needs at least one
+        answered question: sit_sample_tools_1 stopped on the vote with 0 of 9 answered and web search
+        unusable, and reported ``sufficient_evidence``. Otherwise ``tool_failure`` when every call
+        failed or a tool was disabled for the run, and ``no_marginal_gain`` when the tools worked
+        but answered nothing (the existing enum: no new code is needed)."""
+        if any(q.status == "answered" for q in external):
+            return StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "model_stop_vote")
+        if not any(e.source_type is SourceType.EXTERNAL for e in self.ctx.ledger):
+            # Zero external evidence is never "sufficient": every call failed, or none found anything.
+            failed = not any(c.status is ToolCallStatus.OK for c in self.state.tool_calls)
+            return StopReason.of(StopReasonCode.TOOL_FAILURE if failed else StopReasonCode.NO_MARGINAL_GAIN,
+                                 "model_stop_vote with no external evidence")
+        from sit_review_agent.tools.gateway import PolicyToolGateway
+        from sit_review_agent.tools.mcp_client import find_layer
+
+        policy = find_layer(self.ctx.tools, PolicyToolGateway)
+        offered = {t["name"] for t in self.api_tools}
+        unusable = sorted(set(getattr(policy, "unusable_tools", set()) or set()) & offered)
+        if unusable:
+            return StopReason.of(StopReasonCode.TOOL_FAILURE,
+                                 f"model_stop_vote with no question answered; {', '.join(unusable)} unusable")
+        return StopReason.of(StopReasonCode.NO_MARGINAL_GAIN, "model_stop_vote with no question answered")
 
     # ================================================================== conversation
     def _render(self, part: str, questions: list[ResearchQuestion], *, reason: str = "", error: str = "") -> str:

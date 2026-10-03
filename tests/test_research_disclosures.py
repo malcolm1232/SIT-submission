@@ -19,7 +19,7 @@ from mcp import MCPError, types
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.llm.gateway import FakeResponse
-from sit_review_agent.models import DegradationType
+from sit_review_agent.models import DegradationType, StopReasonCode
 from sit_review_agent.phases.research import ResearchPhase
 from sit_review_agent.tools.gateway import MCPToolGateway, ToolErrorClass, qualify
 from test_research_phase import PAPERS, final, make_ctx, tu
@@ -100,3 +100,23 @@ async def test_tool_error_disclosure_names_successes_too(tmp_path: Path) -> None
     assert d.event.startswith("mcp-internet-search/search_web: 1 of 1 call(s) failed (session_closed x1)")
     assert "disabled" not in d.event                                 # one genuine failure is not two
     assert ToolErrorClass.SESSION_CLOSED.value in d.event
+
+
+async def test_stop_vote_with_nothing_answered_is_not_sufficient_evidence(tmp_path: Path) -> None:
+    """sit_sample_tools_1: 0 of 9 answered, web search disabled, scholarly evidence in the ledger, the
+    model voted to stop: the reason was ``sufficient_evidence``."""
+    clock = FakeClock()
+    script = run_script(("RQ-001", "unanswered", []), ("RQ-002", "partial", ["EV-001"]))
+    ctx = await ResearchPhase().run(make_ctx(tmp_path, script, base=live_base(clock, {}), clock=clock))
+    assert any(e.source_type.value == "external" for e in ctx.ledger)     # evidence was gathered
+    stop = ctx.state.stop_reason
+    assert stop.code is StopReasonCode.TOOL_FAILURE, stop
+    assert stop.detail == "model_stop_vote with no question answered; mcp-internet-search__search_web unusable"
+
+
+async def test_stop_vote_with_an_answer_stays_sufficient_evidence(tmp_path: Path) -> None:
+    clock = FakeClock()
+    script = run_script(("RQ-001", "unanswered", []), ("RQ-002", "answered", ["EV-001", "EV-002"]))
+    ctx = await ResearchPhase().run(make_ctx(tmp_path, script, base=live_base(clock, {}), clock=clock))
+    assert ctx.state.stop_reason.code is StopReasonCode.SUFFICIENT_EVIDENCE
+    assert ctx.state.stop_reason.detail == "model_stop_vote"
