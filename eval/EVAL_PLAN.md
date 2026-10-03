@@ -4,20 +4,26 @@ Date: 2026-10-02. Status: plan, to be executed after the build. The binding vers
 
 Sources: the scope-cut table in `research/audit/fresh_eyes.md` §2.3 (FE), `research/audit/research_audit.md` §4.6 and §6 (RA), `research/methodology/README.md` and `metrics.md` (MR, MM), `docs/BUDGET.md`, `docs/USER_DECISIONS.md` (UD), `docs/DECISIONS.md` (ADR), `docs/SEALING.md`.
 
-**Cost basis.** The corrected per-run figures in `docs/BUDGET.md` §1 (all-Opus, hybrid ingestion, cached, 20 calls, 20K output): FULL $2.18, B0 $0.63, B0-$ $2.18 (cost-matched to FULL), A5 $1.02; heavy-thinking worst case $3.24. Instruments at the BUDGET §3 rates: matcher plus judges $1.05 per matched run (Opus 5.5 in batch, or the second provider at a similar UNVERIFIED rate), Opus 5.5 grader $0.57 per review (batch), Sonnet 5.5 control grader $0.30 per review (batch). All totals carry the BUDGET 30 % margin. The token base is still UNVERIFIED (audit U3); the pilot measures it.
+**Cost basis (redone 2026-10-03 from measured runs; `docs/BUDGET.md` §1.1 and §6, arithmetic in `research/audit/budget_redo_editlog.md`).**
+Per run: FULL $5.74 and A5 $5.74 (measured, concurrent design, demo profile, document-only), B0 $2.45 (derived), B0-$ $5.74 (cost-matched to FULL); A4b-high $8.21 (measured).
+Instruments per scored run: scoring $10.18 (mean of three measured scorings in the pre-registered setup), Opus 5.5 grader $5.30 (measured), Sonnet 5.5 control grader $2.79 (derived).
+All totals carry the BUDGET 30 % margin.
+Every cost is the CLI's estimate on one document, not a billed amount.
+The 2026-10-02 planning figures (FULL $2.18, B0 $0.63, B0-$ $2.18, A5 $1.02, heavy case $3.24; instruments $1.05, $0.57, $0.30) are kept in `docs/BUDGET.md` §1.2 and in prereg `costs.per_run_usd`; they describe the planning model, not a measured run.
 
-**Run time.** Measured on 2026-10-02, not estimated (`docs/HANDOVER_FULL.md` §8 and §10; artefacts under `docs/live_runs/live_cc_opus_payments_v1/`; arithmetic in `research/audit/verify_runtime_cli_editlog.md`). One FULL-shaped run at `high` on a 21-page PDF through the `claude -p` backend, document-only (no research) and without the refine stage, took 959 s (16.0 min) of successful work: ingest 2 s, understand 158 s, plan 158 s, assess 520 s, verify 33 s, report 88 s. Its wall time was 3,372 s (56.2 min), because four assess attempts were killed by a 600 s timeout that has since been raised to 1,800 s. Research and refine have not been timed, so 16.0 min is a floor for a FULL run, and the default deadline of 3,600 s (60 min, `config/stop_rules.yaml`) is the cap. The single-call conditions (B0, B0-$) have not been timed either; the nearest measured analogue is the 520 s (8.7 min) assess call. Scoring one review in the pre-registered setup took 245.6 s (4.1 min: 98 calls at concurrency 4, 943.7 s of call time), and grading one review took 549.3 s (9.2 min: two samples of Pass A and Pass B, run one after another), so the instruments add 794.9 s (13.2 min) per scored and graded run. The earlier estimate of 8-10 minutes per run (BUDGET §4) is withdrawn. Runs go 2-3 in parallel within rate limits (not yet tried on the `claude -p` backend), with conditions interleaved in a seeded order. The cost figures in this plan are still the estimates made before these measurements; `docs/BUDGET.md` is to be redone from the measured runs (`docs/HANDOVER_FULL.md` §10 step 4).
+**Run time of the old sequential agent at `high` (stale since the latency redesign; kept as the record).** Measured on 2026-10-02, not estimated (`docs/HANDOVER_FULL.md` §8 and §10; artefacts under `docs/live_runs/live_cc_opus_payments_v1/`; arithmetic in `research/audit/verify_runtime_cli_editlog.md`). One FULL-shaped run at `high` on a 21-page PDF through the `claude -p` backend, document-only (no research) and without the refine stage, took 959 s (16.0 min) of successful work: ingest 2 s, understand 158 s, plan 158 s, assess 520 s, verify 33 s, report 88 s. Its wall time was 3,372 s (56.2 min), because four assess attempts were killed by a 600 s timeout that has since been raised to 1,800 s. Research and refine have not been timed, so 16.0 min is a floor for a FULL run, and the default deadline of 3,600 s (60 min, `config/stop_rules.yaml`) is the cap. The single-call conditions (B0, B0-$) have not been timed either; the nearest measured analogue is the 520 s (8.7 min) assess call. Scoring one review in the pre-registered setup took 245.6 s (4.1 min: 98 calls at concurrency 4, 943.7 s of call time), and grading one review took 549.3 s (9.2 min: two samples of Pass A and Pass B, run one after another), so the instruments add 794.9 s (13.2 min) per scored and graded run. The earlier estimate of 8-10 minutes per run (BUDGET §4) is withdrawn. Runs go 2-3 in parallel within rate limits (not yet tried on the `claude -p` backend), with conditions interleaved in a seeded order. The cost figures in this plan are still the estimates made before these measurements; `docs/BUDGET.md` is to be redone from the measured runs (`docs/HANDOVER_FULL.md` §10 step 4).
 
-**Run-time and cost basis after the latency redesign (2026-10-03): to be re-measured after the first rehearsal.**
-The two notes above describe the old sequential agent at `high`.
-The evaluated agent is now the demo profile (`medium` on every stage, research `low`, 540 s deadline) with a concurrent first stage (`docs/DECISIONS.md` ADR-011, ADR-012; `docs/USER_DECISIONS.md` #31; prereg deviations entry 11).
-Every figure in this note is a prediction until the first timed rehearsal replaces it.
-Run time: the 132 runs stay 93 FULL-shaped and 39 single-call; FULL runs are capped at 540 s, so run time is at most 93 × 540 s + 39 × 520 s = 70,500 s = 19.6 h (the single-call figure is still the 520 s assess analogue above).
-Predicted FULL run: 443 s document-only, 450 to 499 s with research.
-Cost: about $5.0 to $5.4 per FULL run (about 165,000 output tokens), so the agent budget is about 93 × $5.4 + 39 × $1.6 = $565 before margin, against the $240.12 planned in §1.2; the rise comes from measured prices, not from the design.
+**Run-time and cost basis after the latency redesign (2026-10-03): measured on two rehearsals; `docs/BUDGET.md` §1.1 and §6.**
+The run-time note above describes the old sequential agent at `high`.
+The evaluated agent is now the demo profile (`medium` on every stage, research `low`, 540 s deadline) with a concurrent first stage (`docs/DECISIONS.md` ADR-011, ADR-012; `docs/USER_DECISIONS.md` #31 and #33; prereg deviations entry 11).
+Measured FULL run, document-only (`docs/live_runs/rehearsal_concurrent_1/MEASUREMENT.md`): 382.3 s, $5.74, 148,957 output tokens, 344,584 input tokens, all written to the cache and none read.
+The same agent at `high` on every stage (`docs/live_runs/rehearsal_concurrent_high_1/MEASUREMENT.md`): 780.3 s, $8.21, 258,222 output tokens.
+With research: NOT measured; predicted 389.3 to 438.3 s and $6.14 (the measured run plus the design note's predicted research increment of 7 to 56 s and $0.40).
+Single-call conditions: not measured; B0 is derived at $2.45 and 859.8 s, B0-$ at $5.74 and 1,719.6 s (`docs/BUDGET.md` §1.1).
+Run time of the 132 runs: 84 × 382.3 s + 9 × 382.3 s + 24 × 859.8 s + 15 × 1,719.6 s = 81,983.1 s = 22.8 h at one run at a time, 11.4 h at 2 and 7.6 h at 3 in parallel.
+Agent cost: 84 × $5.74 + 9 × $5.74 + 24 × $2.45 + 15 × $5.74 = $678.72 before margin, against the $240.12 planned; Tier A with scoring, grading and the 30 % margin is $3,281.19 (`docs/BUDGET.md` §6).
 Scheduling: one FULL run at a time until 12 concurrent CLI sessions are measured, because a FULL run holds up to 6 (prereg `runs_per_item.scheduling`).
-Re-pilot before Tier A: three timed rehearsals on payments v1 (two document-only, one with tools, about $15), and one of them scored and graded (about $15).
-The Tier A figures in §1.2 are not recomputed here; `docs/BUDGET.md` is redone after the first rehearsal.
+Still to measure before Tier A: the with-tools rehearsal (waits for the MCP key, `docs/USER_DECISIONS.md` #31 ruling 9).
 
 ---
 
@@ -41,54 +47,61 @@ The Tier A figures in §1.2 are not recomputed here; `docs/BUDGET.md` is redone 
 
 ### 1.2 Run matrix and cost
 
+Agent USD at the measured per-run figures of `docs/BUDGET.md` §1.1 (FULL, A5 and B0-$ $5.74, B0 $2.45), redone 2026-10-03; the line arithmetic is in `research/audit/budget_redo_editlog.md` §2.3.
+
 | Line | What | Documents | Conditions × k | Runs | Agent USD |
 |---|---|---|---|---:|---:|
-| A-1 | Development iteration (support; no claims). Resume from stage checkpoints where possible | S-dev v1, SIT v1 (after the owner's key exists) | FULL | 16 | 34.88 |
-| A-2 | Pilot before the freeze (calibration; exploratory): estimates ρ, σ_d, ψ, cost, latency; produces the matcher validation pairs | 3 S-dev v1 | FULL, B0 × 3 | 18 | 25.29 |
-| A-3 | Frozen agent on S-dev | 3 S-dev v1 | FULL, B0, B0-$, A5 × 3 | 36 | 54.09 |
-| A-4 | Frozen agent on S-heldout (access 1 of 3) | 2 S-heldout | FULL, B0, B0-$ × 3 | 18 | 29.94 |
-| A-5 | v2 re-review, fresh and with the A-3 v1 review of the same run index as context | 3 S-dev v2 | FULL × 2 variants × 3 | 18 | 39.24 |
-| A-6 | Real-dev: SIT sample v1 | 1 | FULL × 3 | 3 | 6.54 |
-| A-7 | SIT v2 fixture, delta mode with a SIT v1 review as context | 1 | FULL × 3 | 3 | 6.54 |
-| A-8 | Robustness gate, live LLM part (INF-01, INF-24, LLM-06, BEH-24, ADV-01/04, INP-03; about 6 scenarios × 2). The L0 items run on fakes at no API cost | fixtures | FULL × 2 | 12 | 26.16 |
-| A-9 | Rehearsals, cassette recording, fresh-clone check | SIT, rehearsal | FULL | 8 | 17.44 |
-| — | B-gen floor (no model call; matched only) | 5 keyed v1 | 1 each | 0 | 0 |
-| | **Scored runs (A-2 to A-7)** | | | **96** | **161.64** |
-| | **Support runs (A-1, A-8, A-9)** | | | **36** | **78.48** |
-| | **Agent total** | | | **132** | **240.12** |
+| A-1 | Development iteration (support; no claims). Resume from stage checkpoints where possible | S-dev v1, SIT v1 (after the owner's key exists) | FULL | 16 | 91.84 |
+| A-2 | Pilot before the freeze (calibration; exploratory): estimates ρ, σ_d, ψ, cost, latency; produces the matcher validation pairs | 3 S-dev v1 | FULL, B0 × 3 | 18 | 73.71 |
+| A-3 | Frozen agent on S-dev | 3 S-dev v1 | FULL, B0, B0-$, A5 × 3 | 36 | 177.03 |
+| A-4 | Frozen agent on S-heldout (access 1 of 3) | 2 S-heldout | FULL, B0, B0-$ × 3 | 18 | 83.58 |
+| A-5 | v2 re-review, fresh and with the A-3 v1 review of the same run index as context | 3 S-dev v2 | FULL × 2 variants × 3 | 18 | 103.32 |
+| A-6 | Real-dev: SIT sample v1 | 1 | FULL × 3 | 3 | 17.22 |
+| A-7 | SIT v2 fixture, delta mode with a SIT v1 review as context | 1 | FULL × 3 | 3 | 17.22 |
+| A-8 | Robustness gate, live LLM part (INF-01, INF-24, LLM-06, BEH-24, ADV-01/04, INP-03; about 6 scenarios × 2). The L0 items run on fakes at no API cost | fixtures | FULL × 2 | 12 | 68.88 |
+| A-9 | Rehearsals, cassette recording, fresh-clone check | SIT, rehearsal | FULL | 8 | 45.92 |
+| - | B-gen floor (no model call; matched only) | 5 keyed v1 | 1 each | 0 | 0 |
+| | **Scored runs (A-2 to A-7)** | | | **96** | **472.08** |
+| | **Support runs (A-1, A-8, A-9)** | | | **36** | **206.64** |
+| | **Agent total** | | | **132** | **678.72** |
 
 Scoring against a key that is not signed off (LC12).
 The harness refuses to score, or to run the grader's key-aware diagnostic, on a key whose `scored_run_ready` is false, unless the command is given `--exploratory` (SIT FABLE ruling #26, `docs/USER_DECISIONS.md`; `harness/README.md`, "LC12").
 A pilot scored before the owner signs the S-dev keys (T3) is therefore an exploratory run: it uses `--exploratory`, every artefact it writes is marked exploratory, and it may not be reported as confirmatory.
 The three pilots under `docs/live_runs/live_cc_opus_payments_v1/` (`eval_pilot/`, `eval_pilot2_bounded/`, `grade_pilot/`) predate the guard and are exploratory; a note file in each says so.
-Their numbers (strict recall 11 of 14, adjudicated precision 0.95, severity-weighted recall 0.73, grader S 83.8) describe the old single-call agent at `high` and are stale for the latency design (ADR-011); they are not a baseline for the new agent.
+Their numbers (strict recall 11 of 14, adjudicated precision 0.95, severity-weighted recall 0.73, grader S 83.8) describe the OLD sequential single-call agent at `high` and are stale for the latency design (ADR-011); they are not a baseline for the new agent.
+The pilot scores of the new agent are in `docs/live_runs/QUALITY_COMPARISON.md` (exploratory, unsigned key, unfrozen prereg, one document, one run per arm): concurrent `medium` and concurrent `high` each match 13 of 14 flaws strictly, adjudicated precision 0.944 and 0.947, severity-weighted recall 0.933 both, grader S 83.0 and 83.8.
 Lines A-3 to A-7 score only signed keys; `sit-eval aggregate` refuses to put an exploratory score into their analysis.
 
 Instruments:
 
 | Instrument | Volume | USD |
 |---|---|---:|
-| Matcher, adjudicator, G3 and citation judges | 101 matched runs (96 scored + 5 B-gen) × $1.05 | 106.05 |
-| Opus 5.5 grader (primary) | 101 reviews (78 Tier A reviews from A-3 to A-7, 20 V-test grades for R_base, V1, V4, V10 × 5, 3 constructed calibration variants) × $0.57 | 57.57 |
-| Sonnet 5.5 control grader | 101 × $0.30 | 30.30 |
-| Second-provider grader (only if a key exists; price UNVERIFIED) | 101 × $0.57 | 57.57 |
+| Scoring: matcher, adjudicator, G3 and citation judges (`sit-eval score`, pre-registered setup) | 101 matched runs (96 scored + 5 B-gen) × $10.18 (mean of three measured scorings) | 1,028.18 |
+| Opus 5.5 grader (primary) | 101 reviews (78 Tier A reviews from A-3 to A-7, 20 V-test grades for R_base, V1, V4, V10 × 5, 3 constructed calibration variants) × $5.30 (measured) | 535.30 |
+| Sonnet 5.5 control grader | 101 × $2.79 (derived, not measured) | 281.79 |
+| Second-provider grader | Not budgeted: Anthropic only for now (`docs/USER_DECISIONS.md` #23) | 0 |
 
 | Total | Subtotal | **× 1.3** |
 |---|---:|---:|
-| Anthropic only | $434.04 | **$564** |
-| With a second-provider grader | $491.61 | **$639** |
-| Sensitivity: every FULL-shaped run at the $3.24 heavy-thinking cost (+$1.06 × 99 runs) | $539-597 | $701-776 |
+| Agent | $678.72 | $882.34 |
+| Scoring | $1,028.18 | $1,336.63 |
+| Grading | $817.09 | $1,062.22 |
+| **Tier A, Anthropic only** | **$2,523.99** | **$3,281.19** |
+| Sensitivity: FULL with research at the predicted $6.14 (+$0.40 × 84 runs) | $2,557.59 | $3,324.87 |
+| Sensitivity: every FULL-shaped run at the measured `high` cost $8.21 (+$2.47 × 93 runs) | $2,753.70 | $3,579.81 |
 
-**Tier A approval figure: $650** (covers both grader branches at the planning cost). The $701-776 sensitivity row is what the pilot checkpoint protects against: if the pilot median FULL cost exceeds $3.24, re-plan before freezing (BUDGET §5).
+**Tier A figure for the owner's approval: $3,282** (`docs/BUDGET.md` §6, "Owner approval"; it was $650 at the planning prices). The `high` sensitivity row is what the pilot checkpoint protects against: if the pilot median FULL cost exceeds the re-based $8.21, re-plan before freezing (BUDGET §5).
 
 The checkpoint's median is `sit-eval aggregate` `conditions.FULL.cost_usd.median_fully_accounted`, over FULL runs in which every billed model call's usage was recorded (prereg `costs.usage_completeness`; SIT FABLE ruling #28, 2026-10-03).
 A run with a model call that was killed or cut has null cost and tokens with its recorded figures beside them as lower bounds, is excluded from that median and counted; the aggregate's `pilot_checkpoint` is `fail` if the lower-bound median over all FULL runs exceeds $3.24, `pass` only if every FULL run is fully accounted and the median is at or below it, else `not_evaluable`.
 A lower bound can fail the checkpoint but never pass it.
-For the latency design the checkpoint's cost figure is re-based on `docs/BUDGET.md` as redone after the first rehearsal (predicted about $5.4 per FULL run), and its wall-time gate stays the 540 s demo slot (prereg `stop_rule.pilot_checkpoint`, deviations entry 11).
+For the latency design the checkpoint's cost figure is re-based on `docs/BUDGET.md` §5 as redone from the rehearsals: $8.21 per FULL run, the measured cost of the same agent at `high` (prereg `costs.per_run_usd.heavy_case_FULL` still reads $3.24 and is not changed by this pass), and its wall-time gate stays the 540 s demo slot (prereg `stop_rule.pilot_checkpoint`, deviations entry 11).
 
-Wall time, from the measurements in the run-time note above: the 132 runs are 93 FULL-shaped runs (84 FULL and 9 A5) and 39 single-call runs (24 B0 and 15 B0-$). Floor: 93 × 959 s + 39 × 520 s = 109,467 s = 30.4 h of run time, which is 10.1-15.2 h of laptop wall time at 2-3 in parallel. Cap: 132 × 3,600 s = 132 h of run time, which is 44-66 h of wall time at 2-3 in parallel. The pilot (A-2) times research and refine and replaces the floor with a measured median. Instruments: scoring 101 matched runs × 245.6 s = 6.9 h, and Opus grading 101 reviews × 549.3 s = 15.4 h; the Sonnet control grader has not been timed. The earlier line (132 runs × 8-10 min ≈ 18-22 h, about 7-11 h of wall time) is withdrawn.
+Wall time of the OLD sequential agent, from the run-time note above (stale; kept as the record): the 132 runs are 93 FULL-shaped runs (84 FULL and 9 A5) and 39 single-call runs (24 B0 and 15 B0-$). Floor: 93 × 959 s + 39 × 520 s = 109,467 s = 30.4 h of run time, which is 10.1-15.2 h of laptop wall time at 2-3 in parallel. Cap: 132 × 3,600 s = 132 h of run time, which is 44-66 h of wall time at 2-3 in parallel. The pilot (A-2) times research and refine and replaces the floor with a measured median. Instruments: scoring 101 matched runs × 245.6 s = 6.9 h, and Opus grading 101 reviews × 549.3 s = 15.4 h; the Sonnet control grader has not been timed. The earlier line (132 runs × 8-10 min ≈ 18-22 h, about 7-11 h of wall time) is withdrawn.
 
-Since the latency redesign (2026-10-03) the floor and cap above describe the old agent; the predicted cap is 19.6 h of run time (the note after "Run time" at the top), to be re-measured after the first rehearsal.
+Since the latency redesign (2026-10-03) the floor and cap above describe the old agent.
+Measured for the new agent (`docs/BUDGET.md` §6): 84 FULL × 382.3 s + 9 A5 × 382.3 s + 24 B0 × 859.8 s + 15 B0-$ × 1,719.6 s = 81,983.1 s = 22.8 h of run time, 11.4 h of wall time at 2 and 7.6 h at 3 in parallel; the B0 and B0-$ times are derived, and with research at the predicted 389.3 to 438.3 s the total is 22.9 to 24.1 h.
 
 ### 1.3 Grading and human workload (one person, the owner)
 
@@ -154,7 +167,7 @@ The deadline is still unknown (FE N1). Days are counted from the first build day
 | B4 | Fix what the pilot shows; matcher validation; grader pipeline; robustness gate | T4 100 matcher pairs (1.75 h); T5 grader smoke (2.1 h); finish T8 (3.0 h total) | **A-2 pilot** (18), A-8 |
 | B5 | Pilot-driven fixes; leakage tooling (LC5-LC8, LC10, LC11) | Review matcher κ; if κ < 0.60 apply protocol §7 | A-1 (last), A-9 |
 | B6 | **Freeze**: fill the pilot fields in `prereg.yaml`, flip `frozen`, hash, external timestamp (LC1); tag the agent commit | Send the hash to the SIT officer, or push the signed tag | none |
-| E1 | none | none | **A-3** (36) and **A-5** (18), interleaved; at least 4.1-6.1 h wall at 2-3 in parallel (floor: 36 FULL-shaped × 959 s + 18 single-call × 520 s = 12.2 h of run time) and up to 18-27 h if every run reaches the 3,600 s deadline, so E1 can run into a second day |
+| E1 | none | none | **A-3** (36) and **A-5** (18), interleaved; at the measured and derived per-run times (`docs/BUDGET.md` §1.1) 36 FULL-shaped × 382.3 s + 9 B0 × 859.8 s + 9 B0-$ × 1,719.6 s = 13,762.8 s + 7,738.2 s + 15,476.4 s = 36,977.4 s = 10.3 h of run time, 5.1 h at 2 and 3.4 h at 3 in parallel (FULL runs one at a time until 12 concurrent CLI sessions are measured), so E1 can run into a second day; the old agent's floor was 12.2 h |
 | E2 | Leakage audit (LC10) → unseal (access 1) → render the held-out PDFs by script | T6a held-out `core_insight` sign-off after the runs (1.0 h) | **A-4** (18), **A-6** (3), **A-7** (3) |
 | E3 | Matching, adjudication first pass, grader batches, runtime access scan (LC11) | T6b held-out adjudication review (2.0 h); T5b R_base (0.5 h); T7 grader sample (1.8 h) | V-tests (grader only) |
 | E4 | `eval/score.py` once on the complete set; tables; write results and limitations | Read the results and sign the rater statement | none |
@@ -183,7 +196,7 @@ Pre-registered as exploratory in `prereg.yaml` (`tier_B_hypotheses`). In priorit
 
 | Line | What | Runs | Agent USD | Human hours | Supports |
 |---|---|---:|---:|---:|---|
-| B-1 | A4b effort sweep: FULL with every stage at `high` (A4b-high) and at `xhigh` (A4b-xhigh) on 3 S-dev v1 × 3; the A-3 FULL run (the demo profile, `medium`) is the reference (prereg deviation 11). The USD figure predates the latency redesign (`medium` at $2.18, `xhigh` at $3.24 per run) and is re-based with `docs/BUDGET.md` after the first timed rehearsal | 18 | 48.78 | 0 | HB1: whether `high` is justified and whether any stage merits `xhigh` (UD #1, #5) |
+| B-1 | A4b effort sweep: FULL with every stage at `high` (A4b-high) and at `xhigh` (A4b-xhigh) on 3 S-dev v1 × 3; the A-3 FULL run (the demo profile, `medium`) is the reference (prereg deviation 11). The USD figure predates the latency redesign (`medium` at $2.18, `xhigh` at $3.24 per run) and is not redone; at the measured `high` cost the 9 A4b-high runs alone are 9 × $8.21 = $73.89, and A4b-xhigh is not measured (`docs/BUDGET.md` §6) | 18 | 48.78 | 0 | HB1: whether `high` is justified and whether any stage merits `xhigh` (UD #1, #5) |
 | B-2 | Intra-rater re-label of 40 matcher pairs, ≥ 7 days after T4; 50 more pairs to reach RA's 150 | 0 | 0 | 0.75 + 0.9 | Matcher reliability ceiling |
 | B-3 | Grader sample extended to 20 reviews (the tentative tier) | 0 | 0 | 3.7 | Grader validity tier "tentative" |
 | B-4 | A4: Sonnet 5.5 as the agent model, FULL and B0 on the 5 keyed documents × 3 (S-heldout access 2). Per-run cost derived from `cost_model.py` (Sonnet $1.30 central, scaled to hybrid ingestion: about $1.37; B0 about $0.40), UNVERIFIED | 30 | 26.55 | 0 | HB2 (within one family) |
@@ -195,7 +208,7 @@ Pre-registered as exploratory in `prereg.yaml` (`tier_B_hypotheses`). In priorit
 | B-10 | Critical recall and stability (Jaccard over k) from Tier A runs | 0 | 0 | 0 | Secondary, no new runs |
 | | **Tier B total** | **63** | **98.73** | **about 17** | |
 
-Instruments for Tier B: 60 matched runs × $1.05 = $63.00; 60 reviews × ($0.57 + $0.30) = $52.20; second-provider grader 60 × $0.57 = $34.20 if a key exists. **Tier B with margin: $278 (Anthropic only) or $323 (with a second-provider grader).** Tier A plus Tier B: about $842-962, against the full programme's $1,147-1,812.
+Instruments for Tier B: 60 matched runs × $1.05 = $63.00; 60 reviews × ($0.57 + $0.30) = $52.20; second-provider grader 60 × $0.57 = $34.20 if a key exists. **Tier B with margin: $278 (Anthropic only) or $323 (with a second-provider grader).** These Tier B figures are at the 2026-10-02 planning prices and are not redone; Tier A is now $3,281.19 at measured prices (`docs/BUDGET.md` §6), so a Tier A plus Tier B sum would mix the two bases and is not given.
 
 ---
 

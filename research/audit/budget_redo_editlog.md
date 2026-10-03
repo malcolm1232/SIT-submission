@@ -97,3 +97,9 @@ Run mix check: FULL = A-1 16 + A-2 9 + A-3 9 + A-4 6 + A-5 18 + A-6 3 + A-7 3 + 
 | File | Change | Why |
 |---|---|---|
 | `docs/BUDGET.md` | Top note replaced by a dated Basis paragraph; §1.1 measured per-run table with arithmetic; old §1 kept as §1.2 planning figures; §2 to §5 marked as planning prices, not redone; §4 Tier A pointer $650 → $3,282; §4 effort-switch note on the `claude_code` backend; §5 checkpoint re-based to $8.21 with the prereg field left as it is; §6 Tier A recomputed with comparison, wall-time tables and an owner approval line left blank | Item 1 |
+| `eval/EVAL_PLAN.md` | Cost basis paragraph replaced by the measured figures with a pointer to `docs/BUDGET.md` §1.1 and §6; the old run-time note labelled as the old sequential agent; the "to be re-measured after the first rehearsal" note replaced by the measured figures; §1.2 agent USD column, instruments table, totals and approval line at the measured prices; the pilot-score paragraph labels the old numbers as the old agent and cites `docs/live_runs/QUALITY_COMPARISON.md`; the checkpoint line names the re-based $8.21; the second "to be re-measured" line replaced by the measured run time; E1 schedule cell recomputed; Tier B line B-1 and the Tier A plus B line marked as not redone; one pre-existing em dash placeholder in the run table replaced by "-" | Item 2 |
+
+### 2.8 EVAL_PLAN E1 schedule cell
+
+- A-3 and A-5 hold 36 FULL-shaped runs (A-3 9 FULL + 9 A5, A-5 18 FULL), 9 B0 and 9 B0-$.
+- 36 × 382.3 s = 13,762.8 s; 9 × 859.8 s = 7,738.2 s; 9 × 1,719.6 s = 15,476.4 s; sum 36,977.4 s; / 3,600 = 10.27 h; / 2 = 5.14 h; / 3 = 3.42 h (shown as 10.3, 5.1 and 3.4 h).
