@@ -366,6 +366,9 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
         "review_mode": md.review_mode.value, "prior_review_id": md.prior_review_id,
         "disabled_tools": [t.name for t in m.tools if not t.enabled],
         "enabled_tools": [t.name for t in m.tools if t.enabled],
+        # "Tools used": enabled servers that received at least one call in this run.
+        "used_tools": [t.name for t in m.tools
+                       if t.enabled and review.research_log.tool_calls_by_tool.get(t.name, 0) > 0],
         "no_external": not any(e.source_type.value == "external" for e in review.evidence_ledger),
         "intent": {"statement": _md(review.intent_summary.statement),
                    "objectives": [{"ref": o.ref, "text": _one_line(o.text)} for o in review.intent_summary.objectives],

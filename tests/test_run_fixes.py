@@ -86,3 +86,30 @@ async def test_b_waking_lines_written_during_setup_carry_run_s(tmp_path: Path) -
     assert len(waking) == 2
     assert all(isinstance(r["run_s"], int | float) and r["run_s"] >= 0 for r in waking)
     assert _no_null_run_s(records) == []
+
+
+# ------------------------------------------------------------------------------ C: Tools used
+
+
+def _header_row(md: str, label: str) -> str:
+    row = next(line for line in md.splitlines() if line.startswith(f"| {label} |"))
+    return row.split("|")[2].strip()
+
+
+def test_c_tools_used_lists_only_servers_that_received_a_call(review_dict: dict[str, Any]) -> None:
+    from sit_review_agent.models import Review
+    from sit_review_agent.report.render import render_markdown
+
+    d = json.loads(json.dumps(review_dict))
+    entry = {"enabled": True, "server_version": None, "mode": "live"}
+    d["run_manifest"]["tools"] = [{**entry, "name": "mcp-search"},
+                                  {**entry, "name": "mcp-research-information"},
+                                  {**entry, "name": "mcp-standards", "enabled": False}]
+    d["research_log"]["tool_calls_by_tool"] = {"mcp-search": 4, "mcp-research-information": 0}
+    md = render_markdown(Review.model_validate(d))
+    assert _header_row(md, "Tools used") == "mcp-search"
+    assert _header_row(md, "Tools disabled") == "mcp-standards"
+
+    d["research_log"]["tool_calls_by_tool"] = {}
+    md = render_markdown(Review.model_validate(d))
+    assert _header_row(md, "Tools used") == "none"
