@@ -54,6 +54,7 @@ The agent's phase structure is being redesigned for latency (`docs/DECISIONS.md`
 The build is on branches `s4/w1-latency` (streamed CLI output, salvage, stage limits), `s4/w2-latency` (stage orchestration and the new refine and verdict calls) and `s4/w3*-latency` (replay, manifest and these documents), none of them integrated yet.
 Next: the integration pass, then the first timed rehearsal on payments v1, which confirms or replaces the predicted 443 s document-only and about $5.4 per FULL run; `docs/BUDGET.md` and the Tier A plan are redone after it.
 What stays the owner's: the scored pilot and the with-tools rehearsal (which waits for the MCP key), the Tier A budget approval, Opus fast mode, the signature on the S-dev keys, and any reversal of ruling #31 (the evaluated agent at `medium`).
+The first with-tools run on the lab's own sample document exists at `docs/live_runs/sit_sample_tools_1/` (owner's run, 428.0 s, $5.54, `fit_with_conditions` 0.72, measured in its `MEASUREMENT.md`): every `search_web` call failed on a closed MCP session that the gateway classifies as a tool error, and its `text/` folder must stay out of any public snapshot.
 
 ## Owner tasks on the critical path (cannot be delegated)
 
