@@ -177,6 +177,15 @@ Row 36 covers the three outputs of a finished review only; this row covers the i
 |---|---|---|---|
 | 39 | How does the day's artefact reach the agent when SIT hands it over as a link rather than a file? | SIT FABLE for the owner, 2026-10-03: a pasted https link on the `dra ui` drop screen is the hand-over path for the day's artefact (the owner's words on 3 Oct 2026: "download link"). The server fetches it before the run starts, with these guards: https only, no user name or password in the link, a host whose every address is public (checked again on each redirect), the URL policy of `config/url_policy.yaml`, at most 50 MB, and a body that must be a PDF (`%PDF-`). | Built in `agent/sit_review_agent/ui/fetch.py` (`MAX_BYTES`, `MAX_REDIRECTS`), which now cites this row; the file is saved under `runs/<id>/ui/input/`, so the command the page shows names it. Known limit, from the module: DNS rebinding between the check and the fetch is not caught. A file dropped or given by USB stays the first path; `docs/DEMO_DAY_SCRIPT.md` names both. |
 
+## 2026-10-03 (SIT FABLE for the owner, six assess shard groups)
+
+Recorded by the planner on 3 Oct 2026, 22:18, under the owner's delegation of 3 Oct 2026 02:50.
+This is the first tuning step that ruling (3) of row 31 named.
+
+| # | Question | Decision | Consequence |
+|---|---|---|---|
+| 40 | Stage 1 ended at 265.2 s and at 255 s in the two with-tools runs on the lab's 30-page document (`docs/live_runs/sit_sample_tools_1`, `docs/live_runs/sit_sample_ui_1`), past the 230 s tuning threshold of row 31. How many assess shard groups does the demo profile use? | SIT FABLE for the owner, 2026-10-03: six assess shard groups instead of four, as row 31 ruling (3) set out for a stage 1 above 230 s in rehearsal. The owner may reverse this. | `config/agent.yaml` holds six groups since 9e6c2fb on `s4/runfix2`, with the config tests green; the next rehearsal with the UI and the tools on the lab document checks that stage 1 ends at or under 230 s (`extra.timing.stages` in the manifest). |
+
 ## 2026-10-03 (the owner, the v2 look of the review page)
 
 Recorded by the UI v2 verifier from the planner's brief.
