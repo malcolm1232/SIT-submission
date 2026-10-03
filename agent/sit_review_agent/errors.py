@@ -145,6 +145,23 @@ class LLMOverloadedError(LLMError):
     """529 / 503 after the gateway's retry budget (robustness LLM-03)."""
 
 
+class AssessShardsFailed(LLMError):
+    """Every assess shard's call failed with a model error (latency redesign; robustness LLM-03,
+    persistent variant): the run stops as a single assess call's failure stopped it, with the
+    first shard's exit code (3 for an unavailable model), resumable, and the runtime writes the
+    partial run record it writes on a stage crash, listing each shard and its error. ``shards``
+    holds ``(index, name, error)`` per shard in launch order; ``cause`` is the first shard's error."""
+
+    def __init__(self, shards: list[tuple[int, str, LLMError]]) -> None:
+        first = shards[0][2]
+        names = "; ".join(f"shard {i} ({name}): {type(err).__name__}: {str(err)[:160]}" for i, name, err in shards)
+        super().__init__(f"every assess shard failed ({len(shards)} of {len(shards)}): {names}",
+                         call_id=first.call_id, phase=first.phase or "assess")
+        self.exit_code = first.exit_code
+        self.cause = first
+        self.shards = shards
+
+
 class LLMAuthError(LLMError):
     """401 / 403 / missing credentials. Message names the env var, never its value (LLM-11)."""
 

@@ -54,7 +54,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from sit_review_agent.config import AssessShard
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import ExitCode, LLMError, LLMSchemaError
+from sit_review_agent.errors import AssessShardsFailed, ExitCode, LLMError, LLMSchemaError
 from sit_review_agent.llm.outputs import AssessOutput, CriterionCoverage, FindingDraft, SoundAreaDraft
 from sit_review_agent.llm.runtime import OUT_OF_TIME_BEFORE_ASSESSMENT, truncated_twice_event
 from sit_review_agent.models import SEVERITY_RANK, DegradationType, finding_id
@@ -203,7 +203,10 @@ class AssessPhase:
         ordered = [results[i] for i in sorted(results)]
         errors = [r for r in ordered if r.outcome == "error"]
         if ordered and len(errors) == len(ordered):
-            raise self._errors.get(errors[0].index) or RuntimeError(errors[0].detail)
+            failed = [(r.index, r.name, self._errors[r.index]) for r in errors if r.index in self._errors]
+            if len(failed) != len(errors):
+                raise RuntimeError(errors[0].detail)
+            raise AssessShardsFailed(failed)
         return ordered
 
     async def _shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int,

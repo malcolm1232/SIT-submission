@@ -43,7 +43,7 @@ from typing import Any
 from sit_review_agent.clock import isoformat_z
 from sit_review_agent.config import EffectiveConfig
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import AgentError, RunInterrupted, StageCrash
+from sit_review_agent.errors import AgentError, AssessShardsFailed, ExitCode, LLMError, RunInterrupted, StageCrash
 from sit_review_agent.models import DegradationType, DocumentRole, StopReason, StopReasonCode
 from sit_review_agent.phases.base import Phase
 from sit_review_agent.progress import milestone
@@ -1245,7 +1245,6 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     """Record a failed run (``failure.json``, manifest outcome) and return its exit code."""
     import json as _json
 
-    from sit_review_agent.errors import ExitCode
     from sit_review_agent.manifest import finalise_manifest
     from sit_review_agent.models import Outcome
 
@@ -1266,9 +1265,13 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     cause = getattr(exc, "cause", None)
     if cause is not None:
         record["cause"] = f"{type(cause).__name__}: {str(cause)[:2000]}"
-    if code is ExitCode.STAGE_CRASH:
+    shards = getattr(exc, "shards", None) if isinstance(exc, AssessShardsFailed) else None
+    if shards is not None:                      # every assess shard failed (robustness LLM-03, persistent)
+        record["shards"] = [{"shard": i, "name": name, "error": f"{type(err).__name__}: {str(err)[:500]}"}
+                            for i, name, err in shards]
+    if code is ExitCode.STAGE_CRASH or shards is not None:
         try:                                    # ADR-009 item 5, robustness BEH-25: a partial report
-            record["partial_report"] = _run_partial_report(ctx, phase, cause).name
+            record["partial_report"] = _run_partial_report(ctx, phase, cause, code, shards).name
         except OSError:
             pass
     try:
@@ -1290,15 +1293,23 @@ def _run_fail(ctx: RunContext, exc: AgentError) -> RunOutcome:
     return RunOutcome(run_dir=rd.root, exit_code=int(code), report_md=None)
 
 
-def _run_partial_report(ctx: RunContext, phase: str | None, cause: object) -> Path:
-    """``report.partial.md`` after a stage crash (ADR-009 item 5, robustness BEH-25): the completed
-    stages, what the run had gathered and how to resume. Never a review: no finding is printed, since
-    none has passed verify (ADR-007), and the error is named by class only (details in failure.json)."""
+def _run_partial_report(ctx: RunContext, phase: str | None, cause: object, code: ExitCode,
+                        shards: list[tuple[int, str, LLMError]] | None = None) -> Path:
+    """``report.partial.md`` after a stage crash (ADR-009 item 5, robustness BEH-25), or after every
+    assess shard failed with a model error (``shards``; robustness LLM-03, persistent variant): the
+    completed stages, what the run had gathered and how to resume. Never a review: no finding is
+    printed, since none has passed verify (ADR-007), and the error is named by class only (details
+    in failure.json)."""
     s, rd = ctx.state, ctx.run_dir
     done = ", ".join(p.value for p in s.completed_phases) or "none"
+    first = type(cause).__name__ if cause is not None else None
+    if shards is not None:
+        why = (f"every assess shard failed with a model error ({first or 'LLMError'} on the first; "
+               f"exit {int(code)}, resumable)")
+    else:
+        why = f"the `{phase or 'run'}` stage crashed ({first or 'StageCrash'}; exit {int(code)})"
     lines = ["# Partial run record (not a review)", "",
-             f"The run stopped because the `{phase or 'run'}` stage crashed "
-             f"({type(cause).__name__ if cause is not None else 'StageCrash'}; exit 4). Nothing below is a "
+             f"The run stopped because {why}. Nothing below is a "
              "finding: no draft has been verified against the document, so none is reported.", "",
              f"- Run: `{s.run_id}`",
              f"- Document: {(s.documents[0].title if s.documents else '') or 'unknown'}",
@@ -1309,6 +1320,10 @@ def _run_partial_report(ctx: RunContext, phase: str | None, cause: object) -> Pa
              f"- Draft findings (unverified, not reported): {len(s.finding_drafts)}",
              f"- Resume: `sit-review resume {rd.root}` (continues after the last completed stage)",
              "- Details: `failure.json`, `state.json`, `checkpoints/`"]
+    if shards is not None:
+        lines += ["", "## Assess shards (every one failed; none of their criteria was assessed)", "",
+                  *[f"- assess shard {i}/{len(shards)} ({name}): {type(err).__name__}: {str(err)[:300]}"
+                    for i, name, err in shards]]
     if s.degradations:
         lines += ["", "## Events before the crash", "", *[f"- {d.event}" for d in s.degradations]]
     path = rd.root / "report.partial.md"

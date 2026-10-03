@@ -365,14 +365,36 @@ def _persistent_529(data: dict[str, Any]) -> None:
 
 
 def check_llm03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """529 on attempts 0-3 of every assess shard's call (K = 4 shards), then recovery: every shard
+    completes, no model switch. Persistent variant (every shard overloaded past the retry budget):
+    the run exits 3 once, resumable, and writes the partial run record a stage crash writes
+    (``report.partial.md``, named in ``failure.json``), disclosing that every shard failed and why;
+    ``resume`` completes once the API recovers (integration ruling of 2026-10-03)."""
     rec, stuck = recs
     r = ok(rec)
-    fault = [e for e in llm_calls(rec, "assess") if e.get("fault")]
-    assert [e["attempt"] for e in fault] == [0, 1, 2, 3] and all("529" in e["message"] for e in fault)
+    for s in SHARDS:
+        fault = [e for e in shard_calls(rec, s) if e.get("fault")]
+        assert [e["attempt"] for e in fault] == [0, 1, 2, 3] and all("529" in e["message"] for e in fault), s
+        assert len([e for e in shard_calls(rec, s) if e.get("outcome") == "ok"]) == 1, s
+    assert titles(rec) == titles(control)
     m = r["run_manifest"]
     assert served(m) == [rec.config.agent.model] and m["fallback_events"] == []          # no model switch
-    # persistent overload: resumable exit 3, then `sit-review resume` once the API recovers
-    assert oracles.exit_code(stuck) == 3 and stuck.failure["resumable"]
+    # persistent overload on every shard: resumable exit 3 (once), a disclosed partial run record,
+    # then `sit-review resume` once the API recovers
+    assert oracles.exit_code(stuck) == 3 and stuck.failure["resumable"] and stuck.report is None
+    n = stuck.config.agent.llm.max_retries + 1
+    for s in SHARDS:
+        attempts = [e["attempt"] for e in shard_calls(stuck, s) if e.get("fault")]
+        assert attempts == list(range(n)), (s, attempts)                       # the budget, never more
+    assert stuck.failure["phase"] == "assess" and stuck.failure["partial_report"] == "report.partial.md"
+    assert "every assess shard" in stuck.failure["message"] and "529" in stuck.failure["message"]
+    assert [sh["shard"] for sh in stuck.failure["shards"]] == SHARDS
+    assert all("LLMOverloadedError" in sh["error"] for sh in stuck.failure["shards"])
+    partial = (stuck.run_dir.root / "report.partial.md").read_text(encoding="utf-8")
+    assert "not a review" in partial and "every assess shard failed" in partial and "exit 3" in partial
+    assert "Completed stages: ingest, understand, plan, research" in partial
+    assert all(f"assess shard {s}/4" in partial and "LLMOverloadedError" in partial for s in SHARDS)
+    assert "Draft findings (unverified, not reported): 0" in partial
     cfg = stuck.config.model_copy(update={"agent": stuck.config.agent.model_copy(update={"fault_schedule": None})})
     again = resume(stuck, config=cfg, accept_drift=True)
     oracles.assert_oracles(again)
