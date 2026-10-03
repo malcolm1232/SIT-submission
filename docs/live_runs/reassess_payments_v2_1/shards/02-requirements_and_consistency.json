@@ -1,0 +1,1297 @@
+{
+ "hashes": {
+  "canonical_text": "e318322d463ba3cfd4c7ac4dbbb5d9942931367dad1818339ad783a5e1b2c1a3",
+  "effective_config": "79a78b6aea40f86fd3030500a033c55c70121845d35d70a2863fb427aaf80835",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0004",
+  "criteria": [
+   "requirement_completeness",
+   "internal_consistency",
+   "verifiability"
+  ],
+  "delta": {
+   "budget": {},
+   "declined_sections": [],
+   "degradations": [
+    {
+     "event": "assess shard 2/4 (requirements_and_consistency) was cut by the stage 1 limit at 265 s; 12 finished finding(s) kept (cut call llm-0004)",
+     "id": "DEG-002",
+     "impact": "every criterion of the shard has a finding; the shard's lower-ranked findings, if any, are missing",
+     "type": "budget_or_deadline_hit"
+    }
+   ],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0004"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 2,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "requirements_and_consistency",
+  "outcome": "cut",
+  "output": {
+   "coverage": [],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.9,
+     "criterion_ids": [
+      "internal_consistency",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 8,
+       "quote": "On completion of a request, the final response is written to idem:resp:{idempotency_key} with a 24-hour TTL.",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "9.2"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 4,
+       "quote": "Every mutating call is deduplicated on the pair of merchant identity and client-supplied",
+       "requirement_ids": [
+        "P3"
+       ],
+       "section_ref": "3"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 8,
+       "quote": "frequently use their own order or invoice identifiers, which is accepted.",
+       "requirement_ids": [],
+       "section_ref": "9.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "On completion of a request, the final response is written to idem:resp:{idempotency_key} with a 24-hour TTL.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "incoming mutating request, the Payments API checks this key first; on a hit, it returns the stored response immediately",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-3",
+       "quote": "Redis fast path (idem:resp:{key}) + DynamoDB global table payments-idempotency (PK",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2",
+        "NEW-3"
+       ],
+       "evidence_id": "NEW-4",
+       "quote": "Because the fast-path key has no merchant identity and the hit path does not compare request hashes, both the P3 (merchant, key) scope and the FR-5 HTTP 422 on body mismatch are bypassed whenever Redis holds the key.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": {
+      "note": "v1.1 re-keyed only the DynamoDB table. The fast-path key in 9.2 and the decision in Section 24 are unchanged.",
+      "prior_finding_id": "FND-001",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "In Section 9.2 and the Section 24 idempotency row, change the key to idem:resp:{merchant_id}:{idempotency_key}. Store request_hash with the response, and on a hit compare hashes and return 422 when they differ. Add an FR-5 acceptance case in which two merchants use the same key and a case that resends a modified body while Redis is warm.",
+      "expected_benefit": "Removes cross-merchant response disclosure and silent payment loss (FR-5, P3).",
+      "issue": "The fast-path key and hit logic ignore the merchant and the request hash.",
+      "objective_refs": [
+       "FR-5",
+       "P3",
+       "NFR-7"
+      ],
+      "rationale": "P3 and FR-5 require deduplication on (merchant, key) and a 422 when the body differs. The v1.1 DynamoDB fix did not reach the Redis tier.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3",
+       "NEW-4"
+      ],
+      "verification": "In the extended FR-5 test, two merchants with the same key each get their own payment, and a modified body returns 422 on a fast-path hit."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "critical",
+     "statement": "The v1.1 revision changed the DynamoDB key to merchant_id#idempotency_key, but the Redis fast path is unchanged. Section 9.2 still writes and reads idem:resp:{idempotency_key} and returns a hit without a merchant or request-hash check, and the confirmed decision in Section 24 repeats that key. This conflicts with P3 and FR-5. Merchants are allowed to use order or invoice numbers as keys, so key collisions across merchants are likely. A collision would return one merchant's payment object to another merchant and silently drop the second merchant's payment.",
+     "tags": [
+      "idempotency",
+      "redis",
+      "multi-tenancy"
+     ],
+     "title": "Redis idempotency fast path is still keyed without the merchant and skips the body-hash check"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "internal_consistency",
+      "verifiability"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 8,
+       "quote": "exactly one request can acquire the lock for a given merchant and key regardless of which",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "9.4"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 8,
+       "quote": "replicas in ap-southeast-1 and ap-southeast-3, using the default multi-Region eventual consistency mode.",
+       "requirement_ids": [],
+       "section_ref": "9.4"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 19,
+       "quote": "merchant_id#idempotency_key, no indexes; replicas in ap-southeast-1 and ap-southeast-3, both writable)",
+       "requirement_ids": [],
+       "section_ref": "24"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "exactly one request can acquire the lock for a given merchant and key regardless of which",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "replicas in ap-southeast-1 and ap-southeast-3, using the default multi-Region eventual consistency mode.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-7",
+       "quote": "Payments API in each region reads and writes its local replica. Because the lock is a conditional put on",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-5",
+        "NEW-6",
+        "NEW-7"
+       ],
+       "evidence_id": "NEW-8",
+       "quote": "A conditional put evaluated against a local, asynchronously replicated replica cannot see a concurrent put in the other region, so the cross-region exactly-once claim needs verification against the platform's documented global-table semantics.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Confirm global-table conditional-write semantics from the vendor documentation, then run a two-region duplicate-request test before finalising Section 9.4.",
+      "owner": "Payments Core tech lead"
+     },
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": {
+      "note": "Introduced by the v1.1 change to a global table (Sections 9.4 and 24).",
+      "prior_finding_id": null,
+      "status": "new_in_update"
+     },
+     "recommendation": {
+      "change_summary": "Verify how conditional writes behave in the chosen global-table mode. If uniqueness is not guaranteed, either route all lock writes to a single home region (with Jakarta forwarding them, as is done for Aurora writes), or adopt a strongly consistent multi-Region mode if one is available and acceptable. Then correct Section 9.4 and the Section 24 row. Add a cross-region concurrent-duplicate case to the FR-5 acceptance criteria.",
+      "expected_benefit": "Ensures FR-5 holds during partial outages and failover.",
+      "issue": "Cross-region lock uniqueness is asserted without a stated basis.",
+      "objective_refs": [
+       "FR-5",
+       "NFR-4"
+      ],
+      "rationale": "FR-5 at-most-once authorization during failover depends on this claim. The design itself says the replicas are eventually consistent and written locally.",
+      "supporting_evidence_ids": [
+       "NEW-5",
+       "NEW-6",
+       "NEW-7",
+       "NEW-8"
+      ],
+      "verification": "Fire simultaneous duplicate requests at the two regional endpoints, 10^4 times. The acquirer simulator must record exactly one authorization per key."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "Section 9.4, new in v1.1, claims that a conditional put on attribute_not_exists(pk) guarantees exactly one lock holder in either region. Yet the table runs in eventual-consistency multi-Region mode, both replicas are writable, and each region's API writes only to its local replica. The conditional check may be evaluated only against the local replica, with conflicting writes reconciled afterwards. If so, a merchant retry routed to Jakarta during a partial Singapore outage can acquire a second lock and cause a second downstream authorization, which breaks FR-5. No acceptance test covers this cross-region path.",
+     "tags": [
+      "idempotency",
+      "dynamodb",
+      "multi-region",
+      "failover"
+     ],
+     "title": "The 'exactly one lock across regions' claim for the eventually consistent global table is unverified"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "internal_consistency",
+      "requirement_completeness",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 3,
+       "quote": "On loss of the entire primary region, RPO shall not exceed 5 seconds, and every payment in the",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 17,
+       "quote": "Payments whose final writes fall in the lag window are recovered after failover by querying provider status APIs",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "20.2"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 21,
+       "quote": "measured loss window ≤ 5 s; every payment in the window is restored by provider",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "26.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-9",
+       "quote": "for attempts submitted in the last 60 seconds, and by T+1 reconciliation against settlement lines.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-10",
+       "quote": "Matched payments transition to SETTLED and a settlement journal is posted. Unmatched and mismatched lines",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-11",
+       "quote": "typically under one second; lag pages at 4 seconds against the 5-second regional",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-9",
+        "NEW-10",
+        "NEW-11"
+       ],
+       "evidence_id": "NEW-12",
+       "quote": "Attempt records written in the lag window are exactly the ones absent after promotion, so the 60-second provider query has no attempt list to work from, and reconciliation will raise exceptions rather than restore uncaptured authorizations.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": {
+      "note": "The impossible zero regional RPO was replaced by 5 seconds, which is a real fix. The new provider-records recovery promise has no mechanism and its test cannot be checked.",
+      "prior_finding_id": "FND-004",
+      "status": "partially_addressed"
+     },
+     "recommendation": {
+      "change_summary": "In Section 20.2, name a replicated source of in-flight attempts, for example the payment_id and attempt identifiers held on the DynamoDB global-table idempotency records, written before submission. Define the recovery procedure for each payment type, including authorizations with no settlement line, and how an idempotency record that references a missing payment is reconciled. Either enforce the lag bound (for example, alert and shed writes) or restate RPO as a target with measured percentiles. In Section 26, require the game day to compare the provider-side attempt list against the restored records.",
+      "expected_benefit": "Makes the NFR-4 regional RPO achievable and its game day measurable.",
+      "issue": "There is no replicated index of in-window attempts, and no recovery path for uncaptured payments.",
+      "objective_refs": [
+       "NFR-4",
+       "FR-5",
+       "P1"
+      ],
+      "rationale": "NFR-4 promises that every payment in the window is recoverable, and the DR test asserts it.",
+      "supporting_evidence_ids": [
+       "NEW-9",
+       "NEW-10",
+       "NEW-11",
+       "NEW-12"
+      ],
+      "verification": "In the regional game day, inject load, cut replication and fail over. Every simulator-side authorization is either present in the promoted database or restored by the procedure within RTO."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "v1.1 relaxed the regional RPO to 5 seconds and now requires every payment in the loss window to be recoverable from provider records. The mechanism in Section 20.2 queries providers for 'attempts submitted in the last 60 seconds', but those attempt rows sit in the Aurora writes that were lost, so the design has nothing to enumerate them from. T+1 reconciliation only sees captured settlement lines, and Section 16.2 turns lines without a matching attempt into exceptions rather than restored payments. Authorised-but-uncaptured payments, voids and refunds in the window therefore have no recovery path. The 4-second lag page is an alarm, not a bound, so the 5-second RPO is also not enforced. The NFR-4 game-day criterion cannot be checked because nothing defines how the set of payments in the window is known.",
+     "tags": [
+      "disaster-recovery",
+      "rpo",
+      "reconciliation"
+     ],
+     "title": "The revised NFR-4 promise to recover loss-window payments from provider records has no working mechanism"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "missing_or_unverifiable_requirement",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "requirement_completeness",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 17,
+       "quote": "Regional failover is a runbook-driven managed operation (promote the Aurora secondary, scale up the standby",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "20.2"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 10,
+       "quote": "The Vault's KEKs are held in an AWS CloudHSM cluster with one HSM in ap-southeast-1a.",
+       "requirement_ids": [],
+       "section_ref": "12.3"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 3,
+       "quote": "loss window shall be recoverable from provider records through reconciliation. Recovery time objective shall be 30 minutes in both",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "2.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-13",
+       "quote": "Regional failover is a runbook-driven managed operation (promote the Aurora secondary, scale up the standby",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-14",
+       "quote": "The Vault's KEKs are held in an AWS CloudHSM cluster with one HSM in ap-southeast-1a.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "cross-region; on regional failover they are recreated empty in ap-southeast-3 from infrastructure-as-code.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-13",
+        "NEW-14",
+        "NEW-15"
+       ],
+       "evidence_id": "NEW-16",
+       "quote": "No section places vault data, KEKs or the Card Adapter in ap-southeast-3, so card detokenisation, and therefore card authorization, is unavailable after regional failover regardless of the API cell.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "gap",
+     "next_step": {
+      "action": "Decide whether the CDE is in regional DR scope, and design the vault and HSM replication within the PCI segmentation model.",
+      "owner": "Head of Platform Engineering with the PCI programme lead"
+     },
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": {
+      "note": "Latent in v1.0. It became visible with the v1.1 warm-cell and RPO rework, which still leaves the CDE out.",
+      "prior_finding_id": null,
+      "status": "new_in_update"
+     },
+     "recommendation": {
+      "change_summary": "Add a CDE DR subsection to Section 20.2 covering: vault data replication to ap-southeast-3, a KEK and HSM cluster or cross-region backup restore in Jakarta with timed steps, Card Adapter deployment, and acquirer connectivity (IP allow-lists) from Jakarta. Alternatively, state that card payments are excluded from the regional RTO and have the owner accept that risk. Extend the NFR-4 game day to include a card authorization after failover.",
+      "expected_benefit": "NFR-4 RTO becomes achievable for card payments, or is explicitly scoped.",
+      "issue": "The CDE has no cross-region recovery design.",
+      "objective_refs": [
+       "NFR-4",
+       "NFR-3",
+       "NFR-5"
+      ],
+      "rationale": "The NFR-4 RTO applies to the card authorizations that make up most of the volume, and the Vault is on that path.",
+      "supporting_evidence_ids": [
+       "NEW-13",
+       "NEW-14",
+       "NEW-15",
+       "NEW-16"
+      ],
+      "verification": "In the regional game day, a card authorization succeeds from ap-southeast-3 within 30 minutes of failure injection."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "high",
+     "statement": "NFR-4 sets a 30-minute RTO for loss of the primary region. Section 20.2 now describes a warm API cell, the Aurora secondary and the DynamoDB replica in ap-southeast-3, but says nothing about the CDE account, the card vault store, the KEKs or the Card Adapter. The single HSM and its backups are in ap-southeast-1. Card tokens held in the Jakarta replica therefore cannot be detokenised, and card authorizations (about 55% of attempts) cannot resume within RTO. The NFR-4 game day does not say whether card authorization is part of 'service restored'.",
+     "tags": [
+      "disaster-recovery",
+      "cde",
+      "hsm",
+      "vault"
+     ],
+     "title": "The regional DR plan leaves out the CDE (Vault, CloudHSM, Card Adapter), so card payments cannot meet the 30-minute RTO"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.85,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 11,
+       "quote": "detokenise operation, using the Card Adapter client library and service role.",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "13.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 10,
+       "quote": "Only the Card Adapter's service identity may call detokenise. Each call unwraps the record's DEK",
+       "requirement_ids": [],
+       "section_ref": "12.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 10,
+       "quote": "Fraud Hook Out of scope Token, BIN, last 4 only",
+       "requirement_ids": [
+        "NFR-5"
+       ],
+       "section_ref": "12.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-17",
+       "quote": "detokenise operation, using the Card Adapter client library and service role.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "Only the Card Adapter's service identity may call detokenise. Each call unwraps the record's DEK",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-19",
+       "quote": "Fraud Hook Out of scope Token, BIN, last 4 only",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "risk",
+     "next_step": {
+      "action": "Decide between a fingerprint and a CDE-resident fraud enrichment option before the FRV-1 DPA (Backlog item 4) is signed.",
+      "owner": "CISO / PCI programme lead"
+     },
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": {
+      "note": "Section 13.1 is unchanged in v1.1.",
+      "prior_finding_id": "FND-002",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Choose one: (a) send FRV-1 the keyed PAN fingerprint or a vendor-agreed token instead of the PAN; or (b) move PAN enrichment into a CDE-resident component with its own service identity, and update Sections 12.2 and 5 and P2 accordingly. Add a detokenise-caller test to the NFR-5 criteria.",
+      "expected_benefit": "Gives NFR-5 a CDE scope that can be assessed, and restores P9 least privilege.",
+      "issue": "Three sections give incompatible accounts of who handles the PAN.",
+      "objective_refs": [
+       "NFR-5",
+       "FR-9",
+       "P2",
+       "P9"
+      ],
+      "rationale": "The principle-precedence rule in Section 3 means P2 wins, so either Section 13.1 changes or the CDE scope and principles must change explicitly.",
+      "supporting_evidence_ids": [
+       "NEW-17",
+       "NEW-18",
+       "NEW-19"
+      ],
+      "verification": "Vault audit logs show detokenise calls only from the identities listed in Section 12.2, and the QSA scoping memo matches."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "Section 13.1 is unchanged. The Fraud Hook still obtains the full card number using the Card Adapter's library and service role and sends it to FRV-1. This contradicts P2, the Section 12.1 rule that only the Card Adapter identity may detokenise, and the Section 12.2 table that puts the Fraud Hook out of scope as handling 'Token, BIN, last 4 only'. As written, the NFR-5 CDE boundary is not what will actually be assessed, and the FR-9 test does not reveal the conflict.",
+     "tags": [
+      "pci-dss",
+      "cde",
+      "fraud",
+      "least-privilege"
+     ],
+     "title": "Fraud Hook still detokenises the PAN, contradicting P2, the Section 12.1 access rule and the Section 12.2 CDE scope"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.85,
+     "criterion_ids": [
+      "internal_consistency",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 18,
+       "quote": "move the p99 because fewer than 1% of card payments cascade; the cascade path therefore sits above the 99th",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "21.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 9,
+       "quote": "retryable outcomes - soft declines eligible for reattempt plus acquirer-side errors and timeouts - 3.8%.",
+       "requirement_ids": [],
+       "section_ref": "10.5"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 21,
+       "quote": "Under the NFR-1 load with 3.8% retryable-outcome injection, p99 end-to-end card authorization ≤ 1,500 ms",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "26.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-20",
+       "quote": "move the p99 because fewer than 1% of card payments cascade; the cascade path therefore sits above the 99th",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "retryable outcomes - soft declines eligible for reattempt plus acquirer-side errors and timeouts - 3.8%.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-22",
+       "quote": "acquirer HTTP 5xx; connection refused; no response within 2,500 ms",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-20",
+        "NEW-21",
+        "NEW-22"
+       ],
+       "evidence_id": "NEW-23",
+       "quote": "With roughly 3.8% of card payments cascading, the p99 falls inside the cascade population, and any timeout-triggered cascade (≥2,500 ms plus a second round trip) exceeds the 1,500 ms NFR-2 limit.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": {
+      "note": "Section 21.1 is unchanged in v1.1.",
+      "prior_finding_id": "FND-005",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Rework Section 21.1 using the 3.8% rate: add a cascade-path budget, introduce an overall cascade deadline (for example, no new attempt after 1,500 ms minus the next acquirer's p95), and shorten or adapt the per-attempt timeout. Alternatively, restate NFR-2 to exclude timeout cascades, with owner approval.",
+      "expected_benefit": "Makes NFR-2 achievable and its benchmark meaningful.",
+      "issue": "The latency budget rests on a cascade rate that contradicts the document's own baseline.",
+      "objective_refs": [
+       "NFR-2"
+      ],
+      "rationale": "Under its stated test conditions, NFR-2 cannot be met with a 2,500 ms timeout trigger.",
+      "supporting_evidence_ids": [
+       "NEW-20",
+       "NEW-21",
+       "NEW-22",
+       "NEW-23"
+      ],
+      "verification": "The NFR-2 benchmark with 3.8% injection, including a timeout share matching 2025 production, meets p99 ≤ 1,500 ms."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "Section 21.1 still argues that cascades sit above p99 because fewer than 1% of card payments cascade. Section 10.5 reports 3.8% retryable outcomes, and Section 11.2 cascades every one of them. NFR-2 explicitly includes cascades, and the NFR-2 benchmark injects 3.8% retryable outcomes. Timeout-triggered cascades alone exceed 2,500 ms, so the design is likely to fail its own acceptance test.",
+     "tags": [
+      "latency",
+      "cascade",
+      "nfr-2"
+     ],
+     "title": "Latency budget still excludes cascades on a '<1%' premise that contradicts the 3.8% retryable rate"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "requirement_completeness",
+      "internal_consistency"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 10,
+       "quote": "Because each attempt carries its own attempt_id and the previous attempt did not",
+       "requirement_ids": [
+        "FR-7"
+       ],
+       "section_ref": "11.2"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 10,
+       "quote": "arrive for an attempt after its 2,500 ms timeout are logged against the attempt and discarded.",
+       "requirement_ids": [],
+       "section_ref": "11.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-24",
+       "quote": "succeed, cascading cannot create a duplicate charge: the ledger records only the approved attempt. Responses that",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-25",
+       "quote": "arrive for an attempt after its 2,500 ms timeout are logged against the attempt and discarded.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-24",
+        "NEW-25"
+       ],
+       "evidence_id": "NEW-26",
+       "quote": "A timed-out attempt is of unknown outcome, not a failure, so discarding a late approval leaves an un-voided authorization at the first acquirer alongside the cascaded one.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "gap",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": {
+      "note": "Section 11.2 is unchanged apart from the CVC wording.",
+      "prior_finding_id": "FND-016",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "In Section 11.2, mark timed-out attempts UNKNOWN. On a late approval for a non-winning attempt, issue an automatic reversal or void through the adapter. Extend the Section 20.3 sweeper to resolve UNKNOWN attempts. Remove the 'cannot create a duplicate charge' sentence. Add a late-approval injection case to the FR-7 criteria.",
+      "expected_benefit": "Prevents duplicate holds and charges, and keeps P1 truthful.",
+      "issue": "A timed-out attempt is treated as a failure.",
+      "objective_refs": [
+       "FR-7",
+       "P1",
+       "FR-10"
+      ],
+      "rationale": "P1 requires MPOP's records to reflect provider reality, and the customer impact of a double hold undermines FR-7.",
+      "supporting_evidence_ids": [
+       "NEW-24",
+       "NEW-25",
+       "NEW-26"
+      ],
+      "verification": "In the FR-7 simulation with late approvals injected, every non-winning approved attempt is reversed and no payment has two open authorizations."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "Section 11.2 still claims that cascading cannot create a duplicate charge because the previous attempt 'did not succeed'. However, a timeout is classed as retryable, and a late response is discarded. An attempt that timed out may in fact have been approved, leaving a second hold on the customer's card that the design never voids. There is no requirement or control for reversing orphaned authorizations, and the FR-7 simulation does not inject late approvals.",
+     "tags": [
+      "cascade",
+      "timeouts",
+      "reversal"
+     ],
+     "title": "No path to reverse a late approval after a timeout cascade; the 'no duplicate charge' claim is unsupported"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "internal_consistency",
+      "requirement_completeness"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 22,
+       "quote": "The first merchant cohort (Singapore, cards and PayNow) goes live after Phase 7; other markets follow at four-week",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 22,
+       "quote": "Fraud Hook (FRV-1) Yes - vendor contract (Backlog item 4)",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 3,
+       "quote": "Every card payment and every e-wallet payment above the merchant's configured threshold shall be scored by the fraud-scoring hook",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-27",
+       "quote": "The first merchant cohort (Singapore, cards and PayNow) goes live after Phase 7; other markets follow at four-week",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-28",
+       "quote": "Hardening - load, chaos and DR game days; PCI DSS assessment; Section 26 test plan Follows Section 26",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-29",
+       "quote": "Every card payment and every e-wallet payment above the merchant's configured threshold shall be scored by the fraud-scoring hook",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "risk",
+     "next_step": {
+      "action": "Decide the go-live gate and any interim fraud control, and record the risk acceptance.",
+      "owner": "Head of Payments / programme sponsor"
+     },
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": {
+      "note": "Sections 27 and 28 are unchanged.",
+      "prior_finding_id": "FND-021",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Make go-live depend on Phase 8 and the relevant Phase 9 items. Otherwise, record an explicit interim control for the first cohort (for example, rules-only scoring or the acquirer's fraud screening) with owner risk acceptance, and amend FR-9 and the Section 27 conclusion to match.",
+      "expected_benefit": "Live card traffic starts only with FR-9, NFR-5 and the Section 26 criteria met.",
+      "issue": "The go-live gate comes before mandatory controls and acceptance testing.",
+      "objective_refs": [
+       "FR-9",
+       "NFR-5"
+      ],
+      "rationale": "FR-9 and NFR-5 cannot be met for live card traffic under the current sequence.",
+      "supporting_evidence_ids": [
+       "NEW-27",
+       "NEW-28",
+       "NEW-29"
+      ],
+      "verification": "The go-live checklist references the passed FR-9 and NFR-5 criteria, or a signed risk acceptance."
+     },
+     "secondary_dispositions": [],
+     "severity": "high",
+     "statement": "Section 28 still puts first-cohort go-live after Phase 7. The Fraud Hook, which FR-9 requires for every card payment, comes in Phase 8 and is blocked on the vendor contract. The PCI DSS assessment and the Section 26 acceptance tests come in Phase 9. The Section 27 conclusion that only the Admin API schemas and disputes are material gaps for the first cohort is therefore inconsistent with the build plan.",
+     "tags": [
+      "go-live",
+      "fraud",
+      "pci-dss",
+      "sequencing"
+     ],
+     "title": "First cohort goes live before the Fraud Hook (FR-9), the PCI DSS assessment and the Section 26 tests"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 11,
+       "quote": "cluster when sustained card volume exceeds 1,500 TPS. If the HSM is unreachable, the Vault returns HTTP 503 and",
+       "requirement_ids": [
+        "NFR-3"
+       ],
+       "section_ref": "12.3"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 2,
+       "quote": "Card share of attempts (e-wallet ~30%, bank transfer ~15%) 54% 55%",
+       "requirement_ids": [],
+       "section_ref": "1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-30",
+       "quote": "cluster when sustained card volume exceeds 1,500 TPS. If the HSM is unreachable, the Vault returns HTTP 503 and",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-31",
+       "quote": "Card share of attempts (e-wallet ~30%, bank transfer ~15%) 54% 55%",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-32",
+       "quote": "inside the HSM; DEKs are not cached, so plaintext key material never persists in application memory.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-30",
+        "NEW-31"
+       ],
+       "evidence_id": "NEW-33",
+       "quote": "2,000 TPS × 55% ≈ 1,100 card TPS at the 2027 peak, below the 1,500 TPS trigger, so the second HSM is never added within the design horizon.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-009",
+     "kind": "risk",
+     "next_step": {
+      "action": "Revisit the 'one HSM at launch' decision against the NFR-3 budget and record the outcome.",
+      "owner": "Head of Platform Engineering"
+     },
+     "no_change_rationale": null,
+     "rank": 9,
+     "reassessment": {
+      "note": "Section 12.3 and the Section 24 Vault row are unchanged.",
+      "prior_finding_id": "FND-006",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Change the Section 12.3 and Section 24 Vault row to at least two HSMs in different AZs from launch, with capacity scaling as a separate trigger. Add HSM loss to the NFR-4 AZ game day.",
+      "expected_benefit": "Removes a single point of failure for card authorization.",
+      "issue": "The HSM redundancy trigger is inconsistent with the volume baseline and the availability targets.",
+      "objective_refs": [
+       "NFR-3",
+       "NFR-4"
+      ],
+      "rationale": "NFR-3 and the AZ-loss part of NFR-4 need card authorization to survive the loss of one HSM or one AZ.",
+      "supporting_evidence_ids": [
+       "NEW-30",
+       "NEW-31",
+       "NEW-32",
+       "NEW-33"
+      ],
+      "verification": "In the AZ game day with the ap-southeast-1a HSM removed, card authorizations continue within the NFR-2 limits."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "Section 12.3 adds a second HSM only when sustained card volume exceeds 1,500 TPS. Section 1 implies a 2027 card peak of about 1,100 TPS (55% of 2,000). Every detokenise unwraps a key in the HSM without caching, so the single HSM in one AZ remains a single point of failure for all card payments. This undermines NFR-3 and the zero-RPO and 30-minute-RTO intent for AZ loss in NFR-4. Using the document's own figures, this challenges the confirmed 'one HSM at launch' decision.",
+     "tags": [
+      "hsm",
+      "availability",
+      "single-point-of-failure"
+     ],
+     "title": "Second-HSM trigger (1,500 card TPS) sits above the 2027 card peak, so the single-HSM SPOF never ends"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "missing_or_unverifiable_requirement",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "requirement_completeness",
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 20,
+       "quote": "Randomised event sequences (10^6 per run) never produce a transition outside Section 7.2; every",
+       "requirement_ids": [
+        "FR-2"
+       ],
+       "section_ref": "26.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 2,
+       "quote": "The platform shall expose one versioned merchant API supporting create payment, authorize, capture (full and partial), void, refund",
+       "requirement_ids": [
+        "FR-1"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 13,
+       "quote": "Matched payments transition to SETTLED and a settlement journal is posted.",
+       "requirement_ids": [
+        "FR-11"
+       ],
+       "section_ref": "16.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-34",
+       "quote": "Randomised event sequences (10^6 per run) never produce a transition outside Section 7.2; every",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-35",
+       "quote": "The platform shall expose one versioned merchant API supporting create payment, authorize, capture (full and partial), void, refund",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-36",
+       "quote": "REQUIRES_ACTION -> AUTHORISING | CANCELLED (expiry)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-35",
+        "NEW-36"
+       ],
+       "evidence_id": "NEW-37",
+       "quote": "Section 7.2 lists only PARTIALLY_REFUNDED -> REFUNDED and gives no refunded-to-SETTLED or REQUIRES_ACTION -> FAILED edge, so legitimate events required by FR-1, FR-15 and Section 16.2 have no permitted transition.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-010",
+     "kind": "gap",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 10,
+     "reassessment": {
+      "note": "Sections 7.2 and 26.1 (FR-2) are unchanged.",
+      "prior_finding_id": "FND-022",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Extend Section 7.2 with: PARTIALLY_REFUNDED -> PARTIALLY_REFUNDED; settlement as an attribute or as transitions from the refunded states; REQUIRES_ACTION -> FAILED; repeated partial captures; and the REVIEW hold. Add a positive FR-2 criterion that every operation in FR-1 is reachable from each state that should accept it.",
+      "expected_benefit": "FR-1, FR-15 and FR-11 operations become executable, and FR-2 can verify completeness.",
+      "issue": "The transition table is incomplete, and the test only checks for forbidden transitions.",
+      "objective_refs": [
+       "FR-1",
+       "FR-2",
+       "FR-15",
+       "FR-11"
+      ],
+      "rationale": "FR-2 forbids any transition that is not listed, so these omissions block required operations.",
+      "supporting_evidence_ids": [
+       "NEW-34",
+       "NEW-35",
+       "NEW-36",
+       "NEW-37"
+      ],
+      "verification": "The FR-2 test includes a reachability matrix: every (state, operation) pair expected to succeed does succeed."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Section 7.2 is unchanged. It has no PARTIALLY_REFUNDED self-transition for repeated partial refunds, no way to reach SETTLED once a payment has been refunded before settlement (although Section 16.2 settles matched payments), no failure exit from REQUIRES_ACTION (for example a failed 3DS challenge or wallet payment), and no state for REVIEW 'authorize-and-hold-capture'. The FR-2 property test checks only that no disallowed transition occurs, so these omissions would pass it.",
+     "tags": [
+      "state-machine",
+      "refunds",
+      "verification"
+     ],
+     "title": "State machine still lacks transitions that FR-1, FR-15 and Section 16.2 need, and the FR-2 test cannot detect missing ones"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "verifiability",
+      "internal_consistency"
+     ],
+     "disposition": "needs_testing",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 20,
+       "quote": "Send a create-payment request; after its response is received, resend the identical request with the same",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "26.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 3,
+       "quote": "shall return the identical response, including when duplicate requests arrive concurrently.",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 8,
+       "quote": "While the first request is in flight, a duplicate receives HTTP 409 request_in_progress with Retry-After: 1.",
+       "requirement_ids": [],
+       "section_ref": "9.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-38",
+       "quote": "Send a create-payment request; after its response is received, resend the identical request with the same",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-39",
+       "quote": "shall return the identical response, including when duplicate requests arrive concurrently.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-40",
+       "quote": "While the first request is in flight, a duplicate receives HTTP 409 request_in_progress with Retry-After: 1.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-011",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Add the concurrent, failure-path and cross-region FR-5 cases to the Phase 9 test plan.",
+      "owner": "QA lead, Payments Core"
+     },
+     "no_change_rationale": null,
+     "rank": 11,
+     "reassessment": {
+      "note": "FR-5, Section 9.1 and the FR-5 test are unchanged. The v1.1 global table adds a further untested path.",
+      "prior_finding_id": "FND-023",
+      "status": "still_open"
+     },
+     "recommendation": {
+      "change_summary": "Reword FR-5: 'concurrent duplicates receive 409 or the identical final response; at most one downstream effect'. Add FR-5 test cases for N parallel duplicates, Redis down, a pod crash with sweeper completion, and two regions.",
+      "expected_benefit": "FR-5 is demonstrably met on the paths where duplicates actually arise.",
+      "issue": "The requirement and the contract disagree, and the test leaves out the concurrent and failure paths.",
+      "objective_refs": [
+       "FR-5"
+      ],
+      "rationale": "An acceptance criterion that does not exercise the concurrent case cannot validate FR-5.",
+      "supporting_evidence_ids": [
+       "NEW-38",
+       "NEW-39",
+       "NEW-40"
+      ],
+      "verification": "Across all the added cases, the acquirer simulator records exactly one authorization per (merchant, key)."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "FR-5 requires an identical response 'including when duplicate requests arrive concurrently', while Section 9.1 returns HTTP 409 to an in-flight duplicate. The FR-5 test still resends only after the first response has arrived. It does not exercise concurrent duplicates, sweeper-recovered IN_PROGRESS records, the Redis-down path or the new cross-region path, which are the paths where duplicate authorizations would occur.",
+     "tags": [
+      "idempotency",
+      "testing",
+      "concurrency"
+     ],
+     "title": "FR-5 concurrency clause conflicts with the 409 response, and the replay test still checks only sequential duplicates"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.85,
+     "criterion_ids": [
+      "internal_consistency"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 14,
+       "quote": "with optional TOTP), and both authorise every call against the user's role.",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "18.1"
+      },
+      {
+       "doc_id": "DOC-design_v2",
+       "page": 14,
+       "quote": "Multi-factor authentication (TOTP or WebAuthn) is mandatory for every merchant user; a user without an",
+       "requirement_ids": [],
+       "section_ref": "18.3"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-41",
+       "quote": "with optional TOTP), and both authorise every call against the user's role.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-42",
+       "quote": "Multi-factor authentication (TOTP or WebAuthn) is mandatory for every merchant user; a user without an",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-012",
+     "kind": "ambiguity",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 12,
+     "reassessment": {
+      "note": "Sections 18.2–18.4 are a real fix: mandatory MFA, step-up, two-person approval and a 48-hour cooling-off. Section 18.1 was not updated and now contradicts them.",
+      "prior_finding_id": "FND-046",
+      "status": "partially_addressed"
+     },
+     "recommendation": {
+      "change_summary": "Amend Section 18.1 to reference Section 18.3, with MFA mandatory and TOTP or WebAuthn accepted. Specify how the Admin API authenticates automation (for example, scoped admin tokens issued only after a step-up session) and which money-moving Admin API actions require interactive step-up.",
+      "expected_benefit": "A single unambiguous authentication policy for FR-13.",
+      "issue": "Two sections state conflicting authentication policies.",
+      "objective_refs": [
+       "FR-13",
+       "P8",
+       "P9"
+      ],
+      "rationale": "An implementer of the Admin API could follow Section 18.1 and leave MFA optional, which would reopen the payout-redirect path.",
+      "supporting_evidence_ids": [
+       "NEW-41",
+       "NEW-42"
+      ],
+      "verification": "The FR-13 role-matrix test runs against both the portal and the Admin API, and a call without MFA fails on both."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "v1.1 made MFA (TOTP or WebAuthn) mandatory for every merchant user and added two-person approval and a cooling-off period for payout-account changes. This closes the prior account-takeover path, and FR-13's test checks it. However, Section 18.1 still describes portal and Admin API authentication as 'email and password, with optional TOTP' and does not mention WebAuthn. It is also unclear how Admin API automation clients meet the mandatory MFA and step-up rules.",
+     "tags": [
+      "admin-plane",
+      "mfa",
+      "authentication"
+     ],
+     "title": "Section 18.1 still says 'optional TOTP', contradicting the mandatory MFA introduced in Section 18.3"
+    }
+   ],
+   "sound_areas": []
+  },
+  "prompt_hash": "b9f84b4ee26cddbca7e90347d5716ab8652735019b9e010062f33d7f0cf716d7",
+  "salvaged": 12
+ }
+}

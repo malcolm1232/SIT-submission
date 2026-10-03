@@ -270,7 +270,7 @@ async def test_the_id_rewrite_and_the_renderer_fixes_meet_in_one_report(tmp_path
     assert [(p, t) for p, t in cited(review) if t not in FINAL] == []
     md = rd.report_md.read_text(encoding="utf-8")
     assert sorted({t for t in TOKEN.findall(md) if t not in FINAL}) == []
-    assert "One high-severity findings remain open" in md and "Three high-severity" not in md
+    assert "One high-severity finding remains open" in md and "Three high-severity" not in md
     # The verdict call reads the final numbering: an ID that is no final finding is removed with its
     # brackets, a final one stays, and the list survives the rewrite.
-    assert "remain open:\n\n- the generation model\n- the answer cache (FND-005)" in md
+    assert "remains open:\n\n- the generation model\n- the answer cache (FND-005)" in md

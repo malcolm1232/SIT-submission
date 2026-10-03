@@ -2,7 +2,7 @@
 export with ``report.md`` and ``report.json`` beside it, email through the SMTP server named in
 ``config/ui.yaml``, and the share link on this network. Offline: the committed run
 ``docs/live_runs/ui_flow_1`` (a live run with two chat turns), a local fake SMTP server in this file,
-and an ``httpx.MockTransport`` for the pasted link."""
+and an ``httpx.MockTransport`` for the pasted link, whose fetch is decision #39."""
 
 from __future__ import annotations
 

@@ -789,7 +789,7 @@ def _run_started(progress: object, cfg: EffectiveConfig, rd: RunDir, state: obje
                  start_at: str | None = None, plan_only: bool = False) -> None:
     """The ``run_started`` event (``progress.jsonl`` only; UI design note section 5 item 4): what a
     reader needs to draw the run without ``effective_config.json``: the documents, the profile, the
-    deadline and the stage limits the runtime will use (scaled when ``--deadline`` is below them),
+    deadline and the stage limits the runtime will use (scaled when ``--deadline`` differs from their run length),
     and the assess shard groups in launch order."""
     from sit_review_agent.llm.runtime import effective_stage_limits
 

@@ -1,0 +1,674 @@
+{
+ "budgets": {
+  "deadline_s": 540,
+  "max_tokens": 4000000,
+  "max_tool_calls": 30
+ },
+ "condition": null,
+ "config_sha256": "79a78b6aea40f86fd3030500a033c55c70121845d35d70a2863fb427aaf80835",
+ "extra": {
+  "code": {
+   "anthropic_sdk_version": "1.11.0",
+   "argv": [
+    "review",
+    "eval/synthetic/payments_orchestration/design_v2.pdf",
+    "--profile",
+    "demo",
+    "--no-tools",
+    "--previous",
+    "docs/live_runs/rehearsal_concurrent_1",
+    "--run-id",
+    "reassess_payments_v2_1"
+   ],
+   "git_branch": "s4/delta",
+   "git_commit": "886c3fc99eb4ec875e135440919e7bdc918ee094",
+   "git_dirty": null,
+   "mcp_version": "2.2.0",
+   "os": "Darwin 24.6.0",
+   "package_lock_sha256": null,
+   "pyproject_sha256": "e74784916b21b7e054bb17ec5b17bed89895cad54030eb8dbc5048c282c1db3c",
+   "python": "3.13.13",
+   "sit_review_agent_version": "0.1.0"
+  },
+  "config": {
+   "cli_args": {
+    "no_tools": true,
+    "profile": "demo"
+   },
+   "effective_config_sha256": "79a78b6aea40f86fd3030500a033c55c70121845d35d70a2863fb427aaf80835",
+   "files": {
+    "config/agent.yaml": "25d0cd1c0d9624ec50e93904c7e6f024b8812ea83731ec5d494ed16889200629",
+    "config/criteria.yaml": "4f16aba8d0f0df9c7cce8ca828ebadf79e91a498736ac9224838bdc28b2c0bad",
+    "config/endpoints.yaml": "99cd4094eef39e2a526030bb9c99cfa73d9fe6cb1765c3ffb31a8e236cf252f7",
+    "config/persona.yaml": "f49708c3dd6c571bd7dfdb7d6c939a303a146bb13f4cb65fee03f2dee9880ce8",
+    "config/profiles/demo.yaml": "7482b6b2103d39f51936a7a09ddb9625b92f12a647278f95be9536264ac0a7dc",
+    "config/stop_rules.yaml": "d930647f848d32401eee39fc38fd9b42205395007830551a5125165cab2bc094",
+    "config/tools.yaml": "2204f23914870e507160948e151b5a2a992d4de0598925bf720e6cfc743e1aa9",
+    "config/url_policy.yaml": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+   }
+  },
+  "deviations": [],
+  "doc": {
+   "canonical_text_sha256": "e318322d463ba3cfd4c7ac4dbbb5d9942931367dad1818339ad783a5e1b2c1a3",
+   "documents": [
+    {
+     "bytes": 583898,
+     "canonical_text_sha256": "e318322d463ba3cfd4c7ac4dbbb5d9942931367dad1818339ad783a5e1b2c1a3",
+     "id": "DOC-design_v2",
+     "native_pdf_block": false,
+     "pages": 22,
+     "role": "under_review",
+     "sha256_pdf": "74ed1cc2ccd88176192cdbfa7cfb436b83fd47c98d228fd7311c56ff4adfc932"
+    },
+    {
+     "bytes": 57638,
+     "canonical_text_sha256": "356ac6d0f10bfbdb99d462b189b9bb63601f1b851ec429055e98c36eedc1df64",
+     "id": "DOC-design_v1",
+     "native_pdf_block": false,
+     "pages": 21,
+     "role": "prior_version",
+     "sha256_pdf": null
+    }
+   ],
+   "extractor": {
+    "name": "pdfplumber",
+    "version": "0.11.10"
+   },
+   "id": "DOC-design_v2",
+   "native_pdf_block": false,
+   "normalisation_version": "1",
+   "pages": 22,
+   "sha256_pdf": "74ed1cc2ccd88176192cdbfa7cfb436b83fd47c98d228fd7311c56ff4adfc932"
+  },
+  "fault_injection": {
+   "profile": "none",
+   "schedule_sha256": null
+  },
+  "finding_ids": {
+   "final": {
+    "FND-001": "FND-001",
+    "FND-002": "FND-002",
+    "FND-003": "FND-003",
+    "FND-004": "FND-004",
+    "FND-005": "FND-005",
+    "FND-006": "FND-006",
+    "FND-007": "FND-014",
+    "FND-008": "FND-008",
+    "FND-009": "FND-013",
+    "FND-010": "FND-020",
+    "FND-011": "FND-001",
+    "FND-012": "FND-002",
+    "FND-013": "FND-013",
+    "FND-014": "FND-014",
+    "FND-015": "FND-003",
+    "FND-016": "FND-005",
+    "FND-017": "FND-004",
+    "FND-018": "FND-008",
+    "FND-019": "FND-006",
+    "FND-020": "FND-020",
+    "FND-021": "FND-021",
+    "FND-022": "FND-022",
+    "FND-023": "FND-002",
+    "FND-024": "FND-004",
+    "FND-025": "FND-005",
+    "FND-026": "FND-013",
+    "FND-027": "FND-014",
+    "FND-028": "FND-006",
+    "FND-029": "FND-008",
+    "FND-030": "FND-030",
+    "FND-031": "FND-031",
+    "FND-032": "FND-001",
+    "FND-033": "FND-002",
+    "FND-034": "FND-003",
+    "FND-035": "FND-006",
+    "FND-036": "FND-004",
+    "FND-037": "FND-013",
+    "FND-038": "FND-005",
+    "FND-039": "FND-008",
+    "FND-040": "FND-030",
+    "FND-041": "FND-041",
+    "FND-042": "FND-021",
+    "FND-043": "FND-043",
+    "FND-044": "FND-044",
+    "FND-045": "FND-022",
+    "FND-046": "FND-046",
+    "FND-047": "FND-047"
+   },
+   "prior": [
+    "FND-001",
+    "FND-002",
+    "FND-029",
+    "FND-004",
+    "FND-006",
+    "FND-005",
+    "FND-020",
+    "FND-016",
+    "FND-021",
+    "FND-046",
+    "FND-009",
+    "FND-022",
+    "FND-023",
+    "FND-036",
+    "FND-039",
+    "FND-051",
+    "FND-011",
+    "FND-012",
+    "FND-013",
+    "FND-014",
+    "FND-053"
+   ],
+   "refine": {
+    "FND-007": "FND-014",
+    "FND-009": "FND-013",
+    "FND-010": "FND-020",
+    "FND-011": "FND-001",
+    "FND-012": "FND-002",
+    "FND-015": "FND-003",
+    "FND-016": "FND-005",
+    "FND-017": "FND-004",
+    "FND-018": "FND-008",
+    "FND-019": "FND-006",
+    "FND-023": "FND-002",
+    "FND-024": "FND-004",
+    "FND-025": "FND-005",
+    "FND-026": "FND-013",
+    "FND-027": "FND-014",
+    "FND-028": "FND-006",
+    "FND-029": "FND-008",
+    "FND-032": "FND-001",
+    "FND-033": "FND-002",
+    "FND-034": "FND-003",
+    "FND-035": "FND-006",
+    "FND-036": "FND-004",
+    "FND-037": "FND-013",
+    "FND-038": "FND-005",
+    "FND-039": "FND-008",
+    "FND-040": "FND-030",
+    "FND-042": "FND-021",
+    "FND-045": "FND-022"
+   },
+   "rewrites": {
+    "marked_draft": 0,
+    "remapped": 0,
+    "removed": 0
+   },
+   "shards": {
+    "claims_and_assumptions": {
+     "FND-001": "FND-023",
+     "FND-002": "FND-024",
+     "FND-003": "FND-025",
+     "FND-004": "FND-026",
+     "FND-005": "FND-027",
+     "FND-006": "FND-028",
+     "FND-007": "FND-029",
+     "FND-008": "FND-030",
+     "FND-009": "FND-031"
+    },
+    "intent_and_fitness": {
+     "FND-001": "FND-001",
+     "FND-002": "FND-002",
+     "FND-003": "FND-003",
+     "FND-004": "FND-004",
+     "FND-005": "FND-005",
+     "FND-006": "FND-006",
+     "FND-007": "FND-007",
+     "FND-008": "FND-008",
+     "FND-009": "FND-009",
+     "FND-010": "FND-010"
+    },
+    "requirements_and_consistency": {
+     "FND-001": "FND-011",
+     "FND-002": "FND-012",
+     "FND-003": "FND-013",
+     "FND-004": "FND-014",
+     "FND-005": "FND-015",
+     "FND-006": "FND-016",
+     "FND-007": "FND-017",
+     "FND-008": "FND-018",
+     "FND-009": "FND-019",
+     "FND-010": "FND-020",
+     "FND-011": "FND-021",
+     "FND-012": "FND-022"
+    },
+    "risk_and_operations": {
+     "FND-001": "FND-032",
+     "FND-002": "FND-033",
+     "FND-003": "FND-034",
+     "FND-004": "FND-035",
+     "FND-005": "FND-036",
+     "FND-006": "FND-037",
+     "FND-007": "FND-038",
+     "FND-008": "FND-039",
+     "FND-009": "FND-040",
+     "FND-010": "FND-041",
+     "FND-011": "FND-042",
+     "FND-012": "FND-043",
+     "FND-013": "FND-044",
+     "FND-014": "FND-045",
+     "FND-015": "FND-046",
+     "FND-016": "FND-047"
+    }
+   },
+   "verify": {}
+  },
+  "k_index": null,
+  "manifest_version": 1,
+  "mode": "dev",
+  "model": {
+   "assess_shards": 4,
+   "backend": "claude_code",
+   "betas": [],
+   "calls_logged": 8,
+   "calls_with_unrecorded_usage": [
+    {
+     "attempt": 0,
+     "call_id": "llm-0005",
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess",
+     "wall_s": 262.682
+    },
+    {
+     "attempt": 0,
+     "call_id": "llm-0004",
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess",
+     "wall_s": 262.781
+    },
+    {
+     "attempt": 0,
+     "call_id": "llm-0003",
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess",
+     "wall_s": 262.85
+    }
+   ],
+   "cost_usd_lower_bound": true,
+   "effort_by_stage": {
+    "assess": "medium",
+    "plan": "medium",
+    "refine": "medium",
+    "report": "medium",
+    "research": "low",
+    "understand": "medium",
+    "verify": "medium"
+   },
+   "estimated_usage_of_unrecorded_calls": [
+    {
+     "attempt": 0,
+     "cache_creation_input_tokens": 61076,
+     "cache_read_input_tokens": 0,
+     "call_id": "llm-0005",
+     "estimated": true,
+     "input_tokens": 2,
+     "output_tokens": 27003,
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess"
+    },
+    {
+     "attempt": 0,
+     "cache_creation_input_tokens": 61118,
+     "cache_read_input_tokens": 0,
+     "call_id": "llm-0004",
+     "estimated": true,
+     "input_tokens": 2,
+     "output_tokens": 27457,
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess"
+    },
+    {
+     "attempt": 0,
+     "cache_creation_input_tokens": 61152,
+     "cache_read_input_tokens": 0,
+     "call_id": "llm-0003",
+     "estimated": true,
+     "input_tokens": 2,
+     "output_tokens": 27718,
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess"
+    }
+   ],
+   "estimated_usage_totals": {
+    "cache_creation_input_tokens": 183346,
+    "cache_read_input_tokens": 0,
+    "calls": 3,
+    "cost_source": "price table estimate",
+    "cost_usd": 2.560314,
+    "estimated": true,
+    "input_tokens": 6,
+    "output_tokens": 82178
+   },
+   "fallback_events": [],
+   "fallbacks": "none",
+   "max_tokens_by_stage": {
+    "assess": 128000,
+    "plan": 128000,
+    "refine": 128000,
+    "report": 128000,
+    "research": 128000,
+    "understand": 128000,
+    "verify": 128000
+   },
+   "models_retrieve": {
+    "status": "not available for backend claude_code"
+   },
+   "refusals": [],
+   "requested_model": "claude-opus-5-5",
+   "salvaged_calls": 3,
+   "salvaged_items": 31,
+   "sampling": "provider-default (not settable)",
+   "sdk_client": {
+    "gateway_max_retries": 4,
+    "max_retries": 0,
+    "timeout_s": 1800.0
+   },
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": {
+    "display": "omitted",
+    "type": "adaptive"
+   },
+   "truncations": []
+  },
+  "outputs": {
+   "anchors_sha256": "45fda844d38b13ebceb4336dd10041f542f5d70d6d2fc6a273eaec3e2939ac47",
+   "ledger_sha256": "fb6611cd4085f5b605c7df6c3a70da41bc1dd724f5dbac99114359b3b22eac83",
+   "llm_jsonl_sha256": "9335df01cd06dce0ae864fabefbf26399f4a002c0bd93e4891e2a9646941dc66",
+   "report_json_sha256": "a34ab6d892688b7c5e37aa00dbefcffd92d78ae41d42dd4c63a05ff336be8685",
+   "report_md_sha256": "fd00fb7c9209d673dc0d90c52279b2e40c7f280de103fceead37ec9e2e6c981c",
+   "tools_jsonl_sha256": null
+  },
+  "previous_run_id": "rehearsal_concurrent_1",
+  "prompts": {
+   "bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+   "files": {
+    "prompts/assess.md": "02b2c3bc7300c304e12a840be51f979453497197d2f689fbc94789f4569f31a3",
+    "prompts/plan.md": "c78ea69a30f5040df6abd98e94233670f92cc6d9c519611b44668ae46c8b372e",
+    "prompts/refine.md": "5345cd228844b001ff1ee3cff1abb9a58ce23da20244dc569ffb10701193bb24",
+    "prompts/report.md": "1055e3681acac55b8f112f26725a97e535b81662f7be6eec18695589648626cc",
+    "prompts/research.md": "bb39c853d3116f01d856fd6896674a1196e258038c6b7cb82e4d00dffe160218",
+    "prompts/system.md": "75992c8e04b1a556afcc7aa75cc0256a8f5432ccb37f2786d359818e15fc8dc4",
+    "prompts/understand.md": "cbda99aad19ef5a02759816a1a4cc2b17a84af8ee1d706f917687882cce4f942",
+    "prompts/verify.md": "3dd655035a7e908774aa4edf05d6751007559faca1962eeff64b703fb56d8b8e"
+   }
+  },
+  "split_assignment_sha256": null,
+  "stop": {
+   "active_rules": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "params": {
+    "active": [
+     "sufficient_evidence",
+     "no_marginal_gain",
+     "budget_tool_calls",
+     "budget_tokens",
+     "deadline"
+    ],
+    "deadline_seconds": 540,
+    "max_input_tokens": 4000000,
+    "max_output_tokens": null,
+    "max_research_iterations": 4,
+    "max_tool_calls": 30,
+    "min_independent_sources": 2,
+    "no_marginal_gain_window": 2,
+    "refine_reserve_seconds": 200,
+    "report_reserve_seconds": 75,
+    "stage_limits_s": {
+     "refine_end": 465,
+     "stage_1_end": 265,
+     "verdict_end": 530
+    }
+   },
+   "stop_reason": {
+    "code": "tool_failure",
+    "detail": "no_tools",
+    "group": "error"
+   }
+  },
+  "timing": {
+   "per_stage_s": {
+    "assess": 262.916,
+    "ingest": 2.257,
+    "plan": 72.15,
+    "refine": 129.108,
+    "research": 0.005,
+    "understand": 135.867,
+    "verify": 0.012
+   },
+   "stages": {
+    "ingest": {
+     "members": {
+      "ingest": {
+       "end_offset_s": null,
+       "seconds": 2.257,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 2.257,
+     "wall_basis": "single_member",
+     "wall_s": 2.257
+    },
+    "refine": {
+     "members": {
+      "refine": {
+       "end_offset_s": 394.339,
+       "seconds": 129.108,
+       "start_offset_s": 265.269
+      }
+     },
+     "sum_of_member_s": 129.108,
+     "wall_basis": "single_member",
+     "wall_s": 129.108
+    },
+    "stage_1": {
+     "members": {
+      "assess": {
+       "end_offset_s": 265.172,
+       "seconds": 262.916,
+       "start_offset_s": 2.322
+      },
+      "plan": {
+       "end_offset_s": 74.401,
+       "seconds": 72.15,
+       "start_offset_s": 2.288
+      },
+      "research": {
+       "end_offset_s": null,
+       "seconds": 0.005,
+       "start_offset_s": null
+      },
+      "understand": {
+       "end_offset_s": 138.119,
+       "seconds": 135.867,
+       "start_offset_s": 2.271
+      }
+     },
+     "sum_of_member_s": 470.938,
+     "wall_basis": "member_spans",
+     "wall_s": 262.916
+    },
+    "verify": {
+     "members": {
+      "verify": {
+       "end_offset_s": null,
+       "seconds": 0.012,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 0.012,
+     "wall_basis": "single_member",
+     "wall_s": 0.012
+    }
+   },
+   "wall_clock_s": 422.757
+  },
+  "tools": {
+   "cassette_set_sha256": null,
+   "servers": [
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-internet-search",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "bbdc6eeaa2c98933c20b7594ccb0f3740484b142ed07c26bd3070e5f0aace616"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-research-information",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "cafceacc1e4ad056e8e1eae3bfd642b4513b112e825f6889b1cf787f2dc163d4"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-browser-automation-pw",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "4ad5ebce57687b5ec99d61deb511d8f366a33d5061015f12eefa460165e807c4"
+    },
+    {
+     "allow_tools": [],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-document-intelligence",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "3e0bebc0fd059fa383873de30be099c7083fb74876a981df9ce465634739bf7d"
+    }
+   ],
+   "tool_calls": 0,
+   "transport": "live",
+   "url_policy_sha256": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+  }
+ },
+ "extractor": {
+  "name": "pdfplumber",
+  "page_marker": "[[PAGE n]]",
+  "version": "0.11.10"
+ },
+ "fallback_events": [],
+ "fault_schedule_id": null,
+ "git_commit": "886c3fc99eb4ec875e135440919e7bdc918ee094",
+ "git_dirty": false,
+ "models_used": [
+  {
+   "betas": [],
+   "effort": "per-stage (extra.model.effort_by_stage)",
+   "max_tokens": 128000,
+   "requested_model": "claude-opus-5-5",
+   "role": "agent",
+   "sampling": "provider-default (not settable)",
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": "adaptive"
+  }
+ ],
+ "outcome": "completed_degraded",
+ "prereg_sha256": null,
+ "prompts_bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+ "review_config": {
+  "criteria": [
+   "design_intent",
+   "fitness_for_objectives",
+   "requirement_completeness",
+   "internal_consistency",
+   "claims_and_external_constraints",
+   "security_and_privacy",
+   "scalability_and_failure_modes",
+   "assumptions_and_dependencies",
+   "verifiability",
+   "decision_preservation",
+   "operability_and_governance"
+  ],
+  "persona": "generalist_architect",
+  "stop_rule": {
+   "active": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "deadline_seconds": 540,
+   "max_input_tokens": 4000000,
+   "max_output_tokens": null,
+   "max_research_iterations": 4,
+   "max_tool_calls": 30,
+   "min_independent_sources": 2,
+   "no_marginal_gain_window": 2,
+   "refine_reserve_seconds": 200,
+   "report_reserve_seconds": 75,
+   "stage_limits_s": {
+    "refine_end": 465,
+    "stage_1_end": 265,
+    "verdict_end": 530
+   }
+  }
+ },
+ "run_id": "reassess_payments_v2_1",
+ "schema_version": "1.0",
+ "split": null,
+ "taxonomy_sha256": "1967a3918b1d29259c881301cdeb83bf305a74ec63b400c8e4a2b62c0660bbb6",
+ "timestamps": {
+  "end_utc": "2026-10-03T08:14:45Z",
+  "start_utc": "2026-10-03T08:07:42Z"
+ },
+ "tools": [
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-internet-search",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-research-information",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-browser-automation-pw",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-document-intelligence",
+   "server_version": null
+  }
+ ],
+ "usage": {
+  "cached_tokens": 0,
+  "cost_usd": 4.501736,
+  "input_tokens": 375052,
+  "output_tokens": 75068,
+  "price_table_date": "2026-09-25",
+  "tool_calls": 0
+ }
+}
