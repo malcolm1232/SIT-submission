@@ -1,12 +1,14 @@
 # BEH-29 (S1, P0, L0): one assess shard fails with an exception (process fault, concurrent stage 1,
-# latency redesign 2026-10-03). Shard 3 in launch order (risk_and_operations) raises at its start.
+# latency redesign 2026-10-03). The shard holding security_and_privacy (risk_and_operations of the
+# four-group config, security_and_failure of the six-group one) raises at its start.
 # Expected: a partial review, never a crash: exit 0 with report.json (no failure.json, no
 # report.partial.md); the failure is a disclosed degradation naming the shard; its criteria are not
-# assessed; the findings of shards 0, 1 and 2 survive; the verdict is assessed.
-# The orchestrator applies `shard` to that shard alone (BEH-25 keeps the whole-member crash, exit 4).
+# assessed; the findings of the other shards survive; the verdict is assessed.
+# The orchestrator applies `shard` to that shard alone (BEH-25 keeps the whole-member crash, exit 4);
+# shard_of is resolved to the shard's launch index by tests/robustness/concurrent_schedules.py.
 # Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
 id: BEH-29
-description: An exception is raised at the start of assess shard 3.
+description: An exception is raised at the start of the assess shard of security_and_privacy.
 seed: 42
 process:
-  - {type: raise_in_stage, stage: assess, shard: 3, at: start}
+  - {type: raise_in_stage, stage: assess, shard_of: security_and_privacy, at: start}

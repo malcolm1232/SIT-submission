@@ -243,10 +243,11 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
 
     rec = run(Scenario(id=f"REG-TRUNC2-{stage}", faults="LLM-07", variant=_truncate_every(stage)), tmp_path)
     calls = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == stage]
-    # Assess runs as four concurrent shards (latency redesign): each shard is one logical call with
-    # its one retry, so the stage makes 4 x 2 calls; every other stage makes its 2.
+    # Assess runs as K concurrent shards (the configured groups, latency redesign): each shard is one
+    # logical call with its one retry, so the stage makes K x 2 calls; every other stage makes its 2.
     shards = sorted({e.get("shard") for e in calls}, key=lambda s: (s is None, s)) if stage == "assess" else [None]
-    assert shards == ([1, 2, 3, 4] if stage == "assess" else [None])
+    k = len(rec.config.agent.assess.shards_for(rec.config.criteria.ids()))
+    assert shards == (list(range(1, k + 1)) if stage == "assess" else [None])
     per_shard = {s: [e for e in calls if e.get("shard") == s] for s in shards}
     for s in shards:
         assert [e.get("outcome") for e in per_shard[s]] == ["LLMTruncatedError", "LLMTruncatedError"], s
@@ -268,7 +269,7 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
         # One note per shard, naming the shard and the shard's two call IDs (as the single-call
         # note did), and the one stage-level note above (no shard produced an assessment).
         for s in shards:
-            notes = [d for d in degs if d["event"].startswith(f"assess shard {s}/4 (") and prefix in d["event"]]
+            notes = [d for d in degs if d["event"].startswith(f"assess shard {s}/{k} (") and prefix in d["event"]]
             assert len(notes) == 1 and notes[0]["type"] == "other", (s, degs)
             assert all(c["call_id"] in notes[0]["event"] for c in per_shard[s]), (s, notes[0]["event"])
     else:
@@ -280,9 +281,9 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
     progress = rec.run_dir.progress_log.read_text(encoding="utf-8")
     if stage == "assess":
         for s in shards:
-            assert f"assess shard {s}/4 (" in progress and (
+            assert f"assess shard {s}/{k} (" in progress and (
                 "): answer truncated twice at the output cap; its criteria are not assessed" in progress), s
-        assert progress.count("answer truncated twice at the output cap; its criteria are not assessed") == 4
+        assert progress.count("answer truncated twice at the output cap; its criteria are not assessed") == k
     else:
         assert f"{stage}: answer truncated twice at the output cap" in progress
     stop = report["stop_reason"]                     # research's own stop reason, never a deadline

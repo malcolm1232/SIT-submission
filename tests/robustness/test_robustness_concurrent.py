@@ -27,10 +27,25 @@ from robustness_harness import RunRecord, Scenario, run
 from sit_review_agent.report.coverage import build_coverage
 
 SIDS = sorted(CONCURRENT)
-#: The shard each schedule faults, in launch order of the committed config/agent.yaml.
-TARGETS = {"LLM-13": (2, "claims_and_assumptions"), "LLM-14": (0, "intent_and_fitness"),
-           "LLM-15": (1, "requirements_and_consistency"), "BEH-29": (3, "risk_and_operations"),
-           "LLM-16": None, "LLM-17": None}
+#: The criterion whose shard each schedule faults (``shard_of``); the expected launch index and
+#: group name are read from the committed config/agent.yaml, so a regrouping never breaks this table.
+TARGETS = {"LLM-13": "claims_and_external_constraints", "LLM-14": "fitness_for_objectives",
+           "LLM-15": "verifiability", "BEH-29": "security_and_privacy", "LLM-16": None, "LLM-17": None}
+
+
+def _configured_shards() -> list[Any]:
+    from sit_review_agent.config import load_config
+
+    cfg = load_config()
+    return list(cfg.agent.assess.shards_for(c.id for c in cfg.criteria.criteria))
+
+
+def expected_target(sid: str) -> tuple[int, str] | None:
+    crit = TARGETS[sid]
+    if crit is None:
+        return None
+    [(i, name)] = [(i, s.name) for i, s in enumerate(_configured_shards()) if crit in s.criteria]
+    return i, name
 
 
 # ============================================================================= fixture builders
@@ -175,13 +190,14 @@ def test_every_concurrent_schedule_is_registered_and_checked() -> None:
 @pytest.mark.parametrize("sid", SIDS)
 def test_schedule_resolves_to_the_targeted_shard(sid: str, schedules: dict[str, ConcurrentSchedule]) -> None:
     cs = schedules[sid]
-    assert cs.id == sid and cs.schedule.sha256 and len(cs.shards) == 4
-    want = TARGETS[sid]
+    assert cs.id == sid and cs.schedule.sha256 and len(cs.shards) == len(_configured_shards())
+    want = expected_target(sid)
     assert [(t.index, t.name) for t in cs.targets] == ([want] if want else [])
     for rule in cs.schedule.llm:                                         # nothing of the shard keys is left
         assert not (rule.match.model_extra or {})
     text = cs.agent_yaml()
-    assert "shard_call" not in text and "shard:" not in text.replace("shard: 3", "")
+    process_shard = f"shard: {want[0]}" if sid == "BEH-29" and want else "\0"
+    assert "shard_call" not in text and "shard_of" not in text and "shard:" not in text.replace(process_shard, "")
 
 
 def test_control_has_findings_in_and_outside_the_faulted_shards(control: RunRecord,

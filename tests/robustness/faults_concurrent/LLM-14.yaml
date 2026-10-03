@@ -1,13 +1,14 @@
 # LLM-14 (S1, P0, L0): one assess shard declines (concurrent stage 1, latency redesign 2026-10-03).
-# Shard 0 in launch order (intent_and_fitness) ends with stop_reason refusal on its first call and on
-# its one reframed retry. Expected: no third call for that shard; 'model declined' disclosed as a
-# degradation naming the shard; its criteria are not assessed; the findings of shards 1, 2 and 3
-# survive; the verdict is assessed (a partial review, not not_assessed); report, exit 0, no crash.
-# shard_call [0, 1] = the shard's first call and its reframed retry = nth [0, 4] with K = 4 shards.
+# The shard holding fitness_for_objectives (intent_and_fitness, shard 0 in launch order) ends with
+# stop_reason refusal on its first call and on its one reframed retry. Expected: no third call for
+# that shard; 'model declined' disclosed as a degradation naming the shard; its criteria are not
+# assessed; the findings of the other shards survive; the verdict is assessed (a partial review, not
+# not_assessed); report, exit 0, no crash.
+# shard_call [0, 1] = the shard's first call and its reframed retry = nth [0, K] with K shards.
 # Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
 id: LLM-14
-description: Assess shard 0 refuses twice (the first call and the reframed retry).
+description: The assess shard of fitness_for_objectives refuses twice (the first call and the reframed retry).
 seed: 42
 llm:
-  - match: {stage: assess, shard: 0, shard_call: [0, 1]}
+  - match: {stage: assess, shard_of: fitness_for_objectives, shard_call: [0, 1]}
     fault: {type: stop_reason, value: refusal, category: null}

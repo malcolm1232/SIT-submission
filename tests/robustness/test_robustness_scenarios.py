@@ -311,7 +311,19 @@ def check_inf24(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 # ============================================================================= LLM
 
 
-SHARDS = [1, 2, 3, 4]              # the assess shards of the selftest criteria, in launch order
+def _configured_groups() -> list[Any]:
+    from sit_review_agent.config import load_config
+
+    cfg = load_config()
+    return list(cfg.agent.assess.shards_for(cfg.criteria.ids()))
+
+
+#: The assess shard groups of the selftest criteria under the repo config, in launch order; K of
+#: them (four before USER_DECISIONS #40, six since). Every count below is read from here.
+GROUPS = _configured_groups()
+K = len(GROUPS)
+SHARDS = list(range(1, K + 1))     # the assess shards' launch indices
+STAGE_1_CONVS = sorted(["understand-0", "plan-0", *(f"assess-0-s{s}" for s in SHARDS)])
 
 
 def shard_calls(rec: RunRecord, shard: int) -> list[dict[str, Any]]:
@@ -320,7 +332,7 @@ def shard_calls(rec: RunRecord, shard: int) -> list[dict[str, Any]]:
 
 
 def check_llm01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """Assess runs as K = 4 concurrent shards (latency redesign): the 429 hits attempt 0 of every
+    """Assess runs as K concurrent shards (latency redesign): the 429 hits attempt 0 of every
     shard's call, each shard waits retry-after and completes, findings as in the fault-free run."""
     rec = recs[0]
     ok(rec)
@@ -338,7 +350,7 @@ def check_llm01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert len(llm_calls(rec, "assess")) == 2 * len(SHARDS)
     assert "assess" in rec.state["completed_phases"]
     assert titles(rec) == titles(control)
-    return Metric("wait before the retry, min over the 4 shards (s, virtual)", min(waits), ">= 15")
+    return Metric(f"wait before the retry, min over the {K} shards (s, virtual)", min(waits), ">= 15")
 
 
 def check_llm02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -346,18 +358,18 @@ def check_llm02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert oracles.exit_code(rec) == 3 and rec.report is None
     fail = rec.failure
     assert fail["resumable"] and "spend cap" in fail["message"]
-    # Stage 1 starts understand, plan and the K = 4 assess shards together (latency redesign): each
-    # of the six calls exhausts its own retry budget, none goes past it, and the run exits 3 once.
+    # Stage 1 starts understand, plan and the K assess shards together (latency redesign): each
+    # of the K + 2 calls exhausts its own retry budget, none goes past it, and the run exits 3 once.
     n = rec.config.agent.llm.max_retries + 1
     by_conv: dict[str, list[int]] = {}
     for e in llm_calls(rec):
         assert e.get("fault"), e.get("conversation_id")
         by_conv.setdefault(e["conversation_id"], []).append(e["attempt"])
-    assert sorted(by_conv) == ["assess-0-s1", "assess-0-s2", "assess-0-s3", "assess-0-s4", "plan-0", "understand-0"]
+    assert sorted(by_conv) == STAGE_1_CONVS
     for conv, attempts in by_conv.items():
         assert attempts == list(range(n)), (conv, attempts)               # exits within the retry budget
     assert any(rec.run_dir.checkpoints.iterdir())                          # a checkpoint to resume from
-    return Metric("model attempts per stage 1 call before exit 3", n, f"== {n} on each of 6 calls")
+    return Metric("model attempts per stage 1 call before exit 3", n, f"== {n} on each of {K + 2} calls")
 
 
 def _persistent_529(data: dict[str, Any]) -> None:
@@ -365,7 +377,7 @@ def _persistent_529(data: dict[str, Any]) -> None:
 
 
 def check_llm03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """529 on attempts 0-3 of every assess shard's call (K = 4 shards), then recovery: every shard
+    """529 on attempts 0-3 of every assess shard's call (K shards), then recovery: every shard
     completes, no model switch. Persistent variant (every shard overloaded past the retry budget):
     the run exits 3 once, resumable, and writes the partial run record a stage crash writes
     (``report.partial.md``, named in ``failure.json``), disclosing that every shard failed and why;
@@ -393,7 +405,7 @@ def check_llm03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     partial = (stuck.run_dir.root / "report.partial.md").read_text(encoding="utf-8")
     assert "not a review" in partial and "every assess shard failed" in partial and "exit 3" in partial
     assert "Completed stages: ingest, understand, plan, research" in partial
-    assert all(f"assess shard {s}/4" in partial and "LLMOverloadedError" in partial for s in SHARDS)
+    assert all(f"assess shard {s}/{K}" in partial and "LLMOverloadedError" in partial for s in SHARDS)
     assert "Draft findings (unverified, not reported): 0" in partial
     cfg = stuck.config.model_copy(update={"agent": stuck.config.agent.model_copy(update={"fault_schedule": None})})
     again = resume(stuck, config=cfg, accept_drift=True)
@@ -405,7 +417,7 @@ def check_llm03(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """Refusal on every assess call. Persistent: each of the K = 4 shards gets one reframed retry
+    """Refusal on every assess call. Persistent: each of the K shards gets one reframed retry
     (2 K refusals, no third call per shard), each shard's refusal disclosed naming the shard, every
     criterion not assessed, verdict not_assessed with no verdict call, the other stages complete.
     Once (nth [0]: shard 1's first call): its reframed retry succeeds, findings as in the control."""
@@ -416,7 +428,7 @@ def check_llm06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
         entries = shard_calls(persistent, s)
         assert [e.get("outcome") for e in entries] == ["LLMRefusalError"] * 2, s     # original + one reframed retry
         assert [e.get("purpose") for e in entries] == ["assess", "assess:refusal_retry"], s
-        assert any(d.startswith(f"the model declined assess shard {s}/4 (") and "after a reframed retry" in d
+        assert any(d.startswith(f"the model declined assess shard {s}/{K} (") and "after a reframed retry" in d
                    for d in degs(persistent)), s
     assert len(llm_calls(persistent, "assess")) == 2 * len(SHARDS)
     assert any(d.startswith("the model declined every assess shard") for d in degs(persistent))
@@ -447,8 +459,8 @@ def _persistent_truncation(data: dict[str, Any]) -> None:
 
 def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """max_tokens on the first assess call (nth 0: shard 1, launched first): one retry for that
-    shard, the other three shards untouched, findings as in the control. Persistent (every assess
-    call truncated): each of the K = 4 shards is truncated twice and makes no third call, each
+    shard, the other shards untouched, findings as in the control. Persistent (every assess
+    call truncated): each of the K shards is truncated twice and makes no third call, each
     shard's note names it and its two call IDs, no finding, verdict not_assessed, exit 0."""
     rec, twice = recs
     ok(rec)
@@ -465,7 +477,7 @@ def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
         calls = shard_calls(twice, s)
         assert [e.get("outcome") for e in calls] == ["LLMTruncatedError"] * 2, s
         assert [e.get("purpose") for e in calls] == ["assess", "assess:max_tokens_retry"], s
-        notes = [d for d in degs(twice) if d.startswith(f"assess shard {s}/4 (")
+        notes = [d for d in degs(twice) if d.startswith(f"assess shard {s}/{K} (")
                  and "the assess answer was truncated twice at the output cap" in d]
         assert len(notes) == 1 and all(e["call_id"] in notes[0] for e in calls), (s, notes)
     assert len(llm_calls(twice, "assess")) == 2 * len(SHARDS)
@@ -477,7 +489,7 @@ def check_llm07(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 def check_llm08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """Shard 1's first assess answer (nth 0) misses `findings`: one repair turn for that shard (its
-    second call), the repaired answer used, the other three shards' answers untouched (one call
+    second call), the repaired answer used, the other shards' answers untouched (one call
     each), findings as in the fault-free run."""
     rec = recs[0]
     ok(rec)
@@ -528,20 +540,20 @@ def check_llm11(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert oracles.exit_code(rec) == 3 and rec.report is None
     msg = rec.failure["message"]
     assert "ANTHROPIC_API_KEY" in msg and all(c not in msg for c in CANARIES)
-    # the six stage 1 calls (understand, plan, K = 4 assess shards) start together: each is refused
-    # once and never retried (6 attempts, all attempt 0), the run exits 3 once
+    # the K + 2 stage 1 calls (understand, plan, K assess shards) start together: each is refused
+    # once and never retried (K + 2 attempts, all attempt 0), the run exits 3 once
     refused = [e for e in llm_calls(rec) if e.get("fault")]
-    assert len(refused) == len(llm_calls(rec)) == 6 and all(e["attempt"] == 0 for e in refused)
-    assert len({e["conversation_id"] for e in refused}) == 6                 # one per call, never retried
+    assert len(refused) == len(llm_calls(rec)) == K + 2 and all(e["attempt"] == 0 for e in refused)
+    assert len({e["conversation_id"] for e in refused}) == K + 2             # one per call, never retried
     assert rec.virtual_s <= 10
-    return Metric("time to a clear exit (s, virtual)", rec.virtual_s, "<= 10; 6 calls refused once each")
+    return Metric("time to a clear exit (s, virtual)", rec.virtual_s, f"<= 10; {K + 2} calls refused once each")
 
 
 def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """The first assess call (nth 0: shard 1, launched first) hangs once. Demo profile (540 s): the
     attempt is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed
     budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other
-    three shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit
+    shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit
     0, within the deadline. Default deadline (3600 s): the hang costs llm.timeout_s (1800 s), the
     retry succeeds, findings as in the control. Scheduling clock: the hang must not move the clock
     for the shards that run beside it."""
@@ -557,10 +569,10 @@ def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert len(shard_calls(demo, 1)) == 1                                        # cut, never retried
     assert all([e.get("outcome") for e in shard_calls(demo, s)] == ["ok"] for s in SHARDS[1:])
     cut = [d for d in r["research_log"]["degradations"]
-           if d["event"].startswith("assess shard 1/4 (intent_and_fitness) was cut by the stage 1 limit")]
+           if d["event"].startswith(f"assess shard 1/{K} ({GROUPS[0].name}) was cut by the stage 1 limit")]
     assert len(cut) == 1 and cut[0]["type"] == "budget_or_deadline_hit" and f"at {limit:.0f} s" in cut[0]["event"]
     assert any(cut[0]["id"] in lim["degradation_ids"] for lim in r["limitations"])
-    shard1 = {"design_intent", "fitness_for_objectives", "decision_preservation"}
+    shard1 = set(GROUPS[0].criteria)
     rows = {c["criterion_id"]: c for c in demo.state["coverage"]}
     assert all(rows[c]["outcome"] == "not_applicable" and rows[c]["note"] == NOT_ASSESSED_NOTE["cut"] for c in shard1)
     assert all(not rows[c]["note"].startswith("not assessed") for c in rows if c not in shard1)
@@ -574,20 +586,20 @@ def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert len(shard_calls(default, 1)) == 2
     assert 1800 <= default.virtual_s <= default.config.stop_rules.deadline_seconds + 30
     assert titles(default) == titles(control) and r2["findings"]
-    return Metric("findings kept from the three surviving shards, demo profile", len(r["findings"]),
+    return Metric(f"findings kept from the {K - 1} surviving shards, demo profile", len(r["findings"]),
                   f"> 0; shard 1 cut at {limit:.0f} s and disclosed; run <= {cfg.deadline_seconds} + 30 s")
 
 
 def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """150-page generated document against a 150k-token context window: every first request is
     estimated over 80 % of the window and never sent; exit 2 naming the document size. Stage 1
-    starts six calls together (understand, plan, K = 4 assess shards), so six unsent refusals are
+    starts K + 2 calls together (understand, plan, K assess shards), so K + 2 unsent refusals are
     logged, and none reaches the model."""
     rec = recs[0]
     assert oracles.exit_code(rec) == 2 and rec.report is None
     assert rec.gateway is not None and rec.gateway.calls == []                  # nothing reached the model
     logged = llm_calls(rec)                                                     # the refusals are logged, unsent
-    assert len(logged) == 6 and len({e["conversation_id"] for e in logged}) == 6
+    assert len(logged) == K + 2 and len({e["conversation_id"] for e in logged}) == K + 2
     assert all(e["sent"] is False and e["outcome"] == "LLMContextTooLongError" for e in logged)
     fail = rec.failure
     assert fail["error"] == "LLMContextTooLongError" and fail["phase"] == "understand"
@@ -600,7 +612,7 @@ def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """No network from the start. Stage 1 starts six calls together (understand, plan, K = 4 assess
+    """No network from the start. Stage 1 starts K + 2 calls together (understand, plan, K assess
     shards), each a first call of the run: the first to give up (connection errors within the 10 s
     window, never the full budget) ends the run with the 'no network' message, exit 3 once; the
     other members are cancelled, so no call runs its retry budget and none runs on after the exit.
@@ -616,7 +628,7 @@ def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     by_conv: dict[str, list[dict[str, Any]]] = {}
     for e in entries:
         by_conv.setdefault(e["conversation_id"], []).append(e)
-    assert set(by_conv) <= {"understand-0", "plan-0", "assess-0-s1", "assess-0-s2", "assess-0-s3", "assess-0-s4"}
+    assert set(by_conv) <= set(STAGE_1_CONVS)
     budget = rec.config.agent.llm.max_retries + 1
     ended = [c for c, es in by_conv.items() if es[-1]["call_id"] is not None]      # the calls that gave up
     assert ended and any(c.startswith(f"{fail['phase']}-0") for c in ended), (ended, fail["phase"])
@@ -627,7 +639,7 @@ def check_net02(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     last = max(ts(e["started_at"]) for e in entries)                                # nothing ran on after the exit
     assert (last - ts(entries[0]["started_at"])).total_seconds() <= rec.virtual_s
     progress = rec.run_dir.progress_log.read_text(encoding="utf-8")
-    assert progress.count("error (LLMConnectionError, exit 3)") == 1                 # exits once, not six times
+    assert progress.count("error (LLMConnectionError, exit 3)") == 1                 # exits once, not once per call
     return Metric("time to a clear 'no network' exit (s, virtual)", round(rec.virtual_s, 1),
                   "<= 10; one exit, the other stage 1 members cancelled")
 
@@ -679,7 +691,7 @@ def check_inf08(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 def check_net01(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     """The network drops at 205 s for 120 s while research runs (plan delayed 200 s; the assess
     shards, started with it, have finished): exit 3 with the checkpoints of understand and plan and
-    the four finished shards on disk; resume re-runs neither a completed member nor a shard, serves
+    the K finished shards on disk; resume re-runs neither a completed member nor a shard, serves
     research's completed tool call from tools.jsonl and completes with no duplicate ledger entry."""
     rec = recs[0]
     assert oracles.exit_code(rec) == 3 and rec.failure["resumable"] and rec.failure["phase"] == "research"
@@ -732,7 +744,7 @@ def check_ops04(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert again.outbound == []                                             # no completed tool call repeated live
     phases = [e["phase"] for e in llm_calls(again) if e.get("outcome") == "ok"]
     assert phases.count("understand") == 1 and phases.count("plan") == 1   # completed members not re-run
-    assert phases.count("assess") == len(SHARDS)                            # the four finished shards neither
+    assert phases.count("assess") == len(SHARDS)                            # the K finished shards neither
     assert sorted(int(p.name.split("-", 1)[0]) for p in (rec.run_dir.root / "shards").glob("*.json")) == SHARDS
     assert any(e.get("resumed") for e in llm_calls(again, "research"))
     assert not [e for e in llm_calls(again) if e.get("resumed") and e.get("phase") != "research"]
@@ -902,7 +914,9 @@ def check_beh06(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     assert invented not in titles(rec)
     assert any(u["text"].startswith(f"Unverified (gap): {invented}") for u in rec.report["unresolved"])
     rows = json.loads(rec.run_dir.anchors.read_text(encoding="utf-8"))["rows"]
-    assert any(row["owner_id"] == "FND-003" and row["anchor_status"] == "unresolved" for row in rows)
+    # its merged draft ID depends on the shard groups (the merge numbers in shard order)
+    draft = next(d["id"] for d in rec.state["finding_drafts"] if d["title"] == invented)
+    assert any(row["owner_id"] == draft and row["anchor_status"] == "unresolved" for row in rows)
     return Metric("findings reported with an unresolved anchor", 0, "0")
 
 
@@ -1216,7 +1230,7 @@ CASES: list[Case] = [
                     sc("LLM-09-empty", patches={"assess": _empty})], check_llm09),
     Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}, clock="scheduling"),
                     sc("LLM-05-default", faults="LLM-05", clock="scheduling")], check_llm05,
-         notes="demo profile (540 s): shard 1 cut and disclosed, the other three shards' findings kept; "
+         notes="demo profile (540 s): shard 1 cut and disclosed, the other shards' findings kept; "
                "default deadline: full timeout, then retry; scheduling clock"),
     Case("LLM-10", [lambda tmp: Scenario(id="LLM-10", doc=long_design_pages(tmp / "long_150.pages.txt"),
                                          agent={"llm": _llm(context_window_tokens=150_000)})], check_llm10,
@@ -1224,7 +1238,7 @@ CASES: list[Case] = [
     Case("LLM-11", [sc("LLM-11", faults="LLM-11")], check_llm11),
     Case("NET-01", [sc("NET-01", faults="NET-01")], check_net01),
     Case("NET-02", [sc("NET-02", faults="NET-02", clock="scheduling")], check_net02,
-         notes="six concurrent first calls (scheduling clock): the first to give up exits 3 once, the rest cancelled"),
+         notes="concurrent first calls (scheduling clock): the first to give up exits 3 once, the rest cancelled"),
     Case("NET-06", [sc("NET-06", faults="NET-06", tool_base="mcp")], check_net06,
          notes="the live MCP gateway over the cassettes: the closed session is reopened once and the call repeated"),
     Case("INF-08", [sc("INF-08", agent={"transport": Transport.LIVE}, env_unset=("SIT_MCP_API_KEY",)),

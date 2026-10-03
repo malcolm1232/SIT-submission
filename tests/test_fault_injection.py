@@ -554,13 +554,12 @@ async def test_concurrent_schedule_shard_index_resolves_to_the_logical_call(tmp_
     cs_mod = concurrent_schedules()
     shards = cs_mod.run_shards()
     k = len(shards)
-    assert k == 4 and [s.name for s in shards] == ["intent_and_fitness", "requirements_and_consistency",
-                                                   "claims_and_assumptions", "risk_and_operations"]
+    assert k >= 2                                                        # any configured group count
     yaml_path = tmp_path / "SHARD-1.yaml"
     yaml_path.write_text("id: SHARD-1\nllm:\n  - match: {stage: assess, shard: 1, shard_call: [0, 1]}\n"
                          "    fault: {type: auth, status: 401}\n", encoding="utf-8")
     cs = cs_mod.load_concurrent_schedule(yaml_path)
-    assert cs.id == "SHARD-1" and [(t.index, t.name) for t in cs.targets] == [(1, "requirements_and_consistency")]
+    assert cs.id == "SHARD-1" and [(t.index, t.name) for t in cs.targets] == [(1, shards[1].name)]
     assert cs.schedule.llm[0].match.nth == [1, k] and cs.schedule.llm[0].match.stage == "assess"
     assert cs.schedule.llm[0].match.model_extra in (None, {})          # no shard key reaches the agent
     rd = RunDir(tmp_path / "llm-run").create()
@@ -569,7 +568,7 @@ async def test_concurrent_schedule_shard_index_resolves_to_the_logical_call(tmp_
     inner.progress = NullProgress()  # type: ignore[attr-defined]
     gw = FaultInjectingLLMGateway(inner, cs.schedule, clock=inner.clock)
     faulted = []
-    for nth in range(k + 1):                                             # 4 first calls, then shard 1's retry
+    for nth in range(k + 1):                                             # K first calls, then shard 1's retry
         try:
             assert (await gw.call(llm_req(PhaseName.ASSESS))).text == "ok"
         except LLMAuthError:
@@ -587,8 +586,38 @@ def test_concurrent_schedule_refuses_a_shard_index_out_of_range(tmp_path: Path) 
         cs_mod.load_concurrent_schedule(yaml_path, shards=two)
     msg = str(info.value)
     assert msg.startswith("fault schedule SHARD-9 (") and "shard 2 is out of range" in msg
-    assert "this run has 2 assess shards (0 intent_and_fitness, 1 requirements_and_consistency)" in msg
-    yaml_path.write_text("id: SHARD-9\nprocess:\n  - {type: raise_in_stage, stage: assess, at: start, shard: 4}\n",
+    assert f"this run has 2 assess shards (0 {two[0].name}, 1 {two[1].name})" in msg
+    k = len(cs_mod.run_shards())
+    yaml_path.write_text(f"id: SHARD-9\nprocess:\n  - {{type: raise_in_stage, stage: assess, at: start, shard: {k}}}\n",
                          encoding="utf-8")
-    with pytest.raises(ConfigError, match=r"fault schedule SHARD-9 .*process\[0\]: shard 4 is out of range"):
+    with pytest.raises(ConfigError, match=rf"fault schedule SHARD-9 .*process\[0\]: shard {k} is out of range"):
+        cs_mod.load_concurrent_schedule(yaml_path)
+
+
+def test_concurrent_schedule_shard_of_names_the_shard_by_criterion(tmp_path: Path) -> None:
+    """``shard_of: <criterion>`` resolves to the launch index of the group holding the criterion, for
+    llm rules and process entries alike, so a schedule follows a regrouping of ``assess.shards``; an
+    unknown criterion, or ``shard`` with ``shard_of``, is refused."""
+    cs_mod = concurrent_schedules()
+    shards = cs_mod.run_shards()
+    k = len(shards)
+    last = shards[-1]
+    yaml_path = tmp_path / "SHARD-OF.yaml"
+    yaml_path.write_text(f"id: SHARD-OF\nllm:\n  - match: {{stage: assess, shard_of: {last.criteria[0]}, "
+                         "shard_call: [0, 1]}\n    fault: {type: auth, status: 401}\n", encoding="utf-8")
+    cs = cs_mod.load_concurrent_schedule(yaml_path)
+    assert [(t.index, t.name) for t in cs.targets] == [(k - 1, last.name)]
+    assert cs.schedule.llm[0].match.nth == [k - 1, k] and "shard_of" not in cs.agent_yaml()
+    two = shards[:2]
+    yaml_path.write_text(f"id: SHARD-OF\nprocess:\n  - {{type: raise_in_stage, stage: assess, at: start, "
+                         f"shard_of: {two[1].criteria[0]}}}\n", encoding="utf-8")
+    cs = cs_mod.load_concurrent_schedule(yaml_path, shards=two)
+    assert [(t.index, t.name) for t in cs.targets] == [(1, two[1].name)]
+    yaml_path.write_text("id: SHARD-OF\nllm:\n  - match: {stage: assess, shard_of: no_such_criterion, "
+                         "shard_call: [0]}\n    fault: {type: hang}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="shard_of 'no_such_criterion' is in no assess shard"):
+        cs_mod.load_concurrent_schedule(yaml_path)
+    yaml_path.write_text(f"id: SHARD-OF\nllm:\n  - match: {{stage: assess, shard: 0, shard_of: {last.criteria[0]}, "
+                         "shard_call: [0]}\n    fault: {type: hang}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="shard and shard_of together"):
         cs_mod.load_concurrent_schedule(yaml_path)

@@ -7,7 +7,10 @@ order, which is their launch order. The schedules live in ``faults_concurrent/<I
 format of ``faults/`` (research/robustness/README.md §5.2) plus two match keys on an ``llm:`` rule
 of stage ``assess``:
 
-* ``shard``: the shard index in launch order (0 .. K-1);
+* ``shard``: the shard index in launch order (0 .. K-1), or ``shard_of``: a criterion ID, naming
+  the shard whose group holds that criterion (resolved to its index against the run's shards, so a
+  schedule written this way follows any regrouping of ``assess.shards``; the committed schedules
+  use it since the six-group config of USER_DECISIONS #40);
 * ``shard_call``: the shard's own logical calls, 0-based (0 = its first call; 1 = its first
   follow-up call: the reframed retry after a refusal, the retry after a truncation, the repair turn).
 
@@ -16,8 +19,9 @@ the robustness suite). The K shards start together, so their first calls are ``n
 launch order; a follow-up call of the one faulted shard comes after all K first calls, so its
 ``shard_call`` j (j >= 1) is ``nth`` K + j - 1. That numbering only holds when a single shard makes
 follow-up calls, so a schedule that faults follow-up calls of one shard and faults any other shard
-is refused. A ``process:`` entry may name a ``shard`` too (stage ``assess``); the loader checks its
-range and adds ``shard_name``; applying it to that shard alone is the orchestrator's job.
+is refused. A ``process:`` entry may name a ``shard`` (or ``shard_of``) too (stage ``assess``); the
+loader checks its range, writes the index as ``shard`` and adds ``shard_name``; applying it to that
+shard alone is the orchestrator's job.
 
 :func:`load_concurrent_schedule` resolves ``shard`` / ``shard_call`` into ``nth`` and returns the
 agent's own :class:`~sit_review_agent.tools.faults.FaultSchedule`, so the result is what
@@ -124,6 +128,18 @@ def load_concurrent_schedule(path: str | Path, shards: Sequence[AssessShard] | N
             raise refuse(f"{where}: shard {value!r} is out of range: this run has {k} assess shards ({names})")
         return int(value)
 
+    def pop_shard(where: str, entry: dict[str, Any]) -> Any:
+        """The entry's shard index: ``shard`` as given, or ``shard_of`` resolved (both popped)."""
+        if "shard_of" not in entry:
+            return entry.pop("shard")
+        if "shard" in entry:
+            raise refuse(f"{where}: shard and shard_of together (name the shard one way)")
+        crit = entry.pop("shard_of")
+        holders = [i for i, s in enumerate(run) if crit in s.criteria]
+        if len(holders) != 1:
+            raise refuse(f"{where}: shard_of {crit!r} is in no assess shard of this run ({names})")
+        return holders[0]
+
     targeted: set[int] = set()
     follow_ups: set[int] = set()
     llm: list[Any] = []
@@ -131,14 +147,14 @@ def load_concurrent_schedule(path: str | Path, shards: Sequence[AssessShard] | N
         if not isinstance(rule, dict):
             raise refuse(f"llm[{i}]: a rule is a mapping")
         match = dict(rule.get("match") or {})
-        if "shard" not in match:
+        if "shard" not in match and "shard_of" not in match:
             if "shard_call" in match:
                 raise refuse(f"llm[{i}]: shard_call without shard")
             llm.append(rule)
             continue
         if "nth" in match:
             raise refuse(f"llm[{i}]: shard and nth together (shard_call names the shard's own calls)")
-        s = check_shard(f"llm[{i}]", match.pop("shard"), match.get("stage"))
+        s = check_shard(f"llm[{i}]", pop_shard(f"llm[{i}]", match), match.get("stage"))
         calls = match.pop("shard_call", None)
         if not isinstance(calls, list) or not calls or not all(_index(c) and c >= 0 for c in calls):
             raise refuse(f"llm[{i}]: shard_call must be a non-empty list of call indexes >= 0, got {calls!r}")
@@ -153,10 +169,11 @@ def load_concurrent_schedule(path: str | Path, shards: Sequence[AssessShard] | N
 
     process: list[Any] = []
     for i, spec in enumerate(raw.get("process") or []):
-        if isinstance(spec, dict) and "shard" in spec:
-            s = check_shard(f"process[{i}]", spec["shard"], spec.get("stage"))
+        if isinstance(spec, dict) and ("shard" in spec or "shard_of" in spec):
+            spec = dict(spec)
+            s = check_shard(f"process[{i}]", pop_shard(f"process[{i}]", spec), spec.get("stage"))
             targeted.add(s)
-            spec = {**spec, "shard_name": run[s].name}
+            spec = {**spec, "shard": s, "shard_name": run[s].name}
         process.append(spec)
 
     data = {**raw, "llm": llm, "process": process}

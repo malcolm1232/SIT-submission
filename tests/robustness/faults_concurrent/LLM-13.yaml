@@ -1,15 +1,15 @@
 # LLM-13 (S1, P0, L0): one assess shard hangs (concurrent stage 1, latency redesign 2026-10-03).
-# Shard 2 in launch order (AssessSettings.shards_for: claims_and_assumptions with the committed
-# config/agent.yaml) never answers. Expected with --profile demo: its attempt is cut at
-# stop_rules.stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed degradation
-# naming the shard; its criteria without a finding are not assessed; the findings of shards 0, 1 and 3
+# The shard holding claims_and_external_constraints (claims_and_assumptions, AssessSettings.shards_for
+# with the committed config/agent.yaml) never answers. Expected with --profile demo: its attempt is cut
+# at stop_rules.stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed degradation
+# naming the shard; its criteria without a finding are not assessed; the findings of the other shards
 # survive; the verdict is assessed; report, exit 0, no crash.
-# shard / shard_call are resolved to the stage's logical call index nth by
-# tests/robustness/concurrent_schedules.py (shard_call 0 of shard 2 = nth 2).
+# shard_of / shard_call are resolved to the stage's logical call index nth by
+# tests/robustness/concurrent_schedules.py (shard_call 0 of shard s = nth s).
 # Awaiting integration: runs only against the concurrent orchestrator (tests/robustness/README.md).
 id: LLM-13
-description: Assess shard 2 hangs (no tokens) until the stage 1 limit.
+description: The assess shard of claims_and_external_constraints hangs (no tokens) until the stage 1 limit.
 seed: 42
 llm:
-  - match: {stage: assess, shard: 2, shard_call: [0]}
+  - match: {stage: assess, shard_of: claims_and_external_constraints, shard_call: [0]}
     fault: {type: hang}
