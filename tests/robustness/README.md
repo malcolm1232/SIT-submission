@@ -43,7 +43,7 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 | `fixtures/cassettes/` | Strict replay cassettes: the selftest's web search and fetch, plus one scholarly `search_works` record, so both enabled servers are exercised |
 | `fixtures/tools/*.json` | Hand-authored `replace_content` fixtures: an injected page (ADV-04/05), irrelevant results (INF-15, BEH-01), benchmark evidence (ADV-14), content-farm results (ADV-16). Invented; `.example` / `.invalid` domains, no key |
 | `robustness_harness.py` | `Scenario` and `run_scenario`: `run_review` with every real phase, `transport: fake`, a scripted model, a virtual clock, canary keys, an outbound log, and the generated 150-page document of LLM-10 (`long_design_pages`, built at test time, never committed) |
-| `oracles.py` | INV-01..INV-11 as post-run checks (INV-03..INV-10 call `sit_review_agent.invariants`), plus OPS-10, BEH-23, BEH-28 and DEMO-06 |
+| `oracles.py` | INV-01..INV-12 as post-run checks (INV-03..INV-10 and INV-12 call `sit_review_agent.invariants`), plus OPS-10, BEH-23, BEH-28 and DEMO-06 |
 | `test_robustness_scenarios.py` | The parametrised end-to-end suite: 49 P0 scenarios, 66 runs plus 4 resumes and one shared fault-free control run |
 | `test_robustness_schedules.py` | Every schedule loads and resolves; this table, the registry, the cases and scenarios.md agree; cassette keys; no secret in a fixture; the offline CLI drill above runs (INF-24, INF-03) |
 | `test_robustness_regressions.py` | Regression tests for the agent defects fixed here (six by the implementer, four by the verifier); the runtime policies of 2026-10-02 are tested in `tests/test_runtime_policies.py` |
@@ -72,7 +72,7 @@ only, never on `resume`), so `--faults BEH-25` crashes assess (exit 4, partial r
 6. **Secrets**: `SIT_MCP_API_KEY` and `ANTHROPIC_API_KEY` are canary values during every run (§6.4).
 7. **Oracles** (`oracles.run_oracles`, every run): INV-01 (real-time watchdog 30 s; virtual time <=
    `deadline_seconds` + 30 s), INV-02 (report, or `failure.json` with a documented exit code, never
-   both), INV-03..INV-10 (`invariants.check_all`, INV-08 with the canaries), INV-08 outbound (no
+   both), INV-03..INV-10 and INV-12 (`invariants.check_all`, INV-08 with the canaries), INV-08 outbound (no
    canary in any request that reached the tool transport), INV-11 (nothing but a typed error escapes;
    no traceback in the console or the run directory), OPS-10 (log completeness, ledger replay),
    BEH-23 (a fault always shows in limitations), BEH-28 (every brief section rendered), DEMO-06
@@ -238,7 +238,7 @@ The IDs are new (scenarios.md has LLM-01..LLM-12 and BEH-01..BEH-28) and follow 
 | LLM-17 | S1 | L0 | offline | yes | research's second model call hangs (`nth` [1]) | demo profile: cut at `stage_1_end`, not retried; stop reason deadline; the ledger keeps the first round's external evidence and replays exactly; disclosed as budget_or_deadline_hit naming research; the shards' findings survive; exit 0 |
 | BEH-29 | S1 | L0 | offline | yes | `raise_in_stage` at the start of assess shard 3 (process fault with `shard`) | a partial review, never a crash: exit 0, report.json, no failure.json or report.partial.md; the failure disclosed naming the shard; its criteria not assessed; the findings of shards 0, 1 and 2 survive; verdict assessed |
 
-Every oracle also runs the agent's invariants (`invariants.check_all`, INV-03..INV-10), and the end-to-end form runs `oracles.assert_oracles` (INV-01..INV-11, OPS-10, BEH-23, BEH-28, DEMO-06) as for every scenario.
+Every oracle also runs the agent's invariants (`invariants.check_all`, INV-03..INV-10 and INV-12), and the end-to-end form runs `oracles.assert_oracles` (INV-01..INV-12, OPS-10, BEH-23, BEH-28, DEMO-06) as for every scenario.
 Two names are the contract with the orchestrator and live in one place, `concurrent_oracles.py`: `NOT_ASSESSED` (the coverage outcome in `state.json` of a criterion whose shard did not finish) and `DISCLOSURE` (the words a degradation uses for a cut, a decline, a double truncation and a failure); a degradation about a shard names its group.
 `not_assessed` as a verdict is expected only when no shard finished a single finding by the stage 1 end (LLM-06 and LLM-07 persistent).
 

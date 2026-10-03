@@ -12,7 +12,10 @@ Prompt: ``prompts/verify.md``. Output of the repair call: ``AnchorRepairOutput``
    URLs in free text not in the ledger, registry conflicts, non-refinement findings in
    ``unresolved``, verdict vs severities. A finding with no resolvable anchor cannot carry a
    recommendation (ADR-007): it is moved to ``unresolved`` and reported as unverified.
-Writes: ``state.findings``, ``state.sound_areas``, ``state.anchor_table``, degradations.
+Writes: ``state.findings``, ``state.sound_areas``, ``state.anchor_table``, degradations, and
+``state.finding_ids.verify`` (each renumbered draft ID to its new ID, each draft not reported to null)
+with ``unverified`` (the drafts of the unverified items, in ``state.unresolved`` order), which the
+report's ID rewrite reads (``finding_refs``).
 
 Rules decided here (ADR-007 leaves them open):
 
@@ -434,6 +437,8 @@ class VerifyPhase:
         metas = dict(state.finding_meta)
         registry_ids = ctx.registry.ids()
         delta = state.review_mode is ReviewMode.DELTA
+        fates: dict[str, str | None] = {}          # draft ID -> new ID, or None when not reported
+        unverified_ids: list[str] = []
         for idx, d in enumerate(drafts):
             o = by_owner[d.id]
             old_id = next((k for k, v in id_map.items() if v == d.id), d.id)
@@ -445,12 +450,15 @@ class VerifyPhase:
             if hollow:
                 why = f"placeholder text in {', '.join(hollow)}"
                 dropped.append(f"{d.id}: {why} (hollow answer)")
+                fates[old_id] = None
                 metas[d.id] = meta.model_copy(update={"history": history + [FindingRevision(
                     phase=PhaseName.VERIFY, call_id=call_id, note=f"dropped: {why}")]})
                 continue
             resolved = o.resolved()
             if not resolved:
                 unverified.append(_unverified_item(d))
+                fates[old_id] = None
+                unverified_ids.append(old_id)
                 metas[d.id] = meta.model_copy(update={"history": history + [FindingRevision(
                     phase=PhaseName.VERIFY, call_id=call_id, note="no anchor resolved: moved to unresolved as "
                     "unverified (ADR-007)")]})
@@ -473,6 +481,7 @@ class VerifyPhase:
                 f = hydrate_finding(d, ctx.ledger, meta)
             except (LedgerError, ValueError) as exc:
                 dropped.append(f"{d.id}: {_short(exc)}")
+                fates[old_id] = None
                 metas[d.id] = meta.model_copy(update={"history": history + [FindingRevision(
                     phase=PhaseName.VERIFY, call_id=call_id, note=f"dropped in hydration: {_short(exc)}")]})
                 continue
@@ -490,6 +499,8 @@ class VerifyPhase:
                 history.append(FindingRevision(phase=PhaseName.VERIFY, call_id=call_id, changed_fields=changes,
                                                note="verify: anchors checked, evidence hydrated from the ledger"))
             metas[d.id] = meta.model_copy(update={"history": history})
+            if d.id != old_id:
+                fates[old_id] = d.id
             findings.append((idx, f))
 
         # ---- 5. ranks 1..n in the model's order; drop meta of renamed drafts
@@ -500,6 +511,7 @@ class VerifyPhase:
             if old != new:
                 metas.pop(old, None)
         state.finding_meta = metas
+        state.finding_ids = state.finding_ids.model_copy(update={"verify": fates, "unverified": unverified_ids})
         for f in state.findings:                       # BEH-12: undeclared reversal of an approved decision
             for rid in unlabelled_conflicts(f, ctx.registry.entries()):
                 e = ctx.registry.get(rid)

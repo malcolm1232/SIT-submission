@@ -37,6 +37,7 @@ from test_e2e_synthetic import (  # type: ignore[import-not-found]
     build_script,
     config,
     finding,
+    rec,
 )
 
 TOKEN = re.compile(r"\bFND-\d{3,}\b")
@@ -44,13 +45,14 @@ TOKEN = re.compile(r"\bFND-\d{3,}\b")
 #: Which drafts each shard returns, under the shard's own IDs (the model numbers per call).
 SHARDS: dict[int, list[tuple[str, str]]] = {
     1: [("FND-001", "F3"), ("FND-002", "F3dup"), ("FND-003", "F2")],
-    2: [("FND-001", "F1"), ("FND-002", "F4"), ("FND-003", "F5"), ("FND-004", "F1dup"), ("FND-005", "F6")],
+    2: [("FND-001", "F1"), ("FND-002", "F4"), ("FND-003", "F5"), ("FND-004", "F1dup"), ("FND-005", "F6"),
+        ("FND-006", "F8")],
     3: [],
     4: [],
 }
 #: The merged draft IDs (shard order, then each shard's rank order).
 DRAFT = {"F3": "FND-001", "F3dup": "FND-002", "F2": "FND-003", "F1": "FND-004", "F4": "FND-005",
-         "F5": "FND-006", "F1dup": "FND-007", "F6": "FND-008"}
+         "F5": "FND-006", "F1dup": "FND-007", "F6": "FND-008", "F8": "FND-009"}
 FINAL = {DRAFT[x] for x in ("F1", "F2", "F3", "F4", "F5")}
 
 
@@ -74,6 +76,13 @@ def drafts_by_name() -> dict[str, dict[str, Any]]:
                         doc_anchors=[anchor("2.2", 3, Q_RTO, ["NFR-11"])], disposition="needs_investigation",
                         next_step={"owner": "SRE lead", "action": "Check the recovery wording."},
                         criterion_ids=["verifiability"])
+    out["F8"] = finding("F8", 9, severity="low", title="Unanchored claim", disposition="needs_investigation",
+                        statement="The catalog has no owner. Same root cause as FND-001.",
+                        doc_anchors=[anchor("9", 5, "This sentence does not appear anywhere in the design document.")],
+                        recommendation=rec("Nobody owns the catalog, so nobody fixes its entries.",
+                                           "Name an owner for the catalog in section 20.", []),
+                        next_step={"owner": "Data lead", "action": "Name the catalog owner."},
+                        criterion_ids=["internal_consistency"])          # no anchor resolves: unverified in verify
     # Cross-references in the shards' own numbering. Shard 1: F2 cites F3dup (merged into F3).
     # Shard 2: F5 cites F1 (local FND-001, which is F3 in the merged numbering), F4 cites F6 (local
     # FND-005, withdrawn by refine).
@@ -94,7 +103,7 @@ def build(shards: list[Any]) -> dict[str, list[Any]]:
             f.update(id=local, rank=rank, affected_decisions=[])
             mine.append(f)
         notes = {"fitness_for_objectives": "Raised in FND-001 and FND-002.",
-                 "internal_consistency": "Raised in FND-001 and FND-004."}
+                 "internal_consistency": "Raised in FND-001, FND-004 and FND-006."}
         cited = {c for f in mine for c in f["criterion_ids"]}
         coverage = [{"criterion_id": c, "outcome": "findings" if c in cited else "no_issue", "finding_ids": [],
                      "note": notes.get(c, "e2e")} for c in shards[i - 1].criteria]
@@ -127,6 +136,7 @@ def build(shards: list[Any]) -> dict[str, list[Any]]:
         rev("F4", rank=3, severity="medium", disposition="refinement_now"),
         rev("F5", rank=4, severity="medium", disposition="needs_testing"),
         rev("F3", rank=5, severity=None, disposition="no_change"),
+        rev("F8", rank=6, severity="low", disposition="needs_investigation"),
         rev("F3dup", "merge", merge_into=DRAFT["F3"], reason="Duplicate of the audit strength."),
         rev("F1dup", "merge", merge_into=DRAFT["F1"], reason="Same conflict."),
         rev("F6", "withdraw", reason="Too vague to act on."),
@@ -169,10 +179,6 @@ async def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunDir:
     return rd
 
 
-REPRO = pytest.mark.xfail(strict=True, reason="defect reproduced; fixed in the next commit")
-
-
-@REPRO
 async def test_no_dangling_finding_reference_in_report_json_or_md(run: RunDir) -> None:
     report = json.loads(run.report_json.read_text(encoding="utf-8"))
     assert {f["id"] for f in report["findings"]} == FINAL
@@ -185,10 +191,9 @@ async def test_no_dangling_finding_reference_in_report_json_or_md(run: RunDir) -
     assert [(r.inv_id, r.problems) for r in check_all(report, run.root, canaries=[CANARY]) if not r.passed] == []
 
 
-@REPRO
 async def test_each_reference_follows_its_finding(run: RunDir) -> None:
     """Shard-local IDs read in the shard's numbering, merged IDs point at the kept finding, and a
-    reference to a withdrawn draft is removed with its clause."""
+    reference to a withdrawn or unverified draft is removed with its clause."""
     report = json.loads(run.report_json.read_text(encoding="utf-8"))
     by_id = {f["id"]: f for f in report["findings"]}
     assert by_id[DRAFT["F2"]]["statement"].endswith(" The write-once audit store (FND-001) does not help here.")
@@ -206,7 +211,12 @@ async def test_each_reference_follows_its_finding(run: RunDir) -> None:
     ids = report["run_manifest"]["extra"]["finding_ids"]
     assert ids["shards"]["intent_and_fitness"] == {"FND-001": "FND-001", "FND-002": "FND-002", "FND-003": "FND-003"}
     assert ids["shards"]["requirements_and_consistency"] == {
-        "FND-001": "FND-004", "FND-002": "FND-005", "FND-003": "FND-006", "FND-004": "FND-007", "FND-005": "FND-008"}
+        "FND-001": "FND-004", "FND-002": "FND-005", "FND-003": "FND-006", "FND-004": "FND-007", "FND-005": "FND-008",
+        "FND-006": "FND-009"}
     assert ids["refine"] == {"FND-002": "FND-001", "FND-007": "FND-004", "FND-008": None}
+    assert ids["verify"] == {"FND-009": None}
     assert ids["final"] == {**{DRAFT[x]: DRAFT[x] for x in ("F1", "F2", "F3", "F4", "F5")},
-                            "FND-002": "FND-001", "FND-007": "FND-004", "FND-008": None}
+                            "FND-002": "FND-001", "FND-007": "FND-004", "FND-008": None, "FND-009": None}
+    unverified = [u["text"] for u in report["unresolved"] if u["text"].startswith("Unverified")]
+    assert len(unverified) == 1 and "The catalog has no owner. Same root cause as FND-004." in unverified[0]
+    assert report["run_manifest"]["extra"]["finding_ids"]["rewrites"]["removed"] >= 3

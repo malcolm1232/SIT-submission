@@ -2,7 +2,7 @@
 
 Each ``check_<id>`` takes the faulted run, the fault-free control run and the resolved schedule
 (:mod:`concurrent_schedules`) and returns the problems found (empty = pass). Every check calls the
-agent's own invariants (:func:`sit_review_agent.invariants.check_all`, INV-03..INV-10) and then the
+agent's own invariants (:func:`sit_review_agent.invariants.check_all`, INV-03..INV-10 and INV-12) and then the
 scenario's own expectation: what must be disclosed, which criteria are not assessed, that the other
 shards' findings survive, and that nothing crashed. In the end-to-end form (the integration pass,
 README.md) ``oracles.assert_oracles`` runs as well, as for every scenario.
@@ -138,7 +138,7 @@ def no_crash(run: ConcurrentRun) -> list[str]:
 
 
 def invariants(run: ConcurrentRun) -> list[str]:
-    """INV-03..INV-10 from :mod:`sit_review_agent.invariants` on the report and run directory."""
+    """INV-03..INV-10 and INV-12 from :mod:`sit_review_agent.invariants` on the report and run directory."""
     if run.report is None:
         return []                                                        # no_crash reports the missing report
     return [f"{r.inv_id}: {p}" for r in check_all(run.report, run.root, canaries=CANARIES)

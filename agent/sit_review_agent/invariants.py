@@ -392,5 +392,6 @@ def check_all(review: Review | Mapping[str, Any], run_dir: Path | None = None, *
            check_INV_06(review, run_dir), check_INV_07(review, run_dir)]
     out.append(check_INV_08(run_dir, canaries) if run_dir is not None
                else InvariantResult("INV-08", passed=True, skipped=True, reason="no run directory"))
-    out += [check_INV_09(review, run_dir, require_extra=require_extra), check_INV_10(review, run_dir)]
+    out += [check_INV_09(review, run_dir, require_extra=require_extra), check_INV_10(review, run_dir),
+            check_INV_12(review, run_dir)]
     return out

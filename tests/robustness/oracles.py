@@ -1,8 +1,8 @@
-"""Post-run oracles: the shared invariants INV-01..INV-11 (research/robustness/README.md §2) plus the
+"""Post-run oracles: the shared invariants INV-01..INV-12 (research/robustness/README.md §2) plus the
 run-level checks several P0 scenarios share (OPS-10 log completeness, BEH-23 unresolved stated,
 BEH-28 report sections, DEMO-06 explain).
 
-INV-03..INV-10 are the agent's own checks (:func:`sit_review_agent.invariants.check_all`, the same
+INV-03..INV-10 and INV-12 are the agent's own checks (:func:`sit_review_agent.invariants.check_all`, the same
 functions the report phase and ``selftest`` run); this module only calls them. What lives here is
 what the agent cannot check about itself: termination and the watchdog (INV-01), "a report or a
 failure record, never both and never neither" (INV-02), the outbound-request half of INV-08 (the
@@ -126,11 +126,11 @@ def inv11_no_traceback(rec: RunRecord) -> OracleResult:
     return _r("INV-11", problems)
 
 
-# ============================================================================= INV-03..INV-10 (agent)
+# ============================================================================= INV-03..INV-10 and INV-12 (agent)
 
 
 def agent_invariants(rec: RunRecord) -> list[OracleResult]:
-    """INV-03..INV-10 from :mod:`sit_review_agent.invariants` when a report exists; INV-08 (files)
+    """INV-03..INV-10 and INV-12 from :mod:`sit_review_agent.invariants` when a report exists; INV-08 (files)
     alone otherwise (a failed run's directory must not hold a secret either)."""
     report = rec.report
     if report is None:

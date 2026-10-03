@@ -24,7 +24,13 @@ What assembly guarantees by construction (each is disclosed, never hidden):
 * failed tool calls, cap stops and model fallbacks that no phase recorded as a degradation get
   one (INV-07);
 * a URL or DOI in free text that is not a ledger ``url_or_citation`` is replaced by
-  ``[link removed: not in the evidence register]`` and disclosed as a degradation (INV-05).
+  ``[link removed: not in the evidence register]`` and disclosed as a degradation (INV-05);
+* every finding ID in the text follows its finding through the run's ID map (:func:`settle_refs`,
+  ``finding_refs``): a shard's own ID, a merged ID and a renumbered ID become the final ID, a reference
+  to a withdrawn, dropped or unverified draft is removed with its clause, and a disclosure names a draft
+  as ``draft FND-nnn``; the coverage notes of ``report.md`` the same way. The counts go to the manifest
+  (``extra.finding_ids.rewrites``) and INV-12 checks the result. Model briefs are never rewritten (a
+  recorded run replays with the same requests), so this happens here, after the verdict call.
 
 Anything the invariants still reject after that is a bug: the phase writes ``failure.json`` and
 ``report.invalid.json`` and raises :class:`~sit_review_agent.errors.StageCrash` (exit 4).
@@ -45,11 +51,12 @@ from sit_review_agent.errors import (
     LLMTruncatedError,
     StageCrash,
 )
+from sit_review_agent.finding_refs import RewriteStats, chain_of, dangling_refs, mark_drafts, rewrite_tree
 from sit_review_agent.hashing import sha256_file
 from sit_review_agent.invariants import URL_RE, check_all, spec_validator
 from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest
-from sit_review_agent.llm.outputs import VerdictOutput
+from sit_review_agent.llm.outputs import CriterionCoverage, VerdictOutput
 from sit_review_agent.llm.prefix import start_conversation
 from sit_review_agent.llm.usage_budget import add_usage, cost_lower_bound_line
 from sit_review_agent.manifest import build_manifest, outcome_for, report_json_sha256, write_manifest
@@ -328,6 +335,57 @@ def _redact(node: Any, allowed: set[str], counter: list[int]) -> Any:
     return node
 
 
+#: Review sections the ID rewrite reads in the final numbering (written after verify, or by code).
+_FINAL_SECTIONS = ("intent_summary", "verdict", "decision_registry", "stop_reason")
+
+
+def settle_refs(ctx: RunContext, body: dict[str, Any]) -> dict[str, Any]:
+    """``body`` (the Review as JSON, before validation) with every finding-ID reference rewritten
+    through ``state.finding_ids`` (``finding_refs``), each text in the numbering it was written in: a
+    finding's fields in its shard's (the fields refine wrote in the merged numbering), verify's
+    unverified items in their draft's shard's, sound areas in the merged numbering (moved there at
+    the merge), the verdict and code-written text in the final one; disclosures mark drafts. Also
+    rewrites ``state.coverage`` notes (``report.md``) and records the counts in
+    ``state.finding_ids.rewrites``. Reads only the run state, so a re-run from the verify checkpoint
+    gives the same text."""
+    st = ctx.state
+    ids = st.finding_ids
+    final = [f["id"] for f in body["findings"]]
+    chain = chain_of(ids, final)
+    origin = chain.origin()
+    renamed = {v: k for k, v in ids.verify.items() if v is not None}
+    stats = RewriteStats()
+    out = dict(body)
+    findings = []
+    for f in body["findings"]:
+        draft = renamed.get(f["id"], f["id"])
+        override = {k: chain.draft for k in ids.refine_fields.get(draft, [])}
+        findings.append(rewrite_tree(f, chain.shard(origin.get(draft)), stats, override=override))
+    out["findings"] = findings
+    out["sound_areas"] = rewrite_tree(body["sound_areas"], chain.draft, stats)
+    unresolved = []
+    for i, u in enumerate(body["unresolved"]):
+        own = chain.shard(origin.get(ids.unverified[i])) if i < len(ids.unverified) else chain.final_id
+        unresolved.append(rewrite_tree(u, own, stats))
+    out["unresolved"] = unresolved
+    for k in _FINAL_SECTIONS:
+        out[k] = rewrite_tree(body[k], chain.final_id, stats)
+    log = dict(body["research_log"])
+    for k, v in log.items():
+        if k != "degradations":
+            log[k] = rewrite_tree(v, chain.final_id, stats)
+    log["degradations"] = [{**d, "event": mark_drafts(d["event"], final, ids.prior, stats=stats),
+                            "impact": mark_drafts(d["impact"], final, ids.prior, stats=stats)}
+                           for d in body["research_log"]["degradations"]]
+    out["research_log"] = log
+    out["limitations"] = [{**lim, "text": mark_drafts(lim["text"], final, ids.prior, stats=stats)}
+                          for lim in body["limitations"]]
+    st.coverage = [CriterionCoverage.model_validate(rewrite_tree(c.model_dump(mode="json"), chain.draft, stats))
+                   for c in st.coverage]
+    st.finding_ids = ids.model_copy(update={"rewrites": stats.as_dict()})
+    return out
+
+
 def _default_stop_reason(ctx: RunContext) -> StopReason:
     if ctx.state.stop_reason is not None:
         return ctx.state.stop_reason
@@ -420,6 +478,7 @@ def assemble_review(ctx: RunContext) -> Review:
             lims.append({"text": f"{d['event']}. Impact: {d['impact']}", "degradation_ids": [d["id"]]})
     lims = [lim for lim in lims if all(x in deg_ids for x in lim["degradation_ids"])]
     redacted["limitations"] = lims
+    redacted = settle_refs(ctx, redacted)
     manifest = build_manifest(ctx, outcome_for(ctx), end_utc=isoformat_z(ctx.clock.now_utc()))
     redacted["run_manifest"] = manifest.model_dump(mode="json")
     return Review.model_validate(redacted)
@@ -478,6 +537,9 @@ class ReportPhase:
                     for e in spec_validator("Review").iter_errors(data)]
         results = check_all(review, rd.root)
         problems += [f"{r.inv_id}: {p}" for r in results if not r.passed for p in r.problems]
+        problems += [f"INV-12 (report.md): {p}" for p in dangling_refs({   # coverage notes are in report.md only
+            "findings": data["findings"], "run_manifest": data["run_manifest"],
+            "coverage": [c.model_dump(mode="json") for c in st.coverage]})]
         if problems:
             write_json_atomic(rd.root / "report.invalid.json", data)
             write_json_atomic(rd.failure, {"phase": "report", "error": "InvariantViolation", "problems": problems,
@@ -487,7 +549,7 @@ class ReportPhase:
         rd.report_md.write_text(md, encoding="utf-8")
         ctx.emit(f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
                  f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
-                 f"invariants INV-03..10 pass; wrote {rd.relative(rd.report_md)}")
+                 f"invariants INV-03..10 and INV-12 pass; wrote {rd.relative(rd.report_md)}")
         lower = cost_lower_bound_line(data["run_manifest"])
         if lower is not None:
             ctx.emit(lower, "warn")

@@ -115,6 +115,7 @@ each scenario test only asserts what is specific to it.
 | INV-09 | **The run manifest is complete:** git SHA, config hash, criteria, stop rule, models actually used, tools enabled and disabled, fault-schedule ID, doc SHA-256. *(Spec: `Review.run_manifest` = `#/$defs/RunManifest`, incl. `models_used`, `fallback_events`, `extractor`; field list in `docs/REPRODUCIBILITY.md` §8.)* | Schema. |
 | INV-10 | **Approved decisions and constraints are preserved.** The registry hash is constant across iterations, and no recommendation conflicts with the registry unless it is labelled `challenges_decision`. *(Reconciled 2026-10-02: the label is `affected_decisions[{registry_id, relation: challenges}]` against `Review.decision_registry[]`; `challenges` needs ≥ 2 evidence items and a disposition other than `no_change`; `spec/README.md` §1.)* | Registry diff, plus a judge check on L1. |
 | INV-11 | **No unhandled exception.** There is no Python traceback on stderr. | Grep stderr. |
+| INV-12 | **Every finding ID the report cites is a finding of the report.** *(Added 2026-10-03, merged-ID traceability: an assess shard numbers its own findings, the merge renumbers them, refine merges and withdraws, verify drops; the report rewrites each reference through the run's ID map, `run_manifest.extra.finding_ids`. Verbatim quotes and excerpts, `reassessment` and the `metadata`, `evidence_ledger` and `run_manifest` sections are out of scope; a disclosure may name a draft as `draft FND-nnn`; in delta mode a prior-review ID is allowed.)* | `invariants.check_INV_12` in `check_all`; the report phase also checks the coverage notes of `report.md`. |
 
 ---
 
@@ -311,7 +312,7 @@ version is confirmed with `initialize`.
 ```
 tests/robustness/
   conftest.py              # --level, --k, transport and fault fixtures, scenario marker
-  oracles.py               # INV-01..INV-11
+  oracles.py               # INV-01..INV-12
   fakes/                   # FakeLLM (scripted), FakeMCP (in-process), FakeClock
   faults/                  # <SCENARIO-ID>.yaml
   cassettes/
