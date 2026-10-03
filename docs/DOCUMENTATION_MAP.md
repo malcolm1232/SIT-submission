@@ -8,7 +8,7 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 
 | Lab §5.3 topic | File that satisfies it | Status | Sources to draw on |
 |---|---|---|---|
-| The overall agent architecture | `docs/ARCHITECTURE.md`: state-machine diagram generated from `agent/states.py`; the LLM and Tool gateways; evidence ledger; decision-and-constraint registry; checkpoints and exit codes; `explain` and coverage map; report template (audit M13) | Not yet | `docs/DECISIONS.md` ADR-001; `research/frameworks/README.md`; `research/robustness/README.md` §10; audit §1.2 |
+| The overall agent architecture | `docs/ARCHITECTURE.md` (2026-10-03): what the agent does; the shape of a run with the stage diagram and what is a model call and what is code; why this shape, with the measured times and the quality result; model access; tools; honesty and traceability; state, checkpoints, resume and replay; robustness; the evaluation harness; the UI; frozen interfaces and what is deliberately not built; comparisons and trade-offs; a walkthrough script for lab §5.4 part (a). Every claim names its implementing file | Exists | `docs/DECISIONS.md` ADR-001, ADR-010 to ADR-012; `research/frameworks/README.md`; `research/robustness/mcp_probe_findings.md`; `docs/live_runs/QUALITY_COMPARISON.md` |
 | The agent framework and technologies used | `docs/DECISIONS.md` ADR-001 (custom loop, Anthropic SDK, direct MCP client), ADR-002 (Claude Opus 5.5), ADR-006 (pdfplumber); a "Technologies" section in `docs/ARCHITECTURE.md` listing every pinned dependency from `uv.lock` | Partial (ADRs exist) | `research/frameworks/README.md` and `comparison.md`; `research/models/README.md` |
 | Context management approach | `docs/CONTEXT_MANAGEMENT.md`: what each stage sees; the cached prefix (tools, system prompt, native PDF block, canonical page-marked text); how document content and external research are kept apart (`source: doc \| external \| inference`, ledger IDs, spotlighting of untrusted text); context size per call; why compaction is not needed for one document | Not yet | ADR-006, ADR-007; `research/models/README.md` §3; lab §4.2 |
 | Planning and execution approach | `docs/PLANNING_EXECUTION.md`: stage-by-stage flow; plan schema; fixed action types with adaptive queries (audit C18); stop rules and the stop-reason enum; deadline-aware planner; refine loop and when conclusions are revised | Not yet | `research/frameworks/README.md`; `research/robustness/scenarios.md` BEH-01, BEH-24; lab §4.3, §4.5 |
@@ -34,7 +34,7 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 | Execution procedures | `README.md` § Run (CLI reference: `dra review`, `preflight`, `explain`, `coverage`, `resume`, `replay`); `docs/DEMO_DAY_RUNBOOK.md` | Partial (runbook exists) |
 | Design review outputs generated during the lab session | `outputs/lab_session/<date>/` with each run directory (report, manifest, `llm.jsonl`, `tools.jsonl`) | Not yet (produced on demo day; runbook §3 last row) |
 | Supporting evidence, references and research findings used in the final conclusions | `outputs/lab_session/<date>/<run>/ledger.json` and `snapshots/`, rendered as the report's evidence register | Not yet |
-| "Allow evaluators to understand the agent design, reproduce the exercise and review the outputs" | `docs/ARCHITECTURE.md` (understand), `docs/REPRODUCIBILITY.md` §7 (reproduce: R0-R3), `outputs/lab_session/` (review) | Partial (`REPRODUCIBILITY.md` exists) |
+| "Allow evaluators to understand the agent design, reproduce the exercise and review the outputs" | `docs/ARCHITECTURE.md` (understand), `docs/REPRODUCIBILITY.md` §7 (reproduce: R0-R3), `outputs/lab_session/` (review) | Partial (`ARCHITECTURE.md` and `REPRODUCIBILITY.md` exist; `outputs/lab_session/` is produced on demo day) |
 
 ## 3. Lab §5.2 repository rules
 
@@ -54,7 +54,7 @@ Status: **Exists** (written, may still grow), **Partial** (some content exists e
 | Lab §5.4 item | Where | Status |
 |---|---|---|
 | Session format: design walkthrough, live execution on an SIT artefact, on-the-spot modification | `docs/DEMO_DAY_RUNBOOK.md` intro and §3 timeline | Exists |
-| (a) Explain the design, choices and reasons; optional short deck | `docs/DEMO_DAY_RUNBOOK.md` §8 (talking points); `docs/ARCHITECTURE.md`; optional `docs/slides/` | Partial |
+| (a) Explain the design, choices and reasons; optional short deck | `docs/DEMO_DAY_RUNBOOK.md` §8 (talking points); `docs/ARCHITECTURE.md` (§13 is the walkthrough script); optional `docs/slides/` | Exists (deck optional, not made) |
 | (b) Laptop that runs the agent and can be modified | `docs/DEMO_DAY_RUNBOOK.md` §1-3 | Exists (procedure; every step depends on code listed in runbook §9) |
 | (c) Run on a new artefact provided by SIT during the interview and show the output | `docs/DEMO_DAY_RUNBOOK.md` §5-7 | Exists (procedure; depends on runbook §9) |
 | (d) Modify on request and show the new behaviour | `docs/DEMO_DAY_RUNBOOK.md` §4 | Exists (procedure; depends on runbook §9) |
