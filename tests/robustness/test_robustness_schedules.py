@@ -96,7 +96,7 @@ def _label(c: Coverage) -> str:
 
 def test_readme_lists_the_concurrent_scenarios() -> None:
     """The six concurrent-stage scenarios: in the README's own table, with new IDs (no clash with any
-    scenarios.md row, of any tier), awaiting integration until the concurrent orchestrator is in."""
+    scenarios.md row, of any tier), run end to end since the integration pass."""
     readme = (HERE / "README.md").read_text(encoding="utf-8")
     section = readme.split("### The six scenarios", 1)[1].split("\n### ", 1)[0]
     found = {m.group(1): [c.strip() for c in line.strip("|").split("|")]
@@ -107,7 +107,7 @@ def test_readme_lists_the_concurrent_scenarios() -> None:
     for sid, cells in found.items():
         meta, c = CONCURRENT_META[sid], CONCURRENT[sid]
         assert cells[1:3] == [meta["sev"], meta["level"]] and cells[3] == _label(c) and cells[4] == "yes", sid
-        assert c.kind == "offline" and c.schedule and c.awaiting, sid
+        assert c.kind == "offline" and c.schedule and not c.awaiting, sid
 
 
 def test_cassettes_are_keyed_by_their_arguments() -> None:

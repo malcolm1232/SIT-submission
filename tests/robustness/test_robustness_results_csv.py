@@ -1,6 +1,7 @@
 """The results writer (research/robustness/README.md §8): one row per P0 scenario, the template's
-columns, valid statuses, the summary block, "awaiting integration" rows for the concurrent redesign;
-the suite itself writes the file at session end (conftest.py ``results_sink``)."""
+columns, valid statuses, the summary block, the rows of the concurrent redesign (run like any other
+since the integration pass); the suite itself writes the file at session end (conftest.py
+``results_sink``)."""
 
 from __future__ import annotations
 
@@ -40,25 +41,23 @@ def test_writer_produces_the_template_table(tmp_path: Path) -> None:
             assert by[sid]["status"] == "FAIL" and by[sid]["notes"].startswith("needs decision"), sid
         else:
             assert by[sid]["status"] == "BLOCKED", sid
-        if cov.awaiting:
-            assert by[sid]["notes"].startswith("awaiting integration") and cov.how in by[sid]["notes"], sid
-    for sid in CONCURRENT:
-        assert by[sid]["status"] == "BLOCKED" and by[sid]["notes"].startswith("awaiting integration"), sid
+        assert not cov.awaiting and not by[sid]["notes"].startswith("awaiting integration"), sid
+    for sid in CONCURRENT:                                              # not run in this writer test
+        assert by[sid]["status"] == "BLOCKED" and not by[sid]["notes"].startswith("awaiting integration"), sid
         assert (by[sid]["severity"], by[sid]["tier"]) == (CONCURRENT_META[sid]["sev"], "P0"), sid
     block = (path.parent / "robustness_summary.txt").read_text(encoding="utf-8")
     assert block.startswith("Tier  Total  PASS  FAIL") and "P0       87     1" in block
 
 
-def test_a_changed_row_that_ran_stays_awaiting_integration() -> None:
-    """A row whose expectation the concurrent redesign changed is never PASS before integration, even
-    when its sequential-design case passed this session; that result is kept in the note."""
-    assert AWAITING_INTEGRATION and COVERAGE["LLM-05"].awaiting
+def test_a_changed_row_that_ran_is_its_own_result_after_integration() -> None:
+    """Since the integration pass a row whose expectation the concurrent redesign changed is the
+    result of the case that ran (its new expectation), never a BLOCKED "awaiting integration" row."""
+    assert not AWAITING_INTEGRATION and not COVERAGE["LLM-05"].awaiting
     rows = {r["scenario_id"]: r for r in table([ResultRow("LLM-05", status="PASS", passes=2, k=2,
                                                           key_metric="virtual run time", value=420)])}
     r = rows["LLM-05"]
-    assert r["status"] == "BLOCKED" and r["k"] == "" and r["pass_hat_k"] == ""
-    assert r["notes"].startswith("awaiting integration") and "sequential-design case this session: PASS" in r["notes"]
-    assert "salvaged, disclosed report, exit 0" in r["notes"]
+    assert r["status"] == "PASS" and str(r["k"]) == "2" and r["pass_hat_k"] == "1.00"
+    assert not r["notes"].startswith("awaiting integration")
 
 
 def test_summary_counts() -> None:

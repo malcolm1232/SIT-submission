@@ -12,6 +12,13 @@ test: :data:`NOT_ASSESSED`, the coverage outcome of a criterion whose shard did 
 (``state.json`` ``coverage``, read through :func:`sit_review_agent.report.coverage.build_coverage`),
 and :data:`DISCLOSURE`, the words a degradation uses for each way a shard or call ends. A degradation
 about a shard names the shard's group (``assess.shards[].name``).
+
+Confirmed against the orchestrator in the integration pass (2026-10-03): the output schema's coverage
+outcomes are ``findings``, ``no_issue`` and ``not_applicable`` only, so a criterion no shard assessed
+is written as ``not_applicable`` with a note starting
+:data:`sit_review_agent.report.coverage.NOT_ASSESSED_NOTE` ("not assessed"), the form the report's
+coverage map reads. :func:`is_not_assessed` is that predicate; :attr:`ConcurrentRun.coverage` reports
+such a row as :data:`NOT_ASSESSED`, so every check keeps the one name.
 """
 
 from __future__ import annotations
@@ -26,12 +33,25 @@ from typing import Any
 from concurrent_schedules import ConcurrentSchedule, ShardTarget
 
 from sit_review_agent.invariants import check_all
-from sit_review_agent.report.coverage import build_coverage
+from sit_review_agent.report.coverage import NOT_ASSESSED_NOTE, build_coverage
 from sit_review_agent.rundir import JsonlWriter, RunDir
 from sit_review_agent.state.evidence_ledger import EvidenceLedger
 
-#: Coverage outcome of a criterion no shard assessed (a cut, declined, truncated or failed shard).
+#: Coverage outcome of a criterion no shard assessed (a cut, declined, truncated or failed shard), as
+#: :attr:`ConcurrentRun.coverage` reports it (see the module docstring for the form on disk).
 NOT_ASSESSED = "not_assessed"
+
+
+def is_not_assessed(row: Any) -> bool:
+    """Whether a ``state.json`` coverage row (or ``(outcome, note)``) says the criterion was not assessed:
+    outcome ``not_applicable`` and a note starting with ``NOT_ASSESSED_NOTE``."""
+    outcome, note = (row.get("outcome"), row.get("note")) if isinstance(row, dict) else row
+    return outcome == "not_applicable" and str(note or "").lower().startswith(NOT_ASSESSED_NOTE)
+
+
+def mark_not_assessed(row: dict[str, Any], why: str = "fixture") -> None:
+    """Write the orchestrator's form of a not-assessed criterion into a coverage row."""
+    row["outcome"], row["finding_ids"], row["note"] = "not_applicable", [], f"{NOT_ASSESSED_NOTE}: {why}"
 #: Words a degradation event uses for each ending (any one of them, case-insensitive).
 DISCLOSURE: dict[str, tuple[str, ...]] = {
     "cut": ("cut", "out of time"),
@@ -77,7 +97,8 @@ class ConcurrentRun:
         if self.report is None:
             return {}, {}
         cm = build_coverage(self.root)
-        return dict(cm.outcomes), {c: list(ids) for c, ids in cm.criterion_findings.items()}
+        outcomes = {c: (NOT_ASSESSED if is_not_assessed((o, cm.notes.get(c))) else o) for c, o in cm.outcomes.items()}
+        return outcomes, {c: list(ids) for c, ids in cm.criterion_findings.items()}
 
     def llm(self, phase: str | None = None) -> list[dict[str, Any]]:
         return [e for e in JsonlWriter(self.root / "llm.jsonl").read() if phase is None or e.get("phase") == phase]

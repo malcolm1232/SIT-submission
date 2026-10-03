@@ -19,7 +19,7 @@ from typing import Any
 
 import oracles
 import pytest
-from concurrent_oracles import CHECKS, NOT_ASSESSED, ConcurrentRun, _merged_order
+from concurrent_oracles import CHECKS, ConcurrentRun, _merged_order, is_not_assessed, mark_not_assessed
 from concurrent_schedules import ConcurrentSchedule, concurrent_files, load_concurrent_schedule, schedule_path
 from robustness_coverage import AWAITING_INTEGRATION, CONCURRENT, COVERAGE
 from robustness_harness import RunRecord, Scenario, run
@@ -69,7 +69,7 @@ def drop_criteria(root: Path, lost: tuple[str, ...]) -> list[str]:
     st = _read(root, "state.json")
     for row in st["coverage"]:
         if row["criterion_id"] in lost:
-            row["outcome"], row["finding_ids"] = NOT_ASSESSED, []
+            mark_not_assessed(row)
     st["finding_meta"] = {k: v for k, v in st["finding_meta"].items() if k not in gone}
     _write(root, "state.json", st)
     return gone
@@ -211,8 +211,8 @@ def _lose_other_shard(root: Path) -> None:
 def _criteria_still_assessed(root: Path) -> None:
     st = _read(root, "state.json")
     for row in st["coverage"]:
-        if row["outcome"] == NOT_ASSESSED:
-            row["outcome"] = "no_issue"
+        if is_not_assessed(row):
+            row["outcome"], row["note"] = "no_issue", "checked: no issue (broken fixture)"
     _write(root, "state.json", st)
 
 
@@ -317,7 +317,10 @@ def test_concurrent_scenario_end_to_end(sid: str, tmp_path: Path, control: RunRe
     resolved = tmp_path / f"{sid}.resolved.yaml"
     resolved.write_text(cs.agent_yaml(), encoding="utf-8")
     with results_sink.row(sid, notes=CONCURRENT[sid].how[:120]) as row:
-        rec = run(Scenario(id=sid, faults=str(resolved), overrides={"profile": "demo"}), tmp_path / "v0")
+        # the scheduling clock: concurrent waits overlap as on a wall clock (a hang in one shard does
+        # not move the clock for the shards that have not started their call)
+        rec = run(Scenario(id=sid, faults=str(resolved), overrides={"profile": "demo"}, clock="scheduling"),
+                  tmp_path / "v0")
         oracles.assert_oracles(rec)
         problems = CHECKS[sid](ConcurrentRun.from_record(rec), ConcurrentRun.from_record(control), cs)
         assert not problems, problems

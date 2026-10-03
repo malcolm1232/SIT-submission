@@ -45,6 +45,7 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from collections.abc import Callable, Iterable, Sequence
@@ -298,6 +299,12 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     k, reason = 0, ""
     truncated_ids: list[str | None] = []
     while True:
+        # Yield once before every logical call, so the concurrent members of stage 1 (the K assess
+        # shards, launched in order) reach their own first calls before a retry of this one: the
+        # stage's logical call index (``nth`` of the fault schedules) numbers the shards' first calls
+        # 0..K-1 in launch order whatever the backend's latency (the scripted backend answers without
+        # suspending). Costs nothing on a live backend.
+        await asyncio.sleep(0)
         brief = render(reframed=reframed, schema_error=schema_error)
         messages, bp = start_conversation(docs, brief.text, native_pdf=native)
         conv = base_conv if k == 0 else f"{base_conv}-r{k}"
