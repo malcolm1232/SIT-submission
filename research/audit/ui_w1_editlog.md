@@ -60,5 +60,5 @@ No mutation survived.
 
 ## Gates (exit codes read, one per call)
 
-`ruff check agent harness tests` 0; `pytest -q` from the repo root 0 (1576 passed, 1557 at the base, 19 new); `sit-review selftest` 0; `make smoke` 0 (238 passed); `make test` 0 (1575 passed at `efbec74`, before the last test); `python scripts/leakage_grep.py` 0 (PASS).
+`ruff check agent harness tests` 0; `pytest -q` from the repo root 0 (1576 passed, 1557 at the base, 19 new); `sit-review selftest` 0; `make smoke` 0 (238 passed); `make test` 0 (1576 passed at `9d26c61`); `python scripts/leakage_grep.py` 0 (PASS).
 `scripts/leakage_grep.py --strict` exits 1 on hits outside this workstream's files (none in a file this workstream touched); it is not the gate.
