@@ -19,7 +19,7 @@ The conclusion in the note: on one document and one run per arm there is no qual
 
 ## Gates at the stop
 
-`ruff check agent harness tests` exit 0; `sit-review selftest` exit 0; `make smoke` exit 0; `pytest -q --tb=no -p no:warnings` 1866 passed and 2 xfailed; `make test` ruff clean and 1866 passed, 2 xfailed (exit codes in the edit log section 4).
+`ruff check agent harness tests` exit 0; `sit-review selftest` exit 0; `make smoke` exit 0; `pytest -q --tb=no -p no:warnings` 1866 passed and 2 xfailed; `make test` ruff clean and 1866 passed, 2 xfailed (exit codes in the edit log section 4; the pytest and make test codes are read from their summary lines, because the reruns that captured them to a scratch file could not be read back after the classifier's refusal).
 
 ## Precautions kept
 

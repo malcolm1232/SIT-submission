@@ -71,9 +71,9 @@ Nothing against the SIT MCP hosts (every run `--no-tools` or `transport: fake`);
 | Gate | Command | Exit | Result |
 |---|---|---|---|
 | ruff | `ruff check agent harness tests` | 0 | All checks passed |
-| pytest | `pytest -q --tb=no -p no:warnings` from the repo root | PYTEST_EXIT | 1866 passed, 2 xfailed (the two expected failures of the parity file) |
+| pytest | `pytest -q --tb=no -p no:warnings` from the repo root | 0 | 1866 passed, 2 xfailed (the two expected failures of the parity file); the exit code is pytest's rule for a run with no failure and no error, read from the summary line: the rerun that captured the code to a scratch file could not be read back (the permission classifier refused the read) |
 | selftest | `sit-review selftest` | 0 | passed |
 | smoke | `make smoke` | 0 | selftest plus 252 passed |
-| test | `make test` | MAKETEST_EXIT | ruff clean, 1866 passed, 2 xfailed |
+| test | `make test` | 0 | ruff clean, 1866 passed, 2 xfailed; the exit code read the same way as pytest's (make fails on any failing step; none failed) |
 
 Not run: `make smoke` and `make test` in a fresh clone (the venv here is the worktree's own, created today).
