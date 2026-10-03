@@ -49,7 +49,8 @@ function topBar({ doc, tabs, meta, action }) {
   $("top-doc").textContent = doc || "";
   const t = clear($("top-tabs"));
   t.hidden = !tabs || !tabs.length;
-  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : ""), type: "button", onclick: tab.go, text: tab.label }));
+  // A tab with ``off`` (its reason) is drawn disabled but still opens, so its reason can be read.
+  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : "") + (tab.off ? " off" : ""), type: "button", onclick: tab.go, text: tab.label, title: tab.off || null, "aria-disabled": tab.off ? "true" : null }));
   const m = clear($("top-meta"));
   for (const part of meta || []) m.append(part);
   const a = clear($("top-action"));
@@ -622,15 +623,58 @@ function reviewBody(P) {
   return box;
 }
 
+// The Delta tab (design note section 7), keyed on the prior review's IDs: one row per prior finding with
+// its status, this review's ID(s) and the re-assessment note, then the findings new in the update, a
+// regression marked. Rows come from ui/rundata.delta_view; a run with no previous version never gets here.
+const DELTA_COLS = ["prior", "now", "status", "title", "note"];
+
+function deltaStatus(r) {
+  if (r.status === "new_in_update") return r.regression ? "new (regression)" : "new";
+  const st = r.status === "withdrawn_on_reassessment" ? "withdrawn on re-assessment" : words(r.status);
+  return st + (r.re_examined ? "" : ", not re-examined");
+}
+
 function deltaBody(P) {
+  const D = P.derived.delta;
   const byId = new Map((P.report.findings || []).map((f) => [f.id, f]));
   const box = h("div", {});
   if (P.derived.previous_verdict) box.append(h("p", { class: "small muted", text: "Previous version (" + P.derived.previous_verdict.run_id + "): " + words(P.derived.previous_verdict.label) + " · " + conf(P.derived.previous_verdict.confidence) + "; this version: " + words(P.report.verdict.label) + " · " + conf(P.report.verdict.confidence) }));
-  for (const g of P.derived.delta) {
-    const list = g.finding_ids.map((id) => byId.get(id)).filter(Boolean);
-    box.append(h("div", { class: "sec" }, h("h2", {}, g.heading + " ", h("span", { class: "n num", text: String(list.length) })), findingList(P, list)));
+  if (D.table) {
+    box.append(h("p", { class: "small delta-sum", text: D.prior_count + " prior findings, each with one status" + (D.not_re_examined ? "; " + D.not_re_examined + " recorded as still open because they were not re-examined" : "") + (D.regressions ? "; " + D.regressions + " new finding(s) in a changed section (regression)" : "") + ". Prior IDs are the prior review's own numbering." }));
+  } else {
+    box.append(h("p", { class: "small muted delta-notice", text: D.notice }));
+  }
+  for (const g of D.groups) {
+    if (!g.rows.length) continue;
+    const body = h("tbody", {});
+    for (const r of g.rows) {
+      const f = byId.get((r.finding_ids || [])[0]);
+      const tr = h("tr", { class: "drow" + (f ? " link" : "") },
+        h("td", { class: r.prior_id ? "mono" : "muted", text: r.prior_id || "new" }),
+        h("td", { class: (r.finding_ids || []).length ? "mono" : "muted", text: (r.finding_ids || []).join(", ") || "none" }),
+        h("td", { text: deltaStatus(r) }),
+        h("td", { text: r.title || "" }),
+        h("td", { class: "muted", text: r.note || "" }));
+      if (f) {
+        let box2 = null;
+        tr.setAttribute("aria-expanded", "false");
+        tr.addEventListener("click", () => {
+          if (box2) { box2.remove(); box2 = null; tr.setAttribute("aria-expanded", "false"); return; }
+          box2 = h("tr", { class: "ddetail" }, h("td", { colspan: String(DELTA_COLS.length) }, expanded(P, f)));
+          tr.after(box2); tr.setAttribute("aria-expanded", "true");
+        });
+      }
+      body.append(tr);
+    }
+    box.append(h("div", { class: "sec" }, h("h2", {}, g.heading + " ", h("span", { class: "n num", text: String(g.rows.length) })),
+      h("table", { class: "grid delta" }, h("colgroup", {}, DELTA_COLS.map((c) => h("col", { class: "c-" + c }))),
+        h("thead", {}, h("tr", {}, h("th", { text: "Prior ID" }), h("th", { text: "This review" }), h("th", { text: "Status" }), h("th", { text: "Title" }), h("th", { text: "Re-assessment note" }))), body)));
   }
   return box;
+}
+
+function deltaOff(P) {
+  return h("div", {}, h("p", { class: "delta-off muted", text: P.derived.delta.reason + "." }));
 }
 
 async function coverageBody(runId) {
@@ -657,11 +701,13 @@ async function showReview(info, tab) {
   const R = P.report;
   const doc = (R.metadata.documents || []).find((d) => d.role === "under_review") || (R.metadata.documents || [])[0] || {};
   const tabs = [{ key: "review", label: "Review" }];
-  if (P.derived.delta) tabs.push({ key: "delta", label: "Delta" });
+  // Shown disabled with its reason when there is no previous version (no silent absence).
+  const deltaOn = !!(P.derived.delta && P.derived.delta.available);
+  tabs.push({ key: "delta", label: "Delta", off: deltaOn ? null : P.derived.delta.reason });
   tabs.push({ key: "coverage", label: "Coverage" }, { key: "evidence", label: "Evidence" });
   if (info.has_events) tabs.push({ key: "log", label: "Run log" });
   const current = tabs.some((t) => t.key === tab) ? tab : "review";
-  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, go: () => go(info.run_id, t.key) }));
+  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, off: t.off, go: () => go(info.run_id, t.key) }));
   if (current === "log") { showRun(info, tabList); return; }
   const s = P.summary;
   const metaParts = [s.outcome ? words(s.outcome) : null, s.wall_s !== null ? dur(s.wall_s) : null, s.cost_usd !== null ? money(s.cost_usd, s.cost_lower_bound) : null, s.commit ? String(s.commit).slice(0, 7) : null];
@@ -671,7 +717,7 @@ async function showReview(info, tab) {
   app.append(tpl("tpl-review"));
   const main = $("review");
   if (current === "review") main.append(reviewBody(P));
-  else if (current === "delta") main.append(deltaBody(P));
+  else if (current === "delta") main.append(deltaOn ? deltaBody(P) : deltaOff(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
   await setupOutputs(info);

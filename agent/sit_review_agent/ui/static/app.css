@@ -33,6 +33,8 @@ ul { padding-left: 18px; margin: 0; }
   transition: background-color 150ms; }
 .tab:hover { background: var(--bg-hover); }
 .tab.on { background: var(--bg-active); color: var(--fg); }
+.tab.off { color: var(--fg-disabled); }
+.tab.off.on { background: var(--bg-hover); }
 
 /* one control spec: 32 px, 6 px radius, one border token (rule 8.3) */
 .btn { white-space: nowrap; height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border-control);
@@ -193,3 +195,10 @@ table.obj td.ids { color: var(--fg-muted); }
 .composer .bar2 { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .composer .bar2 .hint { font-size: 12px; color: var(--fg-muted); margin-left: auto; }
 .chat .budget { font-size: 12px; color: var(--fg-muted); margin-top: 8px; }
+table.grid.delta { table-layout: fixed; }
+table.grid.delta col.c-prior { width: 84px; }
+table.grid.delta col.c-now { width: 100px; }
+table.grid.delta col.c-status { width: 196px; }
+table.grid.delta col.c-note { width: 34%; }
+table.grid.delta td { overflow-wrap: anywhere; }
+table.grid.delta tr.ddetail > td { padding: 0 0 8px; }

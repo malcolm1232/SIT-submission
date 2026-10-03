@@ -158,7 +158,8 @@ def test_report_payload_carries_report_json_unchanged(live_client: TestClient) -
     assert c["critical"] == sum(1 for f in issues if f["severity"] == "critical")
     assert c["strengths"] == sum(1 for f in report["findings"] if f["kind"] == "strength")
     assert c["sound_areas"] == len(report["sound_areas"]) and c["unresolved"] == len(report["unresolved"])
-    assert payload["derived"]["delta"] is None          # no previous version: the Delta view is hidden
+    # No previous version: the Delta tab is shown disabled with this reason, never hidden.
+    assert payload["derived"]["delta"] == {"available": False, "reason": "No previous version was given for this run"}
 
 
 def test_delta_groups_follow_the_note_order(tmp_path: Path) -> None:
@@ -167,11 +168,12 @@ def test_delta_groups_follow_the_note_order(tmp_path: Path) -> None:
     statuses = ["resolved", "partially_addressed", "still_open", "new_in_update"]
     for i, f in enumerate(report["findings"]):
         f["reassessment"] = {"prior_finding_id": f["id"], "status": statuses[i % 4], "note": "n"}
+    report["metadata"]["review_mode"] = "delta"
     (rd / "report.json").write_text(json.dumps(report), encoding="utf-8")
-    groups = rundata.delta_groups(report)
-    assert [g["status"] for g in groups] == statuses
+    groups = rundata.delta_view(report)["groups"]
+    assert [g["status"] for g in groups] == [*statuses[:3], "withdrawn_on_reassessment", "new_in_update"]
     assert [g["heading"] for g in groups][0] == "fixed (resolved)"
-    assert sum(len(g["finding_ids"]) for g in groups) == len(report["findings"])
+    assert sum(len(g["rows"]) for g in groups) == len(report["findings"])
 
 
 def test_reviewed_pdf_is_served_only_when_its_hash_matches(live_client: TestClient, tmp_path: Path) -> None:

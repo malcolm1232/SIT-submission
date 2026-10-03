@@ -229,7 +229,9 @@ def test_the_page_in_a_browser(served) -> None:
         assert conf.startswith(f"confidence {report['verdict']['confidence']:.2f}")
         assert page.locator("#chat-label").inner_text() == "reading aid, not the review"
         assert page.locator("#chat-budget").inner_text().startswith("0 of 20 calls used")
-        assert not page.locator(".tab", has_text="Delta").count()      # no previous version: no Delta tab
+        delta = page.locator(".tab", has_text="Delta")                   # no previous version: shown disabled
+        assert delta.get_attribute("aria-disabled") == "true"
+        assert delta.get_attribute("title") == "No previous version was given for this run"
         link = page.locator(".expanded a[href*='doc.pdf#page=']").first.get_attribute("href")
         assert re.search(r"/doc\.pdf#page=\d+$", link)
         assert page.evaluate(MOTION) == 0

@@ -20,9 +20,17 @@ from sit_review_agent.ui import events
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 UI_DIR = "ui"
 SEVERITIES = ("critical", "high", "medium", "low")
-#: Delta groups in the order and with the headings of the design note, section 7.
+#: Delta groups in the order and with the headings of the design note, section 7, plus the status a
+#: prior finding the agent no longer asserts gets (``withdrawn_on_reassessment``, 2026-10-03).
 DELTA_GROUPS = (("resolved", "fixed (resolved)"), ("partially_addressed", "partially addressed"),
-                ("still_open", "unchanged (still open)"), ("new_in_update", "new in update, including regressions"))
+                ("still_open", "unchanged (still open)"), ("withdrawn_on_reassessment", "withdrawn on re-assessment"),
+                ("new_in_update", "new in update, including regressions"))
+#: What the Delta tab says when the run has no previous version (it is shown disabled, never hidden).
+NO_PREVIOUS = "No previous version was given for this run"
+#: What it says for a delta run written before the delta table existed (2026-10-03).
+NO_TABLE = ("This run was written before the delta table existed: it lists this review's findings by their "
+            "re-assessment, and a prior finding that no finding carries forward is not shown, so the page cannot "
+            "say whether every prior finding has a status.")
 
 
 def read_json(path: Path) -> Any:
@@ -185,15 +193,49 @@ def counts(report: dict[str, Any]) -> dict[str, int]:
     return out
 
 
-def delta_groups(report: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """Findings grouped by ``reassessment.status``; ``None`` when no finding has a reassessment
-    (the page then hides the Delta view)."""
-    findings = [f for f in report.get("findings") or [] if isinstance(f.get("reassessment"), dict)]
-    if not findings:
-        return None
-    return [{"status": s, "heading": h, "finding_ids": [f["id"] for f in findings
-                                                       if f["reassessment"].get("status") == s]}
-            for s, h in DELTA_GROUPS]
+def _new_row(f: dict[str, Any]) -> dict[str, Any]:
+    r = f.get("reassessment") or {}
+    return {"prior_id": None, "finding_ids": [f["id"]], "title": f.get("title", ""), "status": "new_in_update",
+            "note": r.get("note"), "re_examined": True, "regression": bool(r.get("regression"))}
+
+
+def delta_view(report: dict[str, Any]) -> dict[str, Any]:
+    """The Delta tab, keyed on the prior review's IDs. A full review (no previous version) gives
+    ``{"available": False, "reason": NO_PREVIOUS}``: the page shows the tab disabled with that
+    sentence. A delta review gives one group per status in :data:`DELTA_GROUPS` order, each row with
+    the prior ID, this review's finding ID(s), the title, the status, the note, whether it was
+    re-examined, and the regression mark of a new finding. With the delta table
+    (``report.prior_findings``) every prior finding is a row; a delta report written before it
+    (``table`` false) is grouped from its findings' reassessments and says so (:data:`NO_TABLE`)."""
+    if (report.get("metadata") or {}).get("review_mode") != "delta":
+        return {"available": False, "reason": NO_PREVIOUS}
+    findings = [f for f in report.get("findings") or [] if isinstance(f, dict)]
+    by_id = {f.get("id"): f for f in findings}
+    rows: list[dict[str, Any]] = []
+    table = isinstance(report.get("prior_findings"), list)
+    if table:
+        for e in report["prior_findings"]:
+            ids = list(e.get("finding_ids") or [])
+            title = (by_id.get(ids[0]) or {}).get("title") if ids else None
+            rows.append({"prior_id": e.get("prior_id"), "finding_ids": ids, "title": title or e.get("prior_title", ""),
+                         "status": e.get("status"), "note": e.get("note"), "re_examined": bool(e.get("re_examined")),
+                         "regression": False})
+    for f in findings:
+        r = f.get("reassessment")
+        if not isinstance(r, dict):
+            continue
+        if r.get("status") == "new_in_update" or not r.get("prior_finding_id"):
+            rows.append(_new_row(f))
+        elif not table:
+            rows.append({"prior_id": r.get("prior_finding_id"), "finding_ids": [f["id"]], "title": f.get("title", ""),
+                         "status": r.get("status"), "note": r.get("note"), "re_examined": True, "regression": False})
+    prior_rows = [x for x in rows if x["status"] != "new_in_update"]
+    return {"available": True, "table": table, "notice": None if table else NO_TABLE,
+            "prior_count": len(prior_rows) if table else None,
+            "not_re_examined": sum(1 for x in prior_rows if not x["re_examined"]),
+            "regressions": sum(1 for x in rows if x["regression"]),
+            "groups": [{"status": st, "heading": h, "rows": [x for x in rows if x["status"] == st]}
+                       for st, h in DELTA_GROUPS]}
 
 
 def previous_verdict(run_dir: Path, runs_dir: Path) -> dict[str, Any] | None:
@@ -222,7 +264,7 @@ def review_payload(run_dir: Path, runs_dir: Path, repo_root: Path) -> dict[str, 
         "finding_bands": {f["id"]: confidence_band(float(f["confidence"])) for f in findings
                           if isinstance(f.get("confidence"), int | float)},
         "anchors": _anchor_rows(run_dir),
-        "delta": delta_groups(report),
+        "delta": delta_view(report),
         "previous_verdict": previous_verdict(run_dir, runs_dir),
         "pdf_available": reviewed_pdf(run_dir, repo_root) is not None,
     }
