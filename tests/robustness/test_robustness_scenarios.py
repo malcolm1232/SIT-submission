@@ -980,16 +980,30 @@ def check_beh24(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_beh25(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
+    """An exception at the start of the whole assess member of stage 1 (no shard; BEH-29 is one
+    shard). Understand, plan and assess start together; the scripted model answers at once, so
+    understand and plan have ended when the crash is handled and research, which waits for both,
+    has not started: exit 4, the plan checkpoint, failure.json naming the partial report, the
+    partial report listing the completed members and no finding, no report.json; resume completes."""
+    from sit_review_agent.states import STAGE_MEMBERS, PhaseName, Stage, stage1_ready
+
     rec = recs[0]
     assert oracles.exit_code(rec) == 4 and rec.report is None and rec.failure["resumable"]
     assert rec.failure["phase"] == "assess" and rec.failure["partial_report"] == "report.partial.md"
-    assert sorted(p.name for p in rec.run_dir.checkpoints.iterdir())[-1] == "04-research.json"
+    assert rec.failure["completed_phases"] == ["ingest", "understand", "plan"]
+    assert sorted(p.name for p in rec.run_dir.checkpoints.iterdir())[-1] == "03-plan.json"
+    assert not rec.run_dir.report_json.exists() and not llm_calls(rec, "research")
     partial = (rec.run_dir.root / "report.partial.md").read_text(encoding="utf-8")
-    assert "Completed stages: ingest, understand, plan, research" in partial and "Crashed stage: assess" in partial
+    assert "Completed stages: ingest, understand, plan\n" in partial and "Crashed stage: assess" in partial
+    assert "Draft findings (unverified, not reported): 0" in partial
     assert "not a review" in partial and not [t for t in titles(control) if t in partial]   # no unverified finding
     # The transition table only moves forward: no edge such as report -> research exists to take.
     assert all(STAGE_ORDER.index(b) == STAGE_ORDER.index(a) + 1 for a, b in STAGE_TRANSITIONS.items() if b is not None)
     assert all(STAGE_ORDER.index(b) > STAGE_ORDER.index(a) for a, b in STAGE_ON_CAP.items())
+    # Within stage 1, research never starts before understand and plan have ended.
+    assert PhaseName.RESEARCH in STAGE_MEMBERS[Stage.STAGE_1] and PhaseName.RESEARCH not in stage1_ready({}, [])
+    assert PhaseName.RESEARCH not in stage1_ready({PhaseName.UNDERSTAND: "done"}, [PhaseName.PLAN])
+    assert PhaseName.RESEARCH in stage1_ready({PhaseName.UNDERSTAND: "done", PhaseName.PLAN: "done"}, [])
     again = resume(rec)                                                     # process faults are not re-applied
     oracles.assert_oracles(again)
     assert oracles.exit_code(again) == 0 and titles(again) == titles(control)
