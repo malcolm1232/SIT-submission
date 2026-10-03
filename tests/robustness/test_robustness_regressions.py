@@ -243,8 +243,15 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
 
     rec = run(Scenario(id=f"REG-TRUNC2-{stage}", faults="LLM-07", variant=_truncate_every(stage)), tmp_path)
     calls = [e for e in rec.jsonl("llm.jsonl") if e.get("phase") == stage]
-    assert [e.get("outcome") for e in calls] == ["LLMTruncatedError", "LLMTruncatedError"]
-    assert [e.get("purpose") for e in calls] == [stage, f"{stage}:max_tokens_retry"]
+    # Assess runs as four concurrent shards (latency redesign): each shard is one logical call with
+    # its one retry, so the stage makes 4 x 2 calls; every other stage makes its 2.
+    shards = sorted({e.get("shard") for e in calls}, key=lambda s: (s is None, s)) if stage == "assess" else [None]
+    assert shards == ([1, 2, 3, 4] if stage == "assess" else [None])
+    per_shard = {s: [e for e in calls if e.get("shard") == s] for s in shards}
+    for s in shards:
+        assert [e.get("outcome") for e in per_shard[s]] == ["LLMTruncatedError", "LLMTruncatedError"], s
+        assert [e.get("purpose") for e in per_shard[s]] == [stage, f"{stage}:max_tokens_retry"], s
+    assert len(calls) == 2 * len(shards)
     assert rec.raised is None and rec.exit_code == 0 and rec.failure is None
     report = rec.report
     assert report is not None and rec.run_dir.report_md.is_file()
@@ -257,12 +264,27 @@ def test_a_stage_that_truncates_twice_ends_in_a_disclosed_degraded_report(
     degs = report["research_log"]["degradations"]
     mine = [d for d in degs if d["event"].startswith(prefix)]
     assert len(mine) == 1 and mine[0]["type"] == "other", degs
-    assert all(c["call_id"] in mine[0]["event"] for c in calls)
+    if stage == "assess":
+        # One note per shard, naming the shard and the shard's two call IDs (as the single-call
+        # note did), and the one stage-level note above (no shard produced an assessment).
+        for s in shards:
+            notes = [d for d in degs if d["event"].startswith(f"assess shard {s}/4 (") and prefix in d["event"]]
+            assert len(notes) == 1 and notes[0]["type"] == "other", (s, degs)
+            assert all(c["call_id"] in notes[0]["event"] for c in per_shard[s]), (s, notes[0]["event"])
+    else:
+        assert all(c["call_id"] in mine[0]["event"] for c in calls)
     assert not any(stage in d["event"] and ("deadline" in d["event"] or "declined" in d["event"]) for d in degs)
     assert any(mine[0]["id"] in lim["degradation_ids"] for lim in report["limitations"])
     md = rec.run_dir.report_md.read_text(encoding="utf-8")
     assert prefix in md
-    assert f"{stage}: answer truncated twice at the output cap" in rec.run_dir.progress_log.read_text(encoding="utf-8")
+    progress = rec.run_dir.progress_log.read_text(encoding="utf-8")
+    if stage == "assess":
+        for s in shards:
+            assert f"assess shard {s}/4 (" in progress and (
+                "): answer truncated twice at the output cap; its criteria are not assessed" in progress), s
+        assert progress.count("answer truncated twice at the output cap; its criteria are not assessed") == 4
+    else:
+        assert f"{stage}: answer truncated twice at the output cap" in progress
     stop = report["stop_reason"]                     # research's own stop reason, never a deadline
     assert stop["code"] == truncation_controls["stop_reason"]["code"] and "deadline" not in stop["detail"]
     if stage != "plan":                              # a code-built plan has no external question

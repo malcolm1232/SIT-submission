@@ -107,6 +107,8 @@ class PhaseCall:
     refusal_category: str | None = None
     cut: bool = False                    # the run deadline cut the call (robustness LLM-05)
     truncated: bool = False              # the answer was cut off at max_tokens twice (LLM-07)
+    #: The call IDs of both truncated attempts (the call and its one retry), when ``truncated``.
+    truncated_ids: tuple[str | None, ...] = ()
     #: What a cut stream had finished (``LLMDeadlineError.partial``; latency redesign), else ``None``.
     partial: dict[str, Any] | None = None
     #: Problems ``check`` still found after the one repair call (the answer is not used).
@@ -352,7 +354,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if widened:                     # second truncation: degrade like a deadline cut, no third call
                 if disclose:
                     truncated_twice(ctx, phase, max_tokens, truncated_ids)
-                return PhaseCall(result=None, brief=brief, truncated=True)
+                return PhaseCall(result=None, brief=brief, truncated=True, truncated_ids=tuple(truncated_ids))
             wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
             how = (f"with max_tokens={wider}" if wider > max_tokens
                    else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")

@@ -267,10 +267,11 @@ class AssessPhase:
                                model=sctx.config.agent.model, prompt_hash=call.brief.sha256,
                                delta=state_delta(iso.base, sctx.state))
         if call.truncated:
+            ids = ", ".join(c for c in call.truncated_ids if c) or "no call IDs"
             sctx.state.add_degradation(
                 DegradationType.OTHER,
                 f"{label}: {truncated_twice_event(phase)} (max_tokens={sctx.config.agent.max_tokens}; the call and "
-                "its one retry); the truncated output was discarded, not repaired",
+                f"its one retry, {ids}); the truncated output was discarded, not repaired",
                 _not_assessed_impact(shard.criteria))
             sctx.emit(f"{label}: answer truncated twice at the output cap; its criteria are not assessed", "warn")
             return ShardResult(**base, outcome="truncated", call_id=last, prompt_hash=call.brief.sha256,
