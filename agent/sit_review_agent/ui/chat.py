@@ -356,6 +356,8 @@ async def ask(run_dir: Path, question: str, client: ChatClient, *, running: bool
             raise ChatRefused(429, f"The chat cap for this run is reached ({b['calls_used']} of {MAX_CALLS} calls, "
                                    f"${b['cost_usd']:.2f} of ${MAX_COST_USD:.2f}).")
         prompt = prompt_for(run_dir, question)
+        # The CLI runs in ui/ (its session files stay out of the run directory proper); it must exist first.
+        (run_dir / UI_DIR).mkdir(parents=True, exist_ok=True)
         reply = await client.ask(system=SYSTEM_PROMPT, prompt=prompt, schema=ANSWER_SCHEMA,
                                  cwd=(run_dir / UI_DIR), max_budget_usd=MAX_COST_USD - b["cost_usd"])
         entry: dict[str, Any] = {
