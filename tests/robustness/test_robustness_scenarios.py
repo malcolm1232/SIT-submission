@@ -530,29 +530,44 @@ def check_llm11(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """A hang on assess. Demo profile (540 s): the attempt's timeout is the time left before the
-    verify + report reserve, the cut call is not retried, the report says "out of time before
-    assessment" with no finding and a not-assessed verdict, and the run ends within the deadline.
-    Default deadline (3600 s): the hang costs llm.timeout_s (1800 s), the retry succeeds."""
+    """The first assess call (nth 0: shard 1, launched first) hangs once. Demo profile (540 s): the
+    attempt is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed
+    budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other
+    three shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit
+    0, within the deadline. Default deadline (3600 s): the hang costs llm.timeout_s (1800 s), the
+    retry succeeds, findings as in the control. Scheduling clock: the hang must not move the clock
+    for the shards that run beside it."""
+    from sit_review_agent.phases.assess import NOT_ASSESSED_NOTE
+
     demo, default = recs
     r = ok(demo)
     cfg = demo.config.stop_rules
+    limit = cfg.stage_limits_s.stage_1_end
     assert cfg.deadline_seconds == 540 and demo.virtual_s <= cfg.deadline_seconds + 30, demo.virtual_s
     fault = [e for e in llm_calls(demo, "assess") if e.get("fault")]
-    assert len(fault) == 1 and fault[0]["outcome"] == "LLMDeadlineError"         # cut, never retried
-    assert demo.virtual_s <= cfg.deadline_seconds - cfg.report_reserve_seconds + 1
-    assert r["findings"] == [] and r["verdict"]["confidence"] == 0.0 and r["verdict"]["label"] == "not_assessed"
-    assert any(d.startswith("out of time before assessment") for d in degs(demo))
-    text = md(demo)
-    assert "Not assessed (out of time before assessment)" in text and "out of time before assessment" in text
-    assert not llm_calls(demo, "report") and not llm_calls(demo, "refine")      # no invented verdict, refine skipped
+    assert len(fault) == 1 and fault[0]["outcome"] == "LLMDeadlineError" and fault[0]["shard"] == 1
+    assert len(shard_calls(demo, 1)) == 1                                        # cut, never retried
+    assert all([e.get("outcome") for e in shard_calls(demo, s)] == ["ok"] for s in SHARDS[1:])
+    cut = [d for d in r["research_log"]["degradations"]
+           if d["event"].startswith("assess shard 1/4 (intent_and_fitness) was cut by the stage 1 limit")]
+    assert len(cut) == 1 and cut[0]["type"] == "budget_or_deadline_hit" and f"at {limit:.0f} s" in cut[0]["event"]
+    assert any(cut[0]["id"] in lim["degradation_ids"] for lim in r["limitations"])
+    shard1 = {"design_intent", "fitness_for_objectives", "decision_preservation"}
+    rows = {c["criterion_id"]: c for c in demo.state["coverage"]}
+    assert all(rows[c]["outcome"] == "not_applicable" and rows[c]["note"] == NOT_ASSESSED_NOTE["cut"] for c in shard1)
+    assert all(not rows[c]["note"].startswith("not assessed") for c in rows if c not in shard1)
+    assert not any(d.startswith("out of time before assessment") for d in degs(demo))
+    survivors = [t for t in titles(control) if t in titles(demo)]
+    assert r["findings"] and survivors and r["verdict"]["label"] != "not_assessed"   # a salvaged review
+    assert llm_calls(demo, "report") and llm_calls(demo, "refine")               # the verdict call was made
     r2 = ok(default)
     hang = [e for e in llm_calls(default, "assess") if e.get("fault")]
-    assert [e["outcome"] for e in hang] == ["LLMTimeoutError"]                   # full timeout, then a retry
+    assert [e["outcome"] for e in hang] == ["LLMTimeoutError"] and hang[0]["shard"] == 1   # full timeout, then a retry
+    assert len(shard_calls(default, 1)) == 2
     assert 1800 <= default.virtual_s <= default.config.stop_rules.deadline_seconds + 30
     assert titles(default) == titles(control) and r2["findings"]
-    return Metric("virtual run time vs deadline (s), demo profile", round(demo.virtual_s),
-                  f"<= {cfg.deadline_seconds} + 30; assess cut and disclosed")
+    return Metric("findings kept from the three surviving shards, demo profile", len(r["findings"]),
+                  f"> 0; shard 1 cut at {limit:.0f} s and disclosed; run <= {cfg.deadline_seconds} + 30 s")
 
 
 def check_llm10(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
@@ -1148,9 +1163,10 @@ CASES: list[Case] = [
     Case("LLM-08", [sc("LLM-08", faults="LLM-08")], check_llm08),
     Case("LLM-09", [sc("LLM-09-hollow", patches={"assess": _hollow}),
                     sc("LLM-09-empty", patches={"assess": _empty})], check_llm09),
-    Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}),
-                    sc("LLM-05-default", faults="LLM-05")], check_llm05,
-         notes="demo profile (540 s): assess cut and disclosed; default deadline: full timeout, then retry"),
+    Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}, clock="scheduling"),
+                    sc("LLM-05-default", faults="LLM-05", clock="scheduling")], check_llm05,
+         notes="demo profile (540 s): shard 1 cut and disclosed, the other three shards' findings kept; "
+               "default deadline: full timeout, then retry; scheduling clock"),
     Case("LLM-10", [lambda tmp: Scenario(id="LLM-10", doc=long_design_pages(tmp / "long_150.pages.txt"),
                                          agent={"llm": _llm(context_window_tokens=150_000)})], check_llm10,
          notes="generated 150-page document (text form), 150k-token window: refused before sending"),

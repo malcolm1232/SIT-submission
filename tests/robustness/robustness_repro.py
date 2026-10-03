@@ -41,10 +41,11 @@ def _summary(rec: RunRecord) -> str:
 
 
 def llm05() -> str:
-    rec = run(Scenario(id="LLM-05", faults="LLM-05", overrides={"profile": "demo"}))
+    # the scheduling clock: the hang in shard 1 must not move the clock for the shards beside it
+    rec = run(Scenario(id="LLM-05", faults="LLM-05", overrides={"profile": "demo"}, clock="scheduling"))
     budget = rec.config.stop_rules.deadline_seconds + 30
-    return (f"expected: INV-01, run ends within deadline + 30 s = {budget} s (virtual), assess cut and "
-            "disclosed\n  " + _summary(rec))
+    return (f"expected: INV-01, run ends within deadline + 30 s = {budget} s (virtual), assess shard 1 cut and "
+            "disclosed, the other three shards' findings kept\n  " + _summary(rec))
 
 
 def net02() -> str:
