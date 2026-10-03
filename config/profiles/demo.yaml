@@ -25,6 +25,7 @@ agent:
 
 stop_rules:
   deadline_seconds: 540   # 9 minutes: one minute of margin in the 10-minute live run (runbook §5)
+  # 540 s is a project ASSUMPTION (audit U4): the lab brief sets no live-run time limit; kept as a safety net until SIT answers (USER_DECISIONS #34).
   # Reserves (robustness LLM-05; see config/stop_rules.yaml), sized for the concurrent design (docs/design/
   # latency_and_demo_design.md section 5); the defaults (180 s and 600 s) are sized from `high`. UNMEASURED:
   report_reserve_seconds: 75    # verify (~5 s, code) + the verdict call (~52 s predicted at medium) + render
