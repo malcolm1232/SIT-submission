@@ -1,0 +1,993 @@
+{
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "8c7850e04ab0f44723fc5620c62ec5a18e5725804a2923840a4c7b5cdca07ffa",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0005",
+  "criteria": [
+   "claims_and_external_constraints",
+   "assumptions_and_dependencies"
+  ],
+  "delta": {
+   "budget": {
+    "cache_creation_input_tokens": 24769,
+    "cache_read_input_tokens": 6195,
+    "input_tokens": 30966,
+    "output_tokens": 20764
+   },
+   "declined_sections": [],
+   "degradations": [],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0005"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 3,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "claims_and_assumptions",
+  "outcome": "done",
+  "output": {
+   "coverage": [
+    {
+     "criterion_id": "claims_and_external_constraints",
+     "finding_ids": [
+      "FND-001",
+      "FND-002",
+      "FND-003",
+      "FND-004",
+      "FND-005",
+      "FND-006",
+      "FND-009",
+      "FND-007"
+     ],
+     "note": "Checked the vector sizing arithmetic, the pgvector filtered-search claim, SKU and cost figures, the Entra token lifetime, Kafka retry claims, the BM25 fallback, DDL completeness and PDPA statements. The raw 57 GB vector estimate is consistent with 1536-dim float32.",
+     "outcome": "findings"
+    },
+    {
+     "criterion_id": "assumptions_and_dependencies",
+     "finding_ids": [
+      "FND-003",
+      "FND-004",
+      "FND-007",
+      "FND-008",
+      "FND-010"
+     ],
+     "note": "Checked the confirmed decisions against the Pending Backlog (Event Hubs, Redis, Auditor/PDPA sign-off, SIS failure handling) and dependencies on outside capabilities (Entra ID, SIS). The Redis confirmation item is low impact and is not raised separately.",
+     "outcome": "findings"
+    }
+   ],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_prototyping",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "effective search space per query is 500-800 vectors, not 9.5 million.",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 11,
+       "quote": "CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops)",
+       "requirement_ids": [],
+       "section_ref": "11"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "effective search space per query is 500-800 vectors, not 9.5 million.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "CREATE INDEX ON memory_vectors USING hnsw (embedding vector_cosine_ops)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2"
+       ],
+       "evidence_id": "NEW-3",
+       "quote": "A single global HNSW index has no knowledge of learner_id/slot_path, so the 500-800 figure only holds if the planner chooses the B-tree path; with the HNSW path, filtering happens after the graph search and recall at ~0.006% selectivity has to be measured, not assumed.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Build a 9.5M-vector prototype on the target SKU and measure query plans, latency and recall for filtered queries.",
+      "owner": "Platform data engineer"
+     },
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 12, state the intended access path: either exact search over the B-tree-filtered rows, which may make the HNSW index unnecessary, or HNSW with a defined filtered/iterative-scan strategy, or partitioning. Then benchmark p50/p95 latency and recall@k on the synthetic 9.5M dataset (NFR-2 test) and record the results.",
+      "expected_benefit": "NFR-2 is shown to be achievable with correct recall, and index size and cost (NFR-1, NFR-10) are justified.",
+      "issue": "NFR-2 and the HNSW index choice rest on an unstated assumption about how filtered pgvector queries are executed.",
+      "objective_refs": [
+       "NFR-2",
+       "NFR-1",
+       "NFR-10"
+      ],
+      "rationale": "Whether the latency target and recall are both met depends on the query plan, and the document does not specify it.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3"
+      ],
+      "verification": "Extend the NFR-2 benchmark to record EXPLAIN plans and recall@k against exact search for random learner/slot filters."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "Section 12 says that because every query filters on learner_id + slot_path, each search only covers 500-800 vectors. NFR-2 (5-15 ms) and the HNSW index in Section 11 both depend on that. The document does not say how the global HNSW index and the B-tree filter work together. If the planner traverses the HNSW graph first and filters afterwards, a filter that matches roughly 0.006% of rows may return few or no in-slot neighbours, so recall drops. If the planner uses the B-tree and scans those rows exactly, results are correct but the ~80 GB HNSW index adds no value. Also, about 600 vectors per learner across all slots means a single slot_path holds far fewer than 500-800, so the stated figure doesn't match the document's own breakdown.",
+     "tags": [
+      "pgvector",
+      "HNSW",
+      "filtered-search",
+      "latency"
+     ],
+     "title": "Filtered HNSW query claim ('500-800 vector search space') is unverified"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "requirement_ids": [
+        "NFR-1"
+       ],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Growth ceiling before degradation ~30-40M vectors (~50,000-60,000 learners)",
+       "requirement_ids": [],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Per-learner breakdown (~600 vectors across a full degree): core/identity 10, advisory 15, modules (6 active × 20)",
+       "requirement_ids": [],
+       "section_ref": "12"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-4",
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "Growth ceiling before degradation ~30-40M vectors (~50,000-60,000 learners)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "Per-learner breakdown (~600 vectors across a full degree): core/identity 10, advisory 15, modules (6 active × 20)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-4",
+        "NEW-5",
+        "NEW-6"
+       ],
+       "evidence_id": "NEW-7",
+       "quote": "57 GB raw + 80 GB HNSW ≈ 137 GB > 128 GB RAM; 30-40M × 1536 × 4 bytes ≈ 184-246 GB raw; the listed per-learner items sum to 10+15+120+60+30+30+20+30+5+20 = 340, not ~600.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Redo Section 12: reconcile the per-learner breakdown with the 600 figure, separate index size from heap size, give a total working-set estimate versus RAM, and replace the 30-40M ceiling with a derived figure or remove it. Consider options such as halfvec, reduced dimensions or partitioning, and re-check the SKU.",
+      "expected_benefit": "A sizing basis that supports NFR-1/NFR-2 and a cost estimate (NFR-10) that can be defended.",
+      "issue": "The sizing table is inconsistent with the SKU and the latency assumption it is meant to justify.",
+      "objective_refs": [
+       "NFR-1",
+       "NFR-2",
+       "NFR-10"
+      ],
+      "rationale": "The SKU, the latency target and the cost estimate are all derived from these numbers.",
+      "supporting_evidence_ids": [
+       "NEW-4",
+       "NEW-5",
+       "NEW-6",
+       "NEW-7"
+      ],
+      "verification": "Measure table and index sizes after loading the NFR-1 synthetic dataset and compare them with the revised table."
+     },
+     "secondary_dispositions": [
+      "needs_prototyping"
+     ],
+     "severity": "high",
+     "statement": "Section 12 puts raw vectors at about 57 GB and the HNSW index at about 80 GB, which is roughly 137 GB before content text, B-tree indexes and the other tables. That is more than the 128 GB RAM of the confirmed SKU, so the 'in-RAM index' basis for 5-15 ms latency isn't shown. The stated growth ceiling of 30-40M vectors would mean about 180-245 GB of raw vectors alone on the same SKU. The per-learner breakdown adds up to about 340 vectors, not the ~600 used for the 9M estimate. NFR-1, NFR-2 and NFR-10 all rely on these figures.",
+     "tags": [
+      "sizing",
+      "capacity",
+      "memory",
+      "SKU"
+     ],
+     "title": "Vector sizing arithmetic doesn't support the 128 GB SKU, the in-RAM claim or the growth ceiling"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "claims_and_external_constraints",
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "6"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Auth tokens shall be valid for 48 hours, with defined degraded-mode behaviour for EXPIRED and REVOKED",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "2.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-8",
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-9",
+       "quote": "REVOKED -> inform learner (token revoked, contact support).",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-8",
+        "NEW-9"
+       ],
+       "evidence_id": "NEW-10",
+       "quote": "The document does not say which token (access, refresh or a platform session token) carries the 48h window, or how revocation is learned, so both the issuing-platform limit and the revocation mechanism are unverified dependencies.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Check Entra ID token lifetime policy limits and revocation options, and update Sections 6 and 15.",
+      "owner": "Identity/security architect"
+     },
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Confirm what Entra ID supports for token lifetime and revocation signalling. In Section 6/15, state which token holds the 48h window (for example, a platform-issued session token backed by Entra refresh) and the revocation mechanism (introspection, continuous access evaluation or event feed), including the maximum detection delay.",
+      "expected_benefit": "NFR-6 can be implemented and revocation is enforced promptly (FR-4 Check 3).",
+      "issue": "The token lifetime and revocation detection depend on identity-platform capabilities that have not been confirmed.",
+      "objective_refs": [
+       "NFR-6",
+       "FR-4"
+      ],
+      "rationale": "NFR-6 and the Gateway's Check 3 cannot be built until it is known what Entra ID supports.",
+      "supporting_evidence_ids": [
+       "NEW-8",
+       "NEW-9",
+       "NEW-10"
+      ],
+      "verification": "Run the NFR-6 test against a real Entra tenant, including revoking a session mid-window and measuring how long the Gateway takes to detect it."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "The document assumes Entra ID will issue learner tokens valid for 48 hours and that the Gateway can tell when a token has been REVOKED. It has not been checked whether Entra ID allows access tokens that long. A self-contained JWT also does not reveal that it has been revoked unless there is introspection or an event mechanism, and none is designed. If either assumption fails, NFR-6, the degraded-mode behaviour and the NFR-6 test cannot work as written, and revoked learners could keep access.",
+     "tags": [
+      "Entra ID",
+      "OAuth",
+      "token-lifetime",
+      "revocation"
+     ],
+     "title": "The 48-hour Entra ID token lifetime and REVOKED-state detection are unverified"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "claims_and_external_constraints",
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "overwhelm the store; failed writes queue and retry automatically; multiple independent consumers (audit,",
+       "requirement_ids": [
+        "FR-9",
+        "NFR-3"
+       ],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-11",
+       "quote": "overwhelm the store; failed writes queue and retry automatically; multiple independent consumers (audit,",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-12",
+       "quote": "Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-11"
+       ],
+       "evidence_id": "NEW-13",
+       "quote": "Validation happens in the background consumer after the immediate ACK, so without a designed retry/DLQ and failure-notification path, writes that are rejected or fail are lost without the agent knowing.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "unresolved_assumption",
+     "next_step": {
+      "action": "Confirm Event Hubs Kafka-surface capabilities and draft the retry/DLQ design.",
+      "owner": "Platform integration lead"
+     },
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18, specify consumer retry policy, idempotency keys, a dead-letter topic per tier, how rejected writes are reported (audit entry plus MMP dashboard), and replay. Close the Event Hubs backlog item, confirming the Kafka-API features the consumers need (consumer groups, retention), before marking the decision as confirmed.",
+      "expected_benefit": "Writes are durable and failures are visible (FR-9, FR-11, FR-13).",
+      "issue": "The write path assumes retry behaviour that has not been designed, and the broker choice is unconfirmed.",
+      "objective_refs": [
+       "FR-9",
+       "FR-11",
+       "FR-13"
+      ],
+      "rationale": "Writes that have been acknowledged but fail later are lost, which undermines FR-9 and FR-13 auditability.",
+      "supporting_evidence_ids": [
+       "NEW-11",
+       "NEW-12",
+       "NEW-13"
+      ],
+      "verification": "Fault-injection test: kill the consumer, fail the embedding call and send a strict-mode reject; confirm retry, dead-lettering and audit entries."
+     },
+     "secondary_dispositions": [
+      "needs_investigation"
+     ],
+     "severity": "high",
+     "statement": "Section 18 says failed writes 'queue and retry automatically'. A broker only keeps messages; retries, dead-lettering and idempotent re-processing have to be built into the consumer, and none of this is designed. The agent gets an ACK before classification and validation, so a write that fails permanently (for example a strict-mode reject in the consumer) would be lost silently. Separately, 'Kafka (Azure Event Hubs)' is listed as a confirmed decision while the backlog still asks for Event Hubs to be confirmed. The document records the Event Hubs question; this review adds the unsupported retry claim and the missing route for reporting failures.",
+     "tags": [
+      "Kafka",
+      "Event Hubs",
+      "retry",
+      "DLQ"
+     ],
+     "title": "The claim that Kafka retries failed writes automatically is unsupported, and the Event Hubs decision is still pending"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 5,
+       "quote": "Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner",
+       "requirement_ids": [
+        "NFR-10"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 28,
+       "quote": "Projected monthly cost at 15,000-learner scale, computed from the actual",
+       "requirement_ids": [
+        "NFR-10"
+       ],
+       "section_ref": "27.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-14",
+       "quote": "Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "800-1,200/month computed from the actual provisioned Azure SKU and measured embedding volume",
+       "source_type": "doc",
+       "supports_claim": false
+      },
+      {
+       "derived_from": [
+        "NEW-14",
+        "NEW-15"
+       ],
+       "evidence_id": "NEW-16",
+       "quote": "Without a breakdown, and with the requirement and its acceptance test covering different scopes, NFR-10 cannot be confirmed and may not include HA, storage or the separate sensitive tier.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Price the confirmed SKU, plus HA and storage, in the Singapore region and update NFR-10.",
+      "owner": "Cloud FinOps / platform lead"
+     },
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add a cost table to Section 12: compute, storage and IOPS, backup, HA, the sensitive tier, and optionally Event Hubs, Redis and embeddings, priced from the current Azure Singapore price list. Align the NFR-10 wording with the scope of its acceptance criterion.",
+      "expected_benefit": "An NFR-10 target that can be verified and reflects the real cost.",
+      "issue": "The cost figure is not derived from anything and its scope is ambiguous.",
+      "objective_refs": [
+       "NFR-10"
+      ],
+      "rationale": "Budget approval and the SKU choice depend on it.",
+      "supporting_evidence_ids": [
+       "NEW-14",
+       "NEW-15",
+       "NEW-16"
+      ],
+      "verification": "Compare against the Azure pricing calculator and the first month of actual billing."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "NFR-10 and Section 12 give SGD 800-1,200/month for a 16-vCore, 128 GB Azure PostgreSQL in Singapore with no breakdown. They do not say whether storage (more than 140 GB of index and data), IOPS, backups, high-availability standby or the separate sensitive-tier deployment are included. The NFR-10 acceptance test also brings in 'measured embedding volume', which goes beyond 'vector-store infrastructure', so the target being tested is unclear. Current Azure pricing has not been checked in this review.",
+     "tags": [
+      "cost",
+      "Azure",
+      "FinOps"
+     ],
+     "title": "The SGD 800-1,200/month cost estimate has no stated basis and an unclear scope"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "Nothing further needed - DDL is concrete and complete (Section",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "All operations on personal data shall be logged; retention rules shall be enforceable per slot; PII-bearing",
+       "requirement_ids": [
+        "NFR-7"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Add to MMP ingestion backlog for re-embed",
+       "requirement_ids": [],
+       "section_ref": "17"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-17",
+       "quote": "Nothing further needed - DDL is concrete and complete (Section",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "Flag record as unembedded (embedded: false)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-17",
+        "NEW-18"
+       ],
+       "evidence_id": "NEW-19",
+       "quote": "The Section 11 DDL has no embedded column, and memory_events/memory_documents have no retention, expiry or pii columns, so the 'complete' claim does not cover the Section 17 fallback or NFR-7.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add embedded BOOLEAN, plus retention/expires_at/pii to all three tables, template_version, consent fields and an audit table DDL to Section 11. Downgrade the Section 28 database schema row to 'Mostly ready' until this is done.",
+      "expected_benefit": "A schema that supports NFR-7 and the embedder fallback when first built.",
+      "issue": "The DDL is missing columns that other sections and NFR-7 require.",
+      "objective_refs": [
+       "NFR-7",
+       "FR-13"
+      ],
+      "rationale": "Section 28 tells builders to generate migrations from this DDL directly.",
+      "supporting_evidence_ids": [
+       "NEW-17",
+       "NEW-18",
+       "NEW-19"
+      ],
+      "verification": "Trace every field named in Sections 10, 17 and 23 to a DDL column."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Section 28 calls the DDL 'concrete and complete' and ready for migrations. But Section 17 relies on an embedded flag that no table has. memory_events and memory_documents have no retention, expires_at or pii columns, although NFR-7 requires per-slot retention and pii flagging. Section 10 places consent in meta-memory, but there is no column for it. Code generated from Section 11 would therefore miss NFR-7 and the embedder fallback.",
+     "tags": [
+      "DDL",
+      "schema",
+      "readiness"
+     ],
+     "title": "The claim that the DDL is 'complete' is contradicted by fields the design relies on"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "decision_depends_on_pending_item",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "assumptions_and_dependencies",
+      "claims_and_external_constraints"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "26"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 13,
+       "quote": "survives learner deletion of their own memory (enabling session resume)",
+       "requirement_ids": [
+        "FR-15"
+       ],
+       "section_ref": "13"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "Audit logs are append-only. Never modified. Retained per PDPA requirements.",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "17"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-20",
+       "quote": "Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "survives learner deletion of their own memory (enabling session resume)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-20",
+        "NEW-21"
+       ],
+       "evidence_id": "NEW-22",
+       "quote": "Data kept after learner deletion and audit records kept indefinitely are design choices whose PDPA position depends on the pending sign-off, not on anything stated in the document.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "unresolved_assumption",
+     "next_step": {
+      "action": "Review backup retention after deletion and audit log retention, and issue the PDPA alignment sign-off.",
+      "owner": "Data Protection Officer"
+     },
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Before Build Phases 4/5, have the DPO rule on (a) whether the agent backup is kept after learner deletion, (b) the audit log retention period and pseudonymisation, and (c) consent records. Record the outcomes in Sections 17, 19 and 20 and change 'required for PDPA' wording to cite the sign-off.",
+      "expected_benefit": "Defensible PDPA position for FR-13, FR-15 and NFR-7.",
+      "issue": "Statements of compliance come before the regulatory review they depend on.",
+      "objective_refs": [
+       "FR-13",
+       "FR-15",
+       "NFR-7"
+      ],
+      "rationale": "FR-15 and P7 claim PDPA alignment, which has not been confirmed.",
+      "supporting_evidence_ids": [
+       "NEW-20",
+       "NEW-21",
+       "NEW-22"
+      ],
+      "verification": "A signed DPO review is attached, and the FR-15 test is extended to cover the agent backup."
+     },
+     "secondary_dispositions": [
+      "needs_investigation"
+     ],
+     "severity": "medium",
+     "statement": "The design says its audit and retention approach meets PDPA, but the backlog shows PDPA alignment sign-off and the audit retention period are still open. The backlog records the sign-off gap. This review adds two specific choices that need DPO review before build: the agent backup is kept after a learner deletes their own memory, and audit logs (which hold learner_id and slot_path) are never modified and have no defined retention period. Either could conflict with retention-limitation or consent-withdrawal obligations; this has not been verified.",
+     "tags": [
+      "PDPA",
+      "retention",
+      "deletion",
+      "audit"
+     ],
+     "title": "PDPA compliance is asserted while the PDPA sign-off is still pending"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "missing_or_unverifiable_requirement",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "SIS events - registration, programme enrolment, module registration, module withdrawal, graduation -",
+       "requirement_ids": [
+        "FR-12"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "MMP in detail - template versioning conflict resolution, SIS integration failure handling.",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-23",
+       "quote": "SIS events - registration, programme enrolment, module registration, module withdrawal, graduation -",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-24",
+       "quote": "MMP in detail - template versioning conflict resolution, SIS integration failure handling.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "unresolved_assumption",
+     "next_step": {
+      "action": "Confirm SIS event emission capability and agree the event contract.",
+      "owner": "SIS system owner with the platform architect"
+     },
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Confirm with the SIS owner that these events are available and how they are delivered. Add an SIS event contract (payload, delivery guarantees, reconciliation job) to Section 21 and name the integration owner.",
+      "expected_benefit": "FR-12 is achievable and has a defined contract.",
+      "issue": "Automatic provisioning depends on an SIS capability that has not been confirmed.",
+      "objective_refs": [
+       "FR-12"
+      ],
+      "rationale": "FR-12 cannot be met without it.",
+      "supporting_evidence_ids": [
+       "NEW-23",
+       "NEW-24"
+      ],
+      "verification": "Run the FR-12 simulation test against real SIS sandbox events."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "FR-12 requires slots to be provisioned and expired automatically from five SIS events, with no manual intervention, through an 'SIS webhook'. The document does not show that SIS can emit these events, who owns the integration, or what the event contract is. SIS failure handling is listed in the backlog. If SIS can only offer batch or polled exports, FR-12 and the provisioning flow in Section 21 would need redesign.",
+     "tags": [
+      "SIS",
+      "integration",
+      "provisioning"
+     ],
+     "title": "The assumption that SIS can emit lifecycle events as webhooks is not verified"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "claims_and_external_constraints"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Fall back to BM25 keyword search for retrieval",
+       "requirement_ids": [
+        "FR-10"
+       ],
+       "section_ref": "17"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-25",
+       "quote": "Fall back to BM25 keyword search for retrieval",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-25"
+       ],
+       "evidence_id": "NEW-26",
+       "quote": "No tsvector column or text index appears in the Section 11 DDL, so the fallback has no schema support as written.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-009",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Check the supported full-text and BM25 options on the target Azure PostgreSQL service.",
+      "owner": "Platform data engineer"
+     },
+     "no_change_rationale": null,
+     "rank": 9,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Confirm which keyword-ranking options Azure Database for PostgreSQL supports. Add the matching column and index to Section 11 and name the ranking method accurately in Section 17.",
+      "expected_benefit": "FR-10 reads keep working while embedding is degraded.",
+      "issue": "The fallback retrieval method is not backed by the schema or a confirmed platform capability.",
+      "objective_refs": [
+       "FR-10"
+      ],
+      "rationale": "Records written while embedding is down would not be retrievable.",
+      "supporting_evidence_ids": [
+       "NEW-25",
+       "NEW-26"
+      ],
+      "verification": "Test: with the embedding service disabled, write and then read back records through keyword search."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "medium",
+     "statement": "When embedding is unavailable, the Embedder says it falls back to BM25 keyword search. The Section 11 DDL has no full-text column or index. The document does not check whether the chosen Azure PostgreSQL service provides BM25 ranking natively or through a supported extension. Without that, the degraded retrieval path for unembedded records may not exist.",
+     "tags": [
+      "BM25",
+      "fallback",
+      "full-text"
+     ],
+     "title": "BM25 fallback assumes a capability the schema doesn't provide"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": null,
+     "confidence": 0.8,
+     "criterion_ids": [
+      "assumptions_and_dependencies"
+     ],
+     "disposition": "no_change",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "The honest answer is partial - strong in some areas, not",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Items confirmed as in-scope but not yet fully designed:",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-27",
+       "quote": "Items confirmed as in-scope but not yet fully designed:",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-010",
+     "kind": "strength",
+     "next_step": null,
+     "no_change_rationale": "Tracking open items explicitly, each linked to a build phase, is the right control for the design's aim of being build-ready; keep it and extend it with the items raised above.",
+     "rank": 10,
+     "reassessment": null,
+     "recommendation": null,
+     "secondary_dispositions": [],
+     "severity": null,
+     "statement": "Sections 26 and 28 set out which items are confirmed and which are still open, and tie each open item to a build phase. Assumptions about the Dispatcher, the Auditor, compaction and the Policy Engine algorithm are therefore visible, not hidden. This supports the stated aim of a specification that can be built from, and lets the remaining assumption findings be closed against named backlog items.",
+     "tags": [
+      "backlog",
+      "traceability"
+     ],
+     "title": "Gaps are explicitly tracked in the Pending Backlog and readiness assessment"
+    }
+   ],
+   "sound_areas": [
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "SIT-AI-Factory-RAG (the Azure AI Search RAG project) - a separate system, in a separate resource group, with",
+       "requirement_ids": [],
+       "section_ref": "1"
+      }
+     ],
+     "evidence_ids": [],
+     "related_finding_ids": [],
+     "section_refs": [
+      "1",
+      "25"
+     ],
+     "why_sound": "Keeping the memory platform separate from the Azure AI Search RAG project, with no shared infrastructure, removes a dependency on another system's capacity and change cycle. It also keeps the PostgreSQL+pgvector choice self-contained."
+    },
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Items confirmed as in-scope but not yet fully designed:",
+       "requirement_ids": [],
+       "section_ref": "26"
+      }
+     ],
+     "evidence_ids": [
+      "NEW-27"
+     ],
+     "related_finding_ids": [
+      "FND-010"
+     ],
+     "section_refs": [
+      "26",
+      "28"
+     ],
+     "why_sound": "Open items are recorded and given a phase, so most assumptions can be traced to a closure point."
+    }
+   ]
+  },
+  "prompt_hash": "28d5f0d0b177f94b774ed361791d45a5641697d06e3966842ff2e2f336d77cdf",
+  "salvaged": 0
+ }
+}

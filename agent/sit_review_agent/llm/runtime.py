@@ -97,8 +97,8 @@ class RunDeadline:
     run started, resume-adjusted); ``deadline_s`` ``None`` means the run has no deadline.
 
     ``stage_limits`` (latency redesign W1): the run-clock second by which each stage must end
-    (``stop_rules.stage_limits_s``, scaled by :func:`effective_stage_limits` when ``--deadline`` is
-    below them). When set, a call's budget is the lesser of the time left to the deadline and the
+    (``stop_rules.stage_limits_s``, scaled by :func:`effective_stage_limits` when ``--deadline`` differs
+    from their run length). When set, a call's budget is the lesser of the time left to the deadline and the
     time left to its stage's limit (:data:`STAGE_LIMIT_OF_PHASE`), and the reserves are not applied
     again (the limits already hold them: ``stage_1_end`` = deadline - both reserves on the shipped
     profiles). ``None`` keeps the reserve rule of 2026-10-02 (tests and callers without limits)."""
@@ -395,12 +395,21 @@ def effective_stage_limits(stop_rules: Any) -> tuple[dict[str, float], str | Non
     profile, 3420 + 180 = 3600 s on the default; ``config/stop_rules.yaml`` derives them that way).
     Scaling keeps every stage, and stage 1 keeps the largest share, which is where findings come
     from (salvaged at the cut), so a short rerun still reports findings (design section 7 verifier
-    check). Refusing would end the rerun the runbook relies on before it starts."""
+    check). Refusing would end the rerun the runbook relies on before it starts.
+
+    A ``--deadline`` ABOVE ``planned`` (``--profile demo --deadline 900``, runbook §5) scales the
+    three limits UP by the same ``deadline / planned`` (441 / 775 / 883 s at 900 s on the demo
+    profile), announced the same way, so the time the user added on purpose reaches the stages
+    instead of idling after ``verdict_end``. Scaling up multiplies every gap by the same factor
+    above 1, so ``refine_end`` still leaves at least ``report_reserve_seconds`` before the deadline
+    and ``verdict_end`` at least the profile's render margin (``planned - verdict_end``); the tests
+    pin both. A deadline from ``verdict_end + 1`` to ``planned`` (the profile's own run length
+    included) keeps the limits as set."""
     lim = stop_rules.stage_limits_s.as_dict()
     d = int(stop_rules.deadline_seconds)
-    if lim["verdict_end"] < d:
-        return {k: float(v) for k, v in lim.items()}, None
     planned = max(lim["refine_end"] + int(stop_rules.report_reserve_seconds), lim["verdict_end"] + 1)
+    if lim["verdict_end"] < d <= planned:
+        return {k: float(v) for k, v in lim.items()}, None
     f = d / planned
     scaled: dict[str, float] = {k: float(max(1, int(v * f))) for k, v in lim.items()}
     # Keep them strictly increasing and below the deadline whatever the rounding (a tiny deadline).
@@ -408,6 +417,10 @@ def effective_stage_limits(stop_rules: Any) -> tuple[dict[str, float], str | Non
         scaled = {"stage_1_end": d * 0.25, "refine_end": d * 0.5, "verdict_end": d * 0.75}
     old = " / ".join(f"{lim[k]}" for k in ("stage_1_end", "refine_end", "verdict_end"))
     new = " / ".join(f"{scaled[k]:g}" for k in ("stage_1_end", "refine_end", "verdict_end"))
+    if d > planned:
+        return scaled, (f"deadline {d} s is longer than the {planned} s run this profile's stage limits were set for "
+                        f"({old} s for stage 1, refine and the verdict): the three limits are scaled up by "
+                        f"{d}/{planned} to {new} s, so every stage gets its share of the added time")
     note = (f"deadline {d} s is not above this profile's stage limits ({old} s for stage 1, refine and the "
             f"verdict, set for a {planned} s run): the three limits are scaled by {d}/{planned} to {new} s; "
             f"a model call still streaming at its limit is cut and its finished items are kept")

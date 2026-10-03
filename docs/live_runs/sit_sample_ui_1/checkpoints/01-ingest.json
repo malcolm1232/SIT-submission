@@ -1,0 +1,100 @@
+{
+ "checkpoint_version": 1,
+ "created_utc": "2026-10-03T08:29:44Z",
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "8c7850e04ab0f44723fc5620c62ec5a18e5725804a2923840a4c7b5cdca07ffa",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "offsets": {
+  "ledger_jsonl": 0,
+  "llm_jsonl": 0,
+  "tools_jsonl": 0
+ },
+ "ordinal": 1,
+ "phase": "ingest",
+ "run_id": "ui-261003-082941-36e8",
+ "seq": 1,
+ "state": {
+  "anchor_table": [],
+  "budget": {
+   "cache_creation_input_tokens": 0,
+   "cache_read_input_tokens": 0,
+   "elapsed_s": 2.162,
+   "input_tokens": 0,
+   "new_sources_by_iteration": [],
+   "output_tokens": 0,
+   "phase_seconds": {
+    "ingest": 2.162
+   },
+   "research_iterations": 0,
+   "started_monotonic": 80974.390074541,
+   "tool_calls": 0
+  },
+  "completed_phases": [
+   "ingest"
+  ],
+  "coverage": [],
+  "created_utc": "2026-10-03T08:29:41Z",
+  "current_phase": "ingest",
+  "declined_sections": [],
+  "degradations": [
+   {
+    "event": "DOC-sit_sample_v1: native PDF block not sent because the configured model backend accepts text only",
+    "id": "DEG-001",
+    "impact": "figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text",
+    "type": "input_degraded"
+   }
+  ],
+  "documents": [
+   {
+    "doc_id": "DOC-sit_sample_v1",
+    "native_pdf": false,
+    "page_count": 30,
+    "pdf_path": "/Users/malco/Desktop/SIT-wt/final/runs/ui-261003-082941-36e8/ui/input/sit_sample_v1.pdf",
+    "role": "under_review",
+    "sha256_pdf": "57f49eb28ade551d3a7dcf1160c9a6debea19bdb3477db68f05111df322bd540",
+    "sha256_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+    "text_path": "text/DOC-sit_sample_v1.pages.txt",
+    "title": "SIT Institutional Memory Platform — Detailed Design",
+    "version": null
+   }
+  ],
+  "fallback_events": [],
+  "finding_drafts": [],
+  "finding_ids": {
+   "prior": [],
+   "refine": {},
+   "refine_fields": {},
+   "rewrites": {},
+   "shards": {},
+   "unverified": [],
+   "verify": {}
+  },
+  "finding_meta": {},
+  "findings": [],
+  "intent_summary": null,
+  "k_index": null,
+  "limitations": [],
+  "llm_calls": {},
+  "mode": "dev",
+  "plan": null,
+  "previous_run_dir": null,
+  "prior_review_id": null,
+  "queries_issued": 0,
+  "refusals": [],
+  "registry": [],
+  "registry_frozen": false,
+  "registry_hashes": [],
+  "review_inputs_found": [],
+  "review_mode": "full",
+  "run_id": "ui-261003-082941-36e8",
+  "sound_area_drafts": [],
+  "sound_areas": [],
+  "stop_reason": null,
+  "tool_calls": [],
+  "unanswered_questions": [],
+  "unresolved": [],
+  "verdict": null
+ }
+}

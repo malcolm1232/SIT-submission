@@ -60,6 +60,7 @@ The first with-tools run on the lab's own sample document exists at `docs/live_r
 The review UI (`dra ui`, the `progress.jsonl` event stream, and the Download, Email and Share outputs of `docs/USER_DECISIONS.md` #36), the merged-finding-ID fix (`agent/sit_review_agent/finding_refs.py`, invariant INV-12) and the MCP session fix (reopen and retry, `session_idle_reopen_s`, the two-failure disable rule of #38, robustness NET-06) are merged and verified on `claude/happy-darwin-d0bl94` (`docs/transcripts/session4/final_hub.md`).
 `markdown-it-py` is a declared dependency and Playwright is in the `dev` extra; run `playwright install chromium` once for the browser tests.
 What stays the owner's: a second with-tools run on the lab document with the MCP key on his Mac, to confirm the session fix live; an SMTP server and `SIT_UI_SMTP_PASSWORD` in `config/ui.yaml` if Email is to be used; opening a share link from a second device; the Tier A budget approval; Opus fast mode; the signature on the S-dev keys; and any reversal of ruling #31.
+The owner's second with-tools run on the lab document, the first from the UI page, is at `docs/live_runs/sit_sample_ui_1/` (506.9 s, $3.68 lower bound, `fit_with_conditions` 0.65, measured in its `MEASUREMENT.md`): the session fix held live (one idle reopen, 8 of 8 web calls succeeded), but shard 2 and refine were cut, so the 30 external entries went uncited and duplicates went unmerged.
 
 ## Owner tasks on the critical path (cannot be delegated)
 
