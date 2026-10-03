@@ -1,4 +1,4 @@
-"""Shared run invariants INV-03..INV-10 (research/robustness/README.md §2), checked after every run
+"""Shared run invariants INV-03..INV-10 and INV-12 (research/robustness/README.md §2), checked after every run
 by ``selftest``, the verify/report phases and the robustness oracles.
 
 Each ``check_INV_xx`` takes a :class:`~sit_review_agent.models.Review` (or its JSON dict) and, where
@@ -22,6 +22,7 @@ from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from referencing import Registry, Resource
 
+from sit_review_agent.finding_refs import dangling_refs
 from sit_review_agent.hashing import registry_sha256
 from sit_review_agent.ingest.anchor import AnchorRules, verify_anchor
 from sit_review_agent.ingest.pdf import Document
@@ -368,6 +369,20 @@ def check_INV_10(review: Review | Mapping[str, Any], run_dir: Path | None = None
                 if f["disposition"] == "no_change":
                     problems.append(f"{f['id']}: challenges {ad['registry_id']} with disposition no_change")
     return _ok("INV-10", problems)
+
+
+# ======================================================================================== INV-12
+
+
+def check_INV_12(review: Review | Mapping[str, Any], run_dir: Path | None = None) -> InvariantResult:
+    """Every finding ID the review cites is a finding of the review (merged-ID traceability,
+    2026-10-03): text and ID lists in every section but ``metadata``, ``evidence_ledger`` and
+    ``run_manifest``, minus a finding's own ``id``, verbatim ``quote`` / ``excerpt`` passages and
+    ``reassessment`` (the prior review's numbering). A disclosure (``research_log.degradations``,
+    ``limitations``) may name a draft as ``draft FND-nnn`` when ``extra.finding_ids.final`` lists it; in
+    delta mode an ID in ``extra.finding_ids.prior`` cites the prior review. Rules and walk:
+    :mod:`sit_review_agent.finding_refs`."""
+    return _ok("INV-12", dangling_refs(_as_dict(review)))
 
 
 def check_all(review: Review | Mapping[str, Any], run_dir: Path | None = None, *,

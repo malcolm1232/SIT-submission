@@ -673,6 +673,9 @@ class ManifestExtra(BaseModel):
     outputs: dict[str, Any] = Field(default_factory=dict, description="report_json_sha256, report_md_sha256, "
                                     "ledger_sha256, llm_jsonl_sha256, tools_jsonl_sha256")
     deviations: list[str] = Field(default_factory=list, description="e.g. --accept-drift, model swap, fallbacks")
+    finding_ids: dict[str, Any] = Field(default_factory=dict, description="shards {shard: {own ID: draft ID}}, "
+                                        "refine {draft: kept|null}, verify {draft: new|null}, final {draft: "
+                                        "final|null}, prior, rewrites (state.finding_ids, finding_refs)")
 
 
 # ============================================================================== review envelope

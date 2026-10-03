@@ -87,7 +87,8 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `phases/_isolation.py` | Private to the phases and the orchestrator: each stage 1 member and assess shard runs on its own deep copy of the run state and registry; `StateDelta` (serialisable, so a finished shard is stored and merged on resume) and the merge back into the run state | done (integration) |
 | `phases/research.py` | The hand-written research tool loop (B) | done (B) |
 | `report/render.py`, `report/explain.py`, `manifest.py`, `selftest.py` | Markdown report, `explain`, manifest (refusals and fallbacks merged from run state and gateway), `selftest` and `preflight` | done (B, C) |
-| `invariants.py` | `check_INV_03` … `check_INV_10`, `check_all` (ports `spec/validate_examples.py`) | done; the outbound-request half of INV-08 runs in the harness |
+| `invariants.py` | `check_INV_03` … `check_INV_10`, `check_INV_12`, `check_all` (ports `spec/validate_examples.py`) | done; the outbound-request half of INV-08 runs in the harness |
+| `finding_refs.py` | Finding-ID references in review text (2026-10-03): `IdChain` (the run's ID map: shard numbering, merged draft IDs, refine's merges and withdrawals, verify's drops), `rewrite_text` / `rewrite_tree` (references follow their finding; one to no finding is removed with its clause), `mark_drafts` (disclosures name drafts as `draft FND-nnn`), `iter_refs` / `dangling_refs` (INV-12) | done |
 | `prompts.py` | Prompt bundle, `PROMPTS.lock`, StrictUndefined rendering | done |
 | `rundir.py`, `progress.py`, `clock.py`, `hashing.py`, `errors.py`, `paths.py` | Run-directory layout and JSONL journal; progress lines and heartbeat; `FakeClock`; hashes; typed errors and exit codes | done |
 | `cli.py` | `sit-review` / `dra`: `run` (`review`, with `--k` and `--profile`), `resume`, `explain`, `coverage`, `replay`, `selftest`, `preflight` (`--profile`), `states`; typed errors to exit codes, never a traceback (INV-11) | done (C, W2) |
@@ -266,6 +267,22 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
   Known limitation: refine cannot move a finding across the `no_change` boundary. `revision_problems` refuses
   such a move ("no_change forbids a recommendation", or the spec rule that the other dispositions need a
   recommendation), so the repair call and then the fallback keep the drafted disposition.
+- 2026-10-03, merged-ID traceability (`docs/transcripts/session4/merged_id_references.md`). Additive; no
+  existing constructor call or signature changes.
+  - `state/run_state.py`: new `FindingIdMap` and `RunState.finding_ids` (default empty, so a state or
+    checkpoint written before loads): the shards' own IDs to merged draft IDs, refine's map (merged ID to kept ID,
+    withdrawn to null) and the fields refine wrote, verify's map (renumbered, or null when dropped or moved to
+    unresolved) and the drafts of its unverified items, the prior review's IDs, and the report's rewrite counts.
+    Writers (next commit): `phases/assess.py` (merge), `phases/refine.py`, `phases/verify.py`, `phases/report.py`.
+    Readers: `manifest.build_manifest`, `phases/report.py` (via the new module `finding_refs`).
+  - `models.ManifestExtra` gained `finding_ids` (default `{}`; `RunManifest.extra` is a free object in
+    `spec/finding.schema.json`, so the schema does not change). Writer: `manifest.build_manifest`
+    (`finding_refs.manifest_record`). Readers: `invariants.check_INV_12`; the replay comparison ignores the
+    manifest, so a replay is not affected.
+  - `invariants.py`: new `check_INV_12` (every finding ID the review cites is a finding of the review).
+    Readers in this commit: `tests/test_finding_refs.py`; the next commit adds it to `check_all`, whose readers
+    are `phases/report.py`, `selftest.py`, `tests/robustness/oracles.py`, `tests/robustness/concurrent_oracles.py`
+    and the tests that call `check_all`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are
