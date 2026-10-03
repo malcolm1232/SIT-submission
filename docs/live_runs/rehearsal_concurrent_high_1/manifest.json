@@ -1,0 +1,430 @@
+{
+ "budgets": {
+  "deadline_s": 3600,
+  "max_tokens": 4000000,
+  "max_tool_calls": 30
+ },
+ "condition": null,
+ "config_sha256": "95b957550fca570e914da5c56c6675e597e4fd699b33d680e12206ac8b428d66",
+ "extra": {
+  "code": {
+   "anthropic_sdk_version": "1.11.0",
+   "argv": [
+    "review",
+    "eval/synthetic/payments_orchestration/design_v1.pdf",
+    "--no-tools",
+    "--run-id",
+    "rehearsal_concurrent_high_1"
+   ],
+   "git_branch": "s4/rehearsal",
+   "git_commit": "70bd6588c8920a7dc47888ece8b940aba36eeb6c",
+   "git_dirty": null,
+   "mcp_version": "2.2.0",
+   "os": "Darwin 24.6.0",
+   "package_lock_sha256": null,
+   "pyproject_sha256": "c665c42e034b78c6fcdacb4c54fa5e9f1ce8027fb4eed8eb5bb032c38392b5ee",
+   "python": "3.13.13",
+   "sit_review_agent_version": "0.1.0"
+  },
+  "config": {
+   "cli_args": {
+    "no_tools": true
+   },
+   "effective_config_sha256": "95b957550fca570e914da5c56c6675e597e4fd699b33d680e12206ac8b428d66",
+   "files": {
+    "config/agent.yaml": "25d0cd1c0d9624ec50e93904c7e6f024b8812ea83731ec5d494ed16889200629",
+    "config/criteria.yaml": "4f16aba8d0f0df9c7cce8ca828ebadf79e91a498736ac9224838bdc28b2c0bad",
+    "config/endpoints.yaml": "99cd4094eef39e2a526030bb9c99cfa73d9fe6cb1765c3ffb31a8e236cf252f7",
+    "config/persona.yaml": "f49708c3dd6c571bd7dfdb7d6c939a303a146bb13f4cb65fee03f2dee9880ce8",
+    "config/stop_rules.yaml": "d930647f848d32401eee39fc38fd9b42205395007830551a5125165cab2bc094",
+    "config/tools.yaml": "6bca28bdc9cef179bcc8f3b382e02f6dcc33727fd63f8aac57776a1de3dd9577",
+    "config/url_policy.yaml": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+   }
+  },
+  "deviations": [],
+  "doc": {
+   "canonical_text_sha256": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+   "documents": [
+    {
+     "bytes": 574604,
+     "canonical_text_sha256": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+     "id": "DOC-design_v1",
+     "native_pdf_block": false,
+     "pages": 21,
+     "role": "under_review",
+     "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99"
+    }
+   ],
+   "extractor": {
+    "name": "pdfplumber",
+    "version": "0.11.10"
+   },
+   "id": "DOC-design_v1",
+   "native_pdf_block": false,
+   "normalisation_version": "1",
+   "pages": 21,
+   "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99"
+  },
+  "fault_injection": {
+   "profile": "none",
+   "schedule_sha256": null
+  },
+  "k_index": null,
+  "manifest_version": 1,
+  "mode": "dev",
+  "model": {
+   "assess_shards": 4,
+   "backend": "claude_code",
+   "betas": [],
+   "calls_logged": 8,
+   "calls_with_unrecorded_usage": [],
+   "cost_usd_lower_bound": false,
+   "effort_by_stage": {
+    "assess": "high",
+    "plan": "high",
+    "refine": "high",
+    "report": "high",
+    "research": "high",
+    "understand": "high",
+    "verify": "high"
+   },
+   "estimated_usage_of_unrecorded_calls": [],
+   "estimated_usage_totals": {
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "calls": 0,
+    "cost_source": "price table estimate",
+    "cost_usd": 0.0,
+    "estimated": true,
+    "input_tokens": 0,
+    "output_tokens": 0
+   },
+   "fallback_events": [],
+   "fallbacks": "none",
+   "max_tokens_by_stage": {
+    "assess": 128000,
+    "plan": 128000,
+    "refine": 128000,
+    "report": 128000,
+    "research": 128000,
+    "understand": 128000,
+    "verify": 128000
+   },
+   "models_retrieve": {
+    "status": "not available for backend claude_code"
+   },
+   "refusals": [],
+   "requested_model": "claude-opus-5-5",
+   "salvaged_calls": 0,
+   "salvaged_items": 0,
+   "sampling": "provider-default (not settable)",
+   "sdk_client": {
+    "gateway_max_retries": 4,
+    "max_retries": 0,
+    "timeout_s": 1800.0
+   },
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": {
+    "display": "omitted",
+    "type": "adaptive"
+   },
+   "truncations": []
+  },
+  "outputs": {
+   "anchors_sha256": "3877acd8e143fee979481eb5feaaef2b637d0f1b21aeb9150111a243982047c4",
+   "ledger_sha256": "6cd88c4bb2d5ac9ea5929a0d46b05955e8b048e7b1519f7e4ce1753f5a1ae830",
+   "llm_jsonl_sha256": "8fd751471a57dc7471e5decac497f4244ce14e9f385ade7f86b4a29a695aa9e2",
+   "report_json_sha256": "4b99bf68186306255bdca66b7fe71dd1bcd823bcdf4a561a39330fc691b073da",
+   "report_md_sha256": "9ba2623a4d3787b346692b607c1210933a85e797ca2eadc03676a8cdc39cb071",
+   "tools_jsonl_sha256": null
+  },
+  "previous_run_id": null,
+  "prompts": {
+   "bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+   "files": {
+    "prompts/assess.md": "02b2c3bc7300c304e12a840be51f979453497197d2f689fbc94789f4569f31a3",
+    "prompts/plan.md": "c78ea69a30f5040df6abd98e94233670f92cc6d9c519611b44668ae46c8b372e",
+    "prompts/refine.md": "5345cd228844b001ff1ee3cff1abb9a58ce23da20244dc569ffb10701193bb24",
+    "prompts/report.md": "1055e3681acac55b8f112f26725a97e535b81662f7be6eec18695589648626cc",
+    "prompts/research.md": "bb39c853d3116f01d856fd6896674a1196e258038c6b7cb82e4d00dffe160218",
+    "prompts/system.md": "75992c8e04b1a556afcc7aa75cc0256a8f5432ccb37f2786d359818e15fc8dc4",
+    "prompts/understand.md": "cbda99aad19ef5a02759816a1a4cc2b17a84af8ee1d706f917687882cce4f942",
+    "prompts/verify.md": "3dd655035a7e908774aa4edf05d6751007559faca1962eeff64b703fb56d8b8e"
+   }
+  },
+  "split_assignment_sha256": null,
+  "stop": {
+   "active_rules": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "params": {
+    "active": [
+     "sufficient_evidence",
+     "no_marginal_gain",
+     "budget_tool_calls",
+     "budget_tokens",
+     "deadline"
+    ],
+    "deadline_seconds": 3600,
+    "max_input_tokens": 4000000,
+    "max_output_tokens": null,
+    "max_research_iterations": 4,
+    "max_tool_calls": 30,
+    "min_independent_sources": 2,
+    "no_marginal_gain_window": 2,
+    "refine_reserve_seconds": 600,
+    "report_reserve_seconds": 180,
+    "stage_limits_s": {
+     "refine_end": 3420,
+     "stage_1_end": 2820,
+     "verdict_end": 3540
+    }
+   },
+   "stop_reason": {
+    "code": "tool_failure",
+    "detail": "no_tools",
+    "group": "error"
+   }
+  },
+  "timing": {
+   "per_stage_s": {
+    "assess": 558.834,
+    "ingest": 1.273,
+    "plan": 178.329,
+    "refine": 179.241,
+    "research": 0.001,
+    "understand": 174.908,
+    "verify": 0.016
+   },
+   "stages": {
+    "ingest": {
+     "members": {
+      "ingest": {
+       "end_offset_s": null,
+       "seconds": 1.273,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 1.273,
+     "wall_basis": "single_member",
+     "wall_s": 1.273
+    },
+    "refine": {
+     "members": {
+      "refine": {
+       "end_offset_s": 739.408,
+       "seconds": 179.241,
+       "start_offset_s": 560.197
+      }
+     },
+     "sum_of_member_s": 179.241,
+     "wall_basis": "single_member",
+     "wall_s": 179.241
+    },
+    "stage_1": {
+     "members": {
+      "assess": {
+       "end_offset_s": 560.103,
+       "seconds": 558.834,
+       "start_offset_s": 1.314
+      },
+      "plan": {
+       "end_offset_s": 179.599,
+       "seconds": 178.329,
+       "start_offset_s": 1.294
+      },
+      "research": {
+       "end_offset_s": null,
+       "seconds": 0.001,
+       "start_offset_s": null
+      },
+      "understand": {
+       "end_offset_s": 176.172,
+       "seconds": 174.908,
+       "start_offset_s": 1.282
+      }
+     },
+     "sum_of_member_s": 912.072,
+     "wall_basis": "member_spans",
+     "wall_s": 558.834
+    },
+    "verify": {
+     "members": {
+      "verify": {
+       "end_offset_s": null,
+       "seconds": 0.016,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 0.016,
+     "wall_basis": "single_member",
+     "wall_s": 0.016
+    }
+   },
+   "wall_clock_s": 780.348
+  },
+  "tools": {
+   "cassette_set_sha256": null,
+   "servers": [
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-internet-search",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "bbdc6eeaa2c98933c20b7594ccb0f3740484b142ed07c26bd3070e5f0aace616"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-research-information",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "cafceacc1e4ad056e8e1eae3bfd642b4513b112e825f6889b1cf787f2dc163d4"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-browser-automation-pw",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "4ad5ebce57687b5ec99d61deb511d8f366a33d5061015f12eefa460165e807c4"
+    },
+    {
+     "allow_tools": [],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-document-intelligence",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "3e0bebc0fd059fa383873de30be099c7083fb74876a981df9ce465634739bf7d"
+    }
+   ],
+   "tool_calls": 0,
+   "transport": "live",
+   "url_policy_sha256": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+  }
+ },
+ "extractor": {
+  "name": "pdfplumber",
+  "page_marker": "[[PAGE n]]",
+  "version": "0.11.10"
+ },
+ "fallback_events": [],
+ "fault_schedule_id": null,
+ "git_commit": "70bd6588c8920a7dc47888ece8b940aba36eeb6c",
+ "git_dirty": false,
+ "models_used": [
+  {
+   "betas": [],
+   "effort": "high",
+   "max_tokens": 128000,
+   "requested_model": "claude-opus-5-5",
+   "role": "agent",
+   "sampling": "provider-default (not settable)",
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": "adaptive"
+  }
+ ],
+ "outcome": "completed_degraded",
+ "prereg_sha256": null,
+ "prompts_bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+ "review_config": {
+  "criteria": [
+   "design_intent",
+   "fitness_for_objectives",
+   "requirement_completeness",
+   "internal_consistency",
+   "claims_and_external_constraints",
+   "security_and_privacy",
+   "scalability_and_failure_modes",
+   "assumptions_and_dependencies",
+   "verifiability",
+   "decision_preservation",
+   "operability_and_governance"
+  ],
+  "persona": "generalist_architect",
+  "stop_rule": {
+   "active": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "deadline_seconds": 3600,
+   "max_input_tokens": 4000000,
+   "max_output_tokens": null,
+   "max_research_iterations": 4,
+   "max_tool_calls": 30,
+   "min_independent_sources": 2,
+   "no_marginal_gain_window": 2,
+   "refine_reserve_seconds": 600,
+   "report_reserve_seconds": 180,
+   "stage_limits_s": {
+    "refine_end": 3420,
+    "stage_1_end": 2820,
+    "verdict_end": 3540
+   }
+  }
+ },
+ "run_id": "rehearsal_concurrent_high_1",
+ "schema_version": "1.0",
+ "split": null,
+ "taxonomy_sha256": "1967a3918b1d29259c881301cdeb83bf305a74ec63b400c8e4a2b62c0660bbb6",
+ "timestamps": {
+  "end_utc": "2026-10-03T02:37:30Z",
+  "start_utc": "2026-10-03T02:24:30Z"
+ },
+ "tools": [
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-internet-search",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-research-information",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-browser-automation-pw",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-document-intelligence",
+   "server_version": null
+  }
+ ],
+ "usage": {
+  "cached_tokens": 71971,
+  "cost_usd": 8.20961,
+  "input_tokens": 378856,
+  "output_tokens": 258222,
+  "price_table_date": "2026-09-25",
+  "tool_calls": 0
+ }
+}
