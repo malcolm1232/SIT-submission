@@ -138,6 +138,13 @@ def test_the_export_is_self_contained_with_no_script_and_no_external_resource(fl
     assert "--red-9:" in html and tokens.split(":root", 1)[1].split("}", 1)[0].strip() in html   # tokens inlined
 
 
+def test_the_export_stylesheet_keeps_the_page_rules() -> None:
+    css = (export.STATIC_DIR / "export.css").read_text(encoding="utf-8")
+    assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", css) and not re.search(r"\brgba?\(|\bhsla?\(", css)
+    assert "animation" not in css and "transition" not in css and "@keyframes" not in css
+    assert "http" not in css and "url(" not in css and "@import" not in css
+
+
 def test_model_text_cannot_inject_markup_or_load_an_image(tmp_path: Path) -> None:
     rd = tmp_path / "r"
     rd.mkdir()
@@ -290,10 +297,10 @@ def test_the_shipped_config_leaves_email_off_with_the_reason(tmp_path: Path, mon
 
     monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
     cfg, detail = mail.load_smtp(REPO / "config" / "ui.yaml")
-    assert cfg is None and "host" in detail
+    assert cfg is None and detail == "host, username and from are empty"
     assert mail.NOT_CONFIGURED == "Email is not configured: see config/ui.yaml"
     missing, detail = mail.load_smtp(tmp_path / "ui.yaml")
-    assert missing is None and "no config/ui.yaml" in detail
+    assert missing is None and detail == "the file does not exist"
     full = tmp_path / "full.yaml"
     full.write_text("email:\n  host: smtp.example.org\n  port: 587\n  starttls: true\n  username: me\n"
                     "  from: me@example.org\n", encoding="utf-8")
@@ -615,3 +622,137 @@ def test_a_link_that_is_not_a_pdf_or_fails_is_refused(tmp_path: Path) -> None:
         data={"document_url": "https://docs.example.org/a.pdf"})
     assert res.status_code == 400 and "not both" in res.json()["error"]
     assert list(tmp_path.iterdir()) == []
+
+
+# ------------------------------------------------------------------ item 5: the three actions in a browser
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@pytest.fixture
+def browser_page(tmp_path: Path, monkeypatch):
+    """The flow run on a loopback server with email pointed at a fake SMTP server, in Chromium (skipped
+    where Playwright or its Chromium is not installed)."""
+    import threading
+    import time
+
+    uvicorn = pytest.importorskip("uvicorn")
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    runs = tmp_path / "runs"
+    copy_run(FLOW, runs / "ui_flow_1")
+    copy_run(FLOW, runs / "no_mail")
+    fake = FakeSMTP()
+    port = _free_port()
+    states = {"ui_flow_1": make_state(runs, smtp=smtp_cfg(fake.port), bind_host="127.0.0.1", port=port)}
+    server = uvicorn.Server(uvicorn.Config(build_app(states["ui_flow_1"]), host="127.0.0.1", port=port,
+                                           log_level="warning"))
+    th = threading.Thread(target=server.run, daemon=True)
+    th.start()
+    for _ in range(200):
+        if server.started:
+            break
+        time.sleep(0.05)
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:  # noqa: BLE001 - Chromium not installed here
+            pytest.skip(f"Chromium not available: {exc}")
+        ctx = browser.new_context(viewport={"width": 1440, "height": 900}, accept_downloads=True)
+        pg = ctx.new_page()
+        errors: list[str] = []
+        pg.on("pageerror", lambda e: errors.append(str(e)))
+        yield pg, ctx, f"http://127.0.0.1:{port}", runs, fake, states["ui_flow_1"]
+        browser.close()
+    server.should_exit = True
+    th.join(timeout=5)
+    fake.close()
+    assert errors == []
+
+
+def test_the_three_actions_in_a_browser(browser_page) -> None:
+    from sit_review_agent.ui import mail, share
+
+    pg, ctx, base, runs, fake, state = browser_page
+    pg.goto(base + "/?run=ui_flow_1")
+    pg.wait_for_selector(".frow")
+    heads = pg.locator("#outputs h3").all_inner_texts()
+    assert heads == ["Download", "Email", "Share"]
+    # 1. Download: the HTML file saves under its name; "Open it in a new tab" shows the same review.
+    assert pg.locator("#out-download").inner_text().startswith("Download review (HTML, ")
+    with pg.expect_download() as dl:
+        pg.click("#out-download")
+    assert dl.value.suggested_filename == "ui_flow_1_review.html"
+    saved = Path(dl.value.path()).read_text(encoding="utf-8")
+    assert export.CHAT_HEADING in saved and "<script" not in saved
+    with pg.expect_download() as md:
+        pg.click("#out-md")
+    assert md.value.suggested_filename == "ui_flow_1_report.md"
+    assert Path(md.value.path()).read_bytes() == (FLOW / "report.md").read_bytes()
+    with ctx.expect_page() as tab:
+        pg.click("#out-open")
+    exp = tab.value
+    exp.wait_for_load_state()
+    report = json.loads((FLOW / "report.json").read_text(encoding="utf-8"))
+    first = min(report["findings"], key=lambda f: f["rank"])
+    assert exp.get_by_role("heading", name=f"{first['id']} {one_line(first['title'])}").count() == 1
+    exp.close()
+    # 2. Email: enabled only for one plain address; the send reaches the (fake) server and is reported.
+    send = pg.locator("#email-send")
+    assert send.inner_text() == "Email the review" and send.is_disabled()
+    pg.fill("#email-to", "not an address")
+    assert send.is_disabled()
+    pg.fill("#email-to", "reader@example.org")
+    assert send.is_enabled()
+    send.click()
+    pg.wait_for_selector("#email-result.ok")
+    assert pg.locator("#email-result").inner_text().startswith("Sent to reader@example.org at ")
+    assert len(fake.messages) == 1
+    # 3. Share: a loopback server shows the restart line and says why there is no link.
+    assert pg.locator("#share-box").is_hidden()
+    pg.click("#share-btn")
+    assert pg.locator("#share-line").inner_text() == f"dra ui --host 0.0.0.0 --allow-remote --port {state.port}"
+    assert pg.locator("#share-text").inner_text() == share.LOOPBACK_TEXT
+    state.bind_host, state.lan_ip = "0.0.0.0", lambda: "192.168.1.23"
+    pg.reload()
+    pg.wait_for_selector(".frow")
+    pg.click("#share-btn")
+    assert pg.locator("#share-line").inner_text() == f"http://192.168.1.23:{state.port}/?run=ui_flow_1"
+    assert pg.locator("#share-text").inner_text() == share.SHARE_TEXT
+    # Without the password the button is disabled and says why, never a silent no-op.
+    import os
+
+    del os.environ[mail.PASSWORD_ENV]
+    pg.goto(base + "/?run=no_mail")
+    pg.wait_for_selector(".frow")
+    assert pg.locator("#email-send").is_disabled() and pg.locator("#email-to").is_disabled()
+    assert pg.locator("#email-help").inner_text().startswith(mail.NOT_CONFIGURED + " (")
+
+
+def test_a_pasted_link_on_the_drop_screen(browser_page) -> None:
+    pg, ctx, base, runs, fake, state = browser_page
+    state.can_launch = True
+    pg.goto(base + "/")
+    pg.wait_for_selector("#doc-link")
+    assert pg.locator("#link-max").inner_text() == "50"
+    start = pg.locator("#start-btn")
+    assert start.is_disabled()
+    pg.fill("#doc-link", "http://docs.example.org/a.pdf")
+    assert start.is_disabled() and pg.locator("#link-error").is_visible()
+    pg.fill("#run-id", "linked")
+    pg.fill("#doc-link", "https://docs.example.org/specs/Payments%20Design%20v2")
+    assert start.is_enabled() and pg.locator("#link-error").is_hidden()
+    assert "review runs/linked/ui/input/Payments_Design_v2.pdf " in pg.locator("#cmd-preview").inner_text()
+    dropped = pg.evaluate_handle("() => { const d = new DataTransfer(); "
+                                 "d.setData('text/uri-list', 'https://cdn.example.net/x/y.pdf'); return d; }")
+    pg.dispatch_event("#dropzone", "drop", {"dataTransfer": dropped})
+    assert pg.locator("#doc-link").input_value() == "https://cdn.example.net/x/y.pdf"
+    assert "runs/linked/ui/input/y.pdf" in pg.locator("#cmd-preview").inner_text()

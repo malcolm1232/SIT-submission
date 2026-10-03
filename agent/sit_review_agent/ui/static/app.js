@@ -62,6 +62,16 @@ function joinMeta(parts) {
   return out;
 }
 
+// A pasted link: https only (the server checks it again under config/url_policy.yaml), and the name the
+// server saves it under (ui/fetch.py file_name: the last path segment, made safe, ending in .pdf).
+function httpsLink(v) { try { return new URL(v).protocol === "https:" && !/\s/.test(v); } catch (e) { return false; } }
+function linkName(v) {
+  let seg = "";
+  try { seg = decodeURIComponent(new URL(v).pathname.split("/").pop() || ""); } catch (e) { seg = ""; }
+  const n = seg.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+|[._]+$/g, "") || "document";
+  return /\.pdf$/i.test(n) ? n : n + ".pdf";
+}
+
 // ------------------------------------------------------------------ frame 1: the drop screen
 
 async function showDrop() {
@@ -77,20 +87,28 @@ async function showDrop() {
   const enabled = meta.tools.filter((t) => t.enabled).map((t) => t.name);
   $("tools-help").textContent = enabled.length ? "Enabled in config/tools.yaml: " + enabled.join(", ") + "." : "No tool server is enabled in config/tools.yaml.";
   let doc = null;
+  $("link-max").textContent = meta.link_max_mb;
+  const link = () => { const v = $("doc-link").value.trim(); return httpsLink(v) ? v : null; };
   const refresh = () => {
     const p = meta.profiles.find((x) => x.name === sel.value);
     $("profile-help").textContent = p ? "Stage 1 ends by " + clock(p.stage_limits_s.stage_1_end) + ", refine by " + clock(p.stage_limits_s.refine_end) + ", verdict by " + clock(p.stage_limits_s.verdict_end) + ", deadline " + clock(p.deadline_s) + "." : "";
     const prev = $("prev-input").files[0];
     const rid = $("run-id").value.trim() || "<new run>";
-    const parts = ["dra", "review", doc ? "runs/" + rid + "/ui/input/" + doc.name : "<document>"];
+    const source = doc ? doc.name : (link() ? linkName(link()) : null);
+    const parts = ["dra", "review", source ? "runs/" + rid + "/ui/input/" + source : "<document>"];
     if (sel.value) parts.push("--profile", sel.value);
     if (prev) parts.push("--v1", "runs/" + rid + "/ui/input/previous/" + prev.name);
     if ($("no-tools").checked) parts.push("--no-tools");
     parts.push("--run-id", rid);
     $("cmd-preview").textContent = parts.join(" ");
-    $("start-btn").disabled = !doc || !meta.can_launch;
+    $("start-btn").disabled = !(doc || link()) || !meta.can_launch;
+    $("link-error").hidden = !$("doc-link").value.trim() || !!link();
+    const c = $("doc-chosen");
+    c.hidden = !doc && !link();
+    c.textContent = doc ? doc.name : (link() ? "Link: " + link() + " (fetched when the review starts)" : "");
   };
-  const choose = (f) => { doc = f || null; const c = $("doc-chosen"); c.hidden = !doc; c.textContent = doc ? doc.name : ""; refresh(); };
+  const choose = (f) => { doc = f || null; if (doc) $("doc-link").value = ""; refresh(); };
+  $("doc-link").addEventListener("input", () => { if ($("doc-link").value.trim()) { doc = null; $("doc-input").value = ""; } refresh(); });
   $("doc-input").addEventListener("change", (e) => choose(e.target.files[0]));
   $("prev-input").addEventListener("change", () => { const f = $("prev-input").files[0]; $("prev-chosen").textContent = f ? f.name : "No file chosen"; $("prev-chosen").classList.toggle("muted", !f); refresh(); });
   for (const id of ["profile-select", "no-tools"]) $(id).addEventListener("change", refresh);
@@ -98,24 +116,34 @@ async function showDrop() {
   const dz = $("dropzone");
   dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
   dz.addEventListener("dragleave", () => dz.classList.remove("over"));
-  dz.addEventListener("drop", (e) => { e.preventDefault(); dz.classList.remove("over"); if (e.dataTransfer.files.length) choose(e.dataTransfer.files[0]); });
+  dz.addEventListener("drop", (e) => {
+    e.preventDefault(); dz.classList.remove("over");
+    if (e.dataTransfer.files.length) { choose(e.dataTransfer.files[0]); return; }
+    const uri = (e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain") || "").split("\n")[0].trim();
+    if (uri) { $("doc-link").value = uri; doc = null; refresh(); }
+  });
+  const startNote = $("start-note").textContent;
   if (!meta.can_launch) $("start-note").textContent = meta.launch_note;
   $("start-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    if (!doc) return;
+    if (!doc && !link()) return;
     const fd = new FormData();
-    fd.append("document", doc);
+    if (doc) fd.append("document", doc);
+    else fd.append("document_url", link());
     const prev = $("prev-input").files[0];
     if (prev) fd.append("previous", prev);
     fd.append("profile", sel.value);
     if ($("run-id").value.trim()) fd.append("run_id", $("run-id").value.trim());
     if ($("no-tools").checked) fd.append("no_tools", "1");
     $("start-btn").disabled = true;
+    $("start-error").hidden = true;
+    if (!doc) $("start-note").textContent = "Fetching the PDF from the link, then starting the review.";
     try {
       const r = await api("/runs", { method: "POST", body: fd });
       go(r.run_id);
     } catch (err) {
-      const box = $("start-error"); box.hidden = false; box.textContent = err.message; refresh();
+      const box = $("start-error"); box.hidden = false; box.textContent = err.message;
+      $("start-note").textContent = meta.can_launch ? startNote : meta.launch_note; refresh();
     }
   });
   refresh();
@@ -403,6 +431,62 @@ function showRun(info, tabs) {
   });
 }
 
+// ------------------------------------------------------------------ the three outputs: download, email, share
+
+// One plain address, the same rule as ui/mail.py ADDRESS_RE; the server checks it again.
+const ADDRESS = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]+$/;
+
+async function setupOutputs(info) {
+  const base = "/runs/" + encodeURIComponent(info.run_id);
+  const out = await api(base + "/outputs");
+  $("out-download").href = base + "/export.html?download=1";
+  $("out-open").href = base + "/export.html";
+  $("out-md").href = base + "/report.md";
+  $("out-json").href = base + "/report.json";
+  $("out-download").textContent = "Download review (HTML" + (out.export ? ", " + out.export.size : "") + ")";
+  $("out-download-help").textContent = "One file, no script, nothing loaded from the network: this run's report.md shown as HTML" +
+    (info.replayed ? ", stamped replayed evidence" : "") +
+    (out.export && out.export.has_chat ? ", then the chat transcript, marked as not part of the review." : ".");
+  const to = $("email-to"), send = $("email-send"), help = $("email-help"), result = $("email-result");
+  const e = out.email;
+  const ready = () => { send.disabled = !e.enabled || !ADDRESS.test(to.value.trim()); };
+  if (e.enabled) {
+    help.textContent = "Sends the HTML file and report.md as attachments from this laptop through " + e.host + ", from " + e.from + ". Logged to " + info.run_id + "/ui/outbox.jsonl without the content.";
+  } else {
+    to.disabled = true;
+    send.title = e.reason;
+    help.textContent = e.reason + " (" + e.detail + ").";
+  }
+  ready();
+  to.addEventListener("input", () => { ready(); result.hidden = true; help.hidden = false; });
+  $("email-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (send.disabled) return;
+    send.disabled = true; to.disabled = true;
+    help.hidden = true;
+    result.hidden = false; result.className = ""; result.textContent = "Sending to " + to.value.trim() + "…";
+    try {
+      const r = await api(base + "/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to: to.value.trim() }) });
+      result.className = "ok"; result.textContent = "Sent to " + r.to + " at " + (r.at || "").slice(11, 16) + " UTC.";
+    } catch (err) {
+      result.className = "bad"; result.textContent = err.message;
+    }
+    to.disabled = false; ready();
+  });
+  const btn = $("share-btn"), box = $("share-box"), s = out.share;
+  btn.addEventListener("click", () => {
+    const open = box.hidden;
+    box.hidden = !open;
+    $("share-hint").hidden = open;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.textContent = open ? "Hide share link" : "Show share link";
+  });
+  $("share-line").textContent = s.url || s.restart || "";
+  $("share-line").hidden = !(s.url || s.restart);
+  $("share-text").textContent = s.text;
+  $("outputs").hidden = false;
+}
+
 // ------------------------------------------------------------------ frame 3: the review
 
 function sevPill(f) {
@@ -590,6 +674,7 @@ async function showReview(info, tab) {
   else if (current === "delta") main.append(deltaBody(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
+  await setupOutputs(info);
   await setupChat(info);
 }
 

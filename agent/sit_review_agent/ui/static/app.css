@@ -69,7 +69,10 @@ ul { padding-left: 18px; margin: 0; }
   padding: 40px 32px; text-align: center; transition: background-color 150ms, border-color 150ms; }
 .dropzone.over { background: var(--bg-hover); border-color: var(--fg-muted); }
 .dropzone .big { font-size: 16px; line-height: 24px; font-weight: 500; }
-.dropzone .chosen { margin-top: 12px; font-weight: 500; }
+.dropzone .chosen { margin-top: 12px; font-weight: 500; word-break: break-all; }
+.dropzone .link-row { margin-top: 16px; }
+.dropzone .link-row .input { width: 100%; }
+.dropzone #link-help { margin-top: 6px; }
 .field { margin: 0 0 20px; }
 .field label, .field .label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
 .field label.btn { display: inline-flex; margin: 0; font-size: 14px; }
@@ -123,6 +126,17 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 /* ---------- review + chat ---------- */
 .rev-wrap { display: grid; grid-template-columns: 1fr 440px; min-height: calc(100vh - 48px); }
 .review { padding: 24px 32px 32px; border-right: 1px solid var(--border-subtle); min-width: 0; }
+.outputs { padding-bottom: 12px; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); }
+.outputs .out { display: grid; grid-template-columns: 72px max-content 1fr; gap: 6px 16px; align-items: center; padding: 6px 0; }
+.outputs h3 { margin: 0; font-size: 13px; color: var(--fg); }
+.outputs .row { display: flex; align-items: center; gap: 8px; }
+.outputs .input { width: 260px; min-width: 0; }
+.outputs .input:disabled { background: var(--bg-control); color: var(--fg-disabled); border-color: var(--bg-control); }
+.outputs .help { font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+.outputs .ok { color: var(--green-11); }
+.outputs .bad { color: var(--red-11); }
+.outputs .share { grid-column: 2 / -1; padding-bottom: 4px; }
+.outputs .share .cmd { margin-top: 4px; color: var(--fg); user-select: all; word-break: normal; overflow-wrap: anywhere; }
 .verdict { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
 .verdict .label { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.02em; }
 .verdict .conf, .verdict .prev { color: var(--fg-muted); }

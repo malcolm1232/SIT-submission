@@ -291,7 +291,12 @@ def build_app(state: UIState) -> Starlette:
         rd = run_dir_of(request)
         if rd is None:
             return _err(404, "No such run.")
-        return _json({"email": mail.status(state.smtp, state.smtp_detail),
+        exp = None
+        if (rd / "report.md").is_file():
+            size = len(export.export_html(rd, replayed=rundata.summary(rd)["replayed"]).encode("utf-8"))
+            exp = {"size": f"{max(1, round(size / 1024))} KB", "has_chat": chat.log_path(rd).is_file(),
+                   "name": export.export_name(rd.name)}
+        return _json({"export": exp, "email": mail.status(state.smtp, state.smtp_detail),
                       "share": share.share_info(bind_host=state.bind_host, port=state.port, run_id=rd.name,
                                                 ui_args=state.ui_args, lan_ip=state.lan_ip)})
 

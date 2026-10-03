@@ -29,6 +29,9 @@
         <div class="chosen" id="doc-chosen" hidden></div>
         <div style="margin-top:16px"><label class="btn" for="doc-input">Choose file</label>
           <input type="file" id="doc-input" name="document" accept=".pdf,.txt,.md" hidden></div>
+        <div class="link-row"><input class="input" id="doc-link" type="url" autocomplete="off" spellcheck="false" placeholder="or paste a link to a PDF (https only)" aria-label="Link to a PDF"></div>
+        <div class="micro muted" id="link-help">A pasted link is fetched by this server when the review starts: public hosts only, under config/url_policy.yaml, at most <span id="link-max"></span> MB, saved with the run's inputs.</div>
+        <div class="micro error" id="link-error" hidden>Paste one https link to a PDF; other schemes are not fetched.</div>
       </div>
       <div class="field" style="margin-top:24px">
         <span class="label">Previous version (optional)</span>
@@ -55,7 +58,7 @@
       </div>
       <div class="start-row">
         <button class="btn primary" type="submit" id="start-btn" disabled>Start review</button>
-        <span class="micro muted" id="start-note">Enabled once a document is chosen. The page runs the command below as a subprocess, the same as typing it.</span>
+        <span class="micro muted" id="start-note">Enabled once a document is chosen or a link is pasted. The page runs the command below as a subprocess, the same as typing it.</span>
       </div>
       <div class="cmd" id="cmd-preview"></div>
       <div class="error" id="start-error" hidden></div>
@@ -99,7 +102,37 @@
 <!-- Frame 3: the review, and the chat as a reading aid kept apart from it. -->
 <template id="tpl-review">
   <div class="rev-wrap">
-    <div class="review" id="review"></div>
+    <div class="review">
+      <section class="outputs" id="outputs" aria-label="Take the review with you" hidden>
+        <div class="out">
+          <h3>Download</h3>
+          <div class="row">
+            <a class="btn" id="out-download" download>Download review (HTML)</a>
+            <a class="btn ghost" id="out-md" download>report.md</a>
+            <a class="btn ghost" id="out-json" download>report.json</a>
+          </div>
+          <div class="help"><span id="out-download-help"></span> <a id="out-open" target="_blank" rel="noopener">Open it in a new tab</a></div>
+        </div>
+        <div class="out">
+          <h3>Email</h3>
+          <form class="row" id="email-form" novalidate>
+            <input class="input" id="email-to" type="email" autocomplete="email" spellcheck="false" placeholder="name@example.org" aria-label="Recipient address">
+            <button class="btn" type="submit" id="email-send" disabled>Email the review</button>
+          </form>
+          <div class="help"><span id="email-help"></span> <span id="email-result" hidden></span></div>
+        </div>
+        <div class="out">
+          <h3>Share</h3>
+          <div class="row"><button class="btn" type="button" id="share-btn" aria-expanded="false">Show share link</button></div>
+          <div class="help" id="share-hint">The address of this page for others on this network, if the server allows it.</div>
+          <div class="share" id="share-box" hidden>
+            <div class="help" id="share-text"></div>
+            <div class="cmd" id="share-line"></div>
+          </div>
+        </div>
+      </section>
+      <div id="review"></div>
+    </div>
     <aside class="chat" id="chat" aria-label="Ask the review"><div class="chat-inner">
       <div class="head"><h2>Ask the review</h2><span class="pill" id="chat-label">reading aid, not the review</span></div>
       <div class="notice">Answers come only from this run directory: report.json, the evidence entries its findings cite and the coverage outcomes. The model may quote and cite, never add a finding, change one, or re-run the review. If the review does not answer a question, it says so and nothing more.</div>

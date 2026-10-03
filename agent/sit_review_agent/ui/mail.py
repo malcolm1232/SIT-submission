@@ -60,23 +60,24 @@ def valid_address(addr: str) -> bool:
 def load_smtp(path: Path) -> tuple[SmtpConfig | None, str]:
     """The SMTP settings in ``path`` (``config/ui.yaml``), or ``None`` and what is missing."""
     if not path.is_file():
-        return None, "there is no config/ui.yaml"
+        return None, "the file does not exist"
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
-        return None, f"config/ui.yaml does not parse ({type(exc).__name__})"
+        return None, f"the file does not parse ({type(exc).__name__})"
     email = doc.get("email") if isinstance(doc, dict) else None
     if not isinstance(email, dict):
-        return None, "config/ui.yaml has no email section"
+        return None, "the file has no email section"
     host, user, sender = (str(email.get(k) or "").strip() for k in ("host", "username", "from"))
     missing = [k for k, v in (("host", host), ("username", user), ("from", sender)) if not v]
     if missing:
-        return None, f"config/ui.yaml leaves {', '.join(missing)} empty"
+        names = missing[0] if len(missing) == 1 else ", ".join(missing[:-1]) + " and " + missing[-1]
+        return None, f"{names} {'is' if len(missing) == 1 else 'are'} empty"
     port = email.get("port", 587)
     if not isinstance(port, int) or isinstance(port, bool) or not 0 < port < 65536:
-        return None, "config/ui.yaml email.port is not a port number"
+        return None, "email.port is not a port number"
     if not valid_address(sender):
-        return None, "config/ui.yaml email.from is not one plain address"
+        return None, "email.from is not one plain address"
     return SmtpConfig(host=host, port=port, starttls=email.get("starttls", True) is not False, username=user,
                       sender=sender), ""
 
