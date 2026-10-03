@@ -30,13 +30,10 @@ Commits carry the identity `malcolm1232 <66200354+malcolm1232@users.noreply.gith
 
 1. Check the hub.
    Run `git -C ~/Desktop/SIT fetch origin && git -C ~/Desktop/SIT rev-parse --short origin/claude/happy-darwin-d0bl94`.
-   If it prints something newer than 9b5dd53, read `docs/transcripts/session4/final_hub.md` on the remote tip (its "for the next session" section) and go to item 2.
-   If it still prints 9b5dd53, the hub was stopped: read `git -C ~/Desktop/SIT-wt/final log --oneline 9b5dd53..HEAD` and `git -C ~/Desktop/SIT-wt/final status --porcelain`, then spawn a fresh Opus verifier with the brief in `docs/transcripts/session4/final_hub.md` if that file exists on `s4/final`, otherwise with this instruction: merge `s4/ui-out`, `s4/fixrefs`, `s4/mcpfix` into `s4/final`, run section 7 in full, record decisions #36 to #38 as described in section 4, update `docs/ARCHITECTURE.md` from "in build" to present tense for the UI, `finding_refs.py`, INV-12 and `progress.jsonl`, and push `s4/final:claude/happy-darwin-d0bl94` without force.
+   If it prints something newer than e52f735, read `docs/transcripts/session4/final_hub.md` on the remote tip (its "for the next session" section) and go to item 2.
+   If it still prints e52f735, the hub was stopped (the Mac was shut down on 3 Oct 2026 at about 14:55 while it ran): read `git -C ~/Desktop/SIT-wt/final log --oneline 9b5dd53..HEAD` and `git -C ~/Desktop/SIT-wt/final status --porcelain`, then spawn a fresh Opus verifier with the brief in `docs/transcripts/session4/final_hub.md` if that file exists on `s4/final`, otherwise with this instruction: merge `s4/ui-out`, `s4/fixrefs`, `s4/mcpfix` into `s4/final`, run section 7 in full, record decisions #36 to #38 as described in section 4, update `docs/ARCHITECTURE.md` from "in build" to present tense for the UI, `finding_refs.py`, INV-12 and `progress.jsonl`, and push `s4/final:claude/happy-darwin-d0bl94` without force.
    Done when `git ls-remote origin claude/happy-darwin-d0bl94` shows a commit that contains `agent/sit_review_agent/ui/server.py` and `agent/sit_review_agent/finding_refs.py` (`git -C ~/Desktop/SIT ls-tree -r --name-only origin/claude/happy-darwin-d0bl94 | grep -c -E 'ui/server.py|finding_refs.py'` prints 2).
-2. Commit this handover and the two SUPERSEDED lines.
-   They sit uncommitted in `~/Desktop/SIT-wt/arch` on `s4/arch` (`docs/HANDOVER_261003_PLANNER.md`, `docs/HANDOVER_FULL.md`, `docs/HANDOVER_FABLE.md`).
-   After item 1, run `git -C ~/Desktop/SIT-wt/arch fetch origin && git -C ~/Desktop/SIT-wt/arch merge --no-edit origin/claude/happy-darwin-d0bl94`, commit the three files with the message `Handover of 3 Oct 2026: the planner session`, and push `s4/arch:claude/happy-darwin-d0bl94`.
-   Done when the remote tip contains `docs/HANDOVER_261003_PLANNER.md`.
+2. Nothing: this handover and the two SUPERSEDED lines were pushed as e52f735 on 3 Oct 2026 14:50, so the remote tip at writing is e52f735, not 9b5dd53, and the hub of item 1 must merge it (a fast-forward push from `s4/final` will be refused until it does).
 3. Refresh the public snapshot after item 2 so it holds the merged UI and this handover.
    Run `~/Desktop/SIT-wt/arch/.venv/bin/python ~/Desktop/SIT-wt/arch/scripts/export_public_snapshot.py --target <empty dir in the scratchpad> --repo ~/Desktop/SIT-wt/arch --allow-file ~/Desktop/SIT-wt/arch/.public-allow --allow 'home-path:tests/test_export_public_snapshot.py' --init-git` with its output piped through `grep -E '^(included|GOOD|NOT GOOD)'` only (never print the scanner's matched values: three workers were stopped by the safeguard doing so).
    Then push that one commit to `https://github.com/malcolm1232/SIT-public` (`git -C <dir> remote add origin https://github.com/malcolm1232/SIT-public.git && git -C <dir> push --force origin HEAD:main`; the force is correct here, the snapshot has no history to keep).
@@ -53,9 +50,8 @@ Commits carry the identity `malcolm1232 <66200354+malcolm1232@users.noreply.gith
 
 | Command | Expected on 03 Oct 2026 14:40 | If different |
 |---|---|---|
-| `git -C ~/Desktop/SIT rev-parse --short origin/claude/happy-darwin-d0bl94` (after `fetch`) | `9b5dd53` | newer: the hub pushed, item 1 is done |
+| `git -C ~/Desktop/SIT rev-parse --short origin/claude/happy-darwin-d0bl94` (after `fetch`) | `e52f735` (this handover) | newer: the hub pushed, item 1 is done |
 | `git -C ~/Desktop/SIT-wt/final log --oneline -1` | `67c69e2` or later | the hub moved on; read its report |
-| `git -C ~/Desktop/SIT-wt/arch status --porcelain` | three `M`/`??` lines: this file and the two SUPERSEDED lines | already committed: skip item 2 |
 | `pgrep -fl 'dra ui'` | one server on port 8765 serving `~/Desktop/SIT-wt/uiint/runs` (started by this session for him to look at) | none: fine; kill it with `pkill -f 'dra ui --port 8765'` after checking its cwd |
 | `gh repo view malcolm1232/SIT-public --json visibility` | `PUBLIC` (he flipped it himself at about 14:30) | PRIVATE: he has not flipped it; leave it |
 | `ls ~/Desktop/SIT-wt/live/runs/input/sit_sample_v1.pdf` | exists (untracked, gitignored) | missing: copy from `~/Downloads/SIT_Memory_Platform_Detailed_Design.pdf` |
