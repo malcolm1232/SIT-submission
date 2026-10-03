@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.test_reassessment_delta import MAIL, STRENGTH, TESTING, WITHDRAW_NOTE, _delta, _run
+from test_reassessment_delta import MAIL, STRENGTH, TESTING, WITHDRAW_NOTE, _delta, _run
 
 from sit_review_agent.ui import rundata
 from sit_review_agent.ui.launcher import Launcher

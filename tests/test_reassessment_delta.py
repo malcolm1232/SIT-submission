@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.test_run_and_resume import tools_factory
+from test_run_and_resume import tools_factory
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.invariants import check_all, check_INV_13
