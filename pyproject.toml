@@ -26,6 +26,9 @@ dependencies = [
     # minimum pins because mcp owns the exact versions.
     "starlette>=1.7.0",
     "uvicorn>=0.54.0",
+    # dra ui exports and chat (ui/export.py): report.md to HTML. Already resolved through typer's
+    # rich; declared because the UI imports it directly. Minimum pin: the version tested.
+    "markdown-it-py>=4.2.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +36,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "ruff==0.16.10",
+    "playwright==1.63.0",    # browser tests of dra ui; then run `playwright install chromium`
 ]
 
 [project.scripts]
