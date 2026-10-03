@@ -46,3 +46,7 @@ prompts: `PROMPTS.lock up to date (bundle 6f0ee28ab9ac)`.
 No live run with tool servers, so B, D and E are not seen on a real 30-page review.
 The reopen count covers the current process only: reopens before a resume are not added.
 The 64 shard-count failures are not fixed, because they need fixture or answer-key changes this task may not make.
+
+## E, planner ruling after the first report
+A research skip with no external question now keeps `sufficient_evidence` / `no_external_questions`, the reason used before the gate, because nothing was tried; `test_research_phase.py::test_no_external_questions` asserts that detail again.
+`test_e_research_skipped_with_no_external_question_keeps_its_reason` asserts the skip passes unchanged, and that a plan with an external question gets no such pass.
