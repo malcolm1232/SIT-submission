@@ -23,13 +23,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from test_run_and_resume import tools_factory
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.invariants import check_all, check_INV_13
 from sit_review_agent.orchestrator import RunRequest, run_review
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.selftest import FIXTURE_DIR, fixture_gateway, selftest_config
+from test_run_and_resume import tools_factory
 
 PDF = FIXTURE_DIR / "design.pages.txt"
 MAIL = "E-mail plan cannot send peak-day reminders"
