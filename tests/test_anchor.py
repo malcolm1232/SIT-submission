@@ -156,3 +156,18 @@ def test_table_of_contents_does_not_capture_section_refs() -> None:
     assert [(s.section_id, s.page_start) for s in doc.sections] == [("1", 2), ("2", 3), ("3", 3)]
     r = verify_anchor(doc, "FR-1 A student may hold up to three active bookings at any one time.", 3, "2")
     assert r.ok and r.section_id == "2"
+
+
+def test_toc_whose_last_entry_is_followed_by_a_footer_is_still_dropped() -> None:
+    # The last contents line is followed by a page footer and a running header, so its "body" is not
+    # empty; it must still be read as a contents entry, not as a real section that swallows the rest.
+    raw = ("[[PAGE 1]]\nRoom Booking - Design\nTable of Contents\n1. Introduction\n2. Requirements\n3. Design\n"
+           "Page 1\n[[PAGE 2]]\nRoom Booking - Design\n1. Introduction\n"
+           "The service lets students reserve study rooms across the whole campus.\n"
+           "[[PAGE 3]]\nRoom Booking - Design\n2. Requirements\n"
+           "FR-1 A student may hold up to three active bookings at any one time.\n"
+           "The booking flow has three layers:\n1 Search\n2 Hold\n3 Confirm\n"
+           "3. Design\nBookings are stored in the existing campus database cluster with nightly backups.\n")
+    doc = Document.from_page_marked_text(normalise(raw), doc_id="DOC-toc-footer")
+    assert [(s.section_id, s.heading, s.page_start) for s in doc.sections] == [
+        ("1", "Introduction", 2), ("2", "Requirements", 3), ("3", "Design", 3)]
