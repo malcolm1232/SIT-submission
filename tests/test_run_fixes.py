@@ -130,7 +130,8 @@ def test_d_manifest_counts_the_session_reopens_of_the_gateway_stack() -> None:
     stack = SimpleNamespace(inner=SimpleNamespace(inner=base))
     assert session_reopens(SimpleNamespace(tools=stack)) == {
         "session_reopens": 3, "session_reopens_by_server": {"mcp-search": 2, "mcp-standards": 1}}
-    assert session_reopens(SimpleNamespace(tools=SimpleNamespace(inner=None, session_events=[])))["session_reopens"] == 0
+    empty = SimpleNamespace(tools=SimpleNamespace(inner=None, session_events=[]))
+    assert session_reopens(empty)["session_reopens"] == 0
     assert session_reopens(SimpleNamespace(tools=None)) == {"session_reopens": 0, "session_reopens_by_server": {}}
 
 
