@@ -256,15 +256,29 @@ def _parse_sections(text: str, pages: list[Page]) -> list[Section]:
         if 0 < cut <= 80:
             title = title[:cut]
         heads.append((m.start(), m.group("num"), title[:120], m.end()))
-    # Drop table-of-contents entries: a heading with no body text before the next heading whose
-    # number appears again later in the document.
+    # Drop table-of-contents entries: a heading whose number appears again later in the document and
+    # that has no body text before the next heading, or whose number AND title appear again later
+    # (the last contents line is often followed by a page footer and a running header, so its body
+    # is not empty; kept, it would swallow every lower-numbered section as a list item).
+    def _key(t: str) -> str:
+        return t.rstrip(".").strip().casefold()
+
     kept: list[tuple[int, str, str]] = []
+    toc: dict[str, str] = {}                           # number -> title, from the dropped contents entries
     for i, (start, num, title, line_end) in enumerate(heads):
         next_start = heads[i + 1][0] if i + 1 < len(heads) else len(text)
         empty_body = not PAGE_MARKER_RE.sub("", text[line_end:next_start]).strip()
-        if empty_body and any(h[1] == num for h in heads[i + 1:]):
+        same_later = [h for h in heads[i + 1:] if h[1] == num]
+        if same_later and (empty_body or any(_key(h[2]) == _key(title) for h in same_later)):
+            toc.setdefault(num, _key(title))
             continue
         kept.append((start, num, title))
+    # With a contents list, a candidate whose number is listed there under another title is a list
+    # item when another candidate carries the listed title (a layer list "4 Memory Retrieval" inside
+    # section 4, before the real "5. Target Architecture").
+    kept = [(start, num, title) for start, num, title in kept
+            if num not in toc or _key(title) == toc[num]
+            or not any(n == num and _key(t) == toc[num] for _, n, t in kept)]
     kept = _drop_list_items(kept)
     out: list[Section] = []
     for i, (start, num, title) in enumerate(kept):

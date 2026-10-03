@@ -1,0 +1,589 @@
+{
+ "agent": {
+  "allow_fallback": false,
+  "assess": {
+   "shards": [
+    {
+     "criteria": [
+      "design_intent",
+      "fitness_for_objectives",
+      "decision_preservation"
+     ],
+     "name": "intent_and_fitness"
+    },
+    {
+     "criteria": [
+      "requirement_completeness",
+      "internal_consistency",
+      "verifiability"
+     ],
+     "name": "requirements_and_consistency"
+    },
+    {
+     "criteria": [
+      "claims_and_external_constraints",
+      "assumptions_and_dependencies"
+     ],
+     "name": "claims_and_assumptions"
+    },
+    {
+     "criteria": [
+      "security_and_privacy",
+      "scalability_and_failure_modes",
+      "operability_and_governance"
+     ],
+     "name": "risk_and_operations"
+    }
+   ]
+  },
+  "claude_code": {
+   "executable": "claude",
+   "extra_args": [
+    "--setting-sources",
+    ""
+   ],
+   "inherit_api_key": false,
+   "max_budget_usd_per_call": null
+  },
+  "effort": {
+   "assess": "medium",
+   "plan": "medium",
+   "refine": "medium",
+   "report": "medium",
+   "research": "low",
+   "verify": "medium"
+  },
+  "fault_schedule": null,
+  "files": {
+   "criteria": "criteria.yaml",
+   "endpoints": "endpoints.yaml",
+   "persona": "persona.yaml",
+   "stop_rules": "stop_rules.yaml",
+   "tools": "tools.yaml",
+   "url_policy": "url_policy.yaml"
+  },
+  "llm": {
+   "backend": "claude_code",
+   "backoff_base_s": 2.0,
+   "backoff_max_s": 60.0,
+   "context_window_tokens": null,
+   "first_call_network_window_s": 10.0,
+   "max_retries": 4,
+   "refusal_retries": 1,
+   "timeout_s": 1800.0
+  },
+  "max_tokens": 128000,
+  "model": "claude-opus-5-5",
+  "persona": "generalist_architect",
+  "phases": {
+   "assess": true,
+   "ingest": true,
+   "plan": true,
+   "refine": true,
+   "report": true,
+   "research": true,
+   "understand": true,
+   "verify": true
+  },
+  "plan_approval": false,
+  "record": {
+   "cassette_dir": "tests/fixtures/cassettes"
+  },
+  "replay": {
+   "fixtures": null,
+   "strict": true
+  },
+  "report": {
+   "min_severity": "low",
+   "template": "standard"
+  },
+  "run_root": "runs",
+  "thinking_display": "omitted",
+  "transport": "live"
+ },
+ "cli_args": {
+  "profile": "demo"
+ },
+ "config_root": "/Users/malco/Desktop/SIT-wt/live/config",
+ "criteria": {
+  "criteria": [
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "design_intent",
+    "kinds": [
+     "strength",
+     "gap",
+     "ambiguity"
+    ],
+    "lab_ref": "§1.2, §2.1, §2.3",
+    "question": "What are the design's objectives, principles, constraints, requirements and approved decisions, and are they stated clearly enough to review against?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "fitness_for_objectives",
+    "kinds": [
+     "strength",
+     "risk",
+     "gap",
+     "validation_need"
+    ],
+    "lab_ref": "§1.4, §2.3, §3.2",
+    "question": "Does each major design element plausibly achieve the objective or requirement it is meant to serve?",
+    "research_hints": [
+     "capabilities and documented limits of the named products and services"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "requirement_completeness",
+    "kinds": [
+     "gap"
+    ],
+    "lab_ref": "§1.4, §2.3",
+    "question": "Are any requirements, controls, error paths, rollback paths or owners missing that the objectives need?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "internal_consistency",
+    "kinds": [
+     "risk",
+     "ambiguity"
+    ],
+    "lab_ref": "§2.4",
+    "question": "Do requirements, decisions, numbers, flows and acceptance criteria agree with each other across sections?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "claims_and_external_constraints",
+    "kinds": [
+     "risk",
+     "validation_need"
+    ],
+    "lab_ref": "§1.2, §3.2",
+    "question": "Are factual and quantitative claims about products, standards, regulations and platform limits correct and current?",
+    "research_hints": [
+     "official product documentation and published quotas",
+     "the text of the cited standard or regulation"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "security_and_privacy",
+    "kinds": [
+     "risk",
+     "gap"
+    ],
+    "lab_ref": "§1.4, §3.2",
+    "question": "Are data protection, access control, secrets handling, auditability and regulatory obligations covered for the data the design handles?",
+    "research_hints": [
+     "applicable data-protection regulation and official security guidance for the named services"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "scalability_and_failure_modes",
+    "kinds": [
+     "risk",
+     "validation_need"
+    ],
+    "lab_ref": "§1.4, §3.2",
+    "question": "Does the design hold at the stated load and under partial failure, retry, concurrency and recovery?",
+    "research_hints": [
+     "published performance characteristics and failure behaviour of the named components"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "assumptions_and_dependencies",
+    "kinds": [
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§1.2, §2.3",
+    "question": "Which premises, pending items, vendor capabilities or approvals does the design rely on without verifying or tracking them to closure?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "verifiability",
+    "kinds": [
+     "validation_need"
+    ],
+    "lab_ref": "§2.3, §3.2",
+    "question": "Can each requirement be verified by its acceptance criterion, and which claims need a test, benchmark or prototype?",
+    "research_hints": [
+     "recognised test or benchmark methods for the claim"
+    ]
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "decision_preservation",
+    "kinds": [
+     "strength",
+     "risk",
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§1.3",
+    "question": "Do the design and any proposed refinement preserve the approved decisions and constraints, and is any challenge to one justified by strong evidence?",
+    "research_hints": []
+   },
+   {
+    "applies_to": [
+     "all"
+    ],
+    "id": "operability_and_governance",
+    "kinds": [
+     "gap",
+     "unresolved_assumption"
+    ],
+    "lab_ref": "§3.2",
+    "question": "Are operation, monitoring, cost, ownership and the governance decisions the design needs identified, with an accountable owner?",
+    "research_hints": []
+   }
+  ]
+ },
+ "endpoints": {
+  "servers": {
+   "mcp-browser-automation-pw": "https://mcp-browser-automation-pw.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-document-intelligence": "https://mcp-document-intelligence.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-internet-search": "https://mcp-internet-search.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp",
+   "mcp-research-information": "https://mcp-research-information.delightfulsky-d55e63aa.southeastasia.azurecontainerapps.io/mcp"
+  }
+ },
+ "personas": {
+  "personas": {
+   "generalist_architect": {
+    "emphasis": "Balanced review across objectives, requirements, decisions, risks and verifiability.\n",
+    "title": "Principal solution architect"
+   },
+   "security_architect": {
+    "emphasis": "Same review scope, with extra scrutiny of threats, data protection, access control, auditability and regulatory obligations.\n",
+    "title": "Security and privacy architect"
+   }
+  }
+ },
+ "source_files": {
+  "config/agent.yaml": "25d0cd1c0d9624ec50e93904c7e6f024b8812ea83731ec5d494ed16889200629",
+  "config/criteria.yaml": "4f16aba8d0f0df9c7cce8ca828ebadf79e91a498736ac9224838bdc28b2c0bad",
+  "config/endpoints.yaml": "99cd4094eef39e2a526030bb9c99cfa73d9fe6cb1765c3ffb31a8e236cf252f7",
+  "config/persona.yaml": "f49708c3dd6c571bd7dfdb7d6c939a303a146bb13f4cb65fee03f2dee9880ce8",
+  "config/profiles/demo.yaml": "7482b6b2103d39f51936a7a09ddb9625b92f12a647278f95be9536264ac0a7dc",
+  "config/stop_rules.yaml": "d930647f848d32401eee39fc38fd9b42205395007830551a5125165cab2bc094",
+  "config/tools.yaml": "76049968ac6087fe666f64f06b135f1ceda42b5409dacf5fbcb9e30177dde490",
+  "config/url_policy.yaml": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+ },
+ "stop_rules": {
+  "active": [
+   "sufficient_evidence",
+   "no_marginal_gain",
+   "budget_tool_calls",
+   "budget_tokens",
+   "deadline"
+  ],
+  "deadline_seconds": 540,
+  "max_input_tokens": 4000000,
+  "max_output_tokens": null,
+  "max_research_iterations": 4,
+  "max_tool_calls": 30,
+  "min_independent_sources": 2,
+  "no_marginal_gain_window": 2,
+  "refine_reserve_seconds": 200,
+  "report_reserve_seconds": 75,
+  "stage_limits_s": {
+   "refine_end": 465,
+   "stage_1_end": 265,
+   "verdict_end": 530
+  }
+ },
+ "tools": {
+  "auth_env": "SIT_MCP_API_KEY",
+  "auth_header": "Authorization",
+  "call_timeout_s": 60.0,
+  "capabilities": {
+   "browse": "mcp-browser-automation-pw",
+   "scholarly": "mcp-research-information",
+   "search": "mcp-internet-search"
+  },
+  "cold_start_retries": 1,
+  "connect_timeout_s": 150.0,
+  "servers": [
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": true,
+    "name": "mcp-internet-search"
+   },
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": true,
+    "name": "mcp-research-information"
+   },
+   {
+    "allow_tools": [
+     "*"
+    ],
+    "enabled": false,
+    "name": "mcp-browser-automation-pw"
+   },
+   {
+    "allow_tools": [],
+    "enabled": false,
+    "name": "mcp-document-intelligence"
+   }
+  ],
+  "url_policy": "url_policy.yaml"
+ },
+ "url_policy": {
+  "allow_domains": [],
+  "authority": {
+   "docs_prefixes": [
+    "docs.",
+    "developer.",
+    "developers.",
+    "learn.",
+    "spec.",
+    "specs.",
+    "documentation."
+   ],
+   "informal": [
+    "medium.com",
+    "dev.to",
+    "stackoverflow.com",
+    "stackexchange.com",
+    "serverfault.com",
+    "superuser.com",
+    "reddit.com",
+    "quora.com",
+    "hashnode.dev",
+    "hashnode.com",
+    "substack.com",
+    "blogspot.com",
+    "wordpress.com",
+    "linkedin.com",
+    "youtube.com",
+    "twitter.com",
+    "x.com",
+    "news.ycombinator.com",
+    "geeksforgeeks.org",
+    "tutorialspoint.com",
+    "w3schools.com",
+    "javatpoint.com",
+    "facebook.com",
+    "tiktok.com",
+    "pinterest.com",
+    "slideshare.net",
+    "scribd.com",
+    "towardsdatascience.com"
+   ],
+   "peer_reviewed": [
+    "doi.org",
+    "dl.acm.org",
+    "acm.org",
+    "ieeexplore.ieee.org",
+    "ieee.org",
+    "springer.com",
+    "link.springer.com",
+    "sciencedirect.com",
+    "elsevier.com",
+    "nature.com",
+    "science.org",
+    "wiley.com",
+    "onlinelibrary.wiley.com",
+    "tandfonline.com",
+    "sagepub.com",
+    "plos.org",
+    "mdpi.com",
+    "frontiersin.org",
+    "bmj.com",
+    "thelancet.com",
+    "nejm.org",
+    "jamanetwork.com",
+    "pubmed.ncbi.nlm.nih.gov",
+    "ncbi.nlm.nih.gov",
+    "usenix.org",
+    "aclanthology.org",
+    "openreview.net",
+    "jmlr.org",
+    "proceedings.mlr.press",
+    "neurips.cc",
+    "papers.nips.cc",
+    "aaai.org",
+    "ojs.aaai.org",
+    "vldb.org",
+    "cambridge.org",
+    "academic.oup.com",
+    "jstor.org",
+    "cochranelibrary.com",
+    "iopscience.iop.org",
+    "asce.org",
+    "ascelibrary.org",
+    "icevirtuallibrary.com"
+   ],
+   "preprint": [
+    "arxiv.org",
+    "biorxiv.org",
+    "medrxiv.org",
+    "ssrn.com",
+    "researchsquare.com",
+    "preprints.org",
+    "researchgate.net",
+    "semanticscholar.org",
+    "openalex.org",
+    "crossref.org",
+    "scholar.google.com",
+    "core.ac.uk",
+    "hal.science",
+    "zenodo.org"
+   ],
+   "secondary": [
+    "wikipedia.org",
+    "britannica.com",
+    "martinfowler.com",
+    "infoq.com",
+    "thoughtworks.com",
+    "queue.acm.org",
+    "lwn.net",
+    "oreilly.com",
+    "highscalability.com",
+    "brendangregg.com",
+    "netflixtechblog.com",
+    "engineering.fb.com",
+    "engineering.atspotify.com",
+    "blog.cloudflare.com",
+    "aws.amazon.com/blogs",
+    "cloud.google.com/blog",
+    "techcommunity.microsoft.com",
+    "devblogs.microsoft.com",
+    "github.blog",
+    "uber.com/blog",
+    "dropbox.tech",
+    "slack.engineering",
+    "gartner.com",
+    "forrester.com",
+    "mckinsey.com",
+    "iapp.org",
+    "lexology.com",
+    "jdsupra.com"
+   ],
+   "standards": [
+    "iso.org",
+    "iec.ch",
+    "ietf.org",
+    "rfc-editor.org",
+    "w3.org",
+    "nist.gov",
+    "etsi.org",
+    "itu.int",
+    "standards.ieee.org",
+    "owasp.org",
+    "cisecurity.org",
+    "pcisecuritystandards.org",
+    "oasis-open.org",
+    "ecma-international.org",
+    "whatwg.org",
+    "unicode.org",
+    "openid.net",
+    "fidoalliance.org",
+    "cloudevents.io",
+    "opentelemetry.io",
+    "spec.openapis.org",
+    "json-schema.org",
+    "europa.eu",
+    "legislation.gov.uk",
+    "who.int",
+    "ich.org",
+    "oecd.org",
+    "un.org",
+    "cnil.fr",
+    "ico.org.uk",
+    "pdpc.gov.sg",
+    "imda.gov.sg",
+    "csa.gov.sg",
+    "mas.gov.sg",
+    "hhs.gov",
+    "fda.gov",
+    "cisa.gov",
+    "enisa.europa.eu",
+    "bsi.bund.de",
+    "ncsc.gov.uk",
+    "modelcontextprotocol.io"
+   ],
+   "vendor_docs": [
+    "learn.microsoft.com",
+    "docs.microsoft.com",
+    "docs.aws.amazon.com",
+    "cloud.google.com",
+    "developer.apple.com",
+    "developers.google.com",
+    "docs.oracle.com",
+    "docs.github.com",
+    "kubernetes.io",
+    "postgresql.org",
+    "python.org",
+    "docs.python.org",
+    "apache.org",
+    "redis.io",
+    "nginx.org",
+    "mongodb.com",
+    "elastic.co",
+    "docker.com",
+    "hashicorp.com",
+    "terraform.io",
+    "openai.com",
+    "anthropic.com",
+    "docs.anthropic.com",
+    "platform.claude.com",
+    "code.claude.com",
+    "azure.microsoft.com",
+    "aws.amazon.com",
+    "cloudflare.com",
+    "twilio.com",
+    "mysql.com",
+    "sqlite.org",
+    "nodejs.org",
+    "rust-lang.org",
+    "go.dev",
+    "golang.org",
+    "java.com",
+    "openjdk.org",
+    "spring.io",
+    "djangoproject.com",
+    "fastapi.tiangolo.com",
+    "pydantic.dev",
+    "snowflake.com",
+    "databricks.com",
+    "grafana.com",
+    "prometheus.io"
+   ]
+  },
+  "deny_domains": [],
+  "fetch_only_from_results": true,
+  "mode": "deny",
+  "reject_added_query_strings": true
+ }
+}

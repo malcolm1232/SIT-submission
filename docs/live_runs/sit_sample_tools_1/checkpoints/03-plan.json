@@ -1,0 +1,517 @@
+{
+ "checkpoint_version": 1,
+ "created_utc": "2026-10-03T04:25:42Z",
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "52966ed8963969945d1ce0f129f8d5596d9db4d4409e0f7b63d5dcb1af53f3d6",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "offsets": {
+  "ledger_jsonl": 0,
+  "llm_jsonl": 16706,
+  "tools_jsonl": 0
+ },
+ "ordinal": 2,
+ "phase": "plan",
+ "run_id": "sit_sample_tools_1",
+ "seq": 3,
+ "state": {
+  "anchor_table": [],
+  "budget": {
+   "cache_creation_input_tokens": 24423,
+   "cache_read_input_tokens": 3379,
+   "elapsed_s": 79.648,
+   "input_tokens": 27804,
+   "new_sources_by_iteration": [],
+   "output_tokens": 8025,
+   "phase_seconds": {
+    "ingest": 2.097,
+    "plan": 77.548
+   },
+   "research_iterations": 0,
+   "started_monotonic": 66255.903773041,
+   "tool_calls": 0
+  },
+  "completed_phases": [
+   "ingest",
+   "plan"
+  ],
+  "coverage": [],
+  "created_utc": "2026-10-03T04:24:22Z",
+  "current_phase": "ingest",
+  "declined_sections": [],
+  "degradations": [
+   {
+    "event": "DOC-sit_sample_v1: native PDF block not sent because the configured model backend accepts text only",
+    "id": "DEG-001",
+    "impact": "figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text",
+    "type": "input_degraded"
+   }
+  ],
+  "documents": [
+   {
+    "doc_id": "DOC-sit_sample_v1",
+    "native_pdf": false,
+    "page_count": 30,
+    "pdf_path": "runs/input/sit_sample_v1.pdf",
+    "role": "under_review",
+    "sha256_pdf": "57f49eb28ade551d3a7dcf1160c9a6debea19bdb3477db68f05111df322bd540",
+    "sha256_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+    "text_path": "text/DOC-sit_sample_v1.pages.txt",
+    "title": "SIT Institutional Memory Platform — Detailed Design",
+    "version": null
+   }
+  ],
+  "fallback_events": [],
+  "finding_drafts": [],
+  "finding_meta": {},
+  "findings": [],
+  "intent_summary": null,
+  "k_index": null,
+  "limitations": [],
+  "llm_calls": {
+   "plan": [
+    "llm-0002"
+   ]
+  },
+  "mode": "dev",
+  "plan": {
+   "approved": true,
+   "criteria_skipped": [],
+   "questions": [
+    {
+     "capability": "none",
+     "criterion_id": "design_intent",
+     "evidence_ids": [],
+     "id": "RQ-001",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are the objectives, the principles P1-P10 (including the rule that a principle wins any conflict), FR/NFR IDs and Confirmed Decisions stated clearly enough to review against? Which items are binding constraints and which are only estimates (for example NFR-10 cost, NFR-2 latency)?",
+     "rationale": "Every later finding has to trace to a stated objective, requirement or approved decision, and the precedence rule in Section 3 decides how conflicts are judged.",
+     "section_refs": [
+      "1",
+      "2",
+      "3",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "design_intent",
+     "evidence_ids": [],
+     "id": "RQ-002",
+     "needs_external": false,
+     "queries": [],
+     "question": "Do ambiguous requirement terms have two materially different readings: 'concurrent learner namespaces' (NFR-1), 'normal load' (NFR-2), 'within one provisioning cycle' (FR-1), and 'designated agents' versus 'named_agents list' for the sensitive tier?",
+     "rationale": "Unclear terms in the requirements make the Section 27 pass/fail criteria impossible to apply.",
+     "section_refs": [
+      "2.2",
+      "11",
+      "15",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-003",
+     "needs_external": true,
+     "queries": [
+      "pgvector HNSW filtering WHERE clause ef_search fewer results",
+      "pgvector 0.8 iterative index scans hnsw.iterative_scan",
+      "pgvector filtered search B-tree index exact scan"
+     ],
+     "question": "With an HNSW index plus a selective WHERE filter on learner_id and slot_path (about 500-800 of 9.5M rows), does pgvector search only the filtered subset as Section 12 claims? Or does it post-filter the ef_search candidates, which can return too few results unless the planner uses the B-tree index or iterative index scans?",
+     "rationale": "The NFR-2 latency claim and retrieval quality for context packs depend on how filtered HNSW queries actually execute.",
+     "section_refs": [
+      "11",
+      "12"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-004",
+     "needs_external": true,
+     "queries": [
+      "Azure Database for PostgreSQL flexible server pgvector version supported",
+      "Azure Database for PostgreSQL pg_diskann BM25 full text search extension"
+     ],
+     "question": "Does Azure Database for PostgreSQL Flexible Server support the stated BM25 keyword fallback natively, or only ts_rank full-text ranking? Is pgvector HNSW available there at the required version?",
+     "rationale": "The Embedder fallback path and the vector-store decision rely on capabilities the managed service must actually provide.",
+     "section_refs": [
+      "17",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-005",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can the async write path tell an agent that its write was rejected? The Validator (strict-mode REJECT, sensitivity ceiling) and Classify run in the consumer after the immediate ACK, and no dead-letter queue, error callback or retry/poison-message policy is described.",
+     "rationale": "FR-11 and P6 require writes to be rejected, but an agent that has already received an ACK cannot learn its write was dropped, so data can be lost silently.",
+     "section_refs": [
+      "2.1",
+      "17",
+      "18"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "requirement_completeness",
+     "evidence_ids": [],
+     "id": "RQ-006",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are any controls missing that the objectives need: learner data-access requests, consent handling, write idempotency and dedup on Kafka retries, read-after-write cache invalidation, PostgreSQL backup/DR and HA, reconciliation of the agent backup after degraded mode, and an owner for each? Which of these are already acknowledged in Sections 26/28?",
+     "rationale": "The PDPA audit and governance objectives and FR-16 need these paths, and rule 6 requires checking the backlog before calling something missing.",
+     "section_refs": [
+      "2",
+      "14",
+      "18",
+      "26",
+      "28"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-007",
+     "needs_external": false,
+     "queries": [],
+     "question": "NFR-4 says the MMP is outside the critical request path. Does that hold when Gateway Check 4 calls the MMP to auto-provision slots, the Auditor writes to the MMP AuditStore, and the PolicyEngine is listed as an MMP component?",
+     "rationale": "If any of these sits in the live path, the NFR-4 availability claim and its chaos test would be false.",
+     "section_refs": [
+      "5",
+      "15",
+      "17",
+      "21"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-008",
+     "needs_external": false,
+     "queries": [],
+     "question": "Do the templates and routing contradict each other? Specifically: core slot ceiling INTERNAL versus key accessibility_needs RESTRICTED (the Validator would REJECT it); orientation onboarding_progress typed WORKING (no persistence) yet expiring at orientation end; PUBLIC routed to memory_standard although the tier table lists only INTERNAL+RESTRICTED; FR-9 order classify→embed→validate versus the topic being chosen by sensitivity before classification; FR-13 'exactly one entry' versus enqueue and consumer both logging.",
+     "rationale": "Generating code from mutually contradictory rules produces defects, and Section 28 rates these components as Ready.",
+     "section_refs": [
+      "10",
+      "11",
+      "17",
+      "18",
+      "23",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-009",
+     "needs_external": false,
+     "queries": [],
+     "question": "P8 calls the write path 'Kafka' and Section 25 confirms 'Async via Kafka (Azure Event Hubs)'. Is that consistent with Section 26, which still lists Kafka vs Event Hubs as pending, and is Redis similarly confirmed and pending at the same time?",
+     "rationale": "A confirmed decision that rests on a pending item is an unresolved assumption that affects the write-path design and cost.",
+     "section_refs": [
+      "3",
+      "25",
+      "26"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-010",
+     "needs_external": true,
+     "queries": [
+      "Microsoft Entra ID access token lifetime default configurable maximum",
+      "Entra ID configurable token lifetime policy access token 24 hours limit",
+      "Entra ID userPrincipalName change immutable object id"
+     ],
+     "question": "Can Microsoft Entra ID issue 48-hour access tokens? Default access-token lifetimes are about 60-90 minutes, with configurable lifetime limits and refresh tokens. Is UPN mutable, which would make it unsuitable as the immutable primary key learner_id?",
+     "rationale": "NFR-6, the 48-hour confirmed decision and the identity decision depend on what Entra ID actually allows.",
+     "section_refs": [
+      "6",
+      "15",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-011",
+     "needs_external": true,
+     "queries": [
+      "Azure Database for PostgreSQL flexible server memory optimized 16 vCore price Southeast Asia",
+      "pgvector HNSW index size memory 1536 dimensions million vectors"
+     ],
+     "question": "Is SGD 800-1,200/month realistic for an Azure Database for PostgreSQL Flexible Server Memory Optimised 16 vCore (128 GB) in Southeast Asia, including storage, HA and backup? Does about 9.5M × 1536-dim vectors with HNSW (~57 GB raw, ~80 GB index) fit in 128 GB RAM with headroom?",
+     "rationale": "NFR-10 and the confirmed SKU decision rely on this cost and memory estimate.",
+     "section_refs": [
+      "12",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-012",
+     "needs_external": true,
+     "queries": [
+      "Azure Event Hubs Kafka quotas tiers message size partitions",
+      "Azure Event Hubs dead letter retry Kafka consumer",
+      "Azure OpenAI text-embedding-3-small region availability Southeast Asia"
+     ],
+     "question": "Does Azure Event Hubs Kafka support (tier needed, message size limit, partition counts, no native dead-letter queue, consumer-group limits) fit the write path's 'failed writes queue and retry automatically' claim? Is text-embedding-3-small deployable in an Azure Singapore region for data residency?",
+     "rationale": "The write-path rationale and the separate sensitive-tier embedding deployment depend on these managed-service limits and on regional availability.",
+     "section_refs": [
+      "17",
+      "18",
+      "25",
+      "26"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-013",
+     "needs_external": false,
+     "queries": [],
+     "question": "Is the counselling hard wall (FR-5, P4) actually hard? The counselling agent's own per-learner backup is written 'always, immediate' outside memory_sensitive. Cached context packs live in shared Redis. Escalations written to standard-tier escalations/ may carry counselling content. Super Admin is described as 'Everything'.",
+     "rationale": "FR-5/NFR-5 require isolation at both the policy and the credential level, and these paths could bypass it.",
+     "section_refs": [
+      "11",
+      "13",
+      "14",
+      "18",
+      "19"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-014",
+     "needs_external": true,
+     "queries": [
+      "PDPA Singapore retention limitation obligation section 25",
+      "PDPA Singapore withdrawal of consent cease retention section 16",
+      "PDPC advisory guidelines AI recommendation decision systems personal data"
+     ],
+     "question": "Is serving from an agent backup after a token is REVOKED compatible with access-control intent? Is keeping the agent backup after a learner self-deletes compatible with FR-15 and with PDPA retention-limitation and consent-withdrawal obligations?",
+     "rationale": "These behaviours may break the learner-deletion requirement and the PDPA compliance objective that P7 and the audit rely on.",
+     "section_refs": [
+      "6",
+      "13",
+      "15",
+      "20"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-015",
+     "needs_external": true,
+     "queries": [
+      "PDPA Singapore access and correction obligation sections 21 22",
+      "PDPA data breach notification obligation 3 days",
+      "PDPC guide protection of personal data logging retention"
+     ],
+     "question": "Does PDPA require the specific audit-log retention or access-request support the design implies ('Retained per PDPA requirements')? Do access/correction obligations and data-breach notification create requirements the design lacks? Is the unauthenticated Admin API (acknowledged in Section 28) a launch blocker?",
+     "rationale": "PDPA compliance is a stated objective, and audit retention and the PDPA sign-off are pending (backlog item 4).",
+     "section_refs": [
+      "17",
+      "21",
+      "26",
+      "28"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-016",
+     "needs_external": true,
+     "queries": [
+      "Azure OpenAI embeddings rate limits tokens per minute throttling 429",
+      "Kafka partition key ordering per key idempotent consumer"
+     ],
+     "question": "How does the design behave under term-start write spikes, consumer lag, retries with duplicates, out-of-order writes for one learner (no partition key is defined), Azure OpenAI embedding throttling, and Redis failure? Does the cached read path serve stale or now-forbidden data after a write or a policy change, given that policy decisions are 'not cached' but context packs are?",
+     "rationale": "NFR-1/NFR-3 and the 'rule change takes effect immediately' claim depend on correct behaviour under partial failure and concurrency.",
+     "section_refs": [
+      "16",
+      "17",
+      "18"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-017",
+     "needs_external": false,
+     "queries": [],
+     "question": "Is the agent per-learner backup store ('Full store always present for all learners' for six agents) sized, given a store technology and governed? Does degraded mode have a bounded staleness and a reconciliation path?",
+     "rationale": "FR-16 and P1 depend on a backup store that appears in neither the store architecture nor the sizing.",
+     "section_refs": [
+      "12",
+      "13",
+      "14"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "assumptions_and_dependencies",
+     "evidence_ids": [],
+     "id": "RQ-018",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which premises are unverified or untracked? These include SIS webhook reliability and its failure handling, Entra token behaviour, embedding model stability (re-embedding on model change), PDPA sign-off, and the Event Hubs/Redis choices. Which backlog items (Policy Engine algorithm, compaction, Auditor retention) block the launch scope, and do they contradict Section 28's claim that compaction can be deferred even though term-end compaction is part of the lifecycle?",
+     "rationale": "Several confirmed decisions and the build phases rest on items that are still pending.",
+     "section_refs": [
+      "20",
+      "21",
+      "26",
+      "28",
+      "29"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-019",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can each Section 27 criterion verify its requirement? Cases to check: FR-5 tests only three agents and not the credential level or Super Admin; FR-6 uses static import checks only; FR-9 has an undefined 'enqueue time budget'; NFR-2 has no concurrency profile; NFR-10 is a projection rather than a measurement; FR-8 has no combination cases; FR-16 does not define 'conflicting'.",
+     "rationale": "Build Phase 9 is built on this matrix, so weak criteria let requirements go unverified.",
+     "section_refs": [
+      "27",
+      "29"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-020",
+     "needs_external": true,
+     "queries": [
+      "filtered vector search benchmark recall latency pgvector",
+      "ANN benchmarks recall at k methodology"
+     ],
+     "question": "What recognised benchmark method (for example ANN-benchmarks-style recall@k versus latency with filtered queries under concurrent load) should validate NFR-2 and retrieval quality?",
+     "rationale": "The NFR-2 acceptance criterion measures latency but not recall, which filtered HNSW can degrade.",
+     "section_refs": [
+      "12",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "decision_preservation",
+     "evidence_ids": [],
+     "id": "RQ-021",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can the likely refinements (token lifetime via refresh, filtered-query strategy, a dead-letter path, encryption of the agent backup and cache) be made while preserving the confirmed decisions (48-hour window, pgvector, HNSW parameters, async Kafka, counselling wall)? Does any decision, such as the 48-hour token or SGD cost, meet the bar of two evidence items needed to challenge it?",
+     "rationale": "Approved decisions must be preserved unless strong evidence shows one cannot meet an objective.",
+     "section_refs": [
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "operability_and_governance",
+     "evidence_ids": [],
+     "id": "RQ-022",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are operational monitoring (consumer lag, unembedded backlog, cache hit rate, denial rates), alerting, cost tracking beyond the vector store, and accountable owners (DPO for retention and sensitivity, risk acceptance for the backup surviving deletion, Super Admin use) identified? Is there a DPIA or approval gate?",
+     "rationale": "The MMP governance objective and PDPA accountability need named owners and operational signals.",
+     "section_refs": [
+      "19",
+      "21",
+      "26",
+      "28"
+     ],
+     "status": "open",
+     "summary": ""
+    }
+   ]
+  },
+  "previous_run_dir": null,
+  "prior_review_id": null,
+  "queries_issued": 0,
+  "refusals": [],
+  "registry": [],
+  "registry_frozen": false,
+  "registry_hashes": [],
+  "review_inputs_found": [],
+  "review_mode": "full",
+  "run_id": "sit_sample_tools_1",
+  "sound_area_drafts": [],
+  "sound_areas": [],
+  "stop_reason": null,
+  "tool_calls": [],
+  "unanswered_questions": [],
+  "unresolved": [],
+  "verdict": null
+ }
+}
