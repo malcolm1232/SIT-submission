@@ -25,3 +25,10 @@ No model calls; nothing against the SIT MCP hosts.
 - Secret scan, counts only: `oauth` 0; e-mail addresses 0; `Bearer` followed by a token 0 (the one `Bearer` is the scan line of `MEASUREMENT.md`); `sk-` not preceded by a letter 1, which is the literal `sk-ant-` (7 characters) in that same scan line; the other `sk-` hits are words such as `risk-`.
 - By script against `manifest.json` and `report.json`: wall 424.727 s, cost 4.714814 USD with `cost_usd_lower_bound` true, 21 report entries = 18 findings (1 critical, 10 high, 7 medium) + 3 strengths, verdict `not_fit` at 0.75, degradation "assess shard 2/4 (requirements_and_consistency) was cut by the stage 1 limit at 265 s; 14 finished finding(s) kept".
 - FIXED: `MEASUREMENT.md` line 7 said "21 findings (1 critical, 10 high, 7 medium) plus 3 strengths"; the severities sum to 18 and the 21 include the strengths, so it now says 18 findings.
+
+## 4. The scoring under `eval_pilot_bounded/`
+
+- `scores.json`: `exploratory` true (top level and `judge.exploratory`), status `pilot_unfrozen`; `stdout.txt` and `scores.md` name the exploratory setting.
+- By script against `scores.json`: strict recall 12 of 14, lenient 14 of 14, adjudicated precision 0.944, severity-weighted recall 0.867, critical recall 1.0, strict precision 0.667 (12 of 18), PARTIAL_KEY_MATCH 2, VALID_UNPLANTED 3, INVALID_OPINION 1, 86 judge calls at 9.45 USD; all as in `docs/COMPARISON_LANGGRAPH.md`.
+- Per flaw: strict matches cover 12 flaws, lenient 14; partial only F04 and F07 (the custom loop's run: F04 only), as the note says.
+- The custom column against `docs/live_runs/QUALITY_COMPARISON.md` (concurrent `medium`) and `rehearsal_concurrent_1`'s own files: 382.274 s, 5.735748 USD, 18 scored, 13 of 14, 14 of 14, 0.944, 0.933, 4 of 4, PARTIAL_KEY_MATCH 1, VALID_UNPLANTED 3, DUPLICATE 1, 95 calls at 9.54 USD, strict precision 0.722, `not_fit` at 0.78; all match.
