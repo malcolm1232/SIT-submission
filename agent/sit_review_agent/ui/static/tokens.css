@@ -1,29 +1,61 @@
-/* Tokens for the SIT review UI (dra ui), copied from docs/design/ui_mockup/tokens.css.
-   Radix gray 12-step semantics (research_anti_slop_craft.md 3.1, 7.6), light theme only in this
-   mockup and page; dark would be authored separately (3.3), never inverted.
-   No hex outside this file (rule 8.1). */
+/* Tokens for the SIT review UI, v2: the DBSearch.AI idiom (docs/design/ui_restyle.md, docs/design/ui_mockup_v2/tokens.css).
+   Section 1 is copied from DBSearch.AI/src/dbsearch/server/static/css/tokens.css and css/rail.css so the
+   two products read as one family (same paper ramp, same ink action pill, same signal green, same rail).
+   Section 2 maps the SIT page's own role names onto that palette, so app.css and export.css keep
+   their names and only this file changes. Section 3 is SIT content colour: severity and run state.
+   Light theme only; dark is authored separately later, never inverted (craft 3.3). No hex outside this
+   file (craft 8.1). */
 :root {
-  --bg-app: #fcfcfc;        /* 1 */
-  --bg-subtle: #f9f9f9;     /* 2 */
-  --bg-surface: #ffffff;
-  --bg-control: #f0f0f0;    /* 3 */
-  --bg-hover: #e8e8e8;      /* 4 */
-  --bg-active: #e0e0e0;     /* 5 */
-  --border-subtle: #d9d9d9; /* 6 */
-  --border-control: #cecece;/* 7 */
-  --border-hover: #bbbbbb;  /* 8 */
-  --fg-disabled: #8d8d8d;   /* 9 */
-  --fg-muted: #646464;      /* 11 */
-  --fg: #202020;            /* 12 */
-  --solid-ink: #202020;
-  --solid-ink-fg: #fcfcfc;
-  --focus: #0090ff;         /* blue 9: focus, links, selection only */
-  --link: #0d74ce;          /* blue 11 */
-  /* semantic, used as content only (severity, state) */
-  --red-3: #feebec;  --red-9: #e5484d;  --red-11: #ce2c31;
-  --amber-3: #fff7c2; --amber-11: #ab6400;
-  --green-3: #e6f6eb; --green-11: #218358;
-  --blue-3: #e6f4fe;  --blue-11: #0d74ce;
-  --mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: Inter, -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  /* 1. DBSearch paper palette, reused verbatim */
+  --paper:#FAF9F7; --paper-2:#F2F0EC; --white:#FFFFFF;
+  --ink-900:#16161A; --ink-700:#3A3A42; --ink-500:#6B6B73; --ink-300:#9A9AA2;
+  --rule:#E4E2DD; --rule-strong:#D6D3CC;
+  /* signal green: live dots, verified, grounded. 4.77:1 on paper, safe as text. Never a button fill. */
+  --accent:#15803D; --accent-soft:#ECFDF3; --accent-ring:rgba(21,128,61,.18);
+  --accent-bright:#22C55E;            /* dots only, 2.6:1, never text */
+  /* the one primary action: an ink pill */
+  --action:#16161A; --action-hover:#000000; --action-fg:#FAF9F7;
+  --green:#15803D; --green-soft:#ECFDF3; --green-border:#A7E3BE;
+  --amber:#B45309; --amber-soft:#FEF6E7;
+  --red:#B91C1C; --red-soft:#FDF2F2; --red-border:#F0C0C0;
+  /* the rail (rail.css .navrail), the app's one inverted band */
+  --navrail-bg:#16161A; --navrail-fg:#9A9AA2; --navrail-fg-strong:#FAF9F7; --navrail-muted:#6B6B73;
+  --navrail-active-bg:#FAF9F7; --navrail-active-fg:#16161A; --navrail-w:248px;
+  --navrail-rule:rgba(255,255,255,.07); --navrail-row:rgba(255,255,255,.06);
+  --navrail-note-bg:rgba(255,255,255,.04); --navrail-note-border:rgba(255,255,255,.06);
+  --shadow-sm:0 1px 2px rgba(22,22,26,.04);
+  --shadow:0 1px 2px rgba(22,22,26,.04), 0 1px 3px rgba(22,22,26,.05);
+  --shadow-lg:0 12px 32px -12px rgba(22,22,26,.14), 0 4px 10px -4px rgba(22,22,26,.08);
+  --r-lg:14px; --r-md:10px; --r-sm:7px; --r-pill:999px; --radius-ctl:6px;
+  --font:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --serif:"Instrument Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --mono:ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+
+  /* 2. SIT role names mapped onto the paper palette (app.css and export.css keep these names) */
+  --bg-app:var(--paper); --bg-surface:var(--white); --bg-subtle:var(--paper-2); --bg-control:var(--paper-2);
+  --bg-hover:#ECEAE5; --bg-active:#E4E2DD;
+  --border-subtle:var(--rule); --border-control:var(--rule-strong); --border-hover:#C4C1B9;
+  --fg:var(--ink-900); --fg-2:var(--ink-700); --fg-muted:var(--ink-500); --fg-disabled:var(--ink-300);
+  --solid-ink:var(--action); --solid-ink-fg:var(--action-fg);
+  --focus:var(--ink-900);             /* DBSearch rings in ink, not blue */
+  --link:var(--ink-900);              /* links are ink, underlined; green stays a signal */
+  --sans:var(--font);
+
+  /* 3. SIT content colour: severity and run state (step-3 background, step-11 text, craft 4.3).
+     One saturated fill, critical. Live (running) is the only green on the page; done is ink on paper. */
+  --sev-critical-bg:var(--red); --sev-critical-fg:var(--paper);
+  --sev-high-bg:var(--red-soft); --sev-high-fg:var(--red); --sev-high-border:var(--red-border);
+  --sev-medium-bg:var(--amber-soft); --sev-medium-fg:var(--amber);
+  --sev-low-bg:var(--paper-2); --sev-low-fg:var(--ink-500);
+  --strength-bg:var(--green-soft); --strength-fg:var(--green); --strength-border:var(--green-border);
+  --live-bg:var(--green-soft); --live-fg:var(--green); --live-border:var(--green-border);
+  --done-bg:var(--paper-2); --done-fg:var(--ink-700);
+  --waiting-fg:var(--ink-300);
+}
+
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url("instrument-serif-latin.woff2") format("woff2");
 }

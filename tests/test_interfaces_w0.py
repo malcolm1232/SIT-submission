@@ -94,7 +94,8 @@ def test_refine_revisions_round_trip() -> None:
     out = RefineRevisionsOutput.model_validate(raw)
     assert out.revisions[1].action is RevisionAction.MERGE
     again = RefineRevisionsOutput.model_validate_json(out.model_dump_json())
-    assert again == out and json.loads(out.model_dump_json()) == raw
+    # prior_statuses (2026-10-03, delta reviews) is optional and dumps as [].
+    assert again == out and json.loads(out.model_dump_json()) == {**raw, "prior_statuses": []}
     assert revision_problems(out, IDS) == []
 
 

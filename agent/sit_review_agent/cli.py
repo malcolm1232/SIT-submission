@@ -6,7 +6,7 @@ Commands::
                          [--replay <fixtures>] [--record] [--transport T] [--faults|--fault-schedule <yaml>]
                          [--deadline S] [--max-tool-calls N] [--disable-tool NAME]... [--no-tools]
                          [--plan-only] [--plan-approval] [--allow-fallback] [--mode dev|eval|rehearsal|demo]
-                         [--run-id ID] [--k N]
+                         [--run-id ID] [--k N] [--orchestrator custom|langgraph]
     sit-review run --resume <run_dir> [--accept-drift]
     sit-review review ...                      (alias of run; the runbook's name)
     sit-review explain <run_dir> <finding_id>  (or: explain <finding_id> [--run <run_dir>], default latest run)
@@ -59,6 +59,27 @@ def _not_built(what: str, exc: NotImplementedError) -> None:
 ConfigOpt = Annotated[Path | None, typer.Option("--config", help="config/agent.yaml or its directory")]
 ProfileOpt = Annotated[str | None, typer.Option("--profile", help="overlay config/profiles/<NAME>.yaml (e.g. demo); "
                                                                   "recorded in the manifest, reused by resume")]
+OrchestratorOpt = Annotated[str, typer.Option("--orchestrator", help="custom (the product's state machine, default) | "
+                                                                      "langgraph (the comparison variant, "
+                                                                      "docs/COMPARISON_LANGGRAPH.md; needs the "
+                                                                      "[langgraph] extra)")]
+
+
+def _entry_points(orchestrator: str) -> tuple[Any, Any]:
+    """``(run_review, resume_run)`` of the chosen orchestrator; ``custom`` is the product, unchanged."""
+    if orchestrator == "custom":
+        from sit_review_agent.orchestrator import resume_run, run_review
+
+        return run_review, resume_run
+    if orchestrator == "langgraph":
+        try:
+            from sit_review_agent.orchestrator_langgraph import resume_run, run_review
+        except ImportError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(int(ExitCode.USAGE)) from None
+        return run_review, resume_run
+    typer.echo(f"error: --orchestrator {orchestrator!r}: expected custom | langgraph", err=True)
+    raise typer.Exit(int(ExitCode.USAGE))
 
 
 def _guarded(what: str, fn: Callable[[], T]) -> T:
@@ -136,9 +157,12 @@ def run_cmd(
     profile: ProfileOpt = None,
     k: Annotated[int | None, typer.Option("--k", help="run the review K times as independent runs (stability; "
                                                       "run IDs <group>-k1..kK, --run-id names the group)")] = None,
+    orchestrator: OrchestratorOpt = "custom",
 ) -> None:
     """Review a design artefact and write runs/<run_id>/report.{json,md}."""
-    from sit_review_agent.orchestrator import RunRequest, resume_run, run_review
+    from sit_review_agent.orchestrator import RunRequest
+
+    run_review, resume_run = _entry_points(orchestrator)
 
     def usage(msg: str) -> None:
         typer.echo(f"error: {msg}", err=True)
@@ -158,6 +182,8 @@ def run_cmd(
         usage("--k starts new runs; it cannot be combined with --resume")
     if k is not None and plan_only:
         usage("--k repeats complete reviews; it cannot be combined with --plan-only")
+    if k is not None and orchestrator != "custom":
+        usage("--k runs the product's orchestrator; it cannot be combined with --orchestrator")
     if transport is None:
         transport = Transport.REPLAY if replay is not None else (Transport.RECORD if record else None)
     fault_file = _resolve_faults(faults) if faults is not None else None
@@ -347,9 +373,10 @@ def selftest_cmd() -> None:
 
 @app.command("resume")
 def resume_cmd(run: Annotated[str, typer.Argument(help="run directory or run ID")], config: ConfigOpt = None,
-               accept_drift: Annotated[bool, typer.Option("--accept-drift")] = False) -> None:
+               accept_drift: Annotated[bool, typer.Option("--accept-drift")] = False,
+               orchestrator: OrchestratorOpt = "custom") -> None:
     """Continue a run from its last completed phase (ADR-009)."""
-    from sit_review_agent.orchestrator import resume_run
+    _, resume_run = _entry_points(orchestrator)
 
     run_dir = _resolve_run_dir(run, config)
     if run_dir is None:

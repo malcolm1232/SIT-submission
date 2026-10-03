@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>SIT review UI mockup v2 (DBSearch idiom)</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+  /* Three frames, 1440 px wide, stacked. Every colour is a token (tokens.css, craft 8.1). Nothing animates:
+     the one DBSearch keyframe (the status pill's halo) is left out on purpose (craft 1.3 "fade-in on everything"). */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg-active); color: var(--fg); font-family: var(--font);
+    font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body { width: 1440px; padding: 24px 0 32px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--fg-muted); }
+  .small { font-size: 13px; }
+  .micro { font-size: 12px; line-height: 16px; }
+  a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-hover); }
+  .caption { font-size: 13px; color: var(--fg-muted); padding: 0 32px; margin: 0 0 8px; }
+  .caption b { color: var(--fg); font-weight: 600; }
+  ul { padding-left: 18px; margin: 0; }
+  h2 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 0; }
+  h3 { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--fg-muted); margin: 14px 0 6px; }
+
+  /* The frame is the DBSearch app grid: a reserved 248 px rail column, a 56 px topbar, the surface. */
+  .frame { width: 1440px; min-height: 900px; margin: 0 0 32px; background: var(--bg-app);
+    display: grid; grid-template-columns: var(--navrail-w) minmax(0, 1fr); grid-template-rows: 56px 1fr;
+    grid-template-areas: "nav topbar" "nav main"; border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); }
+
+  /* ---------- the rail (rail.css .navrail, verbatim geometry) ---------- */
+  .navrail { grid-area: nav; width: var(--navrail-w); display: flex; flex-direction: column; gap: 2px; padding: 16px 12px;
+    background: var(--navrail-bg); color: var(--navrail-fg); border-right: 1px solid rgba(255,255,255,.07); }
+  .navrail-brand { display: block; padding: 4px 10px 14px; color: var(--navrail-fg-strong);
+    font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; white-space: nowrap; }
+  .navrail-brand .ai { color: var(--accent-bright); }
+  .navrail-group { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
+    color: var(--navrail-muted); padding: 16px 10px 8px; white-space: nowrap; }
+  .navrail-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 500;
+    color: var(--navrail-fg); padding: 9px 10px; border-radius: var(--r-pill); white-space: nowrap; }
+  .navrail-item.active { background: var(--navrail-active-bg); color: var(--navrail-active-fg); font-weight: 600; }
+  .navrail-ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  /* the surface slot (rail.css .navrail-slot): here it carries the runs and the tool servers */
+  .navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+  .rail-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--navrail-muted);
+    padding: 14px 10px 6px; display: flex; justify-content: space-between; }
+  .rail-run { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12.5px;
+    color: var(--navrail-fg); padding: 6px 10px; border-radius: var(--r-md); }
+  .rail-run.active { background: rgba(255,255,255,.06); color: var(--navrail-fg-strong); }
+  .rail-run .dot { width: 6px; height: 6px; border-radius: 50%; border: 1px solid currentColor; justify-self: center; }
+  .rail-run .dot.live { background: var(--accent-bright); border-color: var(--accent-bright); }
+  .rail-run .dot.done { background: currentColor; }
+  .rail-run .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-run .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-run.active .meta { color: var(--navrail-fg); }
+  .rail-run .meta .live { color: var(--accent-bright); }
+  .rail-tool { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12px;
+    color: var(--navrail-fg); padding: 5px 10px; }
+  .rail-tool .dot { width: 6px; height: 6px; border-radius: 50%; border: 1px solid currentColor; justify-self: center; }
+  .rail-tool .dot.warm { background: var(--accent-bright); border-color: var(--accent-bright); }
+  .rail-tool .dot.off { border-color: var(--navrail-muted); }
+  .rail-tool .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-tool .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .navrail-foot { flex: none; padding-top: 16px; }
+  .navrail-note { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); border-radius: var(--r-md);
+    padding: 11px 12px; font-size: 11.5px; line-height: 1.5; color: var(--navrail-fg); }
+  .navrail-toggle { margin-top: 10px; width: 100%; display: flex; align-items: center; gap: 10px; color: var(--navrail-muted);
+    font-size: 12px; padding: 9px 10px; border-radius: var(--r-pill); }
+  .navrail-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; transform: rotate(180deg); }
+
+  /* ---------- the topbar (app.css .topbar, .edition-pill, .trust-chip, .model-pick) ---------- */
+  .topbar { grid-area: topbar; background: var(--bg-app); border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; gap: 14px; padding: 0 20px; }
+  .spacer { flex: 1; }
+  .edition-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 10px;
+    border-radius: var(--r-pill); background: var(--green-soft); color: var(--green); border: 1px solid var(--green-border); }
+  .edition-pill .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .trust-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); padding: 5px 11px;
+    border: 1px solid var(--border-subtle); border-radius: var(--r-pill); background: var(--bg-surface); }
+  .trust-chip b { color: var(--fg); font-weight: 600; }
+  .model-pick { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-muted); }
+  .model-pick .sel { display: inline-flex; align-items: center; gap: 8px; min-height: 26px; font-size: 12px; font-weight: 600; color: var(--fg);
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-ctl); padding: 0 8px; }
+  .chev { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; color: var(--fg-muted); }
+
+  /* ---------- the surface ---------- */
+  .surface { grid-area: main; min-width: 0; padding: 34px 28px 40px; }
+  .surface > * { max-width: 820px; margin-left: auto; margin-right: auto; }
+  .surface.wide > * { max-width: 1120px; }
+  .surface-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 0 0 14px; border-bottom: 1px solid var(--border-subtle); }
+  .surface-title { font-family: var(--serif); font-size: 26px; line-height: 1.15; color: var(--fg); letter-spacing: -0.01em; }
+  .surface-sub { font-size: 12.5px; color: var(--fg-muted); margin-top: 6px; }
+  .surface-sub b { color: var(--fg); font-weight: 500; }
+
+  /* pills and controls. One control spec: 32 px high, one border token (craft 8.3); the primary is the ink pill. */
+  .btn { white-space: nowrap; height: 32px; padding: 0 14px; border-radius: var(--r-pill); border: 1px solid var(--border-control);
+    background: var(--bg-surface); font-weight: 600; font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px; color: var(--fg); }
+  .btn.primary { background: var(--action); color: var(--action-fg); border-color: var(--action); font-size: 14px; padding: 0 18px; height: 36px; }
+  .btn.primary.disabled { background: var(--bg-active); color: var(--fg-disabled); border-color: var(--bg-active); }
+  .btn.quiet { color: var(--fg-muted); font-weight: 500; }
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--fg-muted); font-weight: 500; }
+  .btn .ico { width: 14px; height: 14px; }
+  .ico { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+  .input, .select { height: 32px; padding: 0 10px; border-radius: var(--radius-ctl); border: 1px solid var(--border-control);
+    background: var(--bg-surface); display: flex; align-items: center; gap: 8px; color: var(--fg-disabled); font-size: 13px; }
+  .select { color: var(--fg); font-weight: 500; justify-content: space-between; }
+  .pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--r-pill);
+    font-size: 11.5px; font-weight: 500; line-height: 16px; white-space: nowrap; background: var(--bg-control); color: var(--fg-muted); }
+  .pill.critical { background: var(--sev-critical-bg); color: var(--sev-critical-fg); }
+  .pill.high, .pill.cut, .pill.failed { background: var(--sev-high-bg); color: var(--sev-high-fg); border: 1px solid var(--sev-high-border); }
+  .pill.medium, .pill.draft, .pill.skipped { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
+  .pill.low { background: var(--sev-low-bg); color: var(--sev-low-fg); }
+  .pill.strength { background: var(--strength-bg); color: var(--strength-fg); border: 1px solid var(--strength-border); }
+  .pill.running { background: var(--live-bg); color: var(--live-fg); border: 1px solid var(--live-border); gap: 6px; }
+  .pill.running::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .pill.done { background: var(--done-bg); color: var(--done-fg); }
+  .pill.waiting { background: transparent; color: var(--waiting-fg); border: 1px solid var(--border-subtle); }
+  .pill.aid { background: var(--bg-surface); color: var(--fg-muted); border: 1px solid var(--border-subtle); }
+  .tabs { display: flex; gap: 4px; }
+  .tab { white-space: nowrap; height: 28px; padding: 0 12px; border-radius: var(--r-pill); display: inline-flex; align-items: center;
+    font-size: 13px; font-weight: 500; color: var(--fg-muted); }
+  .tab.on { background: var(--bg-active); color: var(--fg); font-weight: 600; }
+  .tab.off { color: var(--fg-disabled); }
+
+  /* ---------- frame 1: the empty state (app.css .chat-empty, .starter) and the start form ---------- */
+  .empty { padding: 26px 0 8px; text-align: center; }
+  .empty h1 { font-family: var(--serif); font-weight: 400; font-size: 34px; line-height: 1.1; color: var(--fg); margin: 0 0 12px; letter-spacing: -0.01em; }
+  .empty p { color: var(--fg-muted); font-size: 14px; line-height: 1.6; margin: 0 auto 24px; max-width: 780px; }
+  .dropzone { border: 1px dashed var(--border-hover); border-radius: var(--r-lg); background: var(--bg-surface); padding: 34px 32px 26px; text-align: center; box-shadow: var(--shadow-sm); }
+  .dropzone .big { font-size: 16px; font-weight: 500; }
+  .dropzone .link { margin: 16px auto 0; max-width: 520px; }
+  .starters { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 14px; align-items: center; }
+  .starters .lead { font-size: 12.5px; color: var(--fg-muted); margin-right: 2px; }
+  .starter { font-size: 13px; color: var(--fg-2); background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-pill); padding: 7px 14px; }
+  .form { margin-top: 26px; }
+  .field { margin: 0 0 18px; min-width: 0; }
+  .field .label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+  .field .help { font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-top: 6px; }
+  .picker { display: flex; align-items: center; gap: 12px; }
+  .field-row { display: grid; grid-template-columns: 220px minmax(0, 1fr) 240px; gap: 20px; }
+  /* the tools checkbox: the control and its label on ONE line that never wraps, the help text on its own line below.
+     On the built page `.check` is 32 px high and the label wraps into the help text; here the row is min-height, not height. */
+  .check { display: flex; align-items: center; gap: 8px; min-height: 32px; white-space: nowrap; font-size: 13.5px; }
+  .check .box { width: 15px; height: 15px; border: 1px solid var(--border-hover); border-radius: 4px; background: var(--bg-surface); flex: none; }
+  .start-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
+  .cmd { margin-top: 12px; font-family: var(--mono); font-size: 12px; color: var(--fg-muted); word-break: break-all; }
+
+  /* ---------- frame 2: the run ---------- */
+  .run-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 32px; margin-top: 18px; }
+  .clock { text-align: right; }
+  .clock .t { font-family: var(--serif); font-size: 30px; line-height: 1; color: var(--fg); letter-spacing: -0.01em; }
+  .clock .t span { color: var(--fg-disabled); }
+  .clock .l { font-size: 12px; color: var(--fg-muted); margin-top: 4px; }
+  .stage-head { display: flex; align-items: baseline; gap: 12px; margin: 18px 0 6px; }
+  .stage-head:first-child { margin-top: 0; }
+  .stage-head .limit { color: var(--fg-muted); font-size: 12.5px; }
+  .track { display: grid; grid-template-columns: 168px 96px 170px minmax(0, 1fr); gap: 12px; align-items: center; min-height: 38px; padding: 0 10px;
+    border-top: 1px solid var(--border-subtle); font-size: 13px; }
+  .tracks > .track:last-child { border-bottom: 1px solid var(--border-subtle); }
+  .track .name { font-weight: 500; white-space: nowrap; }
+  .track .name .call { color: var(--fg-muted); font-weight: 400; margin-left: 6px; }
+  .track .time { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .bar { position: relative; width: 72px; height: 3px; background: var(--bg-active); border-radius: 2px; flex: none; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--fg); border-radius: 2px; }
+  .bar.closed i { background: var(--fg-disabled); }
+  .track .status { color: var(--fg-muted); line-height: 1.35; padding: 6px 0; }
+  .track .status b { color: var(--fg); font-weight: 500; }
+  .disclose { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; font-size: 12.5px; color: var(--fg-2); border-bottom: 1px solid var(--border-subtle); background: var(--bg-subtle); }
+  .disclose .k { color: var(--fg-muted); white-space: nowrap; }
+  .legend { font-size: 12px; color: var(--fg-muted); margin-top: 12px; line-height: 1.5; }
+  .feed h2 { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+
+  .feed .rule { font-size: 12px; color: var(--fg-muted); margin: 4px 0 10px; line-height: 1.5; }
+  .draft-row { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; }
+  .draft-row .t { color: var(--fg-muted); }
+  .draft-row .line { display: flex; gap: 8px; align-items: flex-start; }
+  .draft-row .line .text { flex: 1; min-width: 0; }
+  .draft-row .line .who { color: var(--fg-muted); white-space: nowrap; }
+  .log { margin-top: 22px; }
+  .log .row { display: grid; grid-template-columns: 40px 72px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--border-subtle); font-size: 12.5px; }
+  .log .row .ph { color: var(--fg-muted); }
+  .log .row .msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log .row.warn .msg { color: var(--amber); }
+
+  /* ---------- frame 3: the review ---------- */
+  .head-actions { display: flex; gap: 8px; align-items: center; }
+  .tabrow { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; }
+  .share { margin-top: 14px; padding: 12px 14px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-sm); font-size: 12.5px; color: var(--fg-2); }
+  .share .cmd { margin-top: 6px; color: var(--fg); }
+  .verdict { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-top: 26px; }
+  .verdict .label { font-family: var(--serif); font-size: 36px; line-height: 1; letter-spacing: -0.01em; }
+  .verdict .conf { color: var(--fg-muted); font-size: 13.5px; }
+  .counts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 16px; font-size: 13px; color: var(--fg-muted); }
+  .counts b { color: var(--fg); font-weight: 500; }
+  .rationale { max-width: 76ch; margin: 0 0 8px; font-size: 13.5px; line-height: 1.6; }
+  table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.grid th { text-align: left; font-weight: 500; color: var(--fg-muted); padding: 0 12px 8px 0; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+  table.grid td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+  table.grid td.ids { color: var(--fg-muted); white-space: nowrap; }
+  table.grid td.obj { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sec { margin-top: 26px; }
+  .sec h2 { margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; }
+  .sec h2 .n { color: var(--fg-muted); font-weight: 400; font-size: 13px; }
+  .frow { display: grid; grid-template-columns: 28px 64px 78px minmax(0, 1fr) 150px 48px; gap: 12px; align-items: center;
+    min-height: 38px; padding: 6px 10px; border-top: 1px solid var(--border-subtle); font-size: 13px; }
+  .flist > .frow:last-of-type { border-bottom: 1px solid var(--border-subtle); }
+  .frow .rank, .frow .fid, .frow .disp, .frow .conf { color: var(--fg-muted); }
+  .frow .fid { font-size: 12px; }
+  .frow .title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .frow .disp { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frow .conf { text-align: right; }
+  .frow.open { background: var(--bg-subtle); }
+  .expanded { padding: 12px 14px 18px 122px; border-top: 1px solid var(--border-subtle); background: var(--bg-subtle); font-size: 13px; }
+  .expanded p { margin: 0 0 10px; max-width: 76ch; line-height: 1.55; }
+  .ev { display: grid; grid-template-columns: 64px 104px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--border-subtle); }
+  .ev .id { font-weight: 500; }
+  .ev .kind, .ev .where { color: var(--fg-muted); }
+  .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+  .kv dt { color: var(--fg-muted); margin: 0; }
+  .kv dd { margin: 0; max-width: 76ch; }
+  .dec { display: flex; gap: 10px; padding: 4px 0; }
+  .dec .rel { width: 80px; color: var(--fg-muted); flex: none; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .plain li { margin: 0 0 6px; }
+
+  /* the ask: DBSearch's composer (app.css .composer-shell, .composer-hint), pinned under the review column */
+  .ask { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+  .ask .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .ask .head h2 { font-family: var(--serif); font-weight: 400; font-size: 20px; }
+  .ask .notice { font-size: 12px; line-height: 1.5; color: var(--fg-muted); margin: 0 0 12px; max-width: 90ch; }
+  .composer-shell { display: flex; align-items: center; gap: 8px; background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: 18px; padding: 7px 7px 7px 15px; box-shadow: var(--shadow); }
+  .composer-shell .ta { flex: 1; font-size: 15px; line-height: 1.5; color: var(--fg-disabled); padding: 8px 0; }
+  .ready { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft); border: 1px solid var(--green-border); white-space: nowrap; }
+  .ready::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .ask-btn { height: 36px; padding: 0 18px; border-radius: var(--r-pill); background: var(--action); color: var(--action-fg); font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; }
+  .composer-hint { display: flex; justify-content: space-between; gap: 12px; font-family: var(--mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: .14em; color: var(--fg-muted); padding: 9px 6px 0; }
+  .composer-hint .trust { color: var(--accent); }
+  .budget { font-size: 12px; color: var(--fg-muted); margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ======================================================= frame 1 -->
+<p class="caption"><b>1</b> The Review page: DBSearch's rail, topbar pills and centred serif empty state; the drop zone and every control of the built page under it, with the synthetic documents as chips.</p>
+<div class="frame" id="frame-1">
+  <nav class="navrail" aria-label="Primary">
+    <span class="navrail-brand">SIT review<span class="ai">.</span></span>
+    <div class="navrail-group">Workspace</div>
+    <span class="navrail-item active"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M4 2.5h6l3 3v8H4z"/><path d="m6.5 9 1.5 1.5 3-3"/></svg>Review</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Runs</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg>Replay</span>
+    <div class="navrail-group">Operate</div>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M6 2.5v4M10 2.5v4"/><path d="M4 6.5h8v2a4 4 0 0 1-8 0z"/><path d="M8 12.5v2"/></svg>Tools</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M2.5 5h11M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/><circle cx="10" cy="11" r="1.6"/></svg>Settings</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="m5.5 5-3 3 3 3M10.5 5l3 3-3 3"/></svg>Developer</span>
+    <div class="navrail-slot">
+      <div class="rail-head"><span>Runs</span><span>none running</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">sit_sample_tools_1</span><span class="meta num">fit with conditions · 0.72 · 7:08</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">rehearsal_concurrent_high_1</span><span class="meta num">not fit · 0.75 · 13:00</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">rehearsal_concurrent_1</span><span class="meta num">not fit · 0.78 · 6:22</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">demo_profile_measure_1</span><span class="meta num">not assessed · 0.00 · 7:00</span></div>
+      <div class="rail-head"><span>Tools</span><span>2 of 4 warm</span></div>
+      <div class="rail-tool"><span class="dot warm"></span><span class="name">mcp-internet-search</span><span class="meta">warm at 12:24 · 3 tools</span></div>
+      <div class="rail-tool"><span class="dot warm"></span><span class="name">mcp-research-information</span><span class="meta">warm at 12:24 · 7 tools</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-browser-automation-pw</span><span class="meta">off in config/tools.yaml</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-document-intelligence</span><span class="meta">off in config/tools.yaml</span></div>
+    </div>
+    <div class="navrail-foot">
+      <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>
+      <div class="navrail-toggle"><svg viewBox="0 0 16 16"><path d="m6.5 4 4 4-4 4"/></svg>Collapse</div>
+    </div>
+  </nav>
+  <header class="topbar">
+    <span class="edition-pill"><span class="pulse"></span>local · your subscription · no API key</span>
+    <span class="trust-chip">tools: <b>2 of 4</b> servers warm</span>
+    <span class="spacer"></span>
+    <span class="model-pick">Profile <span class="sel">demo · 9:00 <svg class="chev" viewBox="0 0 10 10"><path d="m2 3.5 3 3 3-3"/></svg></span></span>
+  </header>
+  <main class="surface">
+    <div class="empty">
+      <h1>Review a design document</h1>
+      <p>Four concurrent shards assess it, each quote is checked against the page text, and a ranked verdict follows.<br>The agent reads the document only once it is ingested and hashed; nothing on this page is estimated.</p>
+    </div>
+    <div class="dropzone">
+      <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--fg-muted)"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+      <div class="big" style="margin-top:10px">Drop the design document here</div>
+      <div class="muted small" style="margin-top:4px">PDF, or a page-marked .txt or Markdown file.</div>
+      <div style="margin-top:14px"><span class="btn">Choose file</span></div>
+      <div class="link input">or paste a link to a PDF (https only)</div>
+      <div class="micro muted" style="margin-top:6px">A pasted link is fetched by this server when the review starts: public hosts only, under config/url_policy.yaml, at most 100 MB, saved with the run's inputs.</div>
+    </div>
+    <div class="starters">
+      <span class="lead">or a synthetic document (eval/synthetic, design_v1):</span>
+      <span class="starter">Payments orchestration</span>
+      <span class="starter">Clinical RPM</span>
+      <span class="starter">Research lakehouse</span>
+    </div>
+    <div class="form">
+      <div class="field">
+        <span class="label">Previous version (optional)</span>
+        <div class="picker"><span class="btn">Choose file</span><span class="muted small">No file chosen</span></div>
+        <div class="help">Given, the run is a delta re-assessment of the document above against this earlier version (<span class="mono">--v1</span>): every prior finding is marked resolved, partially addressed, still open or new in update.</div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <span class="label">Profile</span>
+          <div class="select"><span>demo · 9:00</span><svg class="chev" viewBox="0 0 10 10"><path d="m2 3.5 3 3 3-3"/></svg></div>
+          <div class="help num">Stage 1 ends by 04:25, refine by 07:45, verdict by 08:50, deadline 09:00.</div>
+        </div>
+        <div class="field">
+          <span class="label">Tools</span>
+          <div class="check"><span class="box"></span><span>Document only (<span class="mono">--no-tools</span>)</span></div>
+          <div class="help">Enabled in config/tools.yaml: mcp-internet-search, mcp-research-information. Both answered the last warm-up at 12:24.</div>
+        </div>
+        <div class="field">
+          <span class="label">Run ID (optional)</span>
+          <div class="input">ui-&lt;date&gt;-&lt;time&gt;-&lt;hex&gt;</div>
+          <div class="help">Name of the run directory (<span class="mono">--run-id</span>). Left empty, the server names it by the start time.</div>
+        </div>
+      </div>
+      <div class="start-row">
+        <span class="btn primary disabled">Start review</span>
+        <span class="micro muted">Enabled once a document is chosen or a link is pasted. The page runs the command below as a subprocess, the same as typing it.</span>
+      </div>
+      <div class="cmd">dra review &lt;document&gt; --profile demo --run-id &lt;new run&gt;</div>
+    </div>
+  </main>
+</div>
+
+<!-- ======================================================= frame 2 -->
+<p class="caption"><b>2</b> The run at 03:34 on the run clock (rehearsal_concurrent_1, timings from its MEASUREMENT.md): the rail's Runs entry shows it live; stage rows against the limit; research skipped as a disclosure line; drafts under the amber pill.</p>
+<div class="frame" id="frame-2">
+  <nav class="navrail" aria-label="Primary">
+    <span class="navrail-brand">SIT review<span class="ai">.</span></span>
+    <div class="navrail-group">Workspace</div>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M4 2.5h6l3 3v8H4z"/><path d="m6.5 9 1.5 1.5 3-3"/></svg>Review</span>
+    <span class="navrail-item active"><svg class="navrail-ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Runs</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg>Replay</span>
+    <div class="navrail-group">Operate</div>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M6 2.5v4M10 2.5v4"/><path d="M4 6.5h8v2a4 4 0 0 1-8 0z"/><path d="M8 12.5v2"/></svg>Tools</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M2.5 5h11M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/><circle cx="10" cy="11" r="1.6"/></svg>Settings</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="m5.5 5-3 3 3 3M10.5 5l3 3-3 3"/></svg>Developer</span>
+    <div class="navrail-slot">
+      <div class="rail-head"><span>Runs</span><span>1 running</span></div>
+      <div class="rail-run active"><span class="dot live"></span><span class="title">rehearsal_concurrent_1</span><span class="meta num"><span class="live">assess</span> · 03:34 of 09:00 · 2 shards open</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">sit_sample_tools_1</span><span class="meta num">fit with conditions · 0.72 · 7:08</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">rehearsal_concurrent_high_1</span><span class="meta num">not fit · 0.75 · 13:00</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">demo_profile_measure_1</span><span class="meta num">not assessed · 0.00 · 7:00</span></div>
+      <div class="rail-head"><span>Tools</span><span>not in use</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-internet-search</span><span class="meta">this run: --no-tools</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-research-information</span><span class="meta">this run: --no-tools</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-browser-automation-pw</span><span class="meta">off in config/tools.yaml</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-document-intelligence</span><span class="meta">off in config/tools.yaml</span></div>
+    </div>
+    <div class="navrail-foot">
+      <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>
+      <div class="navrail-toggle"><svg viewBox="0 0 16 16"><path d="m6.5 4 4 4-4 4"/></svg>Collapse</div>
+    </div>
+  </nav>
+  <header class="topbar">
+    <span class="edition-pill"><span class="pulse"></span>local · your subscription · no API key</span>
+    <span class="trust-chip">tools: <b>2 of 4</b> servers warm</span>
+    <span class="spacer"></span>
+    <span class="model-pick">Profile <span class="sel">demo · 9:00 <svg class="chev" viewBox="0 0 10 10"><path d="m2 3.5 3 3 3-3"/></svg></span></span>
+  </header>
+  <main class="surface wide">
+    <div class="surface-head">
+      <div>
+        <div class="surface-title">Serindit Pay, Merchant Payment Orchestration Platform</div>
+        <div class="surface-sub num"><b>rehearsal_concurrent_1</b> · version 1.0, 21 pages, 28 sections · profile demo · document only (<span class="mono">--no-tools</span>) · started 10:09</div>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:18px">
+        <div class="clock num"><div class="t">03:34 <span>/ 09:00</span></div><div class="l">run clock, as of the last event</div></div>
+        <span class="btn quiet">Stop run</span>
+      </div>
+    </div>
+    <div class="run-wrap">
+      <div class="stages">
+        <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num">ends by 04:25 · understand and plan done, research skipped, 2 of 4 assess shards open</span></div>
+        <div class="tracks">
+          <div class="track"><div class="name">ingest</div><div><span class="pill done">done</span></div><div class="time num"><span class="bar closed"><i style="width:1%"></i></span>0:02 / 4:25</div><div class="status">21 pages, 28 sections</div></div>
+          <div class="track"><div class="name">understand<span class="call mono">llm-0001</span></div><div><span class="pill done">done</span></div><div class="time num"><span class="bar closed"><i style="width:47%"></i></span>2:04 / 4:25</div><div class="status">121.7 s · milestone intent: registry frozen</div></div>
+          <div class="track"><div class="name">plan<span class="call mono">llm-0002</span></div><div><span class="pill done">done</span></div><div class="time num"><span class="bar closed"><i style="width:28%"></i></span>1:14 / 4:25</div><div class="status">71.5 s · milestone plan: 11 criteria in 4 shards</div></div>
+          <div class="track"><div class="name">research</div><div><span class="pill skipped">skipped</span></div><div class="time num muted">at 2:04</div><div class="status">no tool gateway (<span class="mono">--no-tools</span>); continuing document-only</div></div>
+          <div class="track"><div class="name">assess 1/4<span class="call mono">llm-0003</span></div><div><span class="pill running">running</span></div><div class="time num"><span class="bar"><i style="width:81%"></i></span>3:34 / 4:25</div><div class="status">intent_and_fitness · answer streaming</div></div>
+          <div class="track"><div class="name">assess 2/4<span class="call mono">llm-0004</span></div><div><span class="pill running">running</span></div><div class="time num"><span class="bar"><i style="width:81%"></i></span>3:34 / 4:25</div><div class="status">requirements_and_consistency · answer streaming</div></div>
+          <div class="track"><div class="name">assess 3/4<span class="call mono">llm-0005</span></div><div><span class="pill done">done</span></div><div class="time num"><span class="bar closed"><i style="width:80%"></i></span>3:32 / 4:25</div><div class="status">claims_and_assumptions · <b>12</b> draft findings, unverified</div></div>
+          <div class="track"><div class="name">assess 4/4<span class="call mono">llm-0006</span></div><div><span class="pill done">done</span></div><div class="time num"><span class="bar closed"><i style="width:77%"></i></span>3:24 / 4:25</div><div class="status">risk_and_operations · <b>13</b> draft findings, unverified</div></div>
+        </div>
+        <div class="disclose"><span class="k">disclosed in the report as <b style="color:var(--fg);font-weight:500">DEG-002</b></span><span>No external research was possible: every question that needs external evidence is reported as a validation need, and confidence is lowered.</span></div>
+
+        <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
+        <div class="tracks">
+          <div class="track"><div class="name">merge</div><div><span class="pill waiting">waiting</span></div><div class="time num muted">code</div><div class="status">renumbers the shard findings in shard order, writes shard evidence to the ledger</div></div>
+          <div class="track"><div class="name">refine</div><div><span class="pill waiting">waiting</span></div><div class="time num muted">by 7:45</div><div class="status">one call: merge duplicates, withdraw, rank, severity, disposition, decision links</div></div>
+          <div class="track"><div class="name">verify</div><div><span class="pill waiting">waiting</span></div><div class="time num muted">code</div><div class="status">every quote checked against the canonical page text</div></div>
+          <div class="track"><div class="name">verdict</div><div><span class="pill waiting">waiting</span></div><div class="time num muted">by 8:50</div><div class="status">verdict-only call, else the rule-based verdict</div></div>
+          <div class="track"><div class="name">report</div><div><span class="pill waiting">waiting</span></div><div class="time num muted">by 9:00</div><div class="status">report.md and report.json rendered in code, invariants checked</div></div>
+        </div>
+        <div class="legend">The bar is elapsed time against the stage limit on the run clock, nothing else; it is not an estimate of completion, and times are as of the last event received. A track that hits its limit shows <span class="pill cut">cut at 4:25</span> and what it kept as a disclosure line like the one above. A run served by <span class="mono">dra replay</span> carries <span class="pill">replayed evidence</span> in the head.</div>
+        <div class="cmd">dra review runs/rehearsal_concurrent_1/ui/input/design_v1.pdf --profile demo --no-tools --run-id rehearsal_concurrent_1</div>
+      </div>
+
+      <div class="feed">
+        <h2>Draft findings <span class="muted num" style="font-weight:400">7</span> <span class="pill draft">draft, unverified</span></h2>
+        <div class="rule">Each line appears as its JSON object completes in a shard's stream. None has been through refine or verify; IDs, ranks and severities can change, and a draft can be withdrawn.</div>
+        <div class="draft-row"><div class="t num mono">3:31</div><div class="line"><span class="pill high">high</span><span class="text">A single CloudHSM in one AZ is a single point of failure for every card authorization</span><span class="who mono">4/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">3:26</div><div class="line"><span class="pill high">high</span><span class="text">Latency budget leaves cascades out of the p99, but 3.8% of attempts are retryable</span><span class="who mono">3/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">3:12</div><div class="line"><span class="pill high">high</span><span class="text">Cascade after a timeout can produce duplicate authorizations; the 'cannot create a duplicate charge' claim is unsupported</span><span class="who mono">4/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">2:58</div><div class="line"><span class="pill medium">medium</span><span class="text">State machine omits transitions that FR-1, FR-15 and the flows require; FR-2 test cannot detect this</span><span class="who mono">2/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">2:41</div><div class="line"><span class="pill high">high</span><span class="text">Zero RPO for NFR-4 cannot be met with asynchronous Aurora Global replication and unreplicated idempotency state</span><span class="who mono">3/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">2:07</div><div class="line"><span class="pill critical">critical</span><span class="text">Redis idempotency fast path is not merchant-scoped and skips body-hash check</span><span class="who mono">1/4</span></div></div>
+        <div class="draft-row"><div class="t num mono">1:17</div><div class="line"><span class="pill strength">strength</span><span class="text">Ledger is written in the same transaction as state changes, append-only and enforced by database roles</span><span class="who mono">1/4</span></div></div>
+        <div class="log">
+          <h2>Status <span class="muted" style="font-weight:400">same lines as the terminal and progress.log</span></h2>
+          <div class="rule">A status line at least every 10 s while any call is open. Newest first.</div>
+          <div class="row"><div class="num mono">3:34</div><div class="ph">model</div><div class="msg">2 open calls: llm-0003 assess: answer streaming; llm-0004 assess: answer streaming</div></div>
+          <div class="row"><div class="num mono">3:32</div><div class="ph">assess</div><div class="msg">OK assess shard 3/4 (claims_and_assumptions): 12 draft finding(s), unverified</div></div>
+          <div class="row"><div class="num mono">3:24</div><div class="ph">assess</div><div class="msg">OK assess shard 4/4 (risk_and_operations): 13 draft finding(s), unverified</div></div>
+          <div class="row warn"><div class="num mono">2:04</div><div class="ph">research</div><div class="msg">WARN No external research was possible: no tool gateway; continuing document-only</div></div>
+          <div class="row"><div class="num mono">2:04</div><div class="ph">understand</div><div class="msg">OK understand done in 121.7s</div></div>
+          <div class="row"><div class="num mono">1:14</div><div class="ph">plan</div><div class="msg">OK plan done in 71.5s</div></div>
+          <div class="row"><div class="num mono">0:02</div><div class="ph">assess</div><div class="msg">assessing 11 criteria in 4 concurrent shard(s)</div></div>
+          <div class="row"><div class="num mono">0:02</div><div class="ph">ingest</div><div class="msg">OK ingest done in 2.2s</div></div>
+          <div class="row"><div class="num mono">0:00</div><div class="ph">run</div><div class="msg">run rehearsal_concurrent_1: runs/rehearsal_concurrent_1</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ======================================================= frame 3 -->
+<p class="caption"><b>3</b> The finished review (sit_sample_tools_1, from its report.json): verdict first, objectives, findings by rank with FND-011 open, the Delta tab disabled, the three outputs as quiet pills, and the ask composer in DBSearch's shape at the foot of the review.</p>
+<div class="frame" id="frame-3">
+  <nav class="navrail" aria-label="Primary">
+    <span class="navrail-brand">SIT review<span class="ai">.</span></span>
+    <div class="navrail-group">Workspace</div>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M4 2.5h6l3 3v8H4z"/><path d="m6.5 9 1.5 1.5 3-3"/></svg>Review</span>
+    <span class="navrail-item active"><svg class="navrail-ico" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Runs</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg>Replay</span>
+    <div class="navrail-group">Operate</div>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M6 2.5v4M10 2.5v4"/><path d="M4 6.5h8v2a4 4 0 0 1-8 0z"/><path d="M8 12.5v2"/></svg>Tools</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="M2.5 5h11M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/><circle cx="10" cy="11" r="1.6"/></svg>Settings</span>
+    <span class="navrail-item"><svg class="navrail-ico" viewBox="0 0 16 16"><path d="m5.5 5-3 3 3 3M10.5 5l3 3-3 3"/></svg>Developer</span>
+    <div class="navrail-slot">
+      <div class="rail-head"><span>Runs</span><span>none running</span></div>
+      <div class="rail-run active"><span class="dot done"></span><span class="title">sit_sample_tools_1</span><span class="meta num">fit with conditions · 0.72 · 7:08</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">rehearsal_concurrent_high_1</span><span class="meta num">not fit · 0.75 · 13:00</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">rehearsal_concurrent_1</span><span class="meta num">not fit · 0.78 · 6:22</span></div>
+      <div class="rail-run"><span class="dot done"></span><span class="title">demo_profile_measure_1</span><span class="meta num">not assessed · 0.00 · 7:00</span></div>
+      <div class="rail-head"><span>Tools</span><span>this run</span></div>
+      <div class="rail-tool"><span class="dot warm"></span><span class="name">mcp-internet-search</span><span class="meta">warm at 0:02 · 5 calls failed (DEG-002)</span></div>
+      <div class="rail-tool"><span class="dot warm"></span><span class="name">mcp-research-information</span><span class="meta">warm at 0:02 · 1 call, 10 entries</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-browser-automation-pw</span><span class="meta">off in config/tools.yaml</span></div>
+      <div class="rail-tool"><span class="dot off"></span><span class="name">mcp-document-intelligence</span><span class="meta">off in config/tools.yaml</span></div>
+    </div>
+    <div class="navrail-foot">
+      <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>
+      <div class="navrail-toggle"><svg viewBox="0 0 16 16"><path d="m6.5 4 4 4-4 4"/></svg>Collapse</div>
+    </div>
+  </nav>
+  <header class="topbar">
+    <span class="edition-pill"><span class="pulse"></span>local · your subscription · no API key</span>
+    <span class="trust-chip">tools: <b>2 of 4</b> servers warm</span>
+    <span class="spacer"></span>
+    <span class="model-pick">Profile <span class="sel">demo · 9:00 <svg class="chev" viewBox="0 0 10 10"><path d="m2 3.5 3 3 3-3"/></svg></span></span>
+  </header>
+  <main class="surface wide">
+    <div class="surface-head">
+      <div>
+        <div class="surface-title">SIT Institutional Memory Platform, Detailed Design</div>
+        <div class="surface-sub num"><b>sit_sample_tools_1</b> · version 2.0, 30 pages · completed, degraded · 7:08 · $5.54 · 12 model calls · 1b92baf</div>
+      </div>
+      <div class="head-actions">
+        <span class="btn quiet"><svg class="ico" viewBox="0 0 16 16"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg>Download review (HTML)</span>
+        <span class="btn quiet"><svg class="ico" viewBox="0 0 16 16"><path d="M2.5 4h11v8h-11z"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg>Email the review</span>
+        <span class="btn quiet"><svg class="ico" viewBox="0 0 16 16"><path d="M6.5 9.5 9.5 6.5"/><path d="M7 4.5 8.5 3a2.5 2.5 0 0 1 3.5 3.5L10.5 8"/><path d="M9 11.5 7.5 13A2.5 2.5 0 0 1 4 9.5L5.5 8"/></svg>Share link</span>
+      </div>
+    </div>
+    <div class="tabrow">
+      <span class="tabs"><span class="tab on">Review</span><span class="tab off" title="No previous version was given for this run">Delta</span><span class="tab">Coverage</span><span class="tab">Evidence</span><span class="tab">Run log</span></span>
+      <span class="micro muted">Delta is off: no previous version was given for this run.</span>
+    </div>
+    <div class="share">This server answers this laptop only, so there is no link to share; there is no login on the page. To share it on this network, stop the server and start it again with:
+      <div class="cmd">dra ui --host 0.0.0.0 --allow-remote --port 8765</div></div>
+
+    <div class="verdict"><span class="label">Fit with conditions</span><span class="conf num">confidence 0.72 · 9 conditions</span></div>
+    <div class="counts num"><span><b>24</b> findings</span><span><b>0</b> critical</span><span><b>6</b> high</span><span><b>14</b> medium</span><span><b>2</b> low</span><span><b>2</b> strengths</span><span><b>10</b> areas checked, no issue</span><span><b>10</b> unresolved</span><span><b>2</b> limitations</span></div>
+    <p class="rationale">The design is coherent and closely aligned with its own goals. Requirements carry IDs that trace to acceptance criteria and to an honest readiness map (FND-010). The two-tier store with separate credentials gives the counselling wall real enforcement at the credential level (FND-046). The six-layer scope and the governed single-path architecture suit an institution-level memory platform, and most of the structure needs no rework.</p>
+    <p class="rationale muted">It is not yet fit to build unconditionally, because seven high-severity findings are still open and none is critical: <span class="micro">five paragraphs follow in report.md (the open high findings, what each needs, the limits of this review).</span></p>
+    <p class="rationale muted"><b style="font-weight:500;color:var(--fg)">What would change it.</b> The verdict would move to not_fit if the design owners decide to keep any of the following: Super Admin or MMP access to counselling memory; agent backups as ungoverned stores holding HIGHLY_RESTRICTED or deleted data; serving personal data on a revoked token. It would also move to not_fit if the vector-store prototype shows that filtered queries on the confirmed SKU cannot meet NFR-2 latency with acceptable recall without an engine or SKU change.</p>
+
+    <table class="grid" style="margin:18px 0 0">
+      <thead><tr><th>Objective</th><th>Verdict</th><th>Findings</th></tr></thead>
+      <tbody>
+        <tr><td class="obj"><b style="font-weight:500">P1</b> The learner namespace is authoritative and the agent's copy is backup only.</td><td>fit with conditions</td><td class="ids">FND-011, FND-022, FND-043</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P2</b> Memory is private by default: private to the learner, shared by exception, anonymised for service learning.</td><td>fit with conditions</td><td class="ids">FND-037, FND-041, FND-044</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P3</b> Access control happens before retrieval: the namespace restriction gates the query itself.</td><td>fit with conditions</td><td class="ids">FND-026, FND-019, FND-041</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P4</b> The counselling hard wall: wellbeing/counselling/ is HIGHLY_RESTRICTED, zero cross-domain reads, no MMP override.</td><td>fit with conditions</td><td class="ids">FND-012, FND-011, FND-046</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P5</b> Agents share information only through the learner namespace, never each other's memory directly.</td><td>fit with conditions</td><td class="ids">FND-011, FND-019</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P6</b> No uncontrolled self-writing: every write is classified and policy-checked before storage.</td><td>fit with conditions</td><td class="ids">FND-011, FND-038</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P7</b> Every operation is audited (access, write, denial, compaction, deletion, escalation), as PDPA requires.</td><td>fit with conditions</td><td class="ids">FND-030, FND-023, FND-013</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P8</b> Writes are asynchronous via Kafka and reads are cached (Redis L1, then PostgreSQL).</td><td>fit with conditions</td><td class="ids">FND-038, FND-031, FND-017, FND-041</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P9</b> Administrators, not agents, configure slot templates, sensitivity levels and retention rules.</td><td>fit</td><td class="ids">FND-010</td></tr>
+        <tr><td class="obj"><b style="font-weight:500">P10</b> Minimum useful context: summaries over transcripts, facts over full conversations, a token-budgeted context pack.</td><td>fit</td><td class="ids">FND-010</td></tr>
+        <tr><td class="obj">Six-layer coverage (Section 4)</td><td>fit with conditions</td><td class="ids">FND-043, FND-009, FND-010</td></tr>
+        <tr><td class="obj">Implementation readiness (Section 1 / Section 28)</td><td>fit with conditions</td><td class="ids">FND-010, FND-018, FND-006, FND-020</td></tr>
+      </tbody>
+    </table>
+
+    <div class="sec">
+      <h2>Findings <span class="n num">22 issues, ordered by rank</span></h2>
+      <div class="flist">
+        <div class="frow open"><div class="rank num">1</div><div class="fid">FND-011</div><div><span class="pill high">high</span></div><div class="title">Agent per-learner backup is an ungoverned copy that conflicts with P6, NFR-5, FR-15 and FR-16</div><div class="disp">governance decision</div><div class="conf num">0.80</div></div>
+        <div class="expanded">
+          <div class="muted micro">risk · internal contradiction · also: refinement now · provenance: revise, claude-opus-5-5 · anchors 3/3 verified · <a href="#">dra explain FND-011</a></div>
+          <p style="margin-top:8px">Section 13 has every agent hold a full per-learner store for all learners. Section 14 writes to it 'always, immediate', outside the Gateway and Kafka path, and Sections 13 and 20 say it survives learner self-deletion. This conflicts with P6 (all writes policy-checked before storage), with Section 5 ('No agent ever touches a data store directly'), and with FR-15 (deleted memory still exists in the backups). It also conflicts with NFR-5: the Counsellor agent's backup would hold HIGHLY_RESTRICTED content outside memory_sensitive. FR-16 limits the backup to cases where the namespace is unreachable, but Sections 6 and 15 also use it when a token is EXPIRED or REVOKED. The document never says where the backup is stored, what tier it sits in, or how retention applies to it.</p>
+          <h3>Where in the document</h3>
+          <div class="ev"><div class="id"><a href="#">p.13 §13</a></div><div class="kind">FR-15</div><div>“survives learner deletion of their own memory (enabling session resume); rules are written by the system” <span class="where">resolved, exact match</span></div></div>
+          <div class="ev"><div class="id"><a href="#">p.4 §2.1</a></div><div class="kind">FR-16</div><div>“Each agent shall maintain its own per-learner backup memory, used only when the learner namespace is” <span class="where">resolved, exact match</span></div></div>
+          <div class="ev"><div class="id"><a href="#">p.6 §3</a></div><div class="kind">P6</div><div>“No uncontrolled self-writing - all writes are classified and policy-checked before storage.” <span class="where">resolved, exact match</span></div></div>
+          <h3>Evidence (ledger)</h3>
+          <div class="ev"><div class="id">EV-043</div><div class="kind">doc, supports</div><div>“Agent own memory (always, immediate)” <span class="where">doc:DOC-sit_sample_v1#p14/s14</span></div></div>
+          <div class="ev"><div class="id">EV-012</div><div class="kind">doc, supports</div><div>“On revocation: inform the learner, serve from agent backup” <span class="where">doc:DOC-sit_sample_v1#p8/s6</span></div></div>
+          <div class="ev"><div class="id">EV-071</div><div class="kind">inference</div><div>An immediate, always-on agent-local write that survives learner deletion bypasses the classified and policy-checked write path, keeps deleted data, and for the Counsellor agent puts HIGHLY_RESTRICTED data outside memory_sensitive. <span class="where">derived from EV-040, EV-041, EV-014, EV-042, EV-043</span></div></div>
+          <div class="ev"><div class="id">EV-037</div><div class="kind">inference</div><div>Data that survives self-deletion and is still served after revocation, with no stated tier, credential or audit controls, cannot satisfy FR-15 or the schema/credential-level hard wall in FR-5 for counselling content. <span class="where">derived from EV-011, EV-012, EV-013, EV-014</span></div></div>
+          <div class="muted micro" style="padding:6px 0;border-top:1px solid var(--border-subtle)">and 6 more: EV-040, EV-041, EV-014, EV-042, EV-013, EV-109</div>
+          <h3>Recommendation</h3>
+          <dl class="kv">
+            <dt>Change</dt><dd>Add a section on the agent backup store that defines (a) where it is stored, split by sensitivity tier (HIGHLY_RESTRICTED backups in memory_sensitive), (b) that backup writes pass through Gateway/Policy checks, (c) that FR-15 deletion propagates to backups or a documented exemption approved by the DPO, and (d) one list of degraded-mode triggers (unreachable, EXPIRED, REVOKED) reconciled with FR-16. Extend the FR-15 and FR-16 acceptance tests to inspect the backup contents.</dd>
+            <dt>Issue</dt><dd>The agent backup store has no governance (no tier, no policy check, no deletion propagation), which contradicts P6, NFR-5 and FR-15. Its trigger conditions also disagree between FR-16 and Sections 6 and 15.</dd>
+            <dt>Rationale</dt><dd>The backup holds the same learner data as the namespace, so it must meet the same controls; otherwise it undermines the counselling wall and PDPA deletion.</dd>
+            <dt>Expected benefit</dt><dd>Makes FR-15, NFR-5 and P6 achievable and makes the trigger conditions for degraded mode consistent.</dd>
+            <dt>Verification</dt><dd>FR-15 test asserts that deleted keys are absent from every agent backup; NFR-5 test asserts that the Counsellor backup is only reachable with memory_sensitive credentials.</dd>
+            <dt>Objectives</dt><dd>FR-15, FR-16, NFR-5, P6</dd>
+            <dt>Evidence</dt><dd>EV-040, EV-041, EV-014, EV-042, EV-071</dd>
+            <dt>Next step</dt><dd>Data governance officer / DPO with platform architect: Decide whether the backup survives deletion, and set its storage tier and policy path; then revise Sections 13, 14 and 20 and FR-16.</dd>
+          </dl>
+          <h3>Approved decisions</h3>
+          <div class="dec"><span class="rel">refines</span><span><b style="font-weight:500">AD-048</b> Gives the FR-16 backup a governed tier, policy path and deletion rule while keeping it.</span></div>
+          <div class="dec"><span class="rel">refines</span><span><b style="font-weight:500">AD-047</b> Makes FR-15 deletion apply to the backup copies too.</span></div>
+          <div class="dec"><span class="rel">refines</span><span><b style="font-weight:500">AD-014</b> Lines up the degraded-mode triggers in FR-16 with the EXPIRED and REVOKED branches.</span></div>
+          <div class="dec"><span class="rel">preserves</span><span><b style="font-weight:500">AD-009</b> Applies the two-tier split to backup storage.</span></div>
+          <div class="dec"><span class="rel">preserves</span><span><b style="font-weight:500">AD-017</b> Extends the counselling hard wall to the Counsellor agent's backup.</span></div>
+          <div class="dec"><span class="rel">preserves</span><span><b style="font-weight:500">AD-033</b> Brings backup operations under audit.</span></div>
+        </div>
+        <div class="frow"><div class="rank num">2</div><div class="fid">FND-012</div><div><span class="pill high">high</span></div><div class="title">Counselling hard wall contradicted by Super Admin 'Everything' and MMP emergency access; FR-5 test cannot show that no override exists</div><div class="disp">refinement now</div><div class="conf num">0.75</div></div>
+        <div class="frow"><div class="rank num">3</div><div class="fid">FND-038</div><div><span class="pill high">high</span></div><div class="title">Async write path: no path for writes rejected after the ACK, no dead-letter handling, and the topic is chosen before classification</div><div class="disp">refinement now</div><div class="conf num">0.65</div></div>
+        <div class="frow"><div class="rank num">4</div><div class="fid">FND-013</div><div><span class="pill high">high</span></div><div class="title">MMP is in the request path despite NFR-4 (inline slot provisioning, PolicyEngine and AuditStore hosted in MMP)</div><div class="disp">refinement now</div><div class="conf num">0.75</div></div>
+        <div class="frow"><div class="rank num">5</div><div class="fid">FND-037</div><div><span class="pill high">high</span></div><div class="title">A revoked token still gets learner data served from the agent backup</div><div class="disp">governance decision</div><div class="conf num">0.70</div></div>
+        <div class="frow"><div class="rank num">6</div><div class="fid">FND-026</div><div><span class="pill high">high</span></div><div class="title">Filtered HNSW search-space claim is unverified and drives NFR-2</div><div class="disp">needs prototyping</div><div class="conf num">0.65</div></div>
+        <div class="frow"><div class="rank num">7</div><div class="fid">FND-041</div><div><span class="pill medium">medium</span></div><div class="title">Cached context packs keep serving after permission changes, deletions or redaction updates, and the Redis cache has no invalidation path</div><div class="disp">refinement now</div><div class="conf num">0.65</div></div>
+        <div class="frow"><div class="rank num">8</div><div class="fid">FND-030</div><div><span class="pill medium">medium</span></div><div class="title">PDPA compliance is asserted but PDPA sign-off and retention period are still pending</div><div class="disp">governance decision</div><div class="conf num">0.60</div></div>
+        <div class="frow"><div class="rank num">9</div><div class="fid">FND-027</div><div><span class="pill medium">medium</span></div><div class="title">Vector sizing, RAM fit and growth ceiling do not add up</div><div class="disp">needs testing</div><div class="conf num">0.70</div></div>
+        <div class="frow"><div class="rank num">10</div><div class="fid">FND-018</div><div><span class="pill medium">medium</span></div><div class="title">DDL rated 'complete' but lacks columns that other sections rely on</div><div class="disp">refinement now</div><div class="conf num">0.75</div></div>
+        <div class="frow" style="grid-template-columns:28px minmax(0,1fr)"><div></div><div class="muted">and 12 more issues (ranks 11 to 22), then the 2 strengths FND-010 and FND-046; the 10 areas checked with no issue are listed under Coverage</div></div>
+      </div>
+    </div>
+
+    <div class="sec two">
+      <div>
+        <h2>Unresolved issues <span class="n num">10, each with an owner</span></h2>
+        <ul class="plain small">
+          <li><b style="font-weight:500">FND-011</b> governance decision · Data governance officer / DPO with platform architect: decide whether the backup survives deletion, and set its storage tier and policy path.</li>
+          <li><b style="font-weight:500">FND-037</b> governance decision · Information security officer: decide whether any learner-specific memory may be served after revocation, and record the decision in Section 25.</li>
+          <li><b style="font-weight:500">FND-026</b> needs prototyping · Platform data architect: build a 9.5M-vector pgvector prototype on the target Azure PostgreSQL version and benchmark filtered query plans.</li>
+          <li class="muted">and 7 more: FND-030, FND-027, FND-043, FND-031, FND-029, FND-044, FND-034</li>
+        </ul>
+      </div>
+      <div>
+        <h2>Evidence limitations <span class="n num">2</span></h2>
+        <ul class="plain small">
+          <li><b style="font-weight:500">DEG-001</b> native PDF block not sent because the configured model backend accepts text only. Impact: figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text.</li>
+          <li><b style="font-weight:500">DEG-002</b> mcp-internet-search/search_web failed (tool_error): MCP error -32000: Connection closed. Impact: that call contributed no evidence.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ask">
+      <div class="head"><h2>Ask the review</h2><span class="pill aid">reading aid, not the review</span></div>
+      <div class="notice">Answers come only from this run directory: report.json, the evidence entries its findings cite and the coverage outcomes. The model may quote and cite, never add a finding, change one, or re-run the review. If the review does not answer a question, it says so and nothing more.</div>
+      <div class="composer-shell">
+        <span class="ta">Ask about a finding, an objective, a page or an evidence ID…</span>
+        <span class="ready">Grounded in this review</span>
+        <span class="ask-btn">Ask</span>
+      </div>
+      <div class="composer-hint"><span>Enter to ask · Shift + Enter for a new line</span><span class="trust">Trimmed to this review · 20 asks or $3 per run</span></div>
+      <div class="budget num">0 of 20 asks · $0.00 of $3.00 · claude-opus-5-5, effort medium · logged to runs/sit_sample_tools_1/ui/chat.jsonl · outside the evaluated agent and its manifest</div>
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

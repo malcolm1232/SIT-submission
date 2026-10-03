@@ -44,6 +44,7 @@
       "enum": [
         "anchor_repair",
         "anchors_verified",
+        "answer_incomplete",
         "answer_unusable",
         "assess_started",
         "call_bounded",
@@ -907,6 +908,27 @@
               "stage",
               "call_id",
               "category"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "answer_incomplete"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "call_id",
+              "omitted"
             ]
           }
         }

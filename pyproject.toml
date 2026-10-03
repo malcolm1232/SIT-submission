@@ -38,6 +38,12 @@ dev = [
     "ruff==0.16.10",
     "playwright==1.63.0",    # browser tests of dra ui; then run `playwright install chromium`
 ]
+# The comparison variant of the orchestrator (agent/sit_review_agent/orchestrator_langgraph,
+# docs/COMPARISON_LANGGRAPH.md). Not a product dependency: `sit-review run` without
+# `--orchestrator langgraph` never imports it.
+langgraph = [
+    "langgraph==1.2.12",     # measured 2026-10-03; pulls langgraph-checkpoint 4.2.0, langgraph-prebuilt 1.1.0
+]
 
 [project.scripts]
 sit-review = "sit_review_agent.cli:main"

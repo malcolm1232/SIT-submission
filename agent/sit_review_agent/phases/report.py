@@ -42,6 +42,7 @@ from typing import Any
 
 from sit_review_agent.clock import isoformat_z
 from sit_review_agent.context import RunContext
+from sit_review_agent.delta import build_prior_table, mark_regressions, prior_findings_of, unknown_prior_refs
 from sit_review_agent.errors import (
     ExitCode,
     LLMDeadlineError,
@@ -70,6 +71,7 @@ from sit_review_agent.models import (
     IntentSummary,
     Kind,
     ObjectiveVerdict,
+    PriorFindingEntry,
     RegistryHash,
     ResearchLogEntry,
     Review,
@@ -420,12 +422,44 @@ def _intent(ctx: RunContext) -> IntentSummary:
                          doc_anchors=[anchor])
 
 
+def _delta_table(ctx: RunContext, findings: list[Finding]) -> tuple[list[Finding], list[PriorFindingEntry]]:
+    """Delta mode (``delta``): the findings with ``reassessment.regression`` computed from the two
+    texts, and the delta table with one status per finding of the previous review. Prior findings
+    that got no status, and reassessments citing an ID the previous review does not have, are
+    disclosed (each once, so a re-run of the phase adds nothing)."""
+    st = ctx.state
+    findings = mark_regressions(findings, ctx.doc_under_review(), ctx.prior_document())
+    prior = prior_findings_of(st.previous_run_dir)
+    if prior and not st.finding_ids.prior:              # assess did not run: disclosures still cite prior IDs
+        st.finding_ids = st.finding_ids.model_copy(update={"prior": [p["id"] for p in prior]})
+    table, missing = build_prior_table(prior, findings, st.prior_statuses)
+
+    def disclose(event: str, impact: str) -> None:
+        if not any(d.event == event for d in st.degradations):
+            st.add_degradation(DegradationType.OTHER, event, impact)
+
+    if missing:
+        disclose(f"{len(missing)} of {len(prior)} findings of the previous review were not re-examined (no status "
+                 f"from the model, or their only successor was not kept): previous review's "
+                 f"{', '.join(missing)}",
+                 "recorded as still open with the note 'not re-examined' in the delta table; whether the update "
+                 "fixed them was not judged")
+    unknown = unknown_prior_refs(prior, findings)
+    if unknown:
+        disclose(f"{len(unknown)} reassessment(s) cite an ID the previous review does not have ({'; '.join(unknown)})",
+                 "those findings are not in the delta table; their stated prior link is unchecked")
+    return findings, table
+
+
 def assemble_review(ctx: RunContext) -> Review:
     """Build the Review envelope from ``ctx.state``, the ledger, the registry and the manifest."""
     st = ctx.state
     intent = _intent(ctx)
     findings = list(st.findings)
     verdict = st.verdict or fallback_verdict(findings, "no verdict was produced")
+    prior_table: list[PriorFindingEntry] = []
+    if st.review_mode is ReviewMode.DELTA:
+        findings, prior_table = _delta_table(ctx, findings)
 
     unresolved = list(st.unresolved)
     listed = {x for u in unresolved for x in u.finding_ids}
@@ -471,6 +505,7 @@ def assemble_review(ctx: RunContext) -> Review:
             "registry_sha256_by_iteration": [h.model_dump(mode="json") for h in hashes]},
         "limitations": [lim.model_dump(mode="json") for lim in st.limitations],
         "stop_reason": stop.model_dump(mode="json"),
+        "prior_findings": [e.model_dump(mode="json") for e in prior_table],
     }
     allowed = {e.url_or_citation for e in ledger}
     counter = [0]
@@ -548,7 +583,9 @@ class ReportPhase:
 
         problems = [f"schema: {'/'.join(map(str, e.absolute_path))}: {e.message}"
                     for e in spec_validator("Review").iter_errors(data)]
-        results = check_all(review, rd.root)
+        delta_kw = ({"prior_ids": [p["id"] for p in prior_findings_of(st.previous_run_dir)]}
+                    if st.review_mode is ReviewMode.DELTA and st.previous_run_dir else {})
+        results = check_all(review, rd.root, **delta_kw)
         problems += [f"{r.inv_id}: {p}" for r in results if not r.passed for p in r.problems]
         problems += [f"INV-12 (report.md): {p}" for p in dangling_refs({   # coverage notes are in report.md only
             "findings": data["findings"], "run_manifest": data["run_manifest"],
@@ -562,7 +599,7 @@ class ReportPhase:
         rd.report_md.write_text(md, encoding="utf-8")
         ctx_event(ctx, f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
                   f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
-                  f"invariants INV-03..10 and INV-12 pass; wrote {rd.relative(rd.report_md)}", event="verdict",
+                  f"invariants INV-03..10, INV-12 and INV-13 pass; wrote {rd.relative(rd.report_md)}", event="verdict",
                   label=review.verdict.label.value, confidence=getattr(review.verdict, "confidence", None),
                   findings=len(review.findings), unresolved=len(review.unresolved),
                   limitations=len(review.limitations), by_severity=_severity_counts(review.findings),

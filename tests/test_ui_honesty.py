@@ -21,7 +21,11 @@ from sit_review_agent.ui.server import STATIC_DIR, UIState, build_app
 
 REPO = Path(__file__).resolve().parents[1]
 REHEARSAL = REPO / "docs" / "live_runs" / "rehearsal_concurrent_1"
+SAMPLE = REPO / "docs" / "live_runs" / "sit_sample_tools_1"
 FIXTURE_EVENTS = Path(__file__).parent / "fixtures" / "ui" / "progress.jsonl"
+SERVERS = [{"name": "mcp-internet-search", "enabled": True}, {"name": "mcp-research-information", "enabled": True},
+           {"name": "mcp-browser-automation-pw", "enabled": False},
+           {"name": "mcp-document-intelligence", "enabled": False}]
 HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 JS = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 CSS = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
@@ -162,12 +166,27 @@ def served(tmp_path: Path):
     reh.mkdir(parents=True)
     for name in ("report.json", "manifest.json", "anchors.json", "ledger.json", "state.json", "effective_config.json"):
         shutil.copy2(REHEARSAL / name, reh / name)
+    sample = runs / SAMPLE.name                      # a finished run with tool records: the rail's tools source
+    sample.mkdir()
+    for name in ("report.json", "manifest.json", "anchors.json", "ledger.json", "tools_list.jsonl", "tools.jsonl"):
+        shutil.copy2(SAMPLE / name, sample / name)
     fx = runs / "fixture_run"
     fx.mkdir()
     lines = FIXTURE_EVENTS.read_text(encoding="utf-8").splitlines(keepends=True)
     (fx / "progress.jsonl").write_text("".join(lines[:70]), encoding="utf-8")
+    probes: list[int] = []
+
+    async def probe() -> dict:
+        probes.append(1)
+        return {"at": "", "servers": [], "auth_failed": False, "lines": []}
+
+    sample_pdf = REPO / "eval" / "synthetic" / "payments_orchestration" / "design_v1.pdf"
     state = UIState(runs_dir=runs.resolve(), repo_root=REPO, launcher=Launcher(repo_root=REPO), chat_client=None,
-                    profiles=[], tools=[])  # type: ignore[arg-type]
+                    profiles=[], tools=list(SERVERS), probe=probe,
+                    documents=[{"name": "doc-1", "label": "Payments orchestration", "file": "payments_design_v1.pdf",
+                                "path": "eval/synthetic/payments_orchestration/design_v1.pdf",
+                                "abspath": str(sample_pdf)}])  # type: ignore[arg-type]
+    state.probes = probes  # type: ignore[attr-defined]
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(build_app(state), host="127.0.0.1", port=port, log_level="warning"))
     th = threading.Thread(target=server.run, daemon=True)
@@ -176,14 +195,14 @@ def served(tmp_path: Path):
         if server.started:
             break
         time.sleep(0.05)
-    yield f"http://127.0.0.1:{port}", runs
+    yield f"http://127.0.0.1:{port}", runs, state
     server.should_exit = True
     th.join(timeout=5)
 
 
 def test_the_page_in_a_browser(served) -> None:
     sync_api = pytest.importorskip("playwright.sync_api")
-    base, runs = served
+    base, runs, _state = served
     report = json.loads((REHEARSAL / "report.json").read_text(encoding="utf-8"))
     evs = [json.loads(ln) for ln in (runs / "fixture_run" / "progress.jsonl").read_text(encoding="utf-8").splitlines()]
     with sync_api.sync_playwright() as p:
@@ -229,9 +248,92 @@ def test_the_page_in_a_browser(served) -> None:
         assert conf.startswith(f"confidence {report['verdict']['confidence']:.2f}")
         assert page.locator("#chat-label").inner_text() == "reading aid, not the review"
         assert page.locator("#chat-budget").inner_text().startswith("0 of 20 calls used")
-        assert not page.locator(".tab", has_text="Delta").count()      # no previous version: no Delta tab
+        delta = page.locator(".tab", has_text="Delta")                 # no previous version: Delta is drawn disabled
+        assert delta.count() == 1 and delta.get_attribute("aria-disabled") == "true"
+        assert delta.get_attribute("title") == "No previous version was given for this run"
+        assert page.locator("#tab-note").inner_text() == "Delta is off: no previous version was given for this run."
         link = page.locator(".expanded a[href*='doc.pdf#page=']").first.get_attribute("href")
         assert re.search(r"/doc\.pdf#page=\d+$", link)
         assert page.evaluate(MOTION) == 0
         browser.close()
     assert all(u.startswith(base) for u in requests), [u for u in requests if not u.startswith(base)]
+
+
+# ------------------------------------------------------------------ the rail: stream state, recorded servers, no probe
+
+
+def _mmss(s: float) -> str:
+    t = int(s)
+    return f"{t // 60:02d}:{t % 60:02d}"
+
+
+def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_probes(served, monkeypatch) -> None:
+    """Three guards of the v2 rail (docs/design/ui_restyle.md section 4): the running entry is the open run's
+    reduced stream (stage, run clock, open calls), the tools dots are GET /tools (a read of recorded files),
+    and nothing on any page load calls POST /tools/probe; the Probe button is the only path to it."""
+    sync_api = pytest.importorskip("playwright.sync_api")
+    base, runs, state = served
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    evs = [json.loads(ln) for ln in (runs / "fixture_run" / "progress.jsonl").read_text(encoding="utf-8").splitlines()]
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:  # noqa: BLE001 - Chromium not installed here
+            pytest.skip(f"Chromium not available: {exc}")
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        requests: list[tuple[str, str]] = []
+        page.on("request", lambda r: requests.append((r.method, r.url)))
+
+        # 1. The running entry equals the SSE state the page reduced from the stream.
+        page.goto(base + "/?run=fixture_run")
+        page.wait_for_function("document.querySelectorAll('#status-feed .row').length > 0")
+        page.wait_for_function("document.querySelector('#rail-runs .rail-run.active .meta .live') !== null")
+        last = max(e["run_s"] for e in evs if e["run_s"] is not None)
+        deadline = next(e["fields"]["deadline_s"] for e in evs if e["type"] == "run_started")
+        opened = {e["fields"]["call_id"]: e["phase"] for e in evs if e["type"] == "call_opened"}
+        closed = {e["fields"]["call_id"] for e in evs if e["type"] in ("call_closed", "call_cut")}
+        open_calls = [ph for cid, ph in opened.items() if cid not in closed]
+        assert open_calls == ["refine"]
+        entry = page.locator("#rail-runs .rail-run.active")
+        assert entry.get_attribute("data-run") == "fixture_run" and entry.locator(".dot.live").count() == 1
+        assert entry.locator(".meta").inner_text() == f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
+        assert entry.locator(".meta .live").inner_text() == "refine"
+        assert page.locator("#top-meta b").first.inner_text() == _mmss(last)      # the same clock as the page head
+        assert page.locator("#rail-runs-note").text_content() == "1 running"      # uppercase is the CSS caption
+        assert page.locator("#rail-runs .rail-run .dot.live").count() == 1
+
+        # 2. The tools dots equal GET /tools, server by server.
+        tools = page.evaluate("async () => (await fetch('/tools')).json()")
+        assert tools["from_run"] == SAMPLE.name
+        assert [s["name"] for s in tools["servers"]] == [s["name"] for s in SERVERS]
+        assert [s["warm"] for s in tools["servers"]] == [True, True, None, None]
+        for s in tools["servers"]:
+            dot = page.locator(f'#rail-tools .rail-tool[data-server="{s["name"]}"] .dot')
+            assert dot.count() == 1
+            assert ("warm" in dot.get_attribute("class").split()) is bool(s["warm"]), s["name"]
+        warm = sum(1 for s in tools["servers"] if s["warm"])
+        assert page.locator("#rail-tools-note").text_content() == f"{warm} of {len(SERVERS)} warm"
+        assert page.locator("#top-tools b").inner_text() == f"{warm} of {len(SERVERS)}"
+
+        # 3. No page load probes: the Review page, a run, a review and the Tools page send no POST at all.
+        page.goto(base + "/")
+        page.wait_for_selector(".starter")
+        # A chip fills the form with the file and never starts a run (no POST below).
+        page.click(".starter")
+        page.wait_for_function("document.querySelector('#doc-chosen').textContent === 'payments_design_v1.pdf'")
+        assert page.locator("#start-btn").is_enabled()
+        assert "review runs/<new run>/ui/input/payments_design_v1.pdf " in page.locator("#cmd-preview").inner_text()
+        assert page.locator(".starter").get_attribute("aria-pressed") == "true"
+        page.goto(base + f"/?run={REHEARSAL.name}")
+        page.wait_for_selector("#chat-budget")
+        page.goto(base + "/?page=tools")
+        page.wait_for_selector("#probe-btn")
+        assert all(m == "GET" for m, _ in requests), [u for m, u in requests if m != "GET"]
+        assert not any(u.endswith("/tools/probe") for _, u in requests)
+        # The button is the one path to the probe (refused here: no key in this test's environment).
+        page.click("#probe-btn")
+        page.wait_for_selector("#probe-error:not([hidden])")
+        assert [(m, u) for m, u in requests if u.endswith("/tools/probe")] == [("POST", base + "/tools/probe")]
+        assert "SIT_MCP_API_KEY is not set" in page.locator("#probe-error").inner_text()
+        assert state.probes == []                       # refused before the warm-up: no key, no network
+        browser.close()

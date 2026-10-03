@@ -1,0 +1,622 @@
+{
+ "budgets": {
+  "deadline_s": 540,
+  "max_tokens": 4000000,
+  "max_tool_calls": 30
+ },
+ "condition": null,
+ "config_sha256": "79a78b6aea40f86fd3030500a033c55c70121845d35d70a2863fb427aaf80835",
+ "extra": {
+  "code": {
+   "anthropic_sdk_version": "1.11.0",
+   "argv": [
+    "review",
+    "eval/synthetic/payments_orchestration/design_v1.pdf",
+    "--profile",
+    "demo",
+    "--no-tools",
+    "--orchestrator",
+    "langgraph",
+    "--run-id",
+    "langgraph_payments_v1_1"
+   ],
+   "git_branch": "s4/langgraph",
+   "git_commit": "c4d94b95460be0c1cede59669053643088dd9a92",
+   "git_dirty": null,
+   "mcp_version": "2.2.0",
+   "os": "Darwin 24.6.0",
+   "package_lock_sha256": null,
+   "pyproject_sha256": "bcbd65cc4c124d5a2c6df9f69332bf8c9c316c4943ac40bd49cb08bd6cd3f59a",
+   "python": "3.13.13",
+   "sit_review_agent_version": "0.1.0"
+  },
+  "config": {
+   "cli_args": {
+    "no_tools": true,
+    "profile": "demo"
+   },
+   "effective_config_sha256": "79a78b6aea40f86fd3030500a033c55c70121845d35d70a2863fb427aaf80835",
+   "files": {
+    "config/agent.yaml": "25d0cd1c0d9624ec50e93904c7e6f024b8812ea83731ec5d494ed16889200629",
+    "config/criteria.yaml": "4f16aba8d0f0df9c7cce8ca828ebadf79e91a498736ac9224838bdc28b2c0bad",
+    "config/endpoints.yaml": "99cd4094eef39e2a526030bb9c99cfa73d9fe6cb1765c3ffb31a8e236cf252f7",
+    "config/persona.yaml": "f49708c3dd6c571bd7dfdb7d6c939a303a146bb13f4cb65fee03f2dee9880ce8",
+    "config/profiles/demo.yaml": "33dbce5e40015faa0db820ea1d2a2439877b8ed8d5b5e1fdd83ba5b0421a53ba",
+    "config/stop_rules.yaml": "e63d8fb6701e0179a327e30e98f626a690690ebe653f6dab3204a998b445db27",
+    "config/tools.yaml": "2204f23914870e507160948e151b5a2a992d4de0598925bf720e6cfc743e1aa9",
+    "config/url_policy.yaml": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+   }
+  },
+  "deviations": [],
+  "doc": {
+   "canonical_text_sha256": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+   "documents": [
+    {
+     "bytes": 574604,
+     "canonical_text_sha256": "ad0bb891f073f14325b6ba716d58070d6b074ebaef9a9c64432138b89b64ec3c",
+     "id": "DOC-design_v1",
+     "native_pdf_block": false,
+     "pages": 21,
+     "role": "under_review",
+     "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99"
+    }
+   ],
+   "extractor": {
+    "name": "pdfplumber",
+    "version": "0.11.10"
+   },
+   "id": "DOC-design_v1",
+   "native_pdf_block": false,
+   "normalisation_version": "1",
+   "pages": 21,
+   "sha256_pdf": "a790dac8f554449704e4cbda43e2466d6ef5bfc0e80d02c62e9bd17b7eaf0e99"
+  },
+  "fault_injection": {
+   "profile": "none",
+   "schedule_sha256": null
+  },
+  "finding_ids": {
+   "final": {
+    "FND-001": "FND-001",
+    "FND-002": "FND-029",
+    "FND-003": "FND-028",
+    "FND-004": "FND-019",
+    "FND-005": "FND-005",
+    "FND-006": "FND-044",
+    "FND-007": "FND-020",
+    "FND-008": "FND-045",
+    "FND-009": "FND-050",
+    "FND-010": "FND-036",
+    "FND-011": "FND-023",
+    "FND-012": "FND-026",
+    "FND-013": "FND-013",
+    "FND-014": "FND-001",
+    "FND-015": "FND-029",
+    "FND-016": "FND-016",
+    "FND-017": "FND-043",
+    "FND-018": "FND-005",
+    "FND-019": "FND-019",
+    "FND-020": "FND-020",
+    "FND-021": "FND-044",
+    "FND-022": "FND-036",
+    "FND-023": "FND-023",
+    "FND-024": "FND-024",
+    "FND-025": "FND-025",
+    "FND-026": "FND-026",
+    "FND-027": "FND-013",
+    "FND-028": "FND-028",
+    "FND-029": "FND-029",
+    "FND-030": "FND-001",
+    "FND-031": "FND-005",
+    "FND-032": "FND-043",
+    "FND-033": "FND-050",
+    "FND-034": "FND-019",
+    "FND-035": "FND-020",
+    "FND-036": "FND-036",
+    "FND-037": "FND-044",
+    "FND-038": "FND-016",
+    "FND-039": "FND-039",
+    "FND-040": "FND-040",
+    "FND-041": "FND-029",
+    "FND-042": "FND-001",
+    "FND-043": "FND-043",
+    "FND-044": "FND-044",
+    "FND-045": "FND-045",
+    "FND-046": "FND-019",
+    "FND-047": "FND-028",
+    "FND-048": "FND-005",
+    "FND-049": "FND-020",
+    "FND-050": "FND-050",
+    "FND-051": "FND-024",
+    "FND-052": "FND-052",
+    "FND-053": "FND-053",
+    "FND-054": "FND-013"
+   },
+   "prior": [],
+   "refine": {
+    "FND-002": "FND-029",
+    "FND-003": "FND-028",
+    "FND-004": "FND-019",
+    "FND-006": "FND-044",
+    "FND-007": "FND-020",
+    "FND-008": "FND-045",
+    "FND-009": "FND-050",
+    "FND-010": "FND-036",
+    "FND-011": "FND-023",
+    "FND-012": "FND-026",
+    "FND-014": "FND-001",
+    "FND-015": "FND-029",
+    "FND-017": "FND-043",
+    "FND-018": "FND-005",
+    "FND-021": "FND-044",
+    "FND-022": "FND-036",
+    "FND-027": "FND-013",
+    "FND-030": "FND-001",
+    "FND-031": "FND-005",
+    "FND-032": "FND-043",
+    "FND-033": "FND-050",
+    "FND-034": "FND-019",
+    "FND-035": "FND-020",
+    "FND-037": "FND-044",
+    "FND-038": "FND-016",
+    "FND-041": "FND-029",
+    "FND-042": "FND-001",
+    "FND-046": "FND-019",
+    "FND-047": "FND-028",
+    "FND-048": "FND-005",
+    "FND-049": "FND-020",
+    "FND-051": "FND-024",
+    "FND-054": "FND-013"
+   },
+   "rewrites": {
+    "marked_draft": 0,
+    "remapped": 0,
+    "removed": 0
+   },
+   "shards": {
+    "claims_and_assumptions": {
+     "FND-001": "FND-028",
+     "FND-002": "FND-029",
+     "FND-003": "FND-030",
+     "FND-004": "FND-031",
+     "FND-005": "FND-032",
+     "FND-006": "FND-033",
+     "FND-007": "FND-034",
+     "FND-008": "FND-035",
+     "FND-009": "FND-036",
+     "FND-010": "FND-037",
+     "FND-011": "FND-038",
+     "FND-012": "FND-039",
+     "FND-013": "FND-040"
+    },
+    "intent_and_fitness": {
+     "FND-001": "FND-001",
+     "FND-002": "FND-002",
+     "FND-003": "FND-003",
+     "FND-004": "FND-004",
+     "FND-005": "FND-005",
+     "FND-006": "FND-006",
+     "FND-007": "FND-007",
+     "FND-008": "FND-008",
+     "FND-009": "FND-009",
+     "FND-010": "FND-010",
+     "FND-011": "FND-011",
+     "FND-012": "FND-012",
+     "FND-013": "FND-013"
+    },
+    "requirements_and_consistency": {
+     "FND-001": "FND-014",
+     "FND-002": "FND-015",
+     "FND-003": "FND-016",
+     "FND-004": "FND-017",
+     "FND-005": "FND-018",
+     "FND-006": "FND-019",
+     "FND-007": "FND-020",
+     "FND-008": "FND-021",
+     "FND-009": "FND-022",
+     "FND-010": "FND-023",
+     "FND-011": "FND-024",
+     "FND-012": "FND-025",
+     "FND-013": "FND-026",
+     "FND-014": "FND-027"
+    },
+    "risk_and_operations": {
+     "FND-001": "FND-041",
+     "FND-002": "FND-042",
+     "FND-003": "FND-043",
+     "FND-004": "FND-044",
+     "FND-005": "FND-045",
+     "FND-006": "FND-046",
+     "FND-007": "FND-047",
+     "FND-008": "FND-048",
+     "FND-009": "FND-049",
+     "FND-010": "FND-050",
+     "FND-011": "FND-051",
+     "FND-012": "FND-052",
+     "FND-013": "FND-053",
+     "FND-014": "FND-054"
+    }
+   },
+   "verify": {}
+  },
+  "k_index": null,
+  "manifest_version": 1,
+  "mode": "dev",
+  "model": {
+   "assess_shards": 4,
+   "backend": "claude_code",
+   "betas": [],
+   "calls_logged": 8,
+   "calls_with_unrecorded_usage": [
+    {
+     "attempt": 0,
+     "call_id": "llm-0002",
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess",
+     "wall_s": 263.212
+    }
+   ],
+   "cost_usd_lower_bound": true,
+   "effort_by_stage": {
+    "assess": "medium",
+    "plan": "medium",
+    "refine": "medium",
+    "report": "medium",
+    "research": "low",
+    "understand": "medium",
+    "verify": "medium"
+   },
+   "estimated_usage_of_unrecorded_calls": [
+    {
+     "attempt": 0,
+     "cache_creation_input_tokens": 25346,
+     "cache_read_input_tokens": 6195,
+     "call_id": "llm-0002",
+     "estimated": true,
+     "input_tokens": 2,
+     "output_tokens": 26504,
+     "purpose": "assess",
+     "reason": "deadline_cut",
+     "stage": "assess"
+    }
+   ],
+   "estimated_usage_totals": {
+    "cache_creation_input_tokens": 25346,
+    "cache_read_input_tokens": 6195,
+    "calls": 1,
+    "cost_source": "price table estimate",
+    "cost_usd": 0.658057,
+    "estimated": true,
+    "input_tokens": 2,
+    "output_tokens": 26504
+   },
+   "fallback_events": [],
+   "fallbacks": "none",
+   "max_tokens_by_stage": {
+    "assess": 128000,
+    "plan": 128000,
+    "refine": 128000,
+    "report": 128000,
+    "research": 128000,
+    "understand": 128000,
+    "verify": 128000
+   },
+   "models_retrieve": {
+    "status": "not available for backend claude_code"
+   },
+   "refusals": [],
+   "requested_model": "claude-opus-5-5",
+   "salvaged_calls": 1,
+   "salvaged_items": 18,
+   "sampling": "provider-default (not settable)",
+   "sdk_client": {
+    "gateway_max_retries": 4,
+    "max_retries": 0,
+    "timeout_s": 1800.0
+   },
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": {
+    "display": "omitted",
+    "type": "adaptive"
+   },
+   "truncations": []
+  },
+  "outputs": {
+   "anchors_sha256": "5d5e7dc7a4604f40d4ebc6596785b730f2f9fbe686c864a828262be02831dc38",
+   "ledger_sha256": "193de213aa887a6eeb39c00a3838a73107dbebb1322006873b70557aadc46132",
+   "llm_jsonl_sha256": "b1b7c6a754db0d2b47c3d114ec5364572f124f1b9e256df66f4632ed89d1e48d",
+   "report_json_sha256": "a93a2041781681375c3c50565a7c550623b5d0be5a44be11cd93bb5100bd97c2",
+   "report_md_sha256": "3432081fad2f5b11cb2048ecfd7e9d7ae6f7a09ca7b311cd8bd3cb58d5143c89",
+   "tools_jsonl_sha256": null
+  },
+  "previous_run_id": null,
+  "prompts": {
+   "bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+   "files": {
+    "prompts/assess.md": "02b2c3bc7300c304e12a840be51f979453497197d2f689fbc94789f4569f31a3",
+    "prompts/plan.md": "c78ea69a30f5040df6abd98e94233670f92cc6d9c519611b44668ae46c8b372e",
+    "prompts/refine.md": "5345cd228844b001ff1ee3cff1abb9a58ce23da20244dc569ffb10701193bb24",
+    "prompts/report.md": "1055e3681acac55b8f112f26725a97e535b81662f7be6eec18695589648626cc",
+    "prompts/research.md": "bb39c853d3116f01d856fd6896674a1196e258038c6b7cb82e4d00dffe160218",
+    "prompts/system.md": "75992c8e04b1a556afcc7aa75cc0256a8f5432ccb37f2786d359818e15fc8dc4",
+    "prompts/understand.md": "cbda99aad19ef5a02759816a1a4cc2b17a84af8ee1d706f917687882cce4f942",
+    "prompts/verify.md": "3dd655035a7e908774aa4edf05d6751007559faca1962eeff64b703fb56d8b8e"
+   }
+  },
+  "split_assignment_sha256": null,
+  "stop": {
+   "active_rules": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "params": {
+    "active": [
+     "sufficient_evidence",
+     "no_marginal_gain",
+     "budget_tool_calls",
+     "budget_tokens",
+     "deadline"
+    ],
+    "deadline_seconds": 540,
+    "max_input_tokens": 4000000,
+    "max_output_tokens": null,
+    "max_research_iterations": 4,
+    "max_tool_calls": 30,
+    "min_independent_sources": 2,
+    "no_marginal_gain_window": 2,
+    "refine_reserve_seconds": 200,
+    "report_reserve_seconds": 75,
+    "stage_limits_s": {
+     "refine_end": 465,
+     "stage_1_end": 265,
+     "verdict_end": 530
+    }
+   },
+   "stop_reason": {
+    "code": "tool_failure",
+    "detail": "no_tools",
+    "group": "error"
+   }
+  },
+  "timing": {
+   "per_stage_s": {
+    "assess": 263.282,
+    "ingest": 1.857,
+    "plan": 113.61,
+    "refine": 129.571,
+    "research": 0.006,
+    "understand": 124.958,
+    "verify": 0.013
+   },
+   "stages": {
+    "ingest": {
+     "members": {
+      "ingest": {
+       "end_offset_s": null,
+       "seconds": 1.857,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 1.857,
+     "wall_basis": "single_member",
+     "wall_s": 1.857
+    },
+    "refine": {
+     "members": {
+      "refine": {
+       "end_offset_s": 394.809,
+       "seconds": 129.571,
+       "start_offset_s": 265.294
+      }
+     },
+     "sum_of_member_s": 129.571,
+     "wall_basis": "single_member",
+     "wall_s": 129.571
+    },
+    "stage_1": {
+     "members": {
+      "assess": {
+       "end_offset_s": 265.181,
+       "seconds": 263.282,
+       "start_offset_s": 1.942
+      },
+      "plan": {
+       "end_offset_s": 115.518,
+       "seconds": 113.61,
+       "start_offset_s": 2.048
+      },
+      "research": {
+       "end_offset_s": null,
+       "seconds": 0.006,
+       "start_offset_s": null
+      },
+      "understand": {
+       "end_offset_s": 126.861,
+       "seconds": 124.958,
+       "start_offset_s": 2.104
+      }
+     },
+     "sum_of_member_s": 501.856,
+     "wall_basis": "member_spans",
+     "wall_s": 263.282
+    },
+    "verify": {
+     "members": {
+      "verify": {
+       "end_offset_s": null,
+       "seconds": 0.013,
+       "start_offset_s": null
+      }
+     },
+     "sum_of_member_s": 0.013,
+     "wall_basis": "single_member",
+     "wall_s": 0.013
+    }
+   },
+   "wall_clock_s": 424.727
+  },
+  "tools": {
+   "cassette_set_sha256": null,
+   "servers": [
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-internet-search",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "bbdc6eeaa2c98933c20b7594ccb0f3740484b142ed07c26bd3070e5f0aace616"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-research-information",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "cafceacc1e4ad056e8e1eae3bfd642b4513b112e825f6889b1cf787f2dc163d4"
+    },
+    {
+     "allow_tools": [
+      "*"
+     ],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-browser-automation-pw",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "4ad5ebce57687b5ec99d61deb511d8f366a33d5061015f12eefa460165e807c4"
+    },
+    {
+     "allow_tools": [],
+     "enabled": false,
+     "health_at_start": null,
+     "name": "mcp-document-intelligence",
+     "protocol_version": null,
+     "tools_list_sha256": null,
+     "url_sha256": "3e0bebc0fd059fa383873de30be099c7083fb74876a981df9ce465634739bf7d"
+    }
+   ],
+   "tool_calls": 0,
+   "transport": "live",
+   "url_policy_sha256": "81ff6c2b55ec4202e48704700f02377c5b08fab242861cbe8cc060e2ed5f0105"
+  }
+ },
+ "extractor": {
+  "name": "pdfplumber",
+  "page_marker": "[[PAGE n]]",
+  "version": "0.11.10"
+ },
+ "fallback_events": [],
+ "fault_schedule_id": null,
+ "git_commit": "c4d94b95460be0c1cede59669053643088dd9a92",
+ "git_dirty": false,
+ "models_used": [
+  {
+   "betas": [],
+   "effort": "per-stage (extra.model.effort_by_stage)",
+   "max_tokens": 128000,
+   "requested_model": "claude-opus-5-5",
+   "role": "agent",
+   "sampling": "provider-default (not settable)",
+   "served_models": [
+    "claude-opus-5-5"
+   ],
+   "thinking": "adaptive"
+  }
+ ],
+ "outcome": "completed_degraded",
+ "prereg_sha256": null,
+ "prompts_bundle_sha256": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7",
+ "review_config": {
+  "criteria": [
+   "design_intent",
+   "fitness_for_objectives",
+   "requirement_completeness",
+   "internal_consistency",
+   "claims_and_external_constraints",
+   "security_and_privacy",
+   "scalability_and_failure_modes",
+   "assumptions_and_dependencies",
+   "verifiability",
+   "decision_preservation",
+   "operability_and_governance"
+  ],
+  "persona": "generalist_architect",
+  "stop_rule": {
+   "active": [
+    "sufficient_evidence",
+    "no_marginal_gain",
+    "budget_tool_calls",
+    "budget_tokens",
+    "deadline"
+   ],
+   "deadline_seconds": 540,
+   "max_input_tokens": 4000000,
+   "max_output_tokens": null,
+   "max_research_iterations": 4,
+   "max_tool_calls": 30,
+   "min_independent_sources": 2,
+   "no_marginal_gain_window": 2,
+   "refine_reserve_seconds": 200,
+   "report_reserve_seconds": 75,
+   "stage_limits_s": {
+    "refine_end": 465,
+    "stage_1_end": 265,
+    "verdict_end": 530
+   }
+  }
+ },
+ "run_id": "langgraph_payments_v1_1",
+ "schema_version": "1.0",
+ "split": null,
+ "taxonomy_sha256": "1967a3918b1d29259c881301cdeb83bf305a74ec63b400c8e4a2b62c0660bbb6",
+ "timestamps": {
+  "end_utc": "2026-10-03T09:35:27Z",
+  "start_utc": "2026-10-03T09:28:22Z"
+ },
+ "tools": [
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-internet-search",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-research-information",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-browser-automation-pw",
+   "server_version": null
+  },
+  {
+   "enabled": false,
+   "mode": "live",
+   "name": "mcp-document-intelligence",
+   "server_version": null
+  }
+ ],
+ "usage": {
+  "cached_tokens": 62572,
+  "cost_usd": 4.714814,
+  "input_tokens": 282243,
+  "output_tokens": 122221,
+  "price_table_date": "2026-09-25",
+  "tool_calls": 0
+ }
+}

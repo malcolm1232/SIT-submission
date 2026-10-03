@@ -426,6 +426,12 @@ reassessment_statuses:        # finding.reassessment.status (grading D11; metric
   - {id: partially_addressed, definition: "Prior finding mitigated but not resolved."}
   - {id: resolved, definition: "Prior finding fixed by the update (reported, not re-raised)."}
 
+prior_finding_statuses:       # review.prior_findings[].status: the one status of each prior finding (delta table, 2026-10-03)
+  - {id: resolved, definition: "Prior finding fixed by the update."}
+  - {id: partially_addressed, definition: "Prior finding mitigated but not resolved."}
+  - {id: still_open, definition: "Prior finding persists (also recorded by code, with re_examined false, when the model gave no status)."}
+  - {id: withdrawn_on_reassessment, definition: "The agent no longer asserts the prior finding; the note gives the one-line reason."}
+
 # Answer-key-only enums (spec/answer_key.schema.json).
 credit_modes:
   - {id: substance, definition: "MATCH iff the finding states the flaw's core_insight in substance (any wording) at a compatible location. credit.items are guidance; no single item is mandatory."}
