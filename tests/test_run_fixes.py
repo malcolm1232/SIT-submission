@@ -275,3 +275,21 @@ def test_g_the_launch_record_carries_no_path_under_the_home_folder(tmp_path: Pat
     sha = hashlib.sha256(doc.read_bytes()).hexdigest()
     (run_dir / "manifest.json").write_text(json.dumps({"extra": {"doc": {"sha256_pdf": sha}}}), encoding="utf-8")
     assert reviewed_pdf(run_dir, repo) == doc
+
+
+def test_e_research_skipped_with_no_external_question_keeps_its_reason() -> None:
+    """Planner ruling: nothing was tried, so the skip keeps ``sufficient_evidence`` /
+    ``no_external_questions`` (the reason before the gate), never ``no_marginal_gain``; a plan that
+    does have an external question gets no such pass."""
+    from types import SimpleNamespace as NS
+
+    from sit_review_agent.models import StopReason, StopReasonCode
+    from sit_review_agent.stop_rules import settle_sufficient_evidence
+
+    state = _state(["open"] * 3, tool_calls=0)
+    for q in state.plan.questions:
+        q.needs_external, q.capability = False, "none"
+    skip = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "no_external_questions")
+    assert settle_sufficient_evidence(skip, state, PARAMS, _ledger()) is skip
+    state.plan.questions.append(NS(status="open", needs_external=True, capability="web_search"))
+    assert settle_sufficient_evidence(skip, state, PARAMS, _ledger()).code is StopReasonCode.NO_MARGINAL_GAIN

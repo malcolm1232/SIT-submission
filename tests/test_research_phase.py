@@ -349,9 +349,7 @@ async def test_no_external_questions(tmp_path: Path) -> None:
     ctx = make_ctx(tmp_path, [])
     ctx.state.plan = ResearchPlan(questions=[questions()[2]])
     await ResearchPhase().run(ctx)
-    # Run fix E: research skipped with 0 of 1 plan question answered is not sufficient_evidence.
-    assert ctx.state.stop_reason.code is StopReasonCode.NO_MARGINAL_GAIN
-    assert ctx.state.stop_reason.detail.startswith("sufficient_evidence not met (no_external_questions): 0 of 1 ")
+    assert ctx.state.stop_reason.detail == "no_external_questions"
 
 
 async def test_failed_and_refused_calls_go_back_as_is_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

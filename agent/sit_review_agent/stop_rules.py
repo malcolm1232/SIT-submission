@@ -125,6 +125,9 @@ def sufficient_evidence(state: RunState, p: StopRulesConfig, elapsed_s: float) -
 
 #: ``detail`` prefix of a stop reason that was ``sufficient_evidence`` until the gate below refused it.
 NOT_SUFFICIENT = "sufficient_evidence not met"
+#: ``detail`` of the reason research records when no plan question needs external evidence (research
+#: skipped). The gate leaves it as it was before the gate existed: nothing was tried, so no other code fits.
+NO_EXTERNAL_QUESTIONS = "no_external_questions"
 
 
 class EvidenceTally(NamedTuple):
@@ -178,6 +181,10 @@ def settle_sufficient_evidence(stop: StopReason, state: RunState, params: StopRu
     counts do not support becomes :func:`fitting_reason`; a reason this gate refused earlier (in
     research, before any finding cited a source) becomes ``sufficient_evidence`` again when the
     counts now support it. Any other reason is returned unchanged."""
+    if stop.code is StopReasonCode.SUFFICIENT_EVIDENCE and stop.detail == NO_EXTERNAL_QUESTIONS and not any(
+            getattr(q, "needs_external", False) and getattr(q, "capability", "none") != "none"
+            for q in (state.plan.questions if state.plan is not None else [])):
+        return stop                         # research skipped: nothing was tried, the reason stays as before
     tally = evidence_tally(state, ledger)
     if stop.code is StopReasonCode.SUFFICIENT_EVIDENCE:
         return stop if tally.sufficient() else fitting_reason(state, params, tally, stop.detail)
