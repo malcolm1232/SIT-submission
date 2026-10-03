@@ -1019,6 +1019,19 @@ class SelfReplayGateway:
         await self.inner.aclose()
 
 
+def genuine_failure(res: ToolResult) -> bool:
+    """A failure that counts against the tool (INF-11, NET-06): a tool error from a live session, or a
+    closed session met again after the session was reopened for this call. A session error that the
+    reopen recovered, and failures to reach the server, do not count (the breaker handles those)."""
+    if res.ok:
+        return False
+    if res.error_class is ToolErrorClass.TOOL_ERROR:
+        return True
+    if res.error_class is ToolErrorClass.SESSION_CLOSED:
+        return sum(a.error_class is ToolErrorClass.SESSION_CLOSED for a in res.attempts) >= 2
+    return False
+
+
 class PolicyToolGateway:
     """Allowlist (``tools.yaml allow_tools``), URL policy (``url_policy.yaml``), argument sanitiser
     (secrets and canaries never leave the process, ADV-05), per-server breaker (``ServerHealth``),
@@ -1038,7 +1051,9 @@ class PolicyToolGateway:
     #: In-flight calls per server, and the reduced cap after a 429 (INF-05).
     DEFAULT_CONCURRENCY = 4
     RATE_LIMITED_CONCURRENCY = 1
-    #: Consecutive ``isError`` results after which a tool is unusable for the session (INF-11).
+    #: Consecutive genuine failures after which a tool is unusable for the run (INF-11): a tool error
+    #: from a live session, or a call that failed again after its session was reopened. A session
+    #: error the reopen recovered never counts (NET-06, sit_sample_tools_1).
     TOOL_ERROR_LIMIT = 2
     _RETRYABLE = frozenset({ToolErrorClass.COLD_START, ToolErrorClass.TIMEOUT, ToolErrorClass.CONNECTION,
                             ToolErrorClass.HTTP_5XX, ToolErrorClass.UNKNOWN})
@@ -1067,6 +1082,8 @@ class PolicyToolGateway:
         self._open_until: dict[str, float] = {}
         self._first_call_at: dict[str, float] = {}
         self._tool_error_streak: dict[str, int] = {}
+        #: Per tool: logical calls, tool errors, failures after a session reopen, session errors recovered.
+        self.tool_counts: dict[str, dict[str, int]] = {}
         self._caps: dict[str, int] = {}
         self._inflight: dict[str, int] = {}
         self._cond: asyncio.Condition | None = None
@@ -1161,12 +1178,23 @@ class PolicyToolGateway:
                        f"(last: {cls.value if cls else 'error'}); retrying it in {self.BREAKER_COOLDOWN_S:.0f} s")
                 self.events.append(msg)
                 self._emit(phase, msg)
-        if cls is ToolErrorClass.TOOL_ERROR:
+        counts = self.tool_counts.setdefault(tool_name, {"calls": 0, "tool_errors": 0, "failed_after_reopen": 0,
+                                                         "session_recovered": 0})
+        counts["calls"] += 1
+        closed = sum(a.error_class is ToolErrorClass.SESSION_CLOSED for a in res.attempts)
+        genuine = genuine_failure(res)
+        if closed and not genuine:
+            counts["session_recovered"] += 1
+        if genuine:
+            counts["tool_errors" if cls is ToolErrorClass.TOOL_ERROR else "failed_after_reopen"] += 1
             streak = self._tool_error_streak.get(tool_name, 0) + 1
             self._tool_error_streak[tool_name] = streak
             if streak >= self.TOOL_ERROR_LIMIT and tool_name not in self.unusable_tools:
                 self.unusable_tools.add(tool_name)
-                msg = f"{tool_name} returned isError {streak} times in a row; marked unusable for this run"
+                msg = (f"{tool_name} marked unusable for this run after {streak} genuine failures in a row "
+                       f"({counts['tool_errors']} tool error(s), {counts['failed_after_reopen']} failure(s) after a "
+                       f"session reopen) in {counts['calls']} call(s); {counts['session_recovered']} session "
+                       "error(s) were recovered by reopening the session and did not count")
                 self.events.append(msg)
                 self._emit(phase, msg)
         elif res.ok:

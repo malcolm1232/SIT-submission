@@ -24,9 +24,12 @@ from sit_review_agent.clock import FakeClock
 from sit_review_agent.config import load_config
 from sit_review_agent.models import ToolCallStatus
 from sit_review_agent.progress import NullProgress
+from sit_review_agent.tools.cassette import Redactor
 from sit_review_agent.tools.gateway import (
     MCPToolGateway,
+    PolicyToolGateway,
     ToolErrorClass,
+    genuine_failure,
     qualify,
 )
 from sit_review_agent.tools.mcp_client import classify_exception, make_http_session_factory
@@ -190,6 +193,7 @@ async def test_a_second_failure_after_the_reopen_is_returned_and_the_session_dro
     assert not res.ok and res.error_class is ToolErrorClass.SESSION_CLOSED and res.status is ToolCallStatus.ERROR
     assert [a.error_class for a in res.attempts] == [ToolErrorClass.SESSION_CLOSED] * 2   # retried once, no more
     assert srv.inits == 2 and SERVER not in gw._conns                                     # the next call reconnects
+    assert genuine_failure(res)
     await gw.aclose()
 
 
@@ -260,6 +264,91 @@ async def test_no_idle_reopen_while_a_call_is_in_flight() -> None:
     a, b = await slow, await fast
     assert a.ok and b.ok and srv.inits == 1 and gw.session_events == []
     await gw.aclose()
+
+
+# =============================================================================== the disable rule
+
+
+def _policy(gw: MCPToolGateway) -> PolicyToolGateway:
+    c = load_config()
+    return PolicyToolGateway(gw, c, Redactor([KEY]), clock=gw.clock, progress=NullProgress())
+
+
+async def test_session_errors_alone_never_disable_the_tool() -> None:
+    clock = FakeClock()
+    srv = FakeServer(clock, close_after=1)                      # every session closes after one call
+    pol = _policy(gateway(srv, clock, idle_reopen_s=0))
+    for i in range(6):
+        assert (await pol.call(SEARCH, {"query": f"q{i}"})).ok
+    assert SEARCH not in pol.unusable_tools and pol.events == []
+    assert pol.tool_counts[SEARCH] == {"calls": 6, "tool_errors": 0, "failed_after_reopen": 0,
+                                       "session_recovered": 5}
+    await pol.aclose()
+
+
+class _ClosedOnce:
+    """An inner layer whose every call reports one closed session and no reopen (what a layer with no
+    live session below it, such as a fault injector over replay, can return)."""
+
+    def __init__(self, clock: FakeClock) -> None:
+        self.clock = clock
+        self.n = 0
+
+    async def list_tools(self) -> list[Any]:
+        return []
+
+    async def call(self, tool_name: str, args: dict[str, Any], *, phase: Any = None) -> Any:
+        import dataclasses
+
+        from sit_review_agent.tools.gateway import ToolAttempt, _result
+
+        self.n += 1
+        res = _result(f"call-{self.n:04d}", SERVER, "search_web", args, status=ToolCallStatus.ERROR,
+                      started_at="2026-10-02T09:00:00Z", is_error=True, error_class=ToolErrorClass.SESSION_CLOSED,
+                      error_message="session closed (MCP error -32000: Connection closed)")
+        return dataclasses.replace(res, attempts=[ToolAttempt(attempt=0, started_at=res.started_at, elapsed_s=0.0,
+                                                              error_class=ToolErrorClass.SESSION_CLOSED)])
+
+    async def aclose(self) -> None:
+        return None
+
+
+async def test_an_unrecovered_session_error_alone_is_not_a_tool_failure() -> None:
+    clock = FakeClock()
+    pol = PolicyToolGateway(_ClosedOnce(clock), load_config(), Redactor([KEY]), clock=clock, progress=NullProgress())
+    results = [await pol.call(SEARCH, {"query": f"q{i}"}) for i in range(2)]
+    assert not any(genuine_failure(r) for r in results)
+    assert SEARCH not in pol.unusable_tools                    # the breaker, not the disable rule, handles it
+    assert pol.tool_counts[SEARCH]["failed_after_reopen"] == 0 and pol.tool_counts[SEARCH]["calls"] == 2
+
+
+async def test_two_genuine_failures_after_a_reopened_session_disable_it_and_the_disclosure_counts() -> None:
+    clock = FakeClock()
+    srv = FakeServer(clock, close_after=1, fail_reopened=True)
+    pol = _policy(gateway(srv, clock, idle_reopen_s=0))
+    assert (await pol.call(SEARCH, {"query": "ok"})).ok
+    first = await pol.call(SEARCH, {"query": "a"})
+    assert first.error_class is ToolErrorClass.SESSION_CLOSED and SEARCH not in pol.unusable_tools
+    second = await pol.call(SEARCH, {"query": "b"})
+    assert second.error_class is ToolErrorClass.SESSION_CLOSED and SEARCH in pol.unusable_tools
+    assert pol.events == [f"{SEARCH} marked unusable for this run after 2 genuine failures in a row (0 tool "
+                          "error(s), 2 failure(s) after a session reopen) in 3 call(s); 0 session error(s) were "
+                          "recovered by reopening the session and did not count"]
+    await pol.aclose()
+
+
+async def test_two_tool_errors_from_a_live_session_still_disable_it() -> None:
+    """INF-11 unchanged: isError twice in a row."""
+    clock = FakeClock()
+    srv = FakeServer(clock, tool_error=True)
+    pol = _policy(gateway(srv, clock))
+    await pol.call(SEARCH, {"query": "a"})
+    assert SEARCH not in pol.unusable_tools
+    await pol.call(SEARCH, {"query": "b"})
+    assert SEARCH in pol.unusable_tools and "2 tool error(s), 0 failure(s) after a session reopen" in pol.events[0]
+    refused = await pol.call(SEARCH, {"query": "c"})
+    assert refused.error_class is ToolErrorClass.NOT_ALLOWED and srv.calls == 2
+    await pol.aclose()
 
 
 # =============================================================================== the real mcp client
