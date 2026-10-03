@@ -126,6 +126,11 @@ def test_text_without_a_list_renders_as_before() -> None:
         assert _md(text) == _one_line(text)
 
 
+def test_star_and_bullet_glyph_items_become_markdown_dashes() -> None:
+    # A "•" line is no list in Markdown: unnormalised it would render as one run-on paragraph.
+    assert _md("Do this:\n• first\n* second\n-  third") == "Do this:\n\n- first\n- second\n- third"
+
+
 def test_version_label_and_normalise() -> None:
     assert [version_label(v) for v in ("Version 2.0", "v2.0", "2.0", "Rev. 3", "Draft 3", "Validation 2", None)] \
         == ["v2.0", "v2.0", "v2.0", "v3", "Draft 3", "Validation 2", None]
