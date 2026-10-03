@@ -1,0 +1,1951 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sit.invalid/spec/progress_event.schema.json",
+  "title": "progress.jsonl record (version 1)",
+  "description": "One line of runs/<id>/progress.jsonl: one progress event of the review agent (UI design note section 5; agent/README.md 'Progress events'). Written by sit_review_agent.progress.ProgressJsonl, appended and flushed per event. A record never carries model prose: the only model text allowed is a draft finding's title and severity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "seq",
+    "t",
+    "run_s",
+    "type",
+    "phase",
+    "kind",
+    "console",
+    "message",
+    "fields"
+  ],
+  "properties": {
+    "v": {
+      "const": 1,
+      "description": "record version"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1, 2, 3 ... in file order; a resumed run continues the sequence"
+    },
+    "t": {
+      "type": "number",
+      "minimum": 0,
+      "description": "seconds since this sink's first event: the [mm:ss] the console prints"
+    },
+    "run_s": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "run-clock seconds (resume-adjusted, the clock the stage limits use); null before the run clock starts"
+    },
+    "type": {
+      "enum": [
+        "anchor_repair",
+        "anchors_verified",
+        "answer_unusable",
+        "assess_started",
+        "call_bounded",
+        "call_closed",
+        "call_cut",
+        "call_opened",
+        "call_retry",
+        "call_status",
+        "citations_dropped",
+        "cost_lower_bound",
+        "deadline_warning",
+        "declined",
+        "document_ingested",
+        "draft_item",
+        "fault_injected",
+        "fault_schedule",
+        "heartbeat",
+        "intent_ready",
+        "interrupted",
+        "mcp_warmup",
+        "milestone",
+        "not_assessed",
+        "phase_done",
+        "phase_skipped",
+        "phase_started",
+        "plan_approval",
+        "plan_approval_waiting",
+        "plan_criteria_added",
+        "plan_criterion_skipped",
+        "plan_only_stop",
+        "plan_question",
+        "plan_ready",
+        "plan_started",
+        "preflight",
+        "refine_fallback",
+        "refine_skipped",
+        "refine_started",
+        "refined",
+        "registry_anchor",
+        "report_written",
+        "research_answer_ignored",
+        "research_deadline",
+        "research_doc_only",
+        "research_evidence_ignored",
+        "research_iteration",
+        "research_skipped",
+        "research_started",
+        "research_stop_ignored",
+        "research_stopped",
+        "review_inputs_found",
+        "revision_rejected",
+        "run_dir",
+        "run_error",
+        "run_finished",
+        "run_resuming",
+        "run_started",
+        "shard_cut",
+        "shard_declined",
+        "shard_drafted",
+        "shard_failed",
+        "shard_started",
+        "shard_truncated",
+        "shards_ended",
+        "shards_kept",
+        "shards_merged",
+        "stage_limit_passed",
+        "status",
+        "stop_rule",
+        "stopped_after_plan",
+        "tool_round",
+        "tool_status",
+        "tools_down",
+        "truncated_twice",
+        "understand_started",
+        "verdict"
+      ],
+      "description": "event type; 'status' is a line with no data"
+    },
+    "phase": {
+      "type": "string",
+      "description": "the console line's phase column (a phase, 'stage_1', 'run', 'model' or 'tools')"
+    },
+    "kind": {
+      "enum": [
+        "step",
+        "wait",
+        "warn",
+        "done",
+        "draft"
+      ]
+    },
+    "console": {
+      "type": "boolean",
+      "description": "true when the event is also a console and progress.log line"
+    },
+    "message": {
+      "type": "string",
+      "description": "the console line's message, or for an event that quotes model text the same line with the model text left out"
+    },
+    "fields": {
+      "type": "object",
+      "description": "the event's data; required keys per type below"
+    }
+  },
+  "$defs": {
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "kind",
+        "severity",
+        "title"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "type": "string"
+        },
+        "severity": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 110
+        }
+      }
+    },
+    "usage": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "run_id",
+              "run_dir",
+              "mode",
+              "resumed",
+              "start_at",
+              "documents",
+              "profile",
+              "model",
+              "backend",
+              "transport",
+              "deadline_active",
+              "deadline_s",
+              "stage_limits_s",
+              "stage_limits_scaled",
+              "report_reserve_s",
+              "criteria",
+              "shards",
+              "phases_enabled"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_dir"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "run_id",
+              "run_dir"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_resuming"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "run_id",
+              "start_at",
+              "accepted_drift"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_finished"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "run_id",
+              "outcome",
+              "exit_code",
+              "report_md",
+              "report_json",
+              "partial_report",
+              "wall_s",
+              "cost_usd",
+              "cost_is_lower_bound"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "error",
+              "exit_code",
+              "resumable",
+              "resume"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "report_written"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "report_md",
+              "report_json"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "stopped_after_plan"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_only_stop"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "phase_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "phase_skipped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "reason",
+              "stage"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "phase_done"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "seconds",
+              "stopped_at_limit",
+              "stage_closed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "milestone"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "stop_rule"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "code",
+              "detail",
+              "stage",
+              "to"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "stage_limit_passed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "limit",
+              "limit_s",
+              "grace_s",
+              "stopped"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shards_ended"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shards",
+              "seconds",
+              "outcomes"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shards_kept"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shards"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "interrupted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "where"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "deadline_warning"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "deadline_s"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "fault_schedule"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "schedule",
+              "armed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "fault_injected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "fault",
+              "where"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "preflight"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "status"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "mcp_warmup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "status"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_approval"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "approved",
+              "interactive"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_approval_waiting"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "cost_lower_bound"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_opened"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "call_id",
+              "stage",
+              "shard",
+              "shard_name",
+              "purpose",
+              "attempt",
+              "iteration"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_closed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "call_id",
+              "stage",
+              "shard",
+              "shard_name",
+              "purpose",
+              "attempt",
+              "iteration",
+              "outcome",
+              "error",
+              "wall_s",
+              "usage",
+              "usage_status"
+            ],
+            "properties": {
+              "outcome": {
+                "enum": [
+                  "ok",
+                  "cut",
+                  "refusal",
+                  "truncated",
+                  "error",
+                  "cancelled",
+                  "interrupted",
+                  "replaced"
+                ]
+              },
+              "usage": {
+                "$ref": "#/$defs/usage"
+              },
+              "usage_status": {
+                "enum": [
+                  "measured",
+                  "unknown"
+                ]
+              },
+              "estimated_usage": {
+                "$ref": "#/$defs/usage"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "calls"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_bounded"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "call_id",
+              "timeout_s",
+              "bound",
+              "limit_s",
+              "deadline_s"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_retry"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "reason",
+              "stage"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "call_cut"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "call_id",
+              "at_s",
+              "kept_items",
+              "kept"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "truncated_twice"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "max_tokens",
+              "call_ids"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "declined"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "call_id",
+              "category"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "answer_unusable"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "stage",
+              "call_id",
+              "problems"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "draft_item"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "item",
+              "list",
+              "index",
+              "call_id",
+              "shard"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "item": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "list": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "index": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "call_id": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "shard": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "finding_id": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "severity": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "action": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "disposition": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "category": {
+                "type": [
+                  "string",
+                  "integer",
+                  "null"
+                ]
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 110
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "heartbeat"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "document_ingested"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "doc_id",
+              "role",
+              "pages",
+              "sections",
+              "requirement_ids",
+              "sha256_text",
+              "title"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "understand_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "intent_ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "objectives",
+              "constraints",
+              "registry_entries",
+              "registry_sha256"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "review_inputs_found"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "review_inputs",
+              "approved_decisions"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "criteria",
+              "capabilities"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_criteria_added"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "criteria"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_ready"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "questions",
+              "external",
+              "criteria_skipped",
+              "fallback"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_question"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "question_id",
+              "capability",
+              "criterion_id",
+              "needs_external"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "plan_criterion_skipped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "criterion_id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_skipped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "questions",
+              "tools"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_iteration"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "iteration",
+              "max_iterations",
+              "open_questions",
+              "tool_calls_left"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_stop_ignored"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "never_attempted",
+              "tool_calls"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_deadline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "code",
+              "detail"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tool_round"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "calls",
+              "tools",
+              "not_executed",
+              "iteration"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tools_down"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_answer_ignored"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_evidence_ignored"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "question_id",
+              "count"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_doc_only"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "detail"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "research_stopped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "code",
+              "detail",
+              "answered",
+              "questions",
+              "tool_calls",
+              "ledger_entries"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "assess_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "criteria",
+              "shards",
+              "finished_before",
+              "groups"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "criteria"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_drafted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "call_id",
+              "findings",
+              "sound_areas",
+              "drafts"
+            ],
+            "properties": {
+              "drafts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/draft"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_cut"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "call_id",
+              "cut_at_s",
+              "kept",
+              "kept_drafts",
+              "criteria_not_assessed"
+            ],
+            "properties": {
+              "kept_drafts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/draft"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "error",
+              "criteria"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_truncated"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "call_ids",
+              "max_tokens"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shard_declined"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shard",
+              "shard_name",
+              "shards",
+              "call_id",
+              "category"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "shards_merged"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "shards",
+              "findings",
+              "sound_areas",
+              "doc_evidence_added",
+              "inference_evidence_added",
+              "degraded_shards",
+              "by_kind",
+              "coverage"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "citations_dropped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "count"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "refine_skipped"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "findings"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "refine_started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "findings"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "refine_fallback"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "cut",
+              "truncated",
+              "invalid",
+              "declined"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "revision_rejected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "finding_id",
+              "fields_rejected"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "refined"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "call_id",
+              "revised",
+              "unchanged",
+              "merged",
+              "withdrawn",
+              "findings"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "registry_anchor"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "registry_id",
+              "action"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "anchor_repair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "unresolved",
+              "repair",
+              "slack_s"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "anchors_verified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "anchors",
+              "resolved",
+              "repaired",
+              "unresolved",
+              "findings_verified",
+              "findings_unverified",
+              "repair_call_id"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "not_assessed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "reason"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "verdict"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "label",
+              "confidence",
+              "findings",
+              "unresolved",
+              "limitations",
+              "by_severity",
+              "report_md",
+              "report_json"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "tool_status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": [
+              "tool",
+              "blocked"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "type": "object",
+            "required": []
+          }
+        }
+      }
+    }
+  ]
+}

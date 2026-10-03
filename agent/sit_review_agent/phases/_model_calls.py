@@ -80,6 +80,7 @@ from sit_review_agent.models import (
     SourceType,
     finding_id,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.states import PhaseName
 
@@ -250,7 +251,12 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
         event = f"the {phase.value} call was cut by the run deadline ({exc})"
         impact = f"the {phase.value} step was completed by code without model output"
     ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT, event, impact)
-    ctx.emit(f"{phase.value}: model call cut by the run deadline; {impact}", "warn")
+    partial = getattr(exc, "partial", None)
+    ctx_event(ctx, f"{phase.value}: model call cut by the run deadline; {impact}", "warn", event="call_cut",
+              stage=phase.value, call_id=getattr(exc, "call_id", None), at_s=ctx.elapsed_s(),
+              kept_items=getattr(exc, "salvaged_items", 0),
+              kept={str(k): len(v) for k, v in partial.items() if isinstance(v, list)} if isinstance(partial, dict)
+              else {})
 
 
 def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids: Sequence[str | None]) -> None:
@@ -270,7 +276,9 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
     else:
         impact = f"the {phase.value} step was completed by code without model output"
     ctx.state.add_degradation(DegradationType.OTHER, event, impact)
-    ctx.emit(f"{phase.value}: answer truncated twice at the output cap (max_tokens={max_tokens}); {impact}", "warn")
+    ctx_event(ctx, f"{phase.value}: answer truncated twice at the output cap (max_tokens={max_tokens}); {impact}",
+              "warn", event="truncated_twice", stage=phase.value, max_tokens=max_tokens,
+              call_ids=[c for c in call_ids if c])
 
 
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
@@ -327,8 +335,9 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if refusals_left > 0:
                 refusals_left -= 1
                 reframed, k, reason = True, k + 1, "refusal_retry"
-                ctx.emit(f"model declined ({exc.category or 'no category'}); retrying once with professional-review "
-                         "framing", "warn")
+                ctx_event(ctx, f"model declined ({exc.category or 'no category'}); retrying once with "
+                          "professional-review framing", "warn", event="call_retry", reason="refusal_retry",
+                          stage=phase.value, call_id=exc.call_id, category=exc.category)
                 continue
             if not disclose:
                 return PhaseCall(result=None, brief=brief, refusal_category=exc.category)
@@ -339,7 +348,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                 f"the {phase.value} step was completed without model output; see the report's limitations")
             if phase.value not in ctx.state.declined_sections:
                 ctx.state.declined_sections.append(phase.value)
-            ctx.emit(f"model declined {phase.value} twice; continuing without it", "warn")
+            ctx_event(ctx, f"model declined {phase.value} twice; continuing without it", "warn", event="declined",
+                      stage=phase.value, call_id=exc.call_id, category=exc.category)
             return PhaseCall(result=None, brief=brief, refusal_category=exc.category)
         except LLMSchemaError as exc:
             if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
@@ -348,7 +358,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if repaired:
                 raise
             repaired, schema_error, k, reason = True, _short_error(exc), k + 1, "schema_repair"
-            ctx.emit("answer did not match the output schema; one repair call", "warn")
+            ctx_event(ctx, "answer did not match the output schema; one repair call", "warn", event="call_retry",
+                      reason="schema_repair", stage=phase.value, call_id=exc.call_id)
             continue
         except LLMDeadlineError as exc:
             _note_call(ctx, phase, exc.call_id)
@@ -370,19 +381,25 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                    else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")
             widened, max_tokens, k = True, wider, k + 1
             reason = "max_tokens_retry"
-            ctx.emit(f"answer truncated at max_tokens; retrying once {how}", "warn")
+            ctx_event(ctx, f"answer truncated at max_tokens; retrying once {how}", "warn", event="call_retry",
+                      reason="max_tokens_retry", stage=phase.value, call_id=exc.call_id, max_tokens=wider)
             continue
         record_result(ctx, phase, result)
         problems = check(result.parsed) if check is not None and result.parsed is not None else []
         if problems:
             if repaired:
-                ctx.emit(f"{phase.value} answer still unusable after one repair call: {'; '.join(problems)[:300]}",
-                         "warn")
+                # The problems can quote the answer, so progress.jsonl gets their count only.
+                head = f"{phase.value} answer still unusable after one repair call"
+                ctx_event(ctx, f"{head}: {'; '.join(problems)[:300]}", "warn", event="answer_unusable",
+                          stage=phase.value, call_id=result.call_id, problems=len(problems),
+                          public=f"{head} ({len(problems)} problem(s))")
                 return PhaseCall(result=None, brief=brief, invalid=tuple(problems))
             repaired, k, reason = True, k + 1, "schema_repair"
             schema_error = ("The answer had the required structure but broke these rules:\n"
                             + "\n".join(f"- {p}" for p in problems))[:4000]
-            ctx.emit(f"{phase.value} answer broke {len(problems)} rule(s); one repair call", "warn")
+            ctx_event(ctx, f"{phase.value} answer broke {len(problems)} rule(s); one repair call", "warn",
+                      event="call_retry", reason="rule_repair", stage=phase.value, call_id=result.call_id,
+                      problems=len(problems))
             continue
         return PhaseCall(result=result, brief=brief)
 

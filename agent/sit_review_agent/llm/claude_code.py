@@ -86,6 +86,7 @@ from sit_review_agent.llm.gateway import (
     LLMResult,
     ToolUse,
     Usage,
+    assess_shard_index,
     billed,
     log_unsent,
     request_sha256,
@@ -101,7 +102,7 @@ from sit_review_agent.llm.runtime import (
     retry_allowed,
 )
 from sit_review_agent.models import FallbackEvent
-from sit_review_agent.progress import CallTracker, NullProgress, ProgressSink, draft_line
+from sit_review_agent.progress import CallTracker, NullProgress, ProgressSink, draft_event, draft_line, emit_event
 from sit_review_agent.rundir import RunDir
 
 #: Longest ``--system-prompt`` / ``--json-schema`` value accepted (Linux caps one argv string at 128 KiB).
@@ -777,9 +778,11 @@ class ClaudeCodeGateway:
                         assert self.runtime is not None and self.runtime.deadline is not None
                         raise _Unsent(self.runtime.deadline.no_time(request.phase, after=type(fail.error).__name__,
                                                                     call_id=call_id), attempt + 1) from None
-                    if self.progress is not None:
-                        self.progress.emit(phase, f"{type(fail.error).__name__} on {call_id}; retry "
-                                                  f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn")
+                    emit_event(self.progress, phase, f"{type(fail.error).__name__} on {call_id}; retry "
+                                                     f"{attempt + 1}/{self.max_retries} in {delay:.0f} s", "warn",
+                               event="call_retry", reason="transient", stage=phase, call_id=call_id,
+                               error=type(fail.error).__name__, attempt=attempt + 1, retries=self.max_retries,
+                               delay_s=delay)
                     await self.clock.sleep(delay)
                     attempt += 1
                     continue
@@ -842,10 +845,14 @@ class ClaudeCodeGateway:
         """The parser of one attempt: the answer's root is ``final`` inside the tool envelope; each
         finished root-level item becomes a draft line and the tracker follows the counters."""
         phase = request.phase.value
+        shard = assess_shard_index(request.conversation_id)
 
         def on_item(key: str, index: int, item: Any) -> None:
             if self.progress is not None and key != "tool_calls":
-                self.progress.emit(phase, draft_line(key, index, item, call_id=call_id, phase=phase), "draft")
+                # progress.jsonl gets the item's codes and a finding's title only (draft_event).
+                public, fields = draft_event(key, index, item, call_id=call_id, phase=phase, shard=shard)
+                emit_event(self.progress, phase, draft_line(key, index, item, call_id=call_id, phase=phase), "draft",
+                           event="draft_item", public=public, data=fields)
 
         def on_event(p: StreamParser) -> None:
             self.tracker.update(call_id, thinking_tokens=p.thinking_tokens, items=p.item_count(),

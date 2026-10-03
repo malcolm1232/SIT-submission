@@ -22,6 +22,10 @@ dependencies = [
     "jinja2==3.1.6",         # prompts and report template, StrictUndefined (REPRODUCIBILITY §4)
     "typer==0.27.2",
     "rapidfuzz==3.14.6",
+    # dra ui (docs/design/ui_design.md): already resolved through mcp==2.2.0, so these add no package;
+    # minimum pins because mcp owns the exact versions.
+    "starlette>=1.7.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +45,7 @@ where = ["agent", "harness"]
 include = ["sit_review_agent*", "sit_eval*"]
 
 [tool.setuptools.package-data]
-sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/selftest/**/*"]
+sit_review_agent = ["report/templates/*.j2", "fixtures/selftest/*", "fixtures/selftest/**/*", "ui/static/*"]
 sit_eval = ["prompts/*", "schemas/*", "grader/prompts/*", "grader/schemas/*"]
 
 [tool.ruff]

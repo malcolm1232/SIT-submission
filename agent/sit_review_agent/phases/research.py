@@ -99,7 +99,7 @@ from sit_review_agent.models import (
     StopReasonGroup,
     ToolCallStatus,
 )
-from sit_review_agent.progress import heartbeat
+from sit_review_agent.progress import ctx_event, heartbeat
 from sit_review_agent.state.run_state import ResearchQuestion
 from sit_review_agent.states import PhaseName
 from sit_review_agent.tools.cassette import QUERY_ARG_KEYS
@@ -171,7 +171,8 @@ class _ResearchRun:
     async def run(self) -> RunContext:
         ctx, state = self.ctx, self.state
         if ctx.plan_only:
-            ctx.emit("--plan-only: research skipped (zero tool calls)")
+            ctx_event(ctx, "--plan-only: research skipped (zero tool calls)", event="research_skipped",
+                      reason="plan_only")
             return ctx
         questions = state.plan.questions if state.plan is not None else []
         external = [q for q in questions if q.needs_external and q.capability != "none"]
@@ -182,7 +183,8 @@ class _ResearchRun:
             self._doc_only("no tool gateway (--no-tools, or every server is disabled)", "no_tools")
             return ctx
         if not external:
-            ctx.emit("no question needs external evidence; research skipped")
+            ctx_event(ctx, "no question needs external evidence; research skipped", event="research_skipped",
+                      reason="no_external_questions")
             self._finish(StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "no_external_questions"))
             return ctx
         try:
@@ -198,20 +200,25 @@ class _ResearchRun:
             return ctx
         stop = stop_rules.evaluate(state, self.params, ctx.elapsed_s())
         if stop is not None:
-            ctx.emit(f"stop rule {stop.code.value} ({stop.detail}) fired before any research", "warn")
+            ctx_event(ctx, f"stop rule {stop.code.value} ({stop.detail}) fired before any research", "warn",
+                      event="stop_rule", code=stop.code.value, detail=stop.detail, stage="research", to="research_end")
             self._finish(stop, external)
             return ctx
         self.api_tools = [s.to_api_tool() for s in specs]
         self._seed_policy_urls()
         await self._start_conversation(external)
-        ctx.emit(f"{len(external)} question(s) need external evidence; {len(specs)} tool(s) offered")
+        ctx_event(ctx, f"{len(external)} question(s) need external evidence; {len(specs)} tool(s) offered",
+                  event="research_started", questions=len(external), tools=len(specs))
 
         while stop is None:
             self.iteration = state.budget.research_iterations + 1
             self.new_sources = 0
             open_now = self._open(external)
-            ctx.emit(f"iteration {self.iteration}/{self.params.max_research_iterations}: "
-                     f"{len(open_now)} open question(s), {self._calls_left()} tool call(s) left")
+            ctx_event(ctx, f"iteration {self.iteration}/{self.params.max_research_iterations}: "
+                      f"{len(open_now)} open question(s), {self._calls_left()} tool call(s) left",
+                      event="research_iteration", iteration=self.iteration,
+                      max_iterations=self.params.max_research_iterations, open_questions=len(open_now),
+                      tool_calls_left=self._calls_left())
             if self.iteration > 1:
                 self._append_user_text(self._render("continue", open_now))
             outcome = await self._iteration()
@@ -233,8 +240,9 @@ class _ResearchRun:
                         stop = StopReason.of(StopReasonCode.TOOL_FAILURE if failed else StopReasonCode.NO_MARGINAL_GAIN,
                                              "model_stop_vote with no external evidence")
                 else:
-                    ctx.emit(f"model asked to stop; ignored ({len(still_open)} question(s) never attempted, "
-                             f"{self.calls_this_phase} tool call(s) so far)", "warn")
+                    ctx_event(ctx, f"model asked to stop; ignored ({len(still_open)} question(s) never attempted, "
+                              f"{self.calls_this_phase} tool call(s) so far)", "warn", event="research_stop_ignored",
+                              never_attempted=len(still_open), tool_calls=self.calls_this_phase)
         self._finish(stop, external)
         return ctx
 
@@ -300,7 +308,9 @@ class _ResearchRun:
                                             "category": exc.category})
                 if self.refusal_retries_left > 0:
                     self.refusal_retries_left -= 1
-                    ctx.emit(f"model declined (category: {category}); retrying with review framing", "warn")
+                    ctx_event(ctx, f"model declined (category: {category}); retrying with review framing", "warn",
+                              event="call_retry", reason="refusal_retry", stage=PhaseName.RESEARCH.value,
+                              call_id=exc.call_id, category=exc.category)
                     self._append_user_text(self._render("refusal_retry", []))
                     purpose = "refusal_retry"
                     continue
@@ -313,7 +323,8 @@ class _ResearchRun:
                 add_usage(self.state.budget, exc.usage)
                 if not repaired:
                     repaired = True
-                    ctx.emit("final answer did not match the schema; one repair turn", "warn")
+                    ctx_event(ctx, "final answer did not match the schema; one repair turn", "warn", event="call_retry",
+                              reason="schema_repair", stage=PhaseName.RESEARCH.value, call_id=exc.call_id)
                     self._append_user_text(self._render("schema_repair", [], error=str(exc)[:1500]))
                     purpose = "schema_repair"
                     continue
@@ -381,7 +392,8 @@ class _ResearchRun:
                 continue
             self.messages.append({"role": "user", "content": blocks})
             if cap.code is StopReasonCode.DEADLINE:
-                self.ctx.emit("deadline reserve reached; ending research without a wrap-up turn", "warn")
+                ctx_event(self.ctx, "deadline reserve reached; ending research without a wrap-up turn", "warn",
+                          event="research_deadline", code=cap.code.value, detail=cap.detail)
                 return _Outcome(stop=cap)
             return await self._wrap_up(cap, self._cap_text(cap))
 
@@ -426,7 +438,9 @@ class _ResearchRun:
         left = 0 if self.tools_down else self._calls_left()
         run, skip = tool_uses[:left], tool_uses[left:]
         names = ", ".join(tu.name for tu in run) or "none"
-        ctx.emit(f"tool round: {len(run)} call(s) ({names})" + (f", {len(skip)} not executed" if skip else ""))
+        ctx_event(ctx, f"tool round: {len(run)} call(s) ({names})" + (f", {len(skip)} not executed" if skip else ""),
+                  event="tool_round", calls=len(run), tools=[tu.name for tu in run], not_executed=len(skip),
+                  iteration=self.iteration)
         async with _beat(ctx, lambda: f"waiting for {len(run)} tool call(s)"):
             results = await asyncio.gather(*(self._one(tu) for tu in run))
         by_id: dict[str, dict[str, Any]] = {}
@@ -549,7 +563,8 @@ class _ResearchRun:
                           "research continued with the remaining servers; evidence from this server is missing")
         if not specs:
             self.tools_down = True
-            self.ctx.emit("every tool server is unavailable; continuing document-only", "warn")
+            ctx_event(self.ctx, "every tool server is unavailable; continuing document-only", "warn",
+                      event="tools_down")
 
     def _seed_policy_urls(self) -> None:
         from sit_review_agent.tools.gateway import PolicyToolGateway
@@ -575,12 +590,15 @@ class _ResearchRun:
         for a in output.answers:
             q = by_id.get(a.question_id)
             if q is None:
-                self.ctx.emit(f"answer for unknown question {a.question_id} ignored", "warn")
+                ctx_event(self.ctx, f"answer for unknown question {a.question_id} ignored", "warn",
+                          event="research_answer_ignored", public="answer for an unknown question ignored")
                 continue
             ids = [e for e in dict.fromkeys(a.evidence_ids) if e in ledger]
             unknown = [e for e in a.evidence_ids if e not in ledger]
             if unknown:
-                self.ctx.emit(f"{q.id}: unknown evidence IDs ignored: {', '.join(unknown)}", "warn")
+                ctx_event(self.ctx, f"{q.id}: unknown evidence IDs ignored: {', '.join(unknown)}", "warn",
+                          event="research_evidence_ignored", public=f"{q.id}: {len(unknown)} unknown evidence ID(s) "
+                          "ignored", question_id=q.id, count=len(unknown))
             status = a.status
             if status == "answered" and q.needs_external:
                 ext = [ledger.get(e) for e in ids if ledger.get(e).source_type is SourceType.EXTERNAL]
@@ -595,21 +613,25 @@ class _ResearchRun:
                 q.summary = a.summary.strip()
             q.evidence_ids = list(dict.fromkeys([*q.evidence_ids, *ids]))
 
-    def _degrade(self, key: str, kind: DegradationType, event: str, impact: str) -> None:
+    def _degrade(self, key: str, kind: DegradationType, event: str, impact: str) -> str | None:
+        """Record the degradation once per ``key``; its ID the first time, ``None`` after."""
         if key in self._degraded:
-            return
+            return None
         self._degraded.add(key)
-        self.state.add_degradation(kind, event, impact)
+        return self.state.add_degradation(kind, event, impact).id
 
     def _record_registry_hash(self) -> None:
         if not self.ctx.registry.hashes():
             self.ctx.registry.record_iteration(0)
 
     def _doc_only(self, reason: str, detail: str) -> None:
-        self.ctx.emit(f"No external research was possible: {reason}; continuing document-only", "warn")
-        self._degrade("doc_only", DegradationType.TOOL_UNAVAILABLE, f"No external research was possible: {reason}",
-                      "doc-only review: every question that needs external evidence is reported as a validation "
-                      "need, and confidence is lowered")
+        # Registered before the line so the event carries the ID the report will disclose it under.
+        deg = self._degrade("doc_only", DegradationType.TOOL_UNAVAILABLE,
+                            f"No external research was possible: {reason}",
+                            "doc-only review: every question that needs external evidence is reported as a validation "
+                            "need, and confidence is lowered")
+        ctx_event(self.ctx, f"No external research was possible: {reason}; continuing document-only", "warn",
+                  event="research_doc_only", detail=detail, degradation_id=deg)
         questions = self.state.plan.questions if self.state.plan is not None else []
         external = [q for q in questions if q.needs_external]
         self._finish(StopReason.of(StopReasonCode.TOOL_FAILURE, detail), external)
@@ -655,5 +677,7 @@ class _ResearchRun:
                              else "every tool call failed"),
                           "doc-only review: questions that need external evidence are reported as validation needs")
         answered = sum(q.status == "answered" for q in external)
-        ctx.emit(f"research stopped: {stop.code.value} ({stop.detail}); {answered}/{len(external)} answered, "
-                 f"{state.budget.tool_calls} tool call(s), {len(ctx.ledger)} ledger entr(y/ies)", "done")
+        ctx_event(ctx, f"research stopped: {stop.code.value} ({stop.detail}); {answered}/{len(external)} answered, "
+                  f"{state.budget.tool_calls} tool call(s), {len(ctx.ledger)} ledger entr(y/ies)", "done",
+                  event="research_stopped", code=stop.code.value, detail=stop.detail, answered=answered,
+                  questions=len(external), tool_calls=state.budget.tool_calls, ledger_entries=len(ctx.ledger))

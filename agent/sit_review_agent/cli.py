@@ -386,6 +386,29 @@ def states_cmd() -> None:
     typer.echo(mermaid())
 
 
+@app.command("ui")
+def ui_cmd(host: Annotated[str, typer.Option("--host", help="bind address; loopback only unless --allow-remote")]
+           = "127.0.0.1",
+           port: Annotated[int, typer.Option("--port")] = 8765,
+           runs_dir: Annotated[Path | None, typer.Option("--runs-dir", file_okay=False,
+                                                         help="run directories to list and open (default: the "
+                                                              "configured run root; runs start only there)")] = None,
+           allow_remote: Annotated[bool, typer.Option("--allow-remote", help="bind a non-loopback host; the page has "
+                                                                            "no authentication")] = False,
+           config: ConfigOpt = None) -> None:
+    """Serve the local review page (start a run, follow its progress, read the review, ask the review)."""
+    from sit_review_agent.ui.server import RemoteHostRefused, serve
+
+    try:
+        serve(host=host, port=port, runs_dir=runs_dir, config_path=config, allow_remote=allow_remote,
+              echo=lambda s: typer.echo(s, err=s.startswith("WARNING")))
+    except RemoteHostRefused as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(int(ExitCode.USAGE)) from None
+    except AgentError as exc:
+        _fail(exc)
+
+
 def main() -> None:
     """Console-script entry point."""
     try:

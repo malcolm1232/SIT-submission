@@ -37,6 +37,7 @@ from sit_review_agent.phases._model_calls import (
     summarise,
     unique_anchors,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.states import PhaseName
 
@@ -50,7 +51,8 @@ class UnderstandPhase:
 
     async def run(self, ctx: RunContext) -> RunContext:
         phase = self.name
-        ctx.emit("reading the design: intent, objectives, constraints and the decision registry")
+        ctx_event(ctx, "reading the design: intent, objectives, constraints and the decision registry",
+                  event="understand_started")
 
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
             return ctx.prompts.render("understand.md", criteria=criteria_vars(ctx), documents=document_vars(ctx),
@@ -119,14 +121,19 @@ class UnderstandPhase:
 
         self._freeze(ctx)
         intent = ctx.state.intent_summary
-        ctx.emit(f"intent: {len(intent.objectives) if intent else 0} objectives, "
-                 f"{len(intent.constraints) if intent else 0} constraints; registry: "
-                 f"{summarise(ctx.registry.entries(), lambda e: e.type.value)} "
-                 f"(frozen, sha256 {ctx.registry.sha256()[:12]})", "done")
+        ctx_event(ctx, f"intent: {len(intent.objectives) if intent else 0} objectives, "
+                  f"{len(intent.constraints) if intent else 0} constraints; registry: "
+                  f"{summarise(ctx.registry.entries(), lambda e: e.type.value)} "
+                  f"(frozen, sha256 {ctx.registry.sha256()[:12]})", "done", event="intent_ready",
+                  objectives=len(intent.objectives) if intent else 0,
+                  constraints=len(intent.constraints) if intent else 0, registry_entries=len(ctx.registry.entries()),
+                  registry_sha256=ctx.registry.sha256()[:12])
         approved = len([e for e in ctx.registry.entries() if e.type is RegistryEntryType.APPROVED_DECISION])
         if ctx.state.review_inputs_found:
-            ctx.emit(f"{len(ctx.state.review_inputs_found)} review comments or claimed fixes found in the document "
-                     f"(treated as claims to check); {approved} approved decisions to preserve")
+            ctx_event(ctx, f"{len(ctx.state.review_inputs_found)} review comments or claimed fixes found in the "
+                      f"document (treated as claims to check); {approved} approved decisions to preserve",
+                      event="review_inputs_found", review_inputs=len(ctx.state.review_inputs_found),
+                      approved_decisions=approved)
         return ctx
 
     @staticmethod

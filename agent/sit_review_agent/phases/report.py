@@ -76,6 +76,7 @@ from sit_review_agent.models import (
     VerdictCondition,
     VerdictLabel,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.rundir import JsonlWriter, write_json_atomic
 from sit_review_agent.states import PhaseName
 
@@ -83,6 +84,15 @@ CONVERSATION_ID = "report"
 LINK_REMOVED = "[link removed: not in the evidence register]"
 _RETRYABLE = (LLMRefusalError,)
 _FALLBACK = (LLMRefusalError, LLMSchemaError, LLMTruncatedError, LLMDeadlineError)
+
+
+def _severity_counts(findings: Any) -> dict[str, int]:
+    """Findings per severity (``none`` for a finding without one), for the ``verdict`` event."""
+    out: dict[str, int] = {}
+    for f in findings:
+        sev = getattr(getattr(f, "severity", None), "value", None) or "none"
+        out[sev] = out.get(sev, 0) + 1
+    return out
 
 
 class InvariantViolation(Exception):
@@ -137,7 +147,9 @@ async def _verdict_call(ctx: RunContext) -> tuple[VerdictOutput | None, str | No
                                            "category": exc.category})
             if isinstance(exc, _RETRYABLE) and attempt < retries:
                 cat = getattr(exc, "category", None) or "none given"
-                ctx.emit(f"model declined the verdict (category: {cat}); retrying with review framing", "warn")
+                ctx_event(ctx, f"model declined the verdict (category: {cat}); retrying with review framing", "warn",
+                          event="call_retry", reason="refusal_retry", stage=PhaseName.REPORT.value,
+                          call_id=exc.call_id, category=getattr(exc, "category", None))
                 continue
             return None, f"{type(exc).__name__}: {str(exc)[:160]}"
         ctx.state.llm_calls.setdefault(PhaseName.REPORT.value, []).append(res.call_id)
@@ -440,7 +452,8 @@ class ReportPhase:
             # No assessment (out of time, robustness LLM-05; truncated twice, LLM-07; declined, LLM-06):
             # no model verdict on an unassessed design. A verdict call could only invent one.
             why = NOT_ASSESSED_WHY[missing]
-            ctx.emit(f"{why}: no verdict call; the report says the design was not assessed", "warn")
+            ctx_event(ctx, f"{why}: no verdict call; the report says the design was not assessed", "warn",
+                      event="not_assessed", reason=missing)
             st.verdict = not_assessed_verdict(missing)
             st.limitations = []
         else:
@@ -485,12 +498,16 @@ class ReportPhase:
             raise StageCrash(PhaseName.REPORT.value, InvariantViolation("; ".join(problems)[:2000]))
         write_json_atomic(rd.report_json, data)
         rd.report_md.write_text(md, encoding="utf-8")
-        ctx.emit(f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
-                 f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
-                 f"invariants INV-03..10 pass; wrote {rd.relative(rd.report_md)}")
+        ctx_event(ctx, f"verdict {review.verdict.label.value}; {len(review.findings)} findings, "
+                  f"{len(review.unresolved)} unresolved, {len(review.limitations)} limitations; "
+                  f"invariants INV-03..10 pass; wrote {rd.relative(rd.report_md)}", event="verdict",
+                  label=review.verdict.label.value, confidence=getattr(review.verdict, "confidence", None),
+                  findings=len(review.findings), unresolved=len(review.unresolved),
+                  limitations=len(review.limitations), by_severity=_severity_counts(review.findings),
+                  report_md=str(rd.report_md), report_json=str(rd.report_json))
         lower = cost_lower_bound_line(data["run_manifest"])
         if lower is not None:
-            ctx.emit(lower, "warn")
+            ctx_event(ctx, lower, "warn", event="cost_lower_bound")
         return ctx
 
     @staticmethod

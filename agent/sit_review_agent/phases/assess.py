@@ -87,6 +87,7 @@ from sit_review_agent.phases._model_calls import (
     resolve_evidence,
     summarise,
 )
+from sit_review_agent.progress import ctx_event
 from sit_review_agent.prompts import RenderedPrompt
 from sit_review_agent.state.run_state import FindingMeta
 from sit_review_agent.states import PhaseName
@@ -166,6 +167,20 @@ def _is_bug(exc: LLMError) -> bool:
     return exc.exit_code is not ExitCode.LLM_UNAVAILABLE and not isinstance(exc, LLMSchemaError)
 
 
+def _draft_summaries(findings: Sequence[FindingDraft]) -> list[dict[str, Any]]:
+    """What ``progress.jsonl`` carries of each draft finding: its place, kind, severity and title
+    (never its statement, evidence or recommendation)."""
+    return [{"index": i, "kind": f.kind.value, "severity": f.severity.value if f.severity else None,
+             "title": f.title[:110]} for i, f in enumerate(findings, start=1)]
+
+
+def _counts(values: Any) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for v in values:
+        out[str(v)] = out.get(str(v), 0) + 1
+    return out
+
+
 class AssessPhase:
     name = PhaseName.ASSESS
 
@@ -193,8 +208,11 @@ class AssessPhase:
         shards = self.shards(ctx)
         done = dict(done or {})
         count = len(shards)
-        ctx.emit(f"assessing {len(known_criteria(ctx))} criteria in {count} concurrent shard(s)"
-                 + (f"; {len(done)} already finished" if done else ""))
+        ctx_event(ctx, f"assessing {len(known_criteria(ctx))} criteria in {count} concurrent shard(s)"
+                  + (f"; {len(done)} already finished" if done else ""), event="assess_started",
+                  criteria=len(known_criteria(ctx)), shards=count, finished_before=sorted(done),
+                  groups=[{"index": i, "name": s.name, "criteria": list(s.criteria)}
+                          for i, s in enumerate(shards, start=1)])
         tasks: dict[int, asyncio.Task[ShardResult]] = {}
         for i, shard in enumerate(shards, start=1):
             if i in done:
@@ -249,7 +267,9 @@ class AssessPhase:
         iso = isolate(ctx, PhaseName.ASSESS)        # the disclosure travels in the result's delta, like any shard's
         iso.ctx.state.add_degradation(DegradationType.OTHER, f"{label} failed ({type(exc).__name__}: "
                                       f"{str(exc)[:200]})", _not_assessed_impact(shard.criteria))
-        iso.ctx.emit(f"{label} failed ({type(exc).__name__}); its criteria are not assessed", "warn")
+        ctx_event(iso.ctx, f"{label} failed ({type(exc).__name__}); its criteria are not assessed", "warn",
+                  event="shard_failed", shard=index, shard_name=shard.name, shards=count, error=type(exc).__name__,
+                  criteria=list(shard.criteria))
         return ShardResult(index=index, name=shard.name, criteria=list(shard.criteria), iteration=SHARD_ITERATION,
                            outcome="error", detail=f"{type(exc).__name__}: {str(exc)[:500]}",
                            delta=state_delta(iso.base, iso.ctx.state))
@@ -270,7 +290,8 @@ class AssessPhase:
                 shard_count=count, documents=document_vars(sctx), review_mode=sctx.state.review_mode.value,
                 prior_findings=prior_finding_vars(sctx), reframed=reframed, schema_error=schema_error)
 
-        sctx.emit(f"{label}: {', '.join(shard.criteria)}")
+        ctx_event(sctx, f"{label}: {', '.join(shard.criteria)}", event="shard_started", shard=index,
+                  shard_name=shard.name, shards=count, criteria=list(shard.criteria))
         base = dict(index=index, name=shard.name, criteria=list(shard.criteria), iteration=iteration)
         try:
             call = await call_model(sctx, phase, render, AssessOutput, iteration=iteration, purpose="assess",
@@ -281,14 +302,19 @@ class AssessPhase:
             self._errors[index] = exc
             sctx.state.add_degradation(DegradationType.OTHER, f"{label} failed ({type(exc).__name__}: "
                                        f"{str(exc)[:200]})", _not_assessed_impact(shard.criteria))
-            sctx.emit(f"{label} failed ({type(exc).__name__}); its criteria are not assessed", "warn")
+            ctx_event(sctx, f"{label} failed ({type(exc).__name__}); its criteria are not assessed", "warn",
+                      event="shard_failed", shard=index, shard_name=shard.name, shards=count,
+                      error=type(exc).__name__, call_id=exc.call_id, criteria=list(shard.criteria))
             return ShardResult(**base, outcome="error", detail=f"{type(exc).__name__}: {str(exc)[:500]}",
                                delta=state_delta(iso.base, sctx.state))
         result = call.result
         if result is not None and isinstance(result.parsed, AssessOutput):
             out = result.parsed
-            sctx.emit(f"{label}: {len(out.findings)} draft finding(s) "
-                      f"({summarise(out.findings, lambda f: f.kind.value)}), unverified", "done")
+            ctx_event(sctx, f"{label}: {len(out.findings)} draft finding(s) "
+                      f"({summarise(out.findings, lambda f: f.kind.value)}), unverified", "done", event="shard_drafted",
+                      shard=index, shard_name=shard.name, shards=count, call_id=result.call_id,
+                      findings=len(out.findings), sound_areas=len(out.sound_areas),
+                      drafts=_draft_summaries(out.findings))
             return ShardResult(**base, outcome="done", output=out, call_id=result.call_id, model=result.model,
                                prompt_hash=call.brief.sha256, delta=state_delta(iso.base, sctx.state))
         calls = sctx.state.llm_calls.get(phase.value, [])
@@ -298,13 +324,17 @@ class AssessPhase:
             n = len(kept.findings) if kept is not None else 0
             covered = {c for f in (kept.findings if kept else []) for c in f.criterion_ids}
             missing = [c for c in shard.criteria if c not in covered]
-            sctx.state.add_degradation(
+            degradation = sctx.state.add_degradation(
                 DegradationType.BUDGET_OR_DEADLINE_HIT,
                 f"{label} was cut by the stage 1 limit at {sctx.elapsed_s():.0f} s; {n} finished finding(s) kept "
                 f"(cut call {call.cut_id or 'none started'})",
                 _not_assessed_impact(missing) if missing else "every criterion of the shard has a finding; the shard's "
                 "lower-ranked findings, if any, are missing")
-            sctx.emit(f"{label} cut by the stage 1 limit; {n} finished finding(s) kept", "warn")
+            ctx_event(sctx, f"{label} cut by the stage 1 limit; {n} finished finding(s) kept", "warn",
+                      event="shard_cut", shard=index, shard_name=shard.name, shards=count, call_id=call.cut_id,
+                      cut_at_s=sctx.elapsed_s(),
+                      kept=n, kept_drafts=_draft_summaries(kept.findings if kept is not None else []),
+                      criteria_not_assessed=missing, degradation_id=degradation.id)
             return ShardResult(**base, outcome="cut", output=kept, salvaged=n, call_id=last,
                                model=sctx.config.agent.model, prompt_hash=call.brief.sha256,
                                delta=state_delta(iso.base, sctx.state))
@@ -315,14 +345,17 @@ class AssessPhase:
                 f"{label}: {truncated_twice_event(phase)} (max_tokens={sctx.config.agent.max_tokens}; the call and "
                 f"its one retry, {ids}); the truncated output was discarded, not repaired",
                 _not_assessed_impact(shard.criteria))
-            sctx.emit(f"{label}: answer truncated twice at the output cap; its criteria are not assessed", "warn")
+            ctx_event(sctx, f"{label}: answer truncated twice at the output cap; its criteria are not assessed", "warn",
+                      event="shard_truncated", shard=index, shard_name=shard.name, shards=count,
+                      call_ids=[c for c in call.truncated_ids if c], max_tokens=sctx.config.agent.max_tokens)
             return ShardResult(**base, outcome="truncated", call_id=last, prompt_hash=call.brief.sha256,
                                delta=state_delta(iso.base, sctx.state))
         sctx.state.add_degradation(
             DegradationType.OTHER,
             f"the model declined {label} after a reframed retry (refusal category: "
             f"{call.refusal_category or 'none given'})", _not_assessed_impact(shard.criteria))
-        sctx.emit(f"model declined {label} twice; its criteria are not assessed", "warn")
+        ctx_event(sctx, f"model declined {label} twice; its criteria are not assessed", "warn", event="shard_declined",
+                  shard=index, shard_name=shard.name, shards=count, call_id=last, category=call.refusal_category)
         return ShardResult(**base, outcome="declined", call_id=last, prompt_hash=call.brief.sha256,
                            delta=state_delta(iso.base, sctx.state))
 
@@ -391,12 +424,18 @@ class AssessPhase:
         if ordered and not any(r.assessed for r in ordered):
             self._not_assessed(ctx, ordered)
         failed = [r for r in ordered if r.outcome != "done"]
-        ctx.emit(f"merged {count} shard(s): {len(findings)} findings ({summarise(findings, lambda f: f.kind.value)}); "
-                 f"{len(areas)} sound areas; coverage: {summarise(ctx.state.coverage, lambda c: c.outcome)}; "
-                 f"evidence: {doc_added} doc and {inference_added} inference entries added to the ledger"
-                 + (f"; {len(failed)} shard(s) degraded" if failed else ""), "done")
+        by_kind = summarise(findings, lambda f: f.kind.value)
+        ctx_event(ctx, f"merged {count} shard(s): {len(findings)} findings ({by_kind}); "
+                  f"{len(areas)} sound areas; coverage: {summarise(ctx.state.coverage, lambda c: c.outcome)}; "
+                  f"evidence: {doc_added} doc and {inference_added} inference entries added to the ledger"
+                  + (f"; {len(failed)} shard(s) degraded" if failed else ""), "done", event="shards_merged",
+                  shards=count, findings=len(findings), sound_areas=len(areas), doc_evidence_added=doc_added,
+                  inference_evidence_added=inference_added, degraded_shards=[r.index for r in failed],
+                  by_kind=_counts(f.kind.value for f in findings),
+                  coverage=_counts(c.outcome for c in ctx.state.coverage))
         if dropped:
-            ctx.emit(f"{dropped} evidence citations dropped (not in the evidence register)", "warn")
+            ctx_event(ctx, f"{dropped} evidence citations dropped (not in the evidence register)", "warn",
+                      event="citations_dropped", count=dropped)
 
     @staticmethod
     def _not_assessed(ctx: RunContext, ordered: Sequence[ShardResult]) -> None:

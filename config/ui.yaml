@@ -1,0 +1,22 @@
+# config/ui.yaml - settings of the local review page (dra ui) that are not the agent's. The agent never reads
+# this file, so it is not part of the effective config or its hash.
+#
+# email: the "Email" action on a finished review sends the HTML export and report.md as two attachments, from
+# this computer, through the SMTP server below. The password is never written here or anywhere else: the server
+# reads it from the environment variable SIT_UI_SMTP_PASSWORD at the moment it sends. With host, username or
+# from left empty, or SIT_UI_SMTP_PASSWORD unset, the page shows the Email button disabled with the reason
+# "Email is not configured: see config/ui.yaml". Each send is logged to runs/<id>/ui/outbox.jsonl (recipient,
+# time, sizes, result; never the content).
+#
+# Example (an app password of a mail account, kept in the shell that starts dra ui):
+#   host: smtp.example.org
+#   port: 587
+#   starttls: true          # STARTTLS is required when true; the mail is not sent in clear text instead
+#   username: me@example.org
+#   from: me@example.org
+email:
+  host: ""
+  port: 587
+  starttls: true
+  username: ""
+  from: ""
