@@ -195,17 +195,20 @@ def test_the_page_in_a_browser(served) -> None:
         requests: list[str] = []
         page.on("request", lambda r: requests.append(r.url))
 
-        # The run view: drafts and the clock come from the stream only.
-        drafts = [e for e in evs if e.get("event") == "draft"]
+        # The run view: drafts and the clock come from the stream only (a draft is a shard's drafted
+        # finding, ``shard_drafted``, or a streamed one, ``draft_item`` of the findings list).
+        drafts = [d for e in evs if e["type"] == "shard_drafted" for d in e["fields"]["drafts"]]
+        drafts += [e["fields"] for e in evs if e["type"] == "draft_item" and e["fields"].get("list") == "findings"]
         page.goto(base + "/?run=fixture_run")
         page.wait_for_function(f"document.querySelectorAll('#drafts .draft').length === {len(drafts)}")
         page.wait_for_function("document.querySelectorAll('#status-feed .row').length > 0")
         assert page.locator("#draft-count").inner_text() == str(len(drafts))
-        titles = [d["fields"]["title"] for d in reversed(drafts)]
+        titles = [d["title"] for d in reversed(drafts)]
         assert page.locator("#drafts .draft .text").all_inner_texts() == titles
-        last = int(evs[-1]["t"])
+        last = int(max(e["run_s"] for e in evs if e["run_s"] is not None))
         assert page.locator("#top-meta b").first.inner_text() == f"{last // 60:02d}:{last % 60:02d}"
-        assert page.locator("#status-feed .row").count() == len(evs)
+        assert page.locator("#status-feed .row").count() == sum(1 for e in evs if e["console"])
+        assert page.locator("#replay-stamp").count() == 0
         assert page.evaluate(MOTION) == 0
 
         # The review: titles and statements as report.json has them; the counts are list lengths.

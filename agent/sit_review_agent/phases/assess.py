@@ -324,7 +324,7 @@ class AssessPhase:
             n = len(kept.findings) if kept is not None else 0
             covered = {c for f in (kept.findings if kept else []) for c in f.criterion_ids}
             missing = [c for c in shard.criteria if c not in covered]
-            sctx.state.add_degradation(
+            degradation = sctx.state.add_degradation(
                 DegradationType.BUDGET_OR_DEADLINE_HIT,
                 f"{label} was cut by the stage 1 limit at {sctx.elapsed_s():.0f} s; {n} finished finding(s) kept "
                 f"(cut call {call.cut_id or 'none started'})",
@@ -334,7 +334,7 @@ class AssessPhase:
                       event="shard_cut", shard=index, shard_name=shard.name, shards=count, call_id=call.cut_id,
                       cut_at_s=sctx.elapsed_s(),
                       kept=n, kept_drafts=_draft_summaries(kept.findings if kept is not None else []),
-                      criteria_not_assessed=missing)
+                      criteria_not_assessed=missing, degradation_id=degradation.id)
             return ShardResult(**base, outcome="cut", output=kept, salvaged=n, call_id=last,
                                model=sctx.config.agent.model, prompt_hash=call.brief.sha256,
                                delta=state_delta(iso.base, sctx.state))

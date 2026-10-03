@@ -1,7 +1,8 @@
 """``dra ui`` server (docs/design/ui_design.md sections 4, 8 and 9): loopback guard, run listing,
 the review payload, the reviewed PDF, the ``dra review`` subprocess, Stop, and SSE from
 ``progress.jsonl``. Offline: a fake process, a fake chat client, the committed rehearsal run and
-the authored fixture ``tests/fixtures/ui/progress.jsonl``."""
+the recorded fixture stream ``tests/fixtures/ui/progress.jsonl`` (a fixture run on the fake gateway,
+``tests/fixtures/ui/record_fixtures.py``)."""
 
 from __future__ import annotations
 
@@ -227,6 +228,22 @@ def test_start_launches_dra_review_as_a_subprocess(tmp_path: Path) -> None:
     assert info["status"] == "running" and info["argv"] == res.json()["command"]
 
 
+def test_a_run_id_given_on_the_form_names_the_run_directory(tmp_path: Path) -> None:
+    popen = FakePopen()
+    client = TestClient(build_app(make_state(tmp_path, popen=popen)))
+    res = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}, data={"run_id": "ui_flow_1"})
+    assert res.status_code == 201 and res.json()["run_id"] == "ui_flow_1"
+    assert popen.procs[0].argv[-2:] == ["--run-id", "ui_flow_1"] and (tmp_path / "ui_flow_1" / "ui").is_dir()
+    popen.procs[0].code = 0
+    again = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")},
+                        data={"run_id": "ui_flow_1"})
+    assert again.status_code == 409                                     # the directory exists
+    for bad in ("../x", ".hidden", "a b", "x/y", "a" * 129):
+        res = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}, data={"run_id": bad})
+        assert res.status_code == 400, bad
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["ui_flow_1"]
+
+
 def test_stop_sends_sigint_to_the_child(tmp_path: Path) -> None:
     popen = FakePopen()
     client = TestClient(build_app(make_state(tmp_path, popen=popen)))
@@ -282,9 +299,12 @@ def test_sse_reconnect_resumes_after_the_last_sequence(tmp_path: Path) -> None:
     fixture_run(tmp_path)
     n = len(events.read_all(FIXTURE_EVENTS))
     client = TestClient(build_app(make_state(tmp_path)))
-    assert sse_ids(client.get("/runs/fixture_run/events", headers={"Last-Event-ID": "100"}).text) \
-        == list(range(101, n + 1))
-    assert sse_ids(client.get("/runs/fixture_run/events?after=110").text) == list(range(111, n + 1))
+    assert sse_ids(client.get("/runs/fixture_run/events", headers={"Last-Event-ID": "50"}).text) \
+        == list(range(51, n + 1))
+    assert sse_ids(client.get("/runs/fixture_run/events?after=60").text) == list(range(61, n + 1))
+    # A reconnect past the end of a finished stream ends at once instead of following forever.
+    late = client.get(f"/runs/fixture_run/events?after={n + 100}").text
+    assert sse_ids(late) == [] and "event: end" in late
     assert client.get("/runs/fixture_run/events?after=x").status_code == 400
 
 
@@ -323,11 +343,12 @@ def test_bad_lines_are_skipped_not_invented(tmp_path: Path) -> None:
     assert [e["seq"] for e in res.events] == [1, 2, 3] and res.bad_lines == 2
 
 
-def test_fixture_events_follow_the_schema() -> None:
+def test_the_reader_takes_every_line_of_the_recorded_fixture() -> None:
+    """The fixture is a real ``progress.jsonl`` (``tests/fixtures/ui/record_fixtures.py``); its schema
+    check is in ``tests/test_ui_events.py``."""
     evs = events.read_all(FIXTURE_EVENTS)
     raw = FIXTURE_EVENTS.read_text(encoding="utf-8").splitlines()
     assert len(evs) == len(raw)
     assert [e["seq"] for e in evs] == list(range(1, len(evs) + 1))
-    assert evs[0]["event"] == "run started" and evs[-1]["event"] == "run finished"
-    assert {e["event"] for e in evs} - {None} <= set(events.EVENTS)
+    assert evs[0]["type"] == events.STARTED and evs[-1]["type"] == events.FINISHED
     assert all(e["t"] <= f["t"] for e, f in zip(evs, evs[1:], strict=False))

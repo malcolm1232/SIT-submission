@@ -133,8 +133,13 @@ def build_app(state: UIState) -> Starlette:
         if profile is not None and profile not in {p["name"] for p in state.profiles if p["name"]}:
             return _err(400, f"Unknown profile {profile!r}.")
         no_tools = str(form.get("no_tools") or "") in ("1", "true", "on")
-        run_id = new_run_id()
+        run_id = str(form.get("run_id") or "").strip() or new_run_id()
+        if not rundata.RUN_ID_RE.match(run_id) or ".." in run_id:
+            return _err(400, "The run ID may hold letters, digits, dot, dash and underscore only, and must start "
+                             "with a letter or digit.")
         run_dir = state.runs_dir / run_id
+        if run_dir.exists():
+            return _err(409, f"A run directory named {run_id!r} already exists; choose another run ID.")
         inputs = run_dir / rundata.UI_DIR / "input"
         inputs.mkdir(parents=True, exist_ok=False)
         doc_path = inputs / name

@@ -47,6 +47,11 @@
           <label class="check"><input type="checkbox" id="no-tools" name="no_tools" value="1"> Document only (<span class="mono">--no-tools</span>)</label>
           <div class="help" id="tools-help"></div>
         </div>
+        <div class="field">
+          <label for="run-id">Run ID (optional)</label>
+          <input class="select" id="run-id" name="run_id" autocomplete="off" spellcheck="false" placeholder="ui-<date>-<time>-<hex>">
+          <div class="help">Name of the run directory (<span class="mono">--run-id</span>): letters, digits, dot, dash and underscore. Left empty, the server names it by the start time.</div>
+        </div>
       </div>
       <div class="start-row">
         <button class="btn primary" type="submit" id="start-btn" disabled>Start review</button>
@@ -75,6 +80,7 @@
       <div class="tracks" id="stage1-tracks"></div>
       <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
       <div class="tracks" id="seq-tracks"></div>
+      <div class="notice" id="stop-rule" hidden></div>
       <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received.</div>
     </div>
     <div class="feed">

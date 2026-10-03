@@ -54,9 +54,10 @@ ul { padding-left: 18px; margin: 0; }
   font-size: 12px; font-weight: 500; line-height: 16px; white-space: nowrap; background: var(--bg-control); color: var(--fg-muted); }
 .pill.critical { background: var(--red-9); color: var(--solid-ink-fg); }
 .pill.high, .pill.cut, .pill.failed { background: var(--red-3); color: var(--red-11); }
-.pill.medium, .pill.draft, .pill.skipped { background: var(--amber-3); color: var(--amber-11); }
+.pill.medium, .pill.draft, .pill.skipped, .pill.stopped { background: var(--amber-3); color: var(--amber-11); }
 .pill.strength, .pill.done { background: var(--green-3); color: var(--green-11); }
 .pill.running { background: var(--blue-3); color: var(--blue-11); }
+.pill.replayed { background: var(--bg-active); color: var(--fg-muted); }
 
 .page { padding: 0; }
 .notice { font-size: 12px; line-height: 16px; color: var(--fg-muted); }
@@ -73,7 +74,8 @@ ul { padding-left: 18px; margin: 0; }
 .field label, .field .label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
 .field label.btn { display: inline-flex; margin: 0; font-size: 14px; }
 .field .help { font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-top: 6px; }
-.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.field-row .select { width: 100%; }
 .start-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .cmd { margin-top: 12px; font-family: var(--mono); font-size: 12px; color: var(--fg-muted); word-break: break-all; }
 table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }

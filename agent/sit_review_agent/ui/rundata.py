@@ -64,10 +64,10 @@ def last_event(run_dir: Path) -> dict[str, Any] | None:
 
 
 def finished_event(run_dir: Path) -> dict[str, Any] | None:
-    for ev in reversed(events.read_all(run_dir / "progress.jsonl")):
-        if ev.get("event") == events.FINISHED:
-            return ev
-    return None
+    """The stream's final ``run_finished``: the last record, when it is one. A ``run_finished``
+    with records after it ended a failed run that was then resumed, so it is not the end."""
+    ev = last_event(run_dir)
+    return ev if ev is not None and ev.get("type") == events.FINISHED else None
 
 
 def run_status(run_dir: Path, *, process_alive: bool = False) -> str:
@@ -90,10 +90,13 @@ def summary(run_dir: Path, *, process_alive: bool = False) -> dict[str, Any]:
     manifest = read_json(run_dir / "manifest.json")
     launch = read_json(run_dir / UI_DIR / "launch.json")
     wall, cost, lower = _wall_and_cost(manifest)
+    started = events.started(events.read_all(run_dir / "progress.jsonl"))
+    mode = (started or {}).get("mode") or ((manifest or {}).get("extra") or {}).get("mode")
     row: dict[str, Any] = {"run_id": run_dir.name, "status": run_status(run_dir, process_alive=process_alive),
                            "has_report": report is not None, "has_events": (run_dir / "progress.jsonl").is_file(),
-                           "replayed": (run_dir / "replay.json").is_file()
-                           or ((manifest or {}).get("extra") or {}).get("mode") == "replay",
+                           "mode": mode,
+                           "replayed": (run_dir / "replay.json").is_file() or mode == "replay",
+                           "resumed": bool((started or {}).get("resumed")),
                            "wall_s": wall, "cost_usd": cost, "cost_lower_bound": lower,
                            "outcome": (manifest or {}).get("outcome"),
                            "commit": (manifest or {}).get("git_commit"),
@@ -107,9 +110,7 @@ def summary(run_dir: Path, *, process_alive: bool = False) -> dict[str, Any]:
         row.update(document=doc.get("title"), pages=doc.get("page_count"), verdict=verdict.get("label"),
                    confidence=verdict.get("confidence"), findings=len(report.get("findings") or []))
     else:
-        started = next((e for e in events.read_all(run_dir / "progress.jsonl") if e.get("event") == "run started"),
-                       None)
-        doc = ((started or {}).get("fields") or {}).get("document") or {}
+        doc = events.under_review(started)
         row["document"] = doc.get("title") or (launch or {}).get("document_name")
         row["pages"] = doc.get("pages")
     return row

@@ -43,7 +43,7 @@ async function api(url, opts) {
   return body;
 }
 
-const S = { meta: null, runId: null, es: null };
+const S = { meta: null, runId: null, es: null, model: null };
 
 function topBar({ doc, tabs, meta, action }) {
   $("top-doc").textContent = doc || "";
@@ -81,11 +81,12 @@ async function showDrop() {
     const p = meta.profiles.find((x) => x.name === sel.value);
     $("profile-help").textContent = p ? "Stage 1 ends by " + clock(p.stage_limits_s.stage_1_end) + ", refine by " + clock(p.stage_limits_s.refine_end) + ", verdict by " + clock(p.stage_limits_s.verdict_end) + ", deadline " + clock(p.deadline_s) + "." : "";
     const prev = $("prev-input").files[0];
-    const parts = ["dra", "review", doc ? "runs/<new run>/ui/input/" + doc.name : "<document>"];
+    const rid = $("run-id").value.trim() || "<new run>";
+    const parts = ["dra", "review", doc ? "runs/" + rid + "/ui/input/" + doc.name : "<document>"];
     if (sel.value) parts.push("--profile", sel.value);
-    if (prev) parts.push("--v1", "runs/<new run>/ui/input/previous/" + prev.name);
+    if (prev) parts.push("--v1", "runs/" + rid + "/ui/input/previous/" + prev.name);
     if ($("no-tools").checked) parts.push("--no-tools");
-    parts.push("--run-id", "<new run>");
+    parts.push("--run-id", rid);
     $("cmd-preview").textContent = parts.join(" ");
     $("start-btn").disabled = !doc || !meta.can_launch;
   };
@@ -93,6 +94,7 @@ async function showDrop() {
   $("doc-input").addEventListener("change", (e) => choose(e.target.files[0]));
   $("prev-input").addEventListener("change", () => { const f = $("prev-input").files[0]; $("prev-chosen").textContent = f ? f.name : "No file chosen"; $("prev-chosen").classList.toggle("muted", !f); refresh(); });
   for (const id of ["profile-select", "no-tools"]) $(id).addEventListener("change", refresh);
+  $("run-id").addEventListener("input", refresh);
   const dz = $("dropzone");
   dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("over"); });
   dz.addEventListener("dragleave", () => dz.classList.remove("over"));
@@ -106,6 +108,7 @@ async function showDrop() {
     const prev = $("prev-input").files[0];
     if (prev) fd.append("previous", prev);
     fd.append("profile", sel.value);
+    if ($("run-id").value.trim()) fd.append("run_id", $("run-id").value.trim());
     if ($("no-tools").checked) fd.append("no_tools", "1");
     $("start-btn").disabled = true;
     try {
@@ -131,6 +134,8 @@ async function showDrop() {
 }
 
 // ------------------------------------------------------------------ frame 2: the run, from the event stream
+// Each record of progress.jsonl (spec/progress_event.schema.json; ui/events.py) is applied to a model by its
+// `type` and `fields`; `message` is shown verbatim in the status feed and read nowhere else.
 
 const STAGE1 = ["ingest", "understand", "plan", "research"];
 const SEQ = [
@@ -140,64 +145,132 @@ const SEQ = [
   { phase: "verdict", limit: "verdict_end", about: "verdict-only call, else the rule-based verdict" },
   { phase: "report", limit: "deadline", about: "report.md and report.json rendered in code, invariants checked" },
 ];
+// call_closed outcomes that end the call without an answer (the schema's enum, less ok, cut and replaced).
+const CALL_FAILED = ["refusal", "truncated", "error", "cancelled", "interrupted"];
 
 function newRunModel() {
-  return { limits: null, deadline: null, profile: null, lastT: 0, tracks: new Map(), byCall: new Map(), drafts: [], events: [], finished: null, doc: null };
+  return { limits: null, deadline: null, profile: null, mode: null, replay: false, resumed: false, shardCount: null, lastT: 0,
+    tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
+    stopRule: null, doc: null, runId: null };
 }
 
 function track(m, key, label) {
-  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null });
+  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null });
   return m.tracks.get(key);
 }
 
-function shardKey(f) { return f.shard_index && f.shard_count ? "assess " + f.shard_index + "/" + f.shard_count : null; }
+// The run clock (resume-adjusted, the clock the stage limits use) when the record has it, else the sink clock.
+function at(ev) { return typeof ev.run_s === "number" ? ev.run_s : ev.t; }
+function shardKey(m, shard) { return shard ? "assess " + shard + "/" + (m.shardCount || "?") : null; }
+function whoOf(m, shard, callId) { return shard ? shard + "/" + (m.shardCount || "?") : (callId || ""); }
+// A track in flight: "running" live, "replayed" when the stream is dra replay serving recorded calls.
+function inFlight(m) { return m.replay ? "replayed" : "running"; }
+
+function addDraft(m, key, t, d, who) {
+  if (m.seen.has(key) || !d) return;
+  m.seen.add(key);
+  m.drafts.unshift({ t, severity: d.severity, kind: d.kind, title: d.title, who });
+}
 
 function applyEvent(m, ev) {
   const f = ev.fields || {};
-  m.lastT = Math.max(m.lastT, ev.t);
-  m.events.push(ev);
-  switch (ev.event) {
-    case "run started":
-      m.limits = f.stage_limits_s || null; m.deadline = f.deadline_s ?? null; m.profile = f.profile ?? null; m.doc = f.document || null; m.runId = f.run_id; m.argv = f.argv || null;
+  const now = at(ev);
+  m.lastT = Math.max(m.lastT, now);
+  if (ev.console) m.events.push(ev);
+  switch (ev.type) {
+    case "run_started":
+      m.runId = f.run_id; m.mode = f.mode ?? null; m.replay = f.mode === "replay"; m.resumed = m.resumed || !!f.resumed;
+      m.limits = f.stage_limits_s || null; m.deadline = f.deadline_s ?? null; m.profile = f.profile ?? null;
+      if (Array.isArray(f.shards) && f.shards.length) m.shardCount = f.shards.length;
+      m.doc = (f.documents || []).find((d) => d.role === "under_review") || (f.documents || [])[0] || m.doc;
       break;
-    case "phase started": { const t = track(m, f.phase); if (t.status === "waiting") t.status = "running"; if (t.start === null) t.start = ev.t; break; }
-    case "phase done": { const t = track(m, f.phase); if (t.status !== "cut" && t.status !== "failed") t.status = "done"; t.end = ev.t; if (t.start === null) t.start = ev.t - (f.seconds || 0); break; }
-    case "call opened": {
-      const key = (f.phase === "assess" && shardKey(f)) || f.phase;
+    case "run_resuming": m.resumed = true; break;
+    case "document_ingested":
+      if (f.role === "under_review" || !m.doc) m.doc = { ...(m.doc || {}), title: f.title, pages: f.pages, sections: f.sections };
+      break;
+    case "phase_started": { const t = track(m, ev.phase); if (t.status !== "cut") t.status = inFlight(m); if (t.start === null) t.start = now; break; }
+    case "phase_done": {
+      const t = track(m, ev.phase);
+      if (t.status !== "cut" && t.status !== "failed") t.status = "done";
+      t.end = now; if (t.start === null) t.start = now - (f.seconds || 0);
+      if (f.stopped_at_limit) { t.strong = null; t.text = "stopped at the stage limit"; }
+      break;
+    }
+    case "research_started": { const t = track(m, "research"); t.strong = null; t.text = intl(f.questions) + " question(s) to research"; break; }
+    case "research_stopped": { const t = track(m, "research"); t.strong = null; t.text = words(f.code) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + intl(f.tool_calls) + " tool call(s)"; break; }
+    case "phase_skipped": { const t = track(m, ev.phase); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
+    case "research_skipped": { const t = track(m, "research"); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
+    case "research_doc_only": { const t = track(m, "research"); t.strong = f.degradation_id || null; t.text = (f.degradation_id ? " in the report · " : "") + "document only: " + (f.detail || ""); break; }
+    case "call_opened": {
+      const key = (ev.phase === "assess" && shardKey(m, f.shard)) || ev.phase;
       const t = track(m, key);
-      t.call = f.call_id; t.status = "running"; if (t.start === null) t.start = ev.t; if (f.shard_name) t.shard = f.shard_name;
+      t.call = f.call_id; if (t.status !== "cut") t.status = inFlight(m); if (t.start === null) t.start = now; if (f.shard_name) t.shard = f.shard_name;
       m.byCall.set(f.call_id, t);
       break;
     }
-    case "call status": {
-      const t = m.byCall.get(f.call_id); if (!t) break;
-      if (typeof f.items === "number" && f.items > 0) { t.strong = intl(f.items); t.text = (f.items === 1 ? " item" : " items") + " streamed" + (typeof f.chars === "number" ? " (" + intl(f.chars) + " chars)" : ""); }
-      else if (typeof f.thinking_tokens === "number") { t.strong = null; t.text = "thinking ~" + intl(f.thinking_tokens) + " tokens"; }
+    case "call_status":
+      for (const c of f.calls || []) {
+        const t = m.byCall.get(c.call_id); if (!t) continue;
+        if (typeof c.items === "number" && c.items > 0) { t.strong = intl(c.items); t.text = (c.items === 1 ? " item" : " items") + " streamed" + (typeof c.chars === "number" ? " (" + intl(c.chars) + " chars)" : ""); }
+        else if (typeof c.chars === "number" && c.chars > 0) { t.strong = null; t.text = "answer streaming (" + intl(c.chars) + " chars)"; }
+        else if (typeof c.thinking_tokens === "number" && c.thinking_tokens > 0) { t.strong = null; t.text = "thinking ~" + intl(c.thinking_tokens) + " tokens"; }
+        else { t.strong = null; t.text = "starting"; }
+      }
       break;
-    }
-    case "call closed": {
+    case "call_retry": { const t = track(m, ev.phase); t.strong = null; t.text = "retry: " + words(f.reason); break; }
+    case "call_closed": {
       const t = m.byCall.get(f.call_id); if (!t) break;
-      t.end = ev.t;
-      if (f.outcome === "cut") { t.status = "cut"; t.cutAt = ev.t; t.strong = null; t.text = f.kept_items !== undefined ? "kept " + f.kept_items + " finished item(s)" : t.text; }
-      else if (f.outcome === "error" || f.outcome === "declined" || f.outcome === "truncated") { t.status = "failed"; t.strong = null; t.text = words(f.outcome); }
+      t.end = now;
+      if (f.outcome === "cut") { t.status = "cut"; t.cutAt = now; t.strong = null; t.text = typeof f.kept_items === "number" ? "kept " + intl(f.kept_items) + " finished item(s)" : t.text; }
+      else if (f.outcome === "replaced") { t.end = null; }
+      else if (CALL_FAILED.includes(f.outcome)) { t.status = "failed"; t.strong = null; t.text = words(f.outcome); }
       else if (t.key.startsWith("assess ")) t.status = "done";
       break;
     }
-    case "draft":
-      m.drafts.unshift({ t: ev.t, severity: f.severity, kind: f.finding_kind, title: f.title, who: f.shard_index && f.shard_count ? f.shard_index + "/" + f.shard_count : (f.call_id || "") });
+    case "draft_item":
+      if (f.list === "findings") addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
       break;
-    case "stage cut": {
-      const t = f.call_id ? m.byCall.get(f.call_id) : null;
-      if (t) { t.status = "cut"; t.cutAt = f.at_s; t.end = f.at_s; t.strong = null; t.text = f.kept ? "kept " + f.kept : t.text; }
+    case "shard_drafted": {
+      const t = m.byCall.get(f.call_id) || track(m, shardKey(m, f.shard));
+      t.strong = intl(f.findings); t.text = " draft finding(s), " + intl(f.sound_areas) + " sound area(s), unverified";
+      for (const d of f.drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
       break;
     }
-    case "skipped": { const t = track(m, f.phase); t.status = "skipped"; t.skippedAt = ev.t; t.strong = f.degradation_id || null; t.text = (f.degradation_id ? " in the report · " : "") + (f.reason || "skipped"); break; }
+    case "shard_cut": {
+      const t = (f.call_id && m.byCall.get(f.call_id)) || track(m, shardKey(m, f.shard));
+      t.status = "cut"; t.cutAt = f.cut_at_s ?? now; t.end = t.cutAt;
+      t.strong = f.degradation_id || null;
+      t.text = (f.degradation_id ? " in the report · " : "") + "kept " + intl(f.kept) + " finished finding(s)" + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "");
+      for (const d of f.kept_drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      break;
+    }
+    case "shard_failed": { const t = track(m, shardKey(m, f.shard)); t.status = "failed"; t.end = now; t.strong = null; t.text = f.error || "failed"; break; }
+    case "shards_merged": {
+      const t = track(m, "merge"); t.status = "done"; if (t.start === null) t.start = now; t.end = now;
+      t.strong = intl(f.findings); t.text = " findings, " + intl(f.sound_areas) + " sound area(s) from " + intl(f.shards) + " shard(s)" + ((f.degraded_shards || []).length ? "; degraded: " + f.degraded_shards.join(", ") : "");
+      break;
+    }
+    case "call_cut": {
+      const t = m.byCall.get(f.call_id); if (!t) break;
+      t.status = "cut"; t.cutAt = f.at_s ?? now; t.end = t.cutAt; t.strong = null; t.text = "kept " + intl(f.kept_items) + " finished item(s)";
+      break;
+    }
+    case "stop_rule": m.stopRule = f; break;
     case "milestone": {
-      const t = track(m, ev.phase); const counts = Object.entries(f).filter(([k, v]) => k !== "name" && k !== "text" && typeof v === "number");
-      t.strong = null; t.text = f.text || (f.name + (counts.length ? ": " + counts.map(([k, v]) => intl(v) + " " + words(k)).join(", ") : ""));
+      const t = track(m, ev.phase); const counts = Object.entries(f).filter(([k, v]) => k !== "name" && typeof v === "number");
+      t.strong = null; t.text = f.name + (counts.length ? ": " + counts.map(([k, v]) => intl(v) + " " + words(k)).join(", ") : "");
       break;
     }
-    case "run finished": m.finished = f; break;
+    case "verdict": {
+      m.verdict = f; const t = track(m, "verdict"); t.status = "done"; if (t.start === null) t.start = now; t.end = now;
+      t.strong = words(f.label); t.text = " · confidence " + conf(f.confidence) + " · " + intl(f.findings) + " findings";
+      break;
+    }
+    case "run_error":
+      m.error = f;
+      for (const t of m.tracks.values()) if (t.status === "running" || t.status === "replayed") { t.status = "stopped"; t.end = now; }
+      break;
+    case "run_finished": m.finished = f; break;
     default: break;
   }
 }
@@ -217,7 +290,7 @@ function trackRow(m, t, limit) {
   const status = h("div", { class: "status" });
   { if (t.shard) status.append(t.shard + (t.strong || t.text ? " · " : "")); if (t.strong) status.append(h("b", { text: t.strong })); if (t.text) status.append(t.text); }
   status.title = status.textContent;
-  return h("div", { class: "track" },
+  return h("div", { class: "track", "data-track": t.key, "data-status": t.status },
     h("div", { class: "name" }, t.label, t.call ? h("span", { class: "call mono", text: t.call }) : null),
     h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status);
 }
@@ -235,7 +308,7 @@ function renderRun(m) {
     const t = track(m, row.phase);
     const limit = row.limit === "deadline" ? m.deadline : (row.limit ? lim[row.limit] : null);
     if (t.status === "waiting" && row.when) {
-      seq.append(h("div", { class: "track" }, h("div", { class: "name", text: row.phase }), h("div", {}, h("span", { class: "pill waiting", text: "waiting" })),
+      seq.append(h("div", { class: "track", "data-track": row.phase, "data-status": "waiting" }, h("div", { class: "name", text: row.phase }), h("div", {}, h("span", { class: "pill waiting", text: "waiting" })),
         h("div", { class: "time num muted", text: row.when }), h("div", { class: "status", text: row.about })));
     } else {
       const r = trackRow(m, t, limit ?? null);
@@ -243,6 +316,8 @@ function renderRun(m) {
       seq.append(r);
     }
   }
+  const stop = $("stop-rule");
+  if (stop) { stop.hidden = !m.stopRule; stop.textContent = m.stopRule ? "Stop rule " + m.stopRule.code + " fired in " + words(m.stopRule.stage) + ": " + m.stopRule.detail + "; skipped to " + words(m.stopRule.to) + "." : ""; }
   $("draft-count").textContent = String(m.drafts.length);
   const d = clear($("drafts"));
   for (const x of m.drafts) {
@@ -262,12 +337,13 @@ function closeStream() { if (S.es) { S.es.close(); S.es = null; } }
 
 function runTop(info, m, tabs) {
   const doc = m.doc;
-  const docText = [info.run_id, doc ? [doc.title, doc.pages !== undefined ? intl(doc.pages) + " pages" : null, doc.sections !== undefined ? intl(doc.sections) + " sections" : null].filter(Boolean).join(", ") : info.document].filter(Boolean).join(" · ");
+  const docText = [info.run_id, doc ? [doc.title, typeof doc.pages === "number" ? intl(doc.pages) + " pages" : null, typeof doc.sections === "number" ? intl(doc.sections) + " sections" : null].filter(Boolean).join(", ") : info.document].filter(Boolean).join(" · ");
   const metaParts = [h("span", {}, "run clock ", h("b", { text: clock(m.lastT) }), m.deadline ? " of " + clock(m.deadline) : "")];
   if (m.profile) metaParts.push("profile " + m.profile);
-  if (info.replayed) metaParts.push(h("span", { class: "pill", text: "replayed evidence" }));
+  if (m.resumed || info.resumed) metaParts.push(h("span", { class: "pill", text: "resumed" }));
+  if (info.replayed || m.replay) metaParts.push(h("span", { class: "pill", id: "replay-stamp", text: "replayed evidence" }));
   let action = null;
-  if (info.status === "running" && info.argv) {
+  if (info.status === "running" && info.argv && !m.replay) {
     action = h("button", { class: "btn ghost", type: "button", text: "Stop run", onclick: async (e) => {
       e.target.disabled = true;
       try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); e.target.textContent = "SIGINT sent"; }
@@ -277,14 +353,30 @@ function runTop(info, m, tabs) {
   topBar({ doc: docText, tabs, meta: joinMeta(metaParts), action });
 }
 
+function finishedText(m, end) {
+  const f = m.finished;
+  if (f) {
+    const parts = ["Run finished: " + words(f.outcome) + ", exit " + f.exit_code];
+    if (typeof f.wall_s === "number") parts.push(dur(f.wall_s) + " on the run clock");
+    if (typeof f.cost_usd === "number") parts.push(money(f.cost_usd, f.cost_is_lower_bound));
+    if (m.verdict) parts.push("verdict " + words(m.verdict.label) + ", " + intl(m.verdict.findings) + " findings");
+    if (f.exit_code !== 0 && m.error && m.error.resumable) parts.push("resumable with " + m.error.resume);
+    return parts.join(" · ") + ".";
+  }
+  if (m.error) return "The run stopped: " + m.error.error + ", exit " + m.error.exit_code + (m.error.resumable ? "; resumable with " + m.error.resume : "") + ".";
+  if (end.exit_code !== null && end.exit_code !== undefined) return "The process exited with code " + end.exit_code + " before a run_finished event.";
+  return "The event stream ended.";
+}
+
 function showRun(info, tabs) {
   closeStream();
   const app = clear($("app"));
   app.append(tpl("tpl-run"));
   const m = newRunModel();
+  S.model = m;
   renderRun(m);
   runTop(info, m, tabs);
-  if (info.argv) $("status-feed").before(h("div", { class: "cmd", text: info.argv }));
+  if (info.argv) $("status-feed").before(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
   if (!info.has_events) {
     $("legend").after(h("p", { class: "notice", text: "This run directory has no progress.jsonl (it was recorded before the structured event stream), so there is no timeline to show." }));
     return;
@@ -306,8 +398,7 @@ function showRun(info, tabs) {
     const bar = $("finished-bar");
     if (!bar) return;
     clear(bar).hidden = false;
-    const f = m.finished;
-    bar.append(f ? "Run finished: " + words(f.outcome) + ", exit " + f.exit_code + "." : (end.exit_code !== null && end.exit_code !== undefined ? "The process exited with code " + end.exit_code + " before a run finished event." : "The event stream ended."));
+    bar.append(finishedText(m, end));
     if (fresh.has_report && !tabs) bar.append(h("button", { class: "btn primary", type: "button", text: "Open the review", onclick: () => go(info.run_id) }));
   });
 }
@@ -587,5 +678,7 @@ async function route() {
   }
 }
 
+// The run model and its reducer, reachable by tests that feed a recorded stream through the page.
+window.SIT = { applyEvent, newRunModel, state: S };
 window.addEventListener("popstate", route);
 route();

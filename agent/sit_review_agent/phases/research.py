@@ -613,22 +613,25 @@ class _ResearchRun:
                 q.summary = a.summary.strip()
             q.evidence_ids = list(dict.fromkeys([*q.evidence_ids, *ids]))
 
-    def _degrade(self, key: str, kind: DegradationType, event: str, impact: str) -> None:
+    def _degrade(self, key: str, kind: DegradationType, event: str, impact: str) -> str | None:
+        """Record the degradation once per ``key``; its ID the first time, ``None`` after."""
         if key in self._degraded:
-            return
+            return None
         self._degraded.add(key)
-        self.state.add_degradation(kind, event, impact)
+        return self.state.add_degradation(kind, event, impact).id
 
     def _record_registry_hash(self) -> None:
         if not self.ctx.registry.hashes():
             self.ctx.registry.record_iteration(0)
 
     def _doc_only(self, reason: str, detail: str) -> None:
+        # Registered before the line so the event carries the ID the report will disclose it under.
+        deg = self._degrade("doc_only", DegradationType.TOOL_UNAVAILABLE,
+                            f"No external research was possible: {reason}",
+                            "doc-only review: every question that needs external evidence is reported as a validation "
+                            "need, and confidence is lowered")
         ctx_event(self.ctx, f"No external research was possible: {reason}; continuing document-only", "warn",
-                  event="research_doc_only", detail=detail)
-        self._degrade("doc_only", DegradationType.TOOL_UNAVAILABLE, f"No external research was possible: {reason}",
-                      "doc-only review: every question that needs external evidence is reported as a validation "
-                      "need, and confidence is lowered")
+                  event="research_doc_only", detail=detail, degradation_id=deg)
         questions = self.state.plan.questions if self.state.plan is not None else []
         external = [q for q in questions if q.needs_external]
         self._finish(StopReason.of(StopReasonCode.TOOL_FAILURE, detail), external)

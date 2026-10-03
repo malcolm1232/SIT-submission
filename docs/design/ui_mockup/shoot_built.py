@@ -5,10 +5,10 @@
 Writes ``built_1_drop.png``, ``built_2_running.png``, ``built_3_review.png`` and
 ``for_him_ui_built.png`` beside this file. Needs the ``playwright`` package with its Chromium.
 
-Data, all offline: a scratch runs directory holding the authored fixture stream
-``tests/fixtures/ui/progress.jsonl`` cut at the run clock 02:38 (frame 2, served over SSE as a run
-still in progress) and the report files of ``docs/live_runs/rehearsal_concurrent_1`` (frames 1 and
-3). No model call is made and no run is started. Before each picture the script checks the page
+Data, all offline: a scratch runs directory holding the recorded fixture stream
+``tests/fixtures/ui/progress.jsonl`` (a fixture run on the fake gateway, ``tests/fixtures/ui/record_fixtures.py``)
+cut at the run clock 01:00 (frame 2, served over SSE as a run still in progress) and the report files
+of ``docs/live_runs/rehearsal_concurrent_1`` (frames 1 and 3). No model call is made and no run is started. Before each picture the script checks the page
 against the run directory and prints counts only: the findings' titles and statements in the DOM
 equal ``report.json``, and the draft rows equal the fixture's draft events.
 """
@@ -31,7 +31,7 @@ REPO = HERE.parents[2]
 REHEARSAL = REPO / "docs" / "live_runs" / "rehearsal_concurrent_1"
 FIXTURE = REPO / "tests" / "fixtures" / "ui" / "progress.jsonl"
 RUN_FILES = ("report.json", "manifest.json", "anchors.json", "ledger.json", "state.json", "effective_config.json")
-RUNNING_UNTIL_T = 158.0   # 02:38, the moment frame 2 of the mockup shows
+RUNNING_UNTIL_T = 60.0    # run-clock seconds: stage 1 of the fixture run is still open at 01:00
 EXPAND = "FND-005"        # the finding frame 3 of the mockup shows expanded
 
 
@@ -49,7 +49,7 @@ def scratch_runs(root: Path) -> None:
     fx = root / "fixture_run"
     fx.mkdir()
     lines = [ln for ln in FIXTURE.read_text(encoding="utf-8").splitlines(keepends=True)
-             if json.loads(ln)["t"] <= RUNNING_UNTIL_T]
+             if (json.loads(ln)["run_s"] or 0.0) <= RUNNING_UNTIL_T]
     (fx / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
 
 
@@ -119,8 +119,9 @@ def main() -> int:
                 page.wait_for_selector("#runs-table tbody tr")
                 page.screenshot(path=str(out["drop"]), full_page=True)
 
-                drafts = sum(1 for ln in (runs / "fixture_run" / "progress.jsonl").read_text().splitlines()
-                             if json.loads(ln).get("event") == "draft")
+                evs = [json.loads(ln) for ln in (runs / "fixture_run" / "progress.jsonl").read_text().splitlines()]
+                drafts = sum(len(e["fields"]["drafts"]) for e in evs if e["type"] == "shard_drafted") \
+                    + sum(1 for e in evs if e["type"] == "draft_item" and e["fields"].get("list") == "findings")
                 page.goto(base + "/?run=fixture_run")
                 page.wait_for_function(f"document.querySelectorAll('#drafts .draft').length === {drafts}")
                 page.wait_for_timeout(300)
