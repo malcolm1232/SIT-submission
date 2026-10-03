@@ -24,6 +24,8 @@ token64:tests/test_manifest_concurrent.py  # a test function name
 token64:tests/test_refine_next_step.py  # a test function name
 token64:tests/test_runtime_policies.py  # test function names
 token64:tests/test_tool_gateways.py  # a test function name
+token64:tests/test_mcp_session_recovery.py  # a test function name (reviewed 2026-10-03, final hub)
+token64:tests/test_ui_events.py  # a test function name (reviewed 2026-10-03, final hub)
 token64:research/audit/latency_verifier_editlog.md  # a test name quoted in the edit log
 token64:research/audit/verify_runtime_cli_editlog.md  # test names quoted in the edit log
 
@@ -39,6 +41,7 @@ bearer:tests/test_tool_gateways.py  # prose: "Bearer answered HTTP 200" in a doc
 # api_key= matches that are code or environment variable names, not values.
 api_key:agent/sit_review_agent/llm/claude_code.py  # an attribute name (inherit_api_key...)
 api_key:harness/sit_eval/live_judges.py  # an attribute name (inherit_api_key...)
+api_key:agent/sit_review_agent/ui/chat.py  # an attribute name (inherit_api_key...), reviewed 2026-10-03, final hub
 api_key:research/robustness/README.md  # environment variable names in prose
 api_key:tests/robustness/README.md  # environment variable name in a command line
 api_key:tests/robustness/robustness_coverage.py  # environment variable name in a command line

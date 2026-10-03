@@ -363,8 +363,8 @@ def test_email_sends_the_export_and_report_md_and_logs_no_content(flow_runs: Pat
     assert PASSWORD not in json.dumps(client.get("/runs/ui_flow_1/outputs").json())
 
 
-@pytest.mark.parametrize("to", ["", "nobody", "a@b", "a@b.org, c@d.org", "a@b.org\r\nBcc: x@y.org", "a b@c.org",
-                                "x" * 250 + "@b.org"], ids=range(7))
+@pytest.mark.parametrize("to", ["", "nobody", "a@b", "a@b.example, c@d.example", "a@b.example\r\nBcc: x@y.example",
+                                "a b@c.example", "x" * 250 + "@b.example"], ids=range(7))
 def test_a_bad_address_is_refused_before_any_connection(flow_runs: Path, smtp: FakeSMTP, monkeypatch,
                                                         to: str) -> None:
     from sit_review_agent.ui import mail
