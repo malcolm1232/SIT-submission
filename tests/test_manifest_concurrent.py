@@ -103,10 +103,10 @@ def test_a_cut_calls_estimate_sits_beside_its_measured_null_record(tmp_path: Pat
     assert [(r["call_id"], r["stage"], r["estimated"], r["reason"]) for r in rows] == [
         ("llm-0002", "assess", True, "deadline_cut"), ("llm-0003", "assess", True, "deadline_cut")]
     assert (rows[0]["input_tokens"], rows[0]["output_tokens"], rows[0]["cache_creation_input_tokens"],
-            rows[0]["cache_read_input_tokens"]) == (5000, 3000, 100, 50)
+            rows[0]["cache_read_input_tokens"]) == (5000, 850, 100, 50)  # 5 tokens/s measured x 170 s
     tot = model["estimated_usage_totals"]
     assert tot["estimated"] is True and tot["calls"] == 2
-    assert (tot["input_tokens"], tot["output_tokens"]) == (9000, 4000)
+    assert (tot["input_tokens"], tot["output_tokens"]) == (9000, 1700)
     # the measured totals never include an estimate
     assert (m.usage.input_tokens, m.usage.output_tokens, m.usage.cached_tokens) == (1000, 200, 0)
     assert m.usage.cost_usd == pytest.approx((1000 * 4.0 + 200 * 20.0) / 1e6)
