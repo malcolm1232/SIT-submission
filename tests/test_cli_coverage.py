@@ -105,7 +105,8 @@ def test_criterion_whose_findings_were_not_verified_is_not_shown_as_clear(run: P
     assert "1 finding(s) raised here could not be verified" in row              # verify says so in the note
     state = json.loads((run / "state.json").read_text(encoding="utf-8"))
     kept = next(c for c in state["coverage"] if c["criterion_id"] == "verifiability")
-    assert kept["finding_ids"] == ["FND-002"] and "could not be verified" not in kept["note"]
+    testing = next(f["id"] for f in report["findings"] if f["title"] == "Peak-day reminder volume is not tested")
+    assert kept["finding_ids"] == [testing] and "could not be verified" not in kept["note"]
 
 
 def test_coverage_of_a_run_with_no_assessment_says_not_assessed(run: Path) -> None:

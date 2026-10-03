@@ -128,14 +128,15 @@ def degradation_events(report: dict[str, Any]) -> str:
 
 async def test_inv03_non_refinement_finding_left_out_of_unresolved_is_added(tmp_path: Path) -> None:
     """The report answer is the verdict only, so it lists no unresolved item for the needs_testing
-    finding FND-002; the assembly adds it in code (lab §2.4), and the checker rejects a Review
-    without it."""
+    finding (the fixture's FND-002; its merged ID depends on the configured shard groups); the
+    assembly adds it in code (lab §2.4), and the checker rejects a Review without it."""
     out, rd = await run(tmp_path, report=verdict_answer(None))
     report = load(rd)
-    assert "FND-002" in {x for u in report["unresolved"] for x in u["finding_ids"]}
+    testing = next(f["id"] for f in report["findings"] if f["title"] == "Peak-day reminder volume is not tested")
+    assert testing in {x for u in report["unresolved"] for x in u["finding_ids"]}
     broken = copy.deepcopy(report)
-    broken["unresolved"] = [u for u in broken["unresolved"] if "FND-002" not in u["finding_ids"]]
-    assert any("FND-002" in p and "unresolved" in p for p in check_INV_03(broken, rd.root).problems)
+    broken["unresolved"] = [u for u in broken["unresolved"] if testing not in u["finding_ids"]]
+    assert any(testing in p and "unresolved" in p for p in check_INV_03(broken, rd.root).problems)
 
 
 # ============================================================================== INV-04

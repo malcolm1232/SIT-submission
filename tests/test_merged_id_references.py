@@ -42,15 +42,16 @@ from test_e2e_synthetic import (  # type: ignore[import-not-found]
 
 TOKEN = re.compile(r"\bFND-\d{3,}\b")
 
-#: Which drafts each shard returns, under the shard's own IDs (the model numbers per call).
-SHARDS: dict[int, list[tuple[str, str]]] = {
-    1: [("FND-001", "F3"), ("FND-002", "F3dup"), ("FND-003", "F2")],
-    2: [("FND-001", "F1"), ("FND-002", "F4"), ("FND-003", "F5"), ("FND-004", "F1dup"), ("FND-005", "F6"),
-        ("FND-006", "F8")],
-    3: [],
-    4: [],
+#: Which drafts a shard returns, under the shard's own IDs (the model numbers per call), by shard
+#: group name. Every other configured group answers with no findings, so any group count is served
+#: as long as ``intent_and_fitness`` comes before ``requirements_and_consistency`` (checked in
+#: :func:`factory`).
+SHARDS: dict[str, list[tuple[str, str]]] = {
+    "intent_and_fitness": [("FND-001", "F3"), ("FND-002", "F3dup"), ("FND-003", "F2")],
+    "requirements_and_consistency": [("FND-001", "F1"), ("FND-002", "F4"), ("FND-003", "F5"), ("FND-004", "F1dup"),
+                                     ("FND-005", "F6"), ("FND-006", "F8")],
 }
-#: The merged draft IDs (shard order, then each shard's rank order).
+#: The merged draft IDs (shard order, then each shard's rank order; empty groups add nothing).
 DRAFT = {"F3": "FND-001", "F3dup": "FND-002", "F2": "FND-003", "F1": "FND-004", "F4": "FND-005",
          "F5": "FND-006", "F1dup": "FND-007", "F6": "FND-008", "F8": "FND-009"}
 FINAL = {DRAFT[x] for x in ("F1", "F2", "F3", "F4", "F5")}
@@ -97,8 +98,9 @@ def build(shards: list[Any]) -> dict[str, list[Any]]:
     by_name = drafts_by_name()
 
     def shard(i: int) -> FakeResponse:
+        group = shards[i - 1].name
         mine = []
-        for rank, (local, name) in enumerate(SHARDS[i], start=1):
+        for rank, (local, name) in enumerate(SHARDS.get(group, []), start=1):
             f = copy.deepcopy(by_name[name])
             f.update(id=local, rank=rank, affected_decisions=[])
             mine.append(f)
@@ -108,12 +110,12 @@ def build(shards: list[Any]) -> dict[str, list[Any]]:
         coverage = [{"criterion_id": c, "outcome": "findings" if c in cited else "no_issue", "finding_ids": [],
                      "note": notes.get(c, "e2e")} for c in shards[i - 1].criteria]
         areas: list[dict[str, Any]] = []
-        if i == 1:
+        if group == "intent_and_fitness":
             areas = [{"section_refs": ["20"],
                       "why_sound": "The audit store is write-once for seven years (see FND-002).",
                       "doc_anchors": [anchor("20", 17, Q_AUDIT)], "evidence_ids": [],
                       "related_finding_ids": ["FND-001", "FND-002"]}]
-        elif i == 2:
+        elif group == "requirements_and_consistency":
             areas = [{"section_refs": ["3"],
                       "why_sound": "The audit plane is separate from the data plane (see FND-005).",
                       "doc_anchors": [anchor("3", 3, Q_P7)], "evidence_ids": [], "related_finding_ids": []}]
@@ -155,7 +157,9 @@ def build(shards: list[Any]) -> dict[str, list[Any]]:
 
 def factory(cfg: Any) -> Any:
     shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
-    assert len(shards) == len(SHARDS)
+    names = [s.name for s in shards]
+    assert all(g in names for g in SHARDS) and names.index("intent_and_fitness") < names.index(
+        "requirements_and_consistency"), names
     return lambda rd, clock, progress: FakeGateway(build(shards), run_dir=rd, clock=clock)
 
 

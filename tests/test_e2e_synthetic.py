@@ -161,9 +161,22 @@ def assess_findings(ev: dict[str, str] | None = None, *, refined: bool = False) 
     ]
 
 
-#: Which finding each assess shard drafts (the shards are the four groups of config/agent.yaml).
-SHARD_FINDINGS = {1: ["F3"], 2: ["F1", "F4", "F5"], 3: [], 4: ["F2"]}
-#: The IDs the merge gives them: shard order, then each shard's own rank order.
+def shard_findings(shards: list[Any]) -> dict[int, list[str]]:
+    """Which planted finding each assess shard drafts, dealt by the shard groups the config gives:
+    a finding goes to the (1-based) shard whose criteria hold its first criterion, in rank order.
+    Every shard gets an entry (possibly empty), so any configured group count is served."""
+    out: dict[int, list[str]] = {k: [] for k in range(1, len(shards) + 1)}
+    for f in assess_findings():
+        home = [k for k, s in enumerate(shards, 1) if f["criterion_ids"][0] in s.criteria]
+        assert len(home) == 1, (f["id"], f["criterion_ids"][0], "is in no configured shard group")
+        out[home[0]].append(f["id"])
+    return out
+
+
+#: The IDs the merge gives them: shard order, then each shard's own rank order. The planted
+#: criteria put F3 first (intent and fitness), then F1 and F4 (requirements and consistency),
+#: then F5 (verifiability), then F2 (security), for the four- and the six-group configs alike;
+#: ``test_merged_ids_follow_the_configured_shard_order`` checks this against the live config.
 MERGED_ID = {"F3": "FND-001", "F1": "FND-002", "F4": "FND-003", "F5": "FND-004", "F2": "FND-005"}
 
 
@@ -198,9 +211,10 @@ def build_script(shards: list[Any]) -> dict[str, list[Any]]:
         "criteria_skipped": [{"criterion_id": "operability_and_governance", "reason": "Out of scope for this pass."}]})
 
     by_title = {f["id"]: f for f in assess_findings()}
+    dealt = shard_findings(shards)
 
     def shard(i: int) -> FakeResponse:
-        mine = [by_title[x] for x in SHARD_FINDINGS[i]]
+        mine = [by_title[x] for x in dealt[i]]
         for f in mine:
             f["affected_decisions"] = []                          # assess shards link no decisions
         cited = {c for f in mine for c in f["criterion_ids"]}
@@ -208,7 +222,7 @@ def build_script(shards: list[Any]) -> dict[str, list[Any]]:
                      "note": "e2e"} for c in shards[i - 1].criteria]
         areas = ([{"section_refs": ["20"], "why_sound": "The audit store is write-once for seven years.",
                    "doc_anchors": [anchor("20", 17, Q_AUDIT)], "evidence_ids": [], "related_finding_ids": ["F3"]}]
-                 if i == 1 else [])
+                 if "F3" in dealt[i] else [])
         return FakeResponse(parsed={"findings": mine, "sound_areas": areas, "coverage": coverage})
 
     def keep(fx: str, rank: int, severity: str | None, disposition: str, **kw: Any) -> dict[str, Any]:
@@ -261,7 +275,7 @@ def config(tmp_path: Path) -> EffectiveConfig:
 
 def factory(cfg: EffectiveConfig) -> Any:
     shards = cfg.agent.assess.shards_for(cfg.criteria.ids())
-    assert [len(SHARD_FINDINGS)] == [len(shards)]
+    assert sorted(shard_findings(shards)) == list(range(1, len(shards) + 1))
     return lambda rd, clock, progress: ScriptedGateway(rd, clock, shards)
 
 
@@ -336,17 +350,17 @@ async def test_e2e_synthetic_pdf_doc_only_then_resume_after_assess(tmp_path: Pat
     assert f1["provenance"]["phase"] == "revise" and f1["confidence"] == 0.85     # a revision keeps confidence
     assert by_id[MERGED_ID["F3"]]["provenance"]["phase"] == "assess"             # unchanged by refine
     assert report["verdict"]["label"] == "not_fit"
-    assert sorted(p.name for p in (rd.root / "shards").iterdir()) == [
-        "01-intent_and_fitness.json", "02-requirements_and_consistency.json", "03-claims_and_assumptions.json",
-        "04-risk_and_operations.json"]
+    assert sorted(p.name for p in (rd.root / "shards").iterdir()) == [   # one file per configured group
+        f"{k:02d}-{s.name}.json" for k, s in enumerate(cfg.agent.assess.shards_for(cfg.criteria.ids()), 1)]
     # explain works for every finding
     for fid in by_id:
         text = format_explain(explain(rd.root, fid))
         assert fid in text and "NOT IN LEDGER" not in text
     llm_ids = [e["call_id"] for e in JsonlWriter(rd.llm_log).read()]
-    assert llm_ids == [f"llm-{i:04d}" for i in range(1, 10)]                  # research made no model call
+    k = len(cfg.agent.assess.shards_for(cfg.criteria.ids()))
+    assert llm_ids == [f"llm-{i:04d}" for i in range(1, k + 6)]              # research made no model call
     convs = [e["conversation_id"] for e in JsonlWriter(rd.llm_log).read() if e["phase"] == "assess"]
-    assert convs == [f"assess-0-s{i}" for i in range(1, 5)]
+    assert convs == [f"assess-0-s{i}" for i in range(1, k + 1)]
 
     # ---- run B: dies inside refine after its model call, resumes from the assess checkpoint
     phases = {**default_phases(), PhaseName.REFINE: RefineThenInterrupt()}
@@ -360,7 +374,7 @@ async def test_e2e_synthetic_pdf_doc_only_then_resume_after_assess(tmp_path: Pat
     assert comparable(rdb.root) == comparable(rd.root)                        # ADR-009: same report
     entries = JsonlWriter(rdb.llm_log).read()
     ids = [e["call_id"] for e in entries]
-    assert len(ids) == len(set(ids)) == 10                                    # refine re-issued under a new ID
+    assert len(ids) == len(set(ids)) == k + 6                                 # refine re-issued under a new ID
     refine = [e for e in entries if e["phase"] == "refine"]
     assert [e.get("resumed", False) for e in refine] == [False, True]
     assert not any(e.get("resumed") for e in entries if e["phase"] != "refine")
