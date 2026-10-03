@@ -35,7 +35,16 @@ Rules kept from the earlier refine:
 * registry links: a ``challenges`` link needs at least two evidence items (the spec's finding rule,
   checked by ``revision_problems``); a link to an unknown registry entry is dropped in verify, as
   before;
-* delta mode: the shards set ``reassessment``; a revision cannot change it.
+* delta mode: the shards set ``reassessment``; a revision cannot change it. Every finding of the
+  previous review that no kept finding carries forward (``delta.carried_prior_ids``) needs a status in
+  ``prior_statuses`` (resolved, partially_addressed, still_open, or withdrawn_on_reassessment with a
+  one-line reason; ``llm.outputs.prior_status_problems``). An answer that leaves one out is asked
+  once, through the same repair call as an invalid answer (``call_model(ask=...)``), whose correction
+  names each missing prior ID (``prompts/refine.md`` is unchanged: the rule reaches the model through
+  the field's schema description and that correction, since a prompt edit would stop the replay of
+  committed runs); what the repair answer still leaves out is filled in by the report as
+  ``still_open``, "not re-examined", disclosed (``delta.build_prior_table``). The usable statuses go
+  to ``state.prior_statuses``.
 
 Cut with finished revisions (sit_sample_ui_1 defect 1; planner ruling of 2026-10-03): a call cut by
 the stage limit or the deadline hands back the revisions its stream had finished
@@ -69,17 +78,18 @@ from typing import Any
 from pydantic import ValidationError
 
 from sit_review_agent.context import RunContext
+from sit_review_agent.delta import carried_prior_ids
 from sit_review_agent.llm.outputs import (
     FindingDraft,
     FindingRevisionDraft,
     RefineRevisionsOutput,
     RevisionAction,
     apply_revisions,
+    prior_status_problems,
     revision_problems,
 )
-from sit_review_agent.models import DegradationType
+from sit_review_agent.models import DegradationType, PriorFindingStatus
 from sit_review_agent.phases._model_calls import (
-    PhaseCall,
     REFINE_FALLBACK_IMPACT,
     answer_vars,
     call_model,
@@ -268,6 +278,7 @@ class RefinePhase:
     async def run(self, ctx: RunContext) -> RunContext:
         phase = self.name
         drafts = list(ctx.state.finding_drafts)
+        ctx.state.prior_statuses = []                  # a re-run from the checkpoint starts clean
         if not drafts:
             ctx_event(ctx, "no findings to refine; skipping the refine call", "done", event="refine_skipped",
                       findings=0)
@@ -277,6 +288,9 @@ class RefinePhase:
         ids = [d.id for d in drafts]
         ctx_event(ctx, f"refining {len(drafts)} merged findings as one global reviewer (revisions only)",
                   event="refine_started", findings=len(drafts))
+
+        prior = prior_finding_vars(ctx)
+        prior_ids = [p["id"] for p in prior if p["id"]]
 
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
             return ctx.prompts.render(
@@ -289,10 +303,26 @@ class RefinePhase:
         def check(out: RefineRevisionsOutput) -> list[str]:
             return revision_problems(without_unexplained_changes(out, by_id), ids, drafts=by_id)
 
+        def kept_carry(out: RefineRevisionsOutput) -> set[str]:
+            kept = {r.finding_id for r in out.revisions if r.action is RevisionAction.KEEP}
+            return carried_prior_ids(d for d in drafts if d.id in kept)
+
+        def ask(out: RefineRevisionsOutput) -> list[str]:
+            return prior_status_problems(out, prior_ids, kept_carry(out)) if prior_ids else []
+
         since = len(ctx.state.degradations)             # call_model's refine-cut degradation lands after this
         call = await call_model(ctx, phase, render, RefineRevisionsOutput, iteration=iteration, purpose="refine",
-                                check=check)
+                                check=check, ask=ask)
         result = call.result
+        if result is not None and isinstance(result.parsed, RefineRevisionsOutput) and prior_ids:
+            carried, seen = kept_carry(result.parsed), set()
+            usable = []
+            for p in result.parsed.prior_statuses:
+                if p.prior_finding_id in prior_ids and p.prior_finding_id not in carried | seen and (
+                        p.note.strip() or p.status is not PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT):
+                    usable.append(p)
+                    seen.add(p.prior_finding_id)
+            ctx.state.prior_statuses = usable          # what is still missing: the report, "not re-examined"
         salvage = salvage_revisions(call.partial, drafts) if call.cut else None
         if salvage is not None and (salvage.applied == 0
                                     or revision_problems(salvage.out, ids, drafts=by_id)):

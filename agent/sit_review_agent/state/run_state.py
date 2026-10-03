@@ -16,6 +16,7 @@ from sit_review_agent.llm.outputs import (
     CriterionCoverage,
     CriterionSkip,
     FindingDraft,
+    PriorStatusDraft,
     ResearchQuestionDraft,
     SoundAreaDraft,
 )
@@ -170,6 +171,8 @@ class RunState(_State):
     sound_area_drafts: list[SoundAreaDraft] = Field(default_factory=list)
     coverage: list[CriterionCoverage] = Field(default_factory=list)
     finding_ids: FindingIdMap = Field(default_factory=FindingIdMap)   # merged-ID traceability
+    #: Delta mode: refine's status for each prior finding no kept finding carries (2026-10-03).
+    prior_statuses: list[PriorStatusDraft] = Field(default_factory=list)
 
     findings: list[Finding] = Field(default_factory=list)          # hydrated by verify
     sound_areas: list[SoundArea] = Field(default_factory=list)

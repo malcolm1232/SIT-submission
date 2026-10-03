@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import pkgutil
 
 import pytest
@@ -33,7 +34,17 @@ def test_expected_modules_exist() -> None:
 
 @pytest.mark.parametrize("name", MODULES)
 def test_module_imports(name: str) -> None:
+    if name.startswith("sit_review_agent.orchestrator_langgraph"):
+        pytest.importorskip("langgraph", reason="the comparison variant needs the optional [langgraph] extra")
     importlib.import_module(name)
+
+
+def test_the_variant_names_its_extra_when_langgraph_is_absent() -> None:
+    """The base install has no langgraph: the variant's import says which extra to install."""
+    if importlib.util.find_spec("langgraph") is not None:
+        pytest.skip("langgraph is installed here")
+    with pytest.raises(ImportError, match=r"\[langgraph\]"):
+        importlib.import_module("sit_review_agent.orchestrator_langgraph")
 
 
 def test_every_phase_satisfies_protocol() -> None:

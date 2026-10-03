@@ -95,7 +95,7 @@ by offline tests; "UNVERIFIED live" marks behaviour that only a laptop run can c
 | `cli.py` | `sit-review` / `dra`: `run` (`review`, with `--k` and `--profile`), `resume`, `explain`, `coverage`, `replay`, `selftest`, `preflight` (`--profile`), `states`; typed errors to exit codes, never a traceback (INV-11) | done (C, W2) |
 | `kruns.py` | `--k N`: N independent sequential runs `<group>-k1..kN`, intention-to-treat (failures counted, never rerun; Ctrl-C or a setup error stops the group), `extra.k_index` and `k_group.json` per run, group manifest `<run_root>/<group>.kgroup.json` with per-run outcome, verdict, findings, cost and wall time; verdict agreement is over fitness verdicts (a `not_assessed` run is counted separately and never as the modal verdict) | done (W2) |
 | `report/coverage.py` | `dra coverage`: criteria x sections map from the run directory (`nX` findings with worst severity, `ok` = checked, no issue, `?` = the criterion raised findings that verify did not keep, `-` = not applicable, not assessed or not reported, sound areas); falls back to the `report.md` coverage table for report-only run directories | done (W2) |
-| `ui/` | `dra ui` (`docs/design/ui_design.md`, shape A): Starlette on 127.0.0.1 (a non-loopback host needs `--allow-remote` and gets a warning; no authentication), one static page (`static/index.html`, `tokens.css`, `app.css`, `app.js`, no framework, no CDN); runs start as `dra review` subprocesses (`launcher.py`, Stop is SIGINT); `progress.jsonl` as SSE resumed by sequence number (`events.py`, the event schema UI-W1 writes); `report.json` rendered as stored (`rundata.py`); the chat (`chat.py`): one Opus 5.5 call at `medium` per question over the run's report, ledger, anchors and coverage only, citations checked against the run, capped at 20 calls or 3.00 USD per run, logged to `runs/<id>/ui/chat.jsonl`, never to `llm.jsonl` or the manifest | done (UI-W2); joins UI-W1's events in the integration pass |
+| `ui/` | `dra ui` (`docs/design/ui_design.md`, shape A): Starlette on 127.0.0.1 (a non-loopback host needs `--allow-remote` and gets a warning; no authentication), one static page in the DBSearch idiom (`static/index.html`, `tokens.css`, `app.css`, `app.js`, the vendored Instrument Serif, no framework, no CDN; a dark rail with the Runs and Tools lists, the topbar pills, Review, Runs, Replay, Tools, Settings and Developer pages, `GET /tools` and `POST /tools/probe` on the Tools page only); runs start as `dra review` subprocesses (`launcher.py`, Stop is SIGINT); `progress.jsonl` as SSE resumed by sequence number (`events.py`, the event schema UI-W1 writes); `report.json` rendered as stored (`rundata.py`); the chat (`chat.py`): one Opus 5.5 call at `medium` per question over the run's report, ledger, anchors and coverage only, citations checked against the run, capped at 20 calls or 3.00 USD per run, logged to `runs/<id>/ui/chat.jsonl`, never to `llm.jsonl` or the manifest | done (UI-W2); joins UI-W1's events in the integration pass |
 | `ui/` outputs | decision #36: `export.py` (the run's `report.md` as one self-contained HTML file, chat transcript appended apart), `mail.py` (Email through `config/ui.yaml`, password from `SIT_UI_SMTP_PASSWORD`, logged to `runs/<id>/ui/outbox.jsonl`), `share.py` (the page's address on this network with `--allow-remote`, else the restart line), and, under decision #39, `fetch.py` (a pasted https link to a PDF under the URL policy, 50 MB cap) | done |
 | `replay.py` | `dra replay`: re-runs a recorded run through the real phases with `ReplayLLMGateway` (recorded `llm.jsonl` outputs, request hash checked per backend) and `JournalReplayToolGateway` (recorded `tools.jsonl` results, strict), on a `ReplayClock` that follows the recorded timeline; compares the new `report.json` with the recorded one and stamps the output "replayed evidence" | done (W2); replay of a live `claude_code` run with live tools needs the logging below |
 
@@ -297,6 +297,24 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     call meets a closed session (robustness NET-06). Reader: `FaultInjectingGateway`.
   - `config.py` `ToolsConfig.session_idle_reopen_s` (default 60, `config/tools.yaml` below the pinned
     lines): a session idle longer than this is reopened before the next call. Reader: `MCPToolGateway`.
+- 2026-10-03, re-assessment delta table (`docs/transcripts/session4/reassessment_rehearsal.md` defects 1
+  and 2). Additive: every new field has a default, the schema leaves them optional, so reports, checkpoints
+  and recordings made before it still load; no existing constructor call changes. The writers and readers
+  named below land in the commits that follow this one on branch `s4/deltafix`.
+  - `models.py`: new `PriorFindingStatus` (`resolved`, `partially_addressed`, `still_open`,
+    `withdrawn_on_reassessment`) and `PriorFindingEntry` (`prior_id`, `prior_title`, `status`,
+    `finding_ids`, `note`, `re_examined`); `Review.prior_findings` (default `[]`; one entry per finding of
+    the previous review, unique `prior_id`, each listed finding carries that prior ID, empty in a full
+    review); `Reassessment.regression` (default `False`, only on `new_in_update`). Schema:
+    `$defs.PriorFindingStatus`, `$defs.PriorFindingEntry`, `Review.properties.prior_findings`,
+    `Reassessment.properties.regression`; taxonomy `prior_finding_statuses`. Writers: `phases/report.py`
+    (via the new `delta.py`). Readers: `report/render.py`, `ui/rundata.py`, `invariants.check_INV_13`,
+    `finding_refs` (section skipped), `tests/test_models.py`, `tests/test_reassessment_delta.py`.
+  - `llm/outputs.py`: new `PriorStatusDraft` and `prior_status_problems`; `RefineRevisionsOutput.prior_statuses`
+    (default `[]`). Writer: the refine answer. Readers: `phases/refine.py` (the check that asks once),
+    `tests/test_interfaces_w0.py`.
+  - `state/run_state.RunState.prior_statuses` (default `[]`). Writer: `phases/refine.py`. Reader:
+    `phases/report.py`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are

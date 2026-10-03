@@ -26,9 +26,10 @@ this run is kept: it cites the prior review.
 
 Never rewritten nor checked (:data:`SKIP_KEYS`, :data:`SKIP_SECTIONS`): a finding's own ``id``,
 verbatim passages (``quote``, ``excerpt``: document text and recorded evidence, append-only in the
-ledger), ``reassessment`` (the prior review's numbering), and the ``metadata``, ``evidence_ledger``
-and ``run_manifest`` sections. INV-12 (:func:`~sit_review_agent.invariants.check_INV_12`) checks the
-result with :func:`iter_refs`, which walks the review with the same rules.
+ledger), ``reassessment`` (the prior review's numbering), and the ``metadata``, ``evidence_ledger``,
+``run_manifest`` and ``prior_findings`` (the delta table, keyed on the prior review's IDs) sections.
+INV-12 (:func:`~sit_review_agent.invariants.check_INV_12`) checks the result with :func:`iter_refs`,
+which walks the review with the same rules.
 
 Model briefs are never rewritten: refine reads the drafts and the verdict call reads the findings'
 titles and statements as the shards wrote them, so a recorded run replays with the same requests.
@@ -53,7 +54,9 @@ DRAFT_PREFIX = "draft "
 #: Keys whose values are never rewritten nor checked (see the module docstring).
 SKIP_KEYS = frozenset({"id", "quote", "excerpt", "reassessment"})
 #: Review sections never rewritten nor checked.
-SKIP_SECTIONS = frozenset({"metadata", "evidence_ledger", "run_manifest"})
+#: ``prior_findings`` (the delta table) is keyed on the prior review's IDs and its notes are in that
+#: numbering; its current IDs are checked against the findings by ``models.Review`` instead.
+SKIP_SECTIONS = frozenset({"metadata", "evidence_ledger", "run_manifest", "prior_findings"})
 #: Keys holding a list of finding IDs.
 ID_LIST_KEYS = frozenset({"finding_ids", "related_finding_ids"})
 #: The words that replace a removed reference that cannot go with its clause.

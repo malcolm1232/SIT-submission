@@ -224,6 +224,47 @@ def _finding_view(f: Finding, ledger: dict[str, dict[str, Any]], registry: dict[
     }
 
 
+#: The delta table's statuses in report order (``Review.prior_findings``), then the new findings.
+PRIOR_STATUS_ORDER = ("resolved", "partially_addressed", "still_open", "withdrawn_on_reassessment")
+
+
+def _delta_view(review: Review, ordered: list[Any], views: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """The "Changes since the previous version" section. With the delta table (``prior_findings``,
+    2026-10-03) it is keyed on the prior review's IDs: one row per prior finding, each with both IDs
+    ("FND-003, was FND-002") or "(no finding in this review)", its status and note; then the findings
+    new in the update, a regression marked. A report without the table (written earlier, or a
+    ``--v1`` review with no prior review) lists this review's findings by their reassessment, as before."""
+    by_id = {f.id: f for f in review.findings}
+    entries = list(review.prior_findings)
+    new = [{**views[f.id], "regression": bool(f.reassessment and f.reassessment.regression)} for f in ordered
+           if f.reassessment is None or f.reassessment.status.value == "new_in_update"]
+    if not entries:
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for f in ordered:
+            st = f.reassessment.status.value if f.reassessment else "new_in_update"
+            if st != "new_in_update":
+                groups.setdefault(st, []).append({
+                    "label": f"{f.id}, was {f.reassessment.prior_finding_id}" if f.reassessment else f.id,
+                    "title": _one_line(f.title),
+                    "note": _one_line(f.reassessment.note) if f.reassessment and f.reassessment.note else None})
+        return {"table": False, "prior_count": None, "not_re_examined": 0, "new": new,
+                "groups": [{"status": s, "label": s.replace("_", " "), "rows": groups[s]}
+                           for s in PRIOR_STATUS_ORDER if s in groups]}
+    rows: dict[str, list[dict[str, Any]]] = {}
+    for e in entries:
+        if e.finding_ids:
+            label = "; ".join(f"{fid}, was {e.prior_id}" for fid in e.finding_ids)
+            title = _one_line(by_id[e.finding_ids[0]].title) if e.finding_ids[0] in by_id else _one_line(e.prior_title)
+        else:
+            label = f"was {e.prior_id} (no finding in this review)"
+            title = _one_line(e.prior_title)
+        rows.setdefault(e.status.value, []).append({"label": label, "title": title,
+                                                    "note": _one_line(e.note) if e.note else None})
+    return {"table": True, "prior_count": len(entries), "not_re_examined": sum(not e.re_examined for e in entries),
+            "new": new, "groups": [{"status": s, "label": s.replace("_", " "), "rows": rows[s]}
+                                   for s in PRIOR_STATUS_ORDER if s in rows]}
+
+
 def _coverage_outcome(outcome: str, note: str | None) -> str:
     """The coverage table's outcome cell. A run with no assessment stores ``not_applicable`` with a
     note starting "not assessed" (``phases.assess``); the cell says "not assessed", as ``dra
@@ -310,14 +351,7 @@ def render_markdown(review: Review, *, template: str = "standard", min_severity:
     md = review.metadata
     doc_by_role = {d.role.value: d for d in md.documents}
     under = doc_by_role.get("under_review", md.documents[0])
-    delta = None
-    if md.review_mode is ReviewMode.DELTA:
-        groups: dict[str, list[dict[str, Any]]] = {}
-        for f in ordered:
-            st = f.reassessment.status.value if f.reassessment else "new_in_update"
-            groups.setdefault(st, []).append(views[f.id])
-        delta = [{"status": s, "label": s.replace("_", " "), "findings": groups[s]}
-                 for s in ("resolved", "partially_addressed", "still_open", "new_in_update") if s in groups]
+    delta = _delta_view(review, ordered, views) if md.review_mode is ReviewMode.DELTA else None
     counts = severity_counts(review)
     used = {e.evidence_id for f in review.findings for e in f.evidence} | {
         x for s in review.sound_areas for x in s.evidence_ids}

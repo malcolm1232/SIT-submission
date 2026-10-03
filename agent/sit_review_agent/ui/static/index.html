@@ -3,39 +3,67 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SIT design review</title>
+<title>SIT review</title>
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header class="top" id="top">
-  <a class="brand" href="/">SIT design review</a>
-  <span class="doc" id="top-doc">no run open</span>
-  <span class="tabs" id="top-tabs" hidden></span>
-  <span class="spacer"></span>
-  <span class="meta num" id="top-meta"></span>
-  <span id="top-action"></span>
-</header>
-<main id="app" class="page"></main>
+<!-- DBSearch's app grid (docs/design/ui_restyle.md): a dark rail, a topbar of pills, the surface. -->
+<div class="app" id="app-grid">
+  <nav class="navrail" id="navrail" aria-label="Primary"><div class="navrail-inner">
+    <a class="navrail-brand" href="/"><span class="word">SIT review</span><span class="ai">.</span></a>
+    <div class="navrail-group">Workspace</div>
+    <a class="navrail-item" data-page="review" href="/"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h6l3 3v8H4z"/><path d="m6.5 9 1.5 1.5 3-3"/></svg><span class="label">Review</span></a>
+    <a class="navrail-item" data-page="runs" href="/?page=runs"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg><span class="label">Runs</span></a>
+    <a class="navrail-item" data-page="replay" href="/?page=replay"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg><span class="label">Replay</span></a>
+    <div class="navrail-group">Operate</div>
+    <a class="navrail-item" data-page="tools" href="/?page=tools"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5v4M10 2.5v4"/><path d="M4 6.5h8v2a4 4 0 0 1-8 0z"/><path d="M8 12.5v2"/></svg><span class="label">Tools</span></a>
+    <a class="navrail-item" data-page="settings" href="/?page=settings"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5h11M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/><circle cx="10" cy="11" r="1.6"/></svg><span class="label">Settings</span></a>
+    <a class="navrail-item" data-page="developer" href="/?page=developer"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="m5.5 5-3 3 3 3M10.5 5l3 3-3 3"/></svg><span class="label">Developer</span></a>
+    <!-- the surface slot (rail.css .navrail-slot): the runs and the tool servers, every value from the server's JSON -->
+    <div class="navrail-slot" id="navrail-slot">
+      <div class="rail-head"><span>Runs</span><span id="rail-runs-note"></span></div>
+      <div id="rail-runs"></div>
+      <div class="rail-head"><span>Tools</span><span id="rail-tools-note"></span></div>
+      <div id="rail-tools"></div>
+    </div>
+    <div class="navrail-foot">
+      <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>
+      <button class="navrail-toggle" id="navrail-toggle" type="button" aria-label="Collapse the rail"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6.5 4 4 4-4 4"/></svg><span class="label">Collapse</span></button>
+    </div>
+  </div></nav>
+  <header class="topbar">
+    <span class="edition-pill" id="top-edition"><span class="pulse"></span><span id="top-edition-text"></span></span>
+    <a class="trust-chip" id="top-tools" href="/?page=tools"></a>
+    <span class="spacer"></span>
+    <label class="model-pick">Profile <select class="sel" id="top-profile" aria-label="Profile for the next review"></select></label>
+  </header>
+  <main id="app" class="surface"></main>
+</div>
 
-<!-- Frame 1: the drop screen. One empty state: what this is, what to do, one primary action (craft 4.5, 5.1). -->
+<!-- The Review page: DBSearch's empty state, the drop zone, the sample-document chips and the start form. One primary action (craft 4.5, 5.1). -->
 <template id="tpl-drop">
-  <div class="drop-wrap">
-    <form id="start-form">
-      <div class="dropzone" id="dropzone">
-        <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--fg-muted)" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
-        <div class="big" style="margin-top:12px">Drop the design document here</div>
-        <div class="muted small" style="margin-top:4px">PDF, or a page-marked .txt or Markdown file. The agent reads it only once it is ingested and hashed.</div>
-        <div class="chosen" id="doc-chosen" hidden></div>
-        <div style="margin-top:16px"><label class="btn" for="doc-input">Choose file</label>
-          <input type="file" id="doc-input" name="document" accept=".pdf,.txt,.md" hidden></div>
-        <div class="link-row"><input class="input" id="doc-link" type="url" autocomplete="off" spellcheck="false" placeholder="or paste a link to a PDF (https only)" aria-label="Link to a PDF"></div>
-        <div class="micro muted" id="link-help">A pasted link is fetched by this server when the review starts: public hosts only, under config/url_policy.yaml, at most <span id="link-max"></span> MB, saved with the run's inputs.</div>
-        <div class="micro error" id="link-error" hidden>Paste one https link to a PDF; other schemes are not fetched.</div>
-      </div>
-      <div class="field" style="margin-top:24px">
+  <div class="empty">
+    <h1>Review a design document</h1>
+    <p>Four concurrent shards assess it, each quote is checked against the page text, and a ranked verdict follows.<br>The agent reads the document only once it is ingested and hashed; nothing on this page is estimated.</p>
+  </div>
+  <form id="start-form">
+    <div class="dropzone" id="dropzone">
+      <svg class="ico" viewBox="0 0 24 24" style="width:20px;height:20px;color:var(--fg-muted)" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+      <div class="big" style="margin-top:10px">Drop the design document here</div>
+      <div class="muted small" style="margin-top:4px">PDF, or a page-marked .txt or Markdown file.</div>
+      <div class="chosen" id="doc-chosen" hidden></div>
+      <div style="margin-top:14px"><label class="btn" for="doc-input">Choose file</label>
+        <input type="file" id="doc-input" name="document" accept=".pdf,.txt,.md" hidden></div>
+      <div class="link-row"><input class="input" id="doc-link" type="url" autocomplete="off" spellcheck="false" placeholder="or paste a link to a PDF (https only)" aria-label="Link to a PDF"></div>
+      <div class="micro muted" id="link-help">A pasted link is fetched by this server when the review starts: public hosts only, under config/url_policy.yaml, at most <span id="link-max"></span> MB, saved with the run's inputs.</div>
+      <div class="micro error" id="link-error" hidden>Paste one https link to a PDF; other schemes are not fetched.</div>
+    </div>
+    <div class="starters" id="starters"><span class="lead">or a sample document from config/ui.yaml:</span></div>
+    <div class="form">
+      <div class="field">
         <span class="label">Previous version (optional)</span>
-        <div class="picker"><label class="btn" for="prev-input">Choose file</label><span class="muted" id="prev-chosen">No file chosen</span>
+        <div class="picker"><label class="btn" for="prev-input">Choose file</label><span class="muted small" id="prev-chosen">No file chosen</span>
           <input type="file" id="prev-input" name="previous" accept=".pdf,.txt,.md" hidden></div>
         <div class="help">Given, the run is a delta re-assessment of the document above against this earlier version (<span class="mono">--v1</span>): every prior finding is marked resolved, partially addressed, still open or new in update.</div>
       </div>
@@ -43,16 +71,16 @@
         <div class="field">
           <label for="profile-select">Profile</label>
           <select class="select" id="profile-select" name="profile"></select>
-          <div class="help" id="profile-help"></div>
+          <div class="help num" id="profile-help"></div>
         </div>
         <div class="field">
           <span class="label">Tools</span>
-          <label class="check"><input type="checkbox" id="no-tools" name="no_tools" value="1"> Document only (<span class="mono">--no-tools</span>)</label>
+          <label class="check"><input type="checkbox" id="no-tools" name="no_tools" value="1"><span>Document only (<span class="mono">--no-tools</span>)</span></label>
           <div class="help" id="tools-help"></div>
         </div>
         <div class="field">
           <label for="run-id">Run ID (optional)</label>
-          <input class="select" id="run-id" name="run_id" autocomplete="off" spellcheck="false" placeholder="ui-<date>-<time>-<hex>">
+          <input class="input" id="run-id" name="run_id" autocomplete="off" spellcheck="false" placeholder="ui-<date>-<time>-<hex>">
           <div class="help">Name of the run directory (<span class="mono">--run-id</span>): letters, digits, dot, dash and underscore. Left empty, the server names it by the start time.</div>
         </div>
       </div>
@@ -62,29 +90,27 @@
       </div>
       <div class="cmd" id="cmd-preview"></div>
       <div class="error" id="start-error" hidden></div>
-    </form>
-    <div>
-      <h2>Recent runs</h2>
-      <table class="grid num" id="runs-table" style="margin-top:8px">
-        <thead><tr><th>Run</th><th>Document</th><th>Verdict</th><th class="r">Findings</th><th class="r">Wall</th><th class="r">Cost</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <div class="micro muted" style="margin-top:8px" id="runs-note">Every row is a run directory; opening one reads its files, nothing is re-run.</div>
     </div>
-  </div>
+  </form>
 </template>
 
-<!-- Frame 2: the run. Tracks with elapsed time against the stage limit; drafts labelled unverified; a structured status feed (craft 4.4). -->
+<!-- The run: a serif head with the run clock, tracks with elapsed time against the stage limit, drafts labelled unverified, the status feed (craft 4.4). -->
 <template id="tpl-run">
+  <div class="surface-head" id="run-head">
+    <div><div class="surface-title" id="top-doc"></div><div class="surface-sub num" id="top-sub"></div></div>
+    <div class="head-right"><div class="clock num" id="top-meta"></div><span id="top-action"></span></div>
+  </div>
+  <div class="tabrow" id="run-tabrow" hidden><span class="tabs" id="top-tabs"></span></div>
   <div class="finished-bar" id="finished-bar" hidden></div>
   <div class="run-wrap">
     <div class="stages">
       <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num" id="stage1-limit"></span></div>
       <div class="tracks" id="stage1-tracks"></div>
+      <div id="stage1-disclosures"></div>
       <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
       <div class="tracks" id="seq-tracks"></div>
       <div class="notice" id="stop-rule" hidden></div>
-      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received.</div>
+      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
     </div>
     <div class="feed">
       <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <span class="pill draft">draft, unverified</span></h2>
@@ -99,56 +125,43 @@
   </div>
 </template>
 
-<!-- Frame 3: the review, and the chat as a reading aid kept apart from it. -->
+<!-- The finished review: verdict first, the three outputs as quiet pills in the head, the tabs, and the ask composer at the foot as a reading aid kept apart from the review. -->
 <template id="tpl-review">
-  <div class="rev-wrap">
-    <div class="review">
-      <section class="outputs" id="outputs" aria-label="Take the review with you" hidden>
-        <div class="out">
-          <h3>Download</h3>
-          <div class="row">
-            <a class="btn" id="out-download" download>Download review (HTML)</a>
-            <a class="btn ghost" id="out-md" download>report.md</a>
-            <a class="btn ghost" id="out-json" download>report.json</a>
-          </div>
-          <div class="help"><span id="out-download-help"></span> <a id="out-open" target="_blank" rel="noopener">Open it in a new tab</a></div>
-        </div>
-        <div class="out">
-          <h3>Email</h3>
-          <form class="row" id="email-form" novalidate>
-            <input class="input" id="email-to" type="email" autocomplete="email" spellcheck="false" placeholder="name@example.org" aria-label="Recipient address">
-            <button class="btn" type="submit" id="email-send" disabled>Email the review</button>
-          </form>
-          <div class="help"><span id="email-help"></span> <span id="email-result" hidden></span></div>
-        </div>
-        <div class="out">
-          <h3>Share</h3>
-          <div class="row"><button class="btn" type="button" id="share-btn" aria-expanded="false">Show share link</button></div>
-          <div class="help" id="share-hint">The address of this page for others on this network, if the server allows it.</div>
-          <div class="share" id="share-box" hidden>
-            <div class="help" id="share-text"></div>
-            <div class="cmd" id="share-line"></div>
-          </div>
-        </div>
-      </section>
-      <div id="review"></div>
-    </div>
-    <aside class="chat" id="chat" aria-label="Ask the review"><div class="chat-inner">
-      <div class="head"><h2>Ask the review</h2><span class="pill" id="chat-label">reading aid, not the review</span></div>
-      <div class="notice">Answers come only from this run directory: report.json, the evidence entries its findings cite and the coverage outcomes. The model may quote and cite, never add a finding, change one, or re-run the review. If the review does not answer a question, it says so and nothing more.</div>
-      <div id="chat-turns"></div>
-      <form class="composer" id="chat-form">
-        <textarea id="chat-input" placeholder="Ask about a finding, an objective, a page or an evidence ID" aria-label="Question"></textarea>
-        <div class="bar2">
-          <span class="micro muted" id="chat-model"></span>
-          <span class="hint">Cmd+Enter to send</span>
-          <button class="btn" type="submit" id="chat-send" aria-label="Send"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
-        </div>
-      </form>
-      <div class="error" id="chat-error" hidden></div>
-      <div class="budget num" id="chat-budget"></div>
-    </div></aside>
+  <div class="surface-head">
+    <div><div class="surface-title" id="top-doc"></div><div class="surface-sub num" id="top-sub"></div></div>
+    <section class="head-actions" id="outputs" aria-label="Take the review with you" hidden>
+      <div class="out"><h3 class="sr-only">Download</h3><a class="btn quiet" id="out-download" download><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg><span id="out-download-label">Download review (HTML)</span></a></div>
+      <div class="out"><h3 class="sr-only">Email</h3><button class="btn quiet" type="button" id="email-btn" aria-expanded="false" aria-controls="email-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11v8h-11z"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg>Email the review</button></div>
+      <div class="out"><h3 class="sr-only">Share</h3><button class="btn quiet" type="button" id="share-btn" aria-expanded="false" aria-controls="share-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5"/><path d="M7 4.5 8.5 3a2.5 2.5 0 0 1 3.5 3.5L10.5 8"/><path d="M9 11.5 7.5 13A2.5 2.5 0 0 1 4 9.5L5.5 8"/></svg>Share link</button></div>
+    </section>
   </div>
+  <div class="tabrow"><span class="tabs" id="top-tabs"></span><span class="micro muted" id="tab-note"></span></div>
+  <div class="out-line" id="out-line" hidden><span id="out-download-help"></span><a id="out-open" target="_blank" rel="noopener">Open it in a new tab</a><a id="out-md" download>report.md</a><a id="out-json" download>report.json</a></div>
+  <div class="outline" id="email-box" hidden>
+    <form class="row" id="email-form" novalidate>
+      <input class="input" id="email-to" type="email" autocomplete="email" spellcheck="false" placeholder="name@example.org" aria-label="Recipient address">
+      <button class="btn" type="submit" id="email-send" disabled>Email the review</button>
+    </form>
+    <div class="help" style="margin-top:8px"><span id="email-help"></span> <span id="email-result" hidden></span></div>
+  </div>
+  <div class="outline" id="share-box" hidden>
+    <div id="share-text"></div>
+    <div class="cmd" id="share-line"></div>
+  </div>
+  <div id="review"></div>
+  <section class="ask" id="chat" aria-label="Ask the review">
+    <div class="head"><h2>Ask the review</h2><span class="pill" id="chat-label">reading aid, not the review</span></div>
+    <div class="notice">Answers come only from this run directory: report.json, the evidence entries its findings cite and the coverage outcomes. The model may quote and cite, never add a finding, change one, or re-run the review. If the review does not answer a question, it says so and nothing more.</div>
+    <div id="chat-turns"></div>
+    <form class="composer-shell" id="chat-form">
+      <textarea id="chat-input" rows="1" placeholder="Ask about a finding, an objective, a page or an evidence ID" aria-label="Question"></textarea>
+      <span class="ready" id="chat-ready">Grounded in this review</span>
+      <button class="ask-btn" type="submit" id="chat-send">Ask</button>
+    </form>
+    <div class="composer-hint"><span>Enter to ask · Shift + Enter for a new line</span><span class="trust" id="chat-hint"></span></div>
+    <div class="error" id="chat-error" hidden></div>
+    <div class="budget num" id="chat-budget"></div>
+  </section>
 </template>
 
 <script src="/static/app.js"></script>

@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from sit_review_agent.models import (
     NON_REFINEMENT_DISPOSITIONS,
@@ -27,6 +27,7 @@ from sit_review_agent.models import (
     DecisionRelation,
     Disposition,
     Kind,
+    PriorFindingStatus,
     ReassessmentStatus,
     RegistryEntryType,
     Severity,
@@ -260,10 +261,57 @@ class FindingRevisionDraft(Draft):
     reason: str
 
 
+class PriorStatusDraft(Draft):
+    """The status of a finding of the previous review that no kept finding carries forward: resolved,
+    partially_addressed, still_open, or withdrawn_on_reassessment (you no longer assert it; the note
+    gives the one-line reason)."""
+
+    prior_finding_id: str
+    status: PriorFindingStatus
+    note: str
+
+
 class RefineRevisionsOutput(Draft):
-    """The refine answer of the latency redesign: one global call, one revision per finding."""
+    """The refine answer of the latency redesign: one global call, one revision per finding; in a
+    re-review also one prior status per finding of the previous review that no kept finding carries."""
 
     revisions: list[FindingRevisionDraft]
+    # Optional so full-review answers and recordings made before 2026-10-03 still parse. The rule
+    # reaches the model through this description and the repair message (prior_status_problems), not
+    # prompts/refine.md: a prompt edit changes the prompt bundle, and replay of a committed run
+    # refuses a changed bundle.
+    prior_statuses: list[PriorStatusDraft] = Field(default_factory=list, description=(
+        "Re-review only, otherwise empty. Every finding of the prior review gets exactly one status. A prior "
+        "finding that a kept finding carries forward (its reassessment prior_finding_id) has its status there. "
+        "Give exactly one entry here for every other prior finding listed in the brief, including one whose only "
+        "carrier you merge or withdraw, and none for a prior finding a kept finding carries. The IDs are the prior "
+        "review's own numbering, independent of the merged findings' IDs."))
+
+
+def prior_status_problems(out: RefineRevisionsOutput, prior_ids: Sequence[str], carried: set[str]) -> list[str]:
+    """What keeps ``out.prior_statuses`` from giving exactly one status to every prior finding in
+    ``prior_ids`` that no kept finding carries (``carried``): a missing one, one given twice, one for
+    an unknown ID or for a carried finding, and a withdrawal with no reason. Empty in a full review
+    (no ``prior_ids``)."""
+    problems: list[str] = []
+    known = set(prior_ids)
+    given: dict[str, int] = {}
+    for p in out.prior_statuses:
+        given[p.prior_finding_id] = given.get(p.prior_finding_id, 0) + 1
+        if p.prior_finding_id not in known:
+            problems.append(f"prior_statuses: {p.prior_finding_id} is not a finding of the previous review")
+        elif p.prior_finding_id in carried:
+            problems.append(f"prior_statuses: {p.prior_finding_id} is already carried forward by a kept finding's "
+                            "reassessment; give no prior status for it")
+        if p.status is PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT and not p.note.strip():
+            problems.append(f"prior_statuses: {p.prior_finding_id} is withdrawn without a one-line reason in note")
+    problems += [f"prior_statuses: {pid} is given {n} times; give it exactly once" for pid, n in given.items() if n > 1]
+    missing = [pid for pid in prior_ids if pid not in carried and pid not in given]
+    if missing:
+        problems.append("prior_statuses: no status for prior finding(s) " + ", ".join(missing) + " (no kept finding "
+                        "carries them forward); give each resolved, partially_addressed, still_open or "
+                        "withdrawn_on_reassessment with a one-line note")
+    return problems
 
 
 def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
