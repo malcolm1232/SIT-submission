@@ -469,5 +469,6 @@
   },
   "outcome": "completed_nominal",
   "extra": {}
- }
+ },
+ "prior_findings": []
 }

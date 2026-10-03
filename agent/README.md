@@ -297,6 +297,24 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
     call meets a closed session (robustness NET-06). Reader: `FaultInjectingGateway`.
   - `config.py` `ToolsConfig.session_idle_reopen_s` (default 60, `config/tools.yaml` below the pinned
     lines): a session idle longer than this is reopened before the next call. Reader: `MCPToolGateway`.
+- 2026-10-03, re-assessment delta table (`docs/transcripts/session4/reassessment_rehearsal.md` defects 1
+  and 2). Additive: every new field has a default, the schema leaves them optional, so reports, checkpoints
+  and recordings made before it still load; no existing constructor call changes. The writers and readers
+  named below land in the commits that follow this one on branch `s4/deltafix`.
+  - `models.py`: new `PriorFindingStatus` (`resolved`, `partially_addressed`, `still_open`,
+    `withdrawn_on_reassessment`) and `PriorFindingEntry` (`prior_id`, `prior_title`, `status`,
+    `finding_ids`, `note`, `re_examined`); `Review.prior_findings` (default `[]`; one entry per finding of
+    the previous review, unique `prior_id`, each listed finding carries that prior ID, empty in a full
+    review); `Reassessment.regression` (default `False`, only on `new_in_update`). Schema:
+    `$defs.PriorFindingStatus`, `$defs.PriorFindingEntry`, `Review.properties.prior_findings`,
+    `Reassessment.properties.regression`; taxonomy `prior_finding_statuses`. Writers: `phases/report.py`
+    (via the new `delta.py`). Readers: `report/render.py`, `ui/rundata.py`, `invariants.check_INV_13`,
+    `finding_refs` (section skipped), `tests/test_models.py`, `tests/test_reassessment_delta.py`.
+  - `llm/outputs.py`: new `PriorStatusDraft` and `prior_status_problems`; `RefineRevisionsOutput.prior_statuses`
+    (default `[]`). Writer: the refine answer. Readers: `phases/refine.py` (the check that asks once),
+    `tests/test_interfaces_w0.py`.
+  - `state/run_state.RunState.prior_statuses` (default `[]`). Writer: `phases/refine.py`. Reader:
+    `phases/report.py`.
 - `models.py` changes only together with `spec/finding.schema.json`. `tests/test_models.py`
   checks enum parity and validates against the schema on every run.
 - `config/agent.yaml` lines 1-12, `stop_rules.yaml` lines 1-8 and `tools.yaml` lines 1-17 are
