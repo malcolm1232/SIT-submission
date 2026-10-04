@@ -412,3 +412,38 @@ def test_a_resumed_run_continues_on_the_page_with_one_sequence(page) -> None:
                       base + "/runs/progress_resume/events")
     ids = [int(ln[4:]) for ln in sse.splitlines() if ln.startswith("id: ")]
     assert ids == list(range(1, len(evs) + 1)) and "event: end" in sse
+
+
+# ------------------------------------------------------------------ the rail's Logs panel
+
+
+LOG_BOXES = """() => { const l = document.getElementById('rail-log'), slot = document.getElementById('navrail-slot');
+  const top = l.getBoundingClientRect().top + l.clientTop, bottom = top + l.clientHeight;
+  const s = slot.getBoundingClientRect();
+  const vis = [...l.querySelectorAll('.rail-logline')].map(e => e.getBoundingClientRect())
+    .filter(r => r.bottom > top && r.top < bottom);
+  return {top, bottom, slot: [s.top, s.bottom], scrolled: l.scrollTop, lines: vis.map(r => [r.top, r.bottom])}; }"""
+
+
+def test_the_logs_panel_shows_whole_lines_at_the_newest_and_at_the_top(page) -> None:
+    """The Logs panel follows progress.log to its newest line. Its first visible line used to sit half
+    above the panel's content top (the box was not a whole number of lines tall, so scrolling to the
+    bottom left the remainder at the top). Every visible line is now whole, followed and scrolled up."""
+    pg, base, runs, _state = page
+    (runs / "progress" / "progress.log").write_text(
+        "".join(f"[00:{i:02d}] assess     | OK line {i}\n" for i in range(60)), encoding="utf-8")
+    for width, height in ((1440, 900), (1280, 720)):
+        pg.set_viewport_size({"width": width, "height": height})
+        open_run(pg, base, "progress")
+        pg.wait_for_function("document.querySelectorAll('#rail-log .rail-logline').length === 60")
+        pg.evaluate("document.querySelector('.rail-log-frame').scrollIntoView({block: 'nearest'})")
+        for where in ("followed", "top"):
+            if where == "top":
+                pg.evaluate("document.getElementById('rail-log').scrollTop = 0")
+            m = pg.evaluate(LOG_BOXES)
+            assert len(m["lines"]) >= 3, (width, where, m)
+            assert m["lines"][0][0] >= m["top"], (width, where, m)       # the first visible line is not cut at the top
+            assert m["lines"][-1][1] <= m["bottom"], (width, where, m)   # nor the last at the bottom
+            # and the rail shows the whole panel, scrolled into view where the rail is short
+            assert m["slot"][0] <= m["top"] and m["bottom"] <= m["slot"][1], (width, where, m)
+        assert pg.locator("#rail-log .rail-logline").last.text_content() == "[00:59] assess     | OK line 59"
