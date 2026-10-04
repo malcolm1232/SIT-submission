@@ -23,6 +23,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_lakehouse_v2_1 | research_lakehouse | FULL | medium | 505 | 265.5 | completed_degraded | 69 | 7.61 (lb) | 0 | 4.38/6.15/6.68 | 3.32/5.46/6.20 |
 | d_iot_v2_1 | iot_fleet | FULL | medium | 521 | 265.4 | completed_degraded | 70 | 6.98 (lb) | 0 | 3.32/5.46/6.20 | 4.18/5.74/6.24 |
 | d_consent_v2_1 | consent_service | FULL | medium | 256 | 229.2 | aborted_graceful in refine (rc=3) | - | 5.76 | - | 4.18/5.74/6.24 | 7.87/6.89/6.63 |
+| d_payments_v1_2 | payments_orchestration | FULL | medium | 449 | 265.6 | completed_degraded | 23 | 5.53 (lb) | 0 | 3.22/3.14/3.07 | 4.14/4.57/4.05 |
 
 ## Scores
 
