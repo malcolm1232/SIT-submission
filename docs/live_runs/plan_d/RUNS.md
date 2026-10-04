@@ -27,6 +27,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_payments_v1_3 | payments_orchestration | FULL | medium | 444 | 265.1 | completed_degraded | 25 | 6.37 (lb) | 0 | 4.14/4.57/4.05 | 4.33/6.47/5.62 |
 | d_iot_v1_2 | iot_fleet | FULL | medium | 503 | 265.4 | completed_degraded | 31 | 4.43 (lb) | 0 | 4.33/6.47/5.62 | 5.34/6.14/5.95 |
 | d_iot_v1_3 | iot_fleet | FULL | medium | 433 | 265.1 | completed_degraded | 25 | 4.90 (lb) | 0 | 5.34/6.14/5.95 | 3.73/4.59/5.30 |
+| d_payments_v1_low | payments_orchestration | FULL | low | 241 | 152.1 | completed_degraded | 20 | 4.62 | 0 | 3.73/4.59/5.30 | 5.15/5.10/5.36 |
 
 ## Scores
 
@@ -46,3 +47,4 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_iot_v2_1 | iot_fleet | rescore after reset: stopped_budget (--max-cost-usd 18 reached, rc=3; no metrics written) | - | - | - | - | - | 15.62 | 275 | 3.22/3.14/3.07 | 5.09/5.20/4.13 |
 | d_payments_v1_3 | payments_orchestration | 13/14 (0.929) | 1.000 | 0.591 strict / 0.909 adj | 0.933 | 1.000 | 0 of 22 | 5.50 | 227 | 4.33/6.47/5.62 | 7.65/7.22/6.17 |
 | d_iot_v1_2 | iot_fleet | 12/14 (0.857) | 0.929 | 0.444 strict / 0.815 adj | 0.850 | 0.750 | 0 of 27 | 6.83 | 246 | 5.34/6.14/5.95 | 4.38/5.49/5.75 |
+| d_iot_v1_3 | iot_fleet | 11/14 (0.786) | 0.857 | 0.524 strict / 0.857 adj | 0.783 | 0.750 | 0 of 21 | 5.35 | 214 | 3.73/4.59/5.30 | 5.23/5.11/5.38 |
