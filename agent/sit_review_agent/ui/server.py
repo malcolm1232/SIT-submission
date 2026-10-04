@@ -26,7 +26,8 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/export/<part>   one part as a standalone file (``01_summary.html`` ... ``08_traceability.html``)
     GET  /runs/<id>/report.md       the run's report.md, as a download
     GET  /runs/<id>/report.json     the run's report.json, as a download
-    GET  /runs/<id>/outputs         whether Email is configured, and the share link (or how to get one)
+    GET  /runs/<id>/outputs         the bundle the Download saves (name, file count, size), whether Email is
+                                    configured, and the share link (or how to get one)
     POST /runs/<id>/email           the export and report.md to one address (``ui.mail``)
     POST /runs/<id>/stop            SIGINT to a run this server started
     GET  /runs/<id>/chat            chat history and budget
@@ -383,9 +384,10 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, "No such run.")
         exp = None
         if (rd / "report.md").is_file():
-            size = len(export.export_html(rd, replayed=rundata.summary(rd)["replayed"]).encode("utf-8"))
+            # The size of the bundle the Download control saves (export.html?download=1), built as run_export builds it.
+            size = len(export.export_zip(rd, replayed=rundata.summary(rd)["replayed"]))
             exp = {"size": f"{max(1, round(size / 1024))} KB", "has_chat": chat.log_path(rd).is_file(),
-                   "name": export.export_name(rd.name)}
+                   "name": export.bundle_name(rd.name), "files": len(export.bundle_names(rd))}
         return _json({"export": exp, "email": mail.status(state.smtp, state.smtp_detail),
                       "share": share.share_info(bind_host=state.bind_host, port=state.port, run_id=rd.name,
                                                 ui_args=state.ui_args, lan_ip=state.lan_ip)})

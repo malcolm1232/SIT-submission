@@ -983,10 +983,11 @@ async function setupOutputs(info) {
   $("out-open").href = base + "/export.html";
   $("out-md").href = base + "/report.md";
   $("out-json").href = base + "/report.json";
-  $("out-download-label").textContent = "Download review (HTML" + (out.export ? ", " + out.export.size : "") + ")";
-  $("out-download-help").textContent = "One file, no script, nothing loaded from the network: this run's report.md shown as HTML" +
+  $("out-download-label").textContent = "Download review (zip" + (out.export ? ", " + out.export.size : "") + ")";
+  $("out-download-help").textContent = "A zip of one review page with a sidebar, whose one script only shows and hides sections, " +
+    "the eight parts as separate files, report.md and report.json, nothing loaded from the network" +
     (info.replayed ? ", stamped replayed evidence" : "") +
-    (out.export && out.export.has_chat ? ", then the chat transcript, marked as not part of the review." : ".");
+    (out.export && out.export.has_chat ? ", the chat transcript after the review, marked as not part of it." : ".");
   $("out-line").hidden = false;
   const to = $("email-to"), send = $("email-send"), help = $("email-help"), result = $("email-result");
   const e = out.email;
