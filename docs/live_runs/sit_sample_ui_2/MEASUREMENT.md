@@ -140,6 +140,7 @@ No answer key exists for this document (decision #35), so nothing was scored.
 - Committed: `report.md`, `report.json`, `manifest.json`, `effective_config.json`, `state.json`, `tools.jsonl`, `tools_list.jsonl`, `anchors.json`, `ledger.json`, `ledger.jsonl`, `checkpoints/` (8), `shards/` (6), `text/` (2), `ui/launch.json`, all byte-identical to the run directory, and `llm_calls.json`.
 - `llm_calls.json` replaces the run's `llm.jsonl`: one row per model call with ids, purpose, shard, timings, stop reasons, usage, cost, estimated usage and the count of returned items, made by script; no prompt, answer, argv or error text.
   The manifest's `llm_jsonl_sha256` therefore has no file here, and this record cannot be replayed with `dra replay`.
+  This record cannot be replayed byte for byte because the raw model log is summarised, whereas `sit_sample_ui_1` was committed as a byte copy of its run directory, including its raw `llm.jsonl`.
 - Left out: `llm.jsonl`, `progress.log`, `ui/console.txt`, `ui/input/sit_sample_v1.pdf` (the lab's document), the empty `snapshots/`, and `progress.jsonl` (excluded by `.gitignore`).
 - `text/` holds the extracted text of the lab's document; it is the lab's material in a private repo and must be excluded from any public snapshot.
 - The copied files keep the document's own title, which contains an em dash (167 occurrences across 14 files); they are not edited, so their hashes match the manifest.
