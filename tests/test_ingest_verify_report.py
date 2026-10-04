@@ -38,7 +38,7 @@ from sit_review_agent.models import (
     ToolCallStatus,
 )
 from sit_review_agent.phases.ingest import IngestPhase, doc_id_for, placeholder_ref
-from sit_review_agent.phases.report import ReportPhase, assemble_review, fallback_verdict
+from sit_review_agent.phases.report import LINK_REMOVED, ReportPhase, _redact, assemble_review, fallback_verdict
 from sit_review_agent.phases.verify import VerifyPhase, hydrate_finding, settle_registry_anchors
 from sit_review_agent.progress import NullProgress
 from sit_review_agent.prompts import PromptBundle
@@ -431,6 +431,25 @@ async def test_report_writes_valid_review_and_passes_invariants(tmp_path: Path) 
     for key, heading in SECTION_ORDER:
         if key not in ("header", "delta"):
             assert f"## {heading}" in md, heading
+
+
+def test_redact_never_rewrites_a_verbatim_quote() -> None:
+    """Belt and braces for INV-04/05: even a URL outside ``allowed`` stays in an anchor quote and in a
+    doc or external quote that occurs in its ledger excerpt (they are checked against those texts);
+    a model-written quote (inference, or one not in its excerpt) and free text are redacted."""
+    url = "https://rooms.campus.example/stats"
+    excerpts = {"EV-001": f"Counts at {url} weekly.", "EV-002": "Derived."}
+    body = {"doc_anchors": [{"doc_id": "DOC-a", "section_ref": "4.1", "quote": f"Counts at {url} weekly."}],
+            "evidence": [{"evidence_id": "EV-001", "source_type": "doc", "quote": f"counts at {url}"},
+                         {"evidence_id": "EV-001", "source_type": "external", "quote": f"Totals at {url}"},
+                         {"evidence_id": "EV-002", "source_type": "inference", "quote": f"See {url}"}],
+            "excerpt": f"x {url}", "statement": f"See {url}."}
+    counter = [0]
+    out = _redact(body, set(), counter, excerpts)
+    assert out["doc_anchors"][0]["quote"] == body["doc_anchors"][0]["quote"]
+    assert out["evidence"][0]["quote"] == f"counts at {url}" and out["excerpt"] == body["excerpt"]
+    assert [e["quote"] for e in out["evidence"][1:]] == [f"Totals at {LINK_REMOVED}", f"See {LINK_REMOVED}"]
+    assert out["statement"] == f"See {LINK_REMOVED}" and counter == [3]
 
 
 async def test_report_falls_back_to_rule_verdict_after_two_refusals(tmp_path: Path) -> None:

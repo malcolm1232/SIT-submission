@@ -77,6 +77,30 @@ def _norm(t: str) -> str:
     return re.sub(r"\s+", " ", t).strip().lower()
 
 
+def quote_in_excerpt(quote: str, excerpt: str) -> bool:
+    """INV-05's quote rule: ``quote`` occurs in ``excerpt`` after whitespace and case folding."""
+    return _norm(quote) in _norm(excerpt)
+
+
+def _urls_in(text: str) -> set[str]:
+    return {u.rstrip(".,;:") for u in URL_RE.findall(text)}
+
+
+def allowed_urls(ledger_entries: Iterable[Mapping[str, Any]], document_texts: Iterable[str]) -> set[str]:
+    """The URLs and DOIs report text may hold (INV-05), the one set the report phase's redaction keeps:
+    every ledger entry's ``url_or_citation``, plus every URL in the excerpt of a ``doc`` or ``external``
+    entry (recorded text, not model text) and in the canonical text of a reviewed document. A URL
+    the model wrote that is in none of them is not ledger-backed."""
+    out: set[str] = set()
+    for e in ledger_entries:
+        out.add(e["url_or_citation"])
+        if e["source_type"] in ("doc", "external") and e.get("excerpt"):
+            out |= _urls_in(e["excerpt"])
+    for t in document_texts:
+        out |= _urls_in(t)
+    return out
+
+
 # ======================================================================================== INV-03
 
 
@@ -175,10 +199,13 @@ def check_INV_04(review: Review | Mapping[str, Any], run_dir: Path | None = None
 # ======================================================================================== INV-05
 
 
-def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None) -> InvariantResult:
+def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None, *,
+                 texts: Mapping[str, str] | None = None) -> InvariantResult:
     """Every cited evidence ID is in the ledger and hydrated from it; doc/external quotes occur in
     the ledger excerpt; external entries resolve to an ``ok`` tool call of the same server/tool and
-    were read before being cited; no URL or DOI in report text outside the ledger."""
+    were read before being cited; no URL or DOI in report text outside :func:`allowed_urls` (the
+    ledger's sources, doc and external excerpts and the canonical texts named by
+    ``documents[].text_path``, or ``texts``)."""
     r = _as_dict(review)
     problems: list[str] = []
     ledger = {e["evidence_id"]: e for e in r["evidence_ledger"]}
@@ -198,7 +225,7 @@ def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None
             if le["url_or_citation"] != e["url_or_citation"] or le["retrieved_at"] != e["retrieved_at"]:
                 problems.append(f"{f['id']}: evidence {e['evidence_id']} not hydrated from ledger")
             if e["source_type"] in ("doc", "external") and le["excerpt"] and e["quote"] \
-                    and _norm(e["quote"]) not in _norm(le["excerpt"]):
+                    and not quote_in_excerpt(e["quote"], le["excerpt"]):
                 problems.append(f"{f['id']}: evidence {e['evidence_id']} quote not in the ledger excerpt")
             problems += [f"{f['id']}: derived_from {d} not in ledger" for d in e["derived_from"] if d not in ledger]
     for s in r["sound_areas"]:
@@ -216,7 +243,8 @@ def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None
                             f"{e['tool']['server']}/{e['tool']['tool_name']} call")
         if e["evidence_id"] in cited and not e["read_before_cite"]:
             problems.append(f"ledger {e['evidence_id']}: cited but not read before citing")
-    allowed = {e["url_or_citation"] for e in r["evidence_ledger"]}
+    raw = dict(texts) if texts is not None else _load_texts(r, run_dir)
+    allowed = allowed_urls(r["evidence_ledger"], raw.values())
     free = {k: v for k, v in r.items() if k not in ("evidence_ledger", "run_manifest", "metadata")}
     for t in _strings(free, skip=("url_or_citation",)):
         for u in URL_RE.findall(t):
@@ -430,8 +458,8 @@ def check_INV_13(review: Review | Mapping[str, Any], run_dir: Path | None = None
 def check_all(review: Review | Mapping[str, Any], run_dir: Path | None = None, *,
               canaries: Sequence[str] = (), texts: Mapping[str, str] | None = None,
               require_extra: bool = True, prior_ids: Sequence[str] | None = None) -> list[InvariantResult]:
-    out = [check_INV_03(review, run_dir), check_INV_04(review, run_dir, texts=texts), check_INV_05(review, run_dir),
-           check_INV_06(review, run_dir), check_INV_07(review, run_dir)]
+    out = [check_INV_03(review, run_dir), check_INV_04(review, run_dir, texts=texts),
+           check_INV_05(review, run_dir, texts=texts), check_INV_06(review, run_dir), check_INV_07(review, run_dir)]
     out.append(check_INV_08(run_dir, canaries) if run_dir is not None
                else InvariantResult("INV-08", passed=True, skipped=True, reason="no run directory"))
     out += [check_INV_09(review, run_dir, require_extra=require_extra), check_INV_10(review, run_dir),

@@ -23,8 +23,11 @@ What assembly guarantees by construction (each is disclosed, never hidden):
   declined verdict call gives the verdict by rule (:func:`fallback_verdict`), disclosed;
 * failed tool calls, cap stops and model fallbacks that no phase recorded as a degradation get
   one (INV-07);
-* a URL or DOI in free text that is not a ledger ``url_or_citation`` is replaced by
-  ``[link removed: not in the evidence register]`` and disclosed as a degradation (INV-05);
+* a URL or DOI in free text that is not ledger-backed (:func:`~sit_review_agent.invariants.allowed_urls`:
+  a ledger ``url_or_citation``, or a URL in a doc or external excerpt or in a reviewed document) is
+  replaced by ``[link removed: not in the evidence register]`` and disclosed as a degradation
+  (INV-05). Verbatim passages are never rewritten: an anchor quote (INV-04) and a doc or external
+  evidence quote that occurs in its ledger excerpt (INV-05) keep their text, as in :func:`settle_refs`;
 * every finding ID in the text follows its finding through the run's ID map (:func:`settle_refs`,
   ``finding_refs``): a shard's own ID, a merged ID and a renumbered ID become the final ID, a reference
   to a withdrawn, dropped or unverified draft is removed with its clause, and a disclosure names a draft
@@ -38,6 +41,7 @@ Anything the invariants still reject after that is a bug: the phase writes ``fai
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from sit_review_agent.clock import isoformat_z
@@ -54,7 +58,7 @@ from sit_review_agent.errors import (
 )
 from sit_review_agent.finding_refs import RewriteStats, chain_of, dangling_refs, mark_drafts, rewrite_tree
 from sit_review_agent.hashing import sha256_file
-from sit_review_agent.invariants import URL_RE, check_all, spec_validator
+from sit_review_agent.invariants import URL_RE, allowed_urls, check_all, quote_in_excerpt, spec_validator
 from sit_review_agent.llm.backend import supports_native_pdf
 from sit_review_agent.llm.gateway import LLMRequest
 from sit_review_agent.llm.outputs import CriterionCoverage, VerdictOutput
@@ -333,7 +337,22 @@ def _ensure_disclosures(ctx: RunContext, calls: list[ResearchLogEntry], stop: St
                            "part of the review was produced by another model; the run is not eval evidence")
 
 
-def _redact(node: Any, allowed: set[str], counter: list[int]) -> Any:
+def _verbatim_quote(node: dict[str, Any], excerpts: Mapping[str, str]) -> bool:
+    """True when ``node["quote"]`` is a checked verbatim passage: a document anchor's quote (INV-04
+    resolves it in the canonical text) or a doc or external citation whose quote occurs in its
+    ledger excerpt (verify copied or checked it; INV-05 compares the two)."""
+    if "section_ref" in node and "doc_id" in node:
+        return True
+    if node.get("source_type") in ("doc", "external"):
+        excerpt = excerpts.get(node.get("evidence_id") or "") or ""
+        return bool(excerpt) and quote_in_excerpt(node.get("quote") or "", excerpt)
+    return False
+
+
+def _redact(node: Any, allowed: set[str], counter: list[int], excerpts: Mapping[str, str]) -> Any:
+    """``node`` with every URL or DOI not in ``allowed`` replaced by :data:`LINK_REMOVED` (counted in
+    ``counter``). Never rewritten: ``url_or_citation``, ``excerpt`` and a verbatim ``quote``
+    (:func:`_verbatim_quote`), which must stay equal to the text they are checked against."""
     if isinstance(node, str):
         def sub(m: Any) -> str:
             url = m.group(0)
@@ -343,9 +362,10 @@ def _redact(node: Any, allowed: set[str], counter: list[int]) -> Any:
             return LINK_REMOVED
         return URL_RE.sub(sub, node)
     if isinstance(node, list):
-        return [_redact(x, allowed, counter) for x in node]
+        return [_redact(x, allowed, counter, excerpts) for x in node]
     if isinstance(node, dict):
-        return {k: (v if k == "url_or_citation" else _redact(v, allowed, counter)) for k, v in node.items()}
+        keep = {"url_or_citation", "excerpt"} | ({"quote"} if _verbatim_quote(node, excerpts) else set())
+        return {k: (v if k in keep else _redact(v, allowed, counter, excerpts)) for k, v in node.items()}
     return node
 
 
@@ -517,9 +537,10 @@ def assemble_review(ctx: RunContext) -> Review:
         "stop_reason": stop.model_dump(mode="json"),
         "prior_findings": [e.model_dump(mode="json") for e in prior_table],
     }
-    allowed = {e.url_or_citation for e in ledger}
+    allowed = allowed_urls(body["evidence_ledger"], (d.text for d in ctx.documents.values()))
+    excerpts = {e.evidence_id: e.excerpt or "" for e in ledger}
     counter = [0]
-    redacted = {k: (v if k in ("evidence_ledger", "metadata") else _redact(v, allowed, counter))
+    redacted = {k: (v if k in ("evidence_ledger", "metadata") else _redact(v, allowed, counter, excerpts))
                 for k, v in body.items()}
     if counter[0]:
         event = f"{counter[0]} URL(s) or DOI(s) in model-written text were not in the evidence register"

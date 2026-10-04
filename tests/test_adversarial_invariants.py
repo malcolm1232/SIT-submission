@@ -57,20 +57,22 @@ from sit_review_agent.states import PhaseName
 
 PDF = FIXTURE_DIR / "design.pages.txt"
 Mutation = Callable[[dict[str, Any]], None]
+#: A change to the refine answer, given the ledger entries at refine time.
+Revision = Callable[[list[dict[str, Any]], dict[str, Any]], None]
 
 
 class _Gateway(FakeGateway):
     """The selftest fixture script, with ``mutate`` applied to the whole assessment (the model's
     adversarial output; each shard then answers its own part of it, IDs as the merge gives them) and
-    ``report`` replacing the verdict answer when given."""
+    ``report`` replacing the verdict answer when given; ``revise`` changes the refine answer."""
 
     def __init__(self, rd: RunDir, clock: Any, criteria: list[str], mutate: Mutation | None,
-                 report: dict[str, Any] | None, shards: list[list[str]]) -> None:
+                 report: dict[str, Any] | None, shards: list[list[str]], revise: Revision | None = None) -> None:
         script = fixture_script(criteria, shards)
         if report is not None:
             script["report"] = [FakeResponse(parsed=report)] * 2
         super().__init__(script, run_dir=rd, clock=clock)
-        self.rd, self.mutate, self.criteria, self.shards = rd, mutate, criteria, shards
+        self.rd, self.mutate, self.criteria, self.shards, self.revise = rd, mutate, criteria, shards, revise
 
     async def call(self, request: LLMRequest) -> LLMResult[Any]:
         q = self.script.get(str(request.phase))
@@ -81,14 +83,18 @@ class _Gateway(FakeGateway):
                 self.mutate(whole)
                 group = request_shard(request, self.shards)
                 resp = FakeResponse(parsed=whole if group is None else shard_answer(whole, group))
+            if request.phase is PhaseName.REFINE and self.revise is not None:
+                parsed = copy.deepcopy(resp.parsed)
+                self.revise(JsonlWriter(self.rd.ledger_journal).read(), parsed)
+                resp = FakeResponse(parsed=parsed)
             q[0] = resp
         return await super().call(request)
 
 
-def config(tmp_path: Path, *, tools: bool = True) -> EffectiveConfig:
-    """selftest config with refine off (assess's answer is what reaches verify)."""
+def config(tmp_path: Path, *, tools: bool = True, refine: bool = False) -> EffectiveConfig:
+    """selftest config with refine off unless asked (assess's answer is what reaches verify)."""
     cfg = selftest_config(tmp_path / "runs")
-    phases = cfg.agent.phases.model_copy(update={"refine": False})
+    phases = cfg.agent.phases.model_copy(update={"refine": refine})
     cfg = cfg.model_copy(update={"agent": cfg.agent.model_copy(update={"phases": phases})})
     if not tools:
         servers = [s.model_copy(update={"enabled": False}) for s in cfg.tools.servers]
@@ -97,13 +103,14 @@ def config(tmp_path: Path, *, tools: bool = True) -> EffectiveConfig:
 
 
 async def run(tmp_path: Path, mutate: Mutation | None = None, *, report: dict[str, Any] | None = None,
-              tools: bool = True, phases: dict[PhaseName, Any] | None = None, run_id: str = "adv") -> Any:
-    cfg = config(tmp_path, tools=tools)
+              tools: bool = True, phases: dict[PhaseName, Any] | None = None, run_id: str = "adv",
+              pdf: Path = PDF, revise: Revision | None = None) -> Any:
+    cfg = config(tmp_path, tools=tools, refine=revise is not None)
     out = await run_review(
-        RunRequest(pdf=PDF, config=cfg, run_id=run_id), phases=phases,
+        RunRequest(pdf=pdf, config=cfg, run_id=run_id), phases=phases,
         llm_factory=lambda rd, clock, progress: _Gateway(
             rd, clock, cfg.criteria.ids(), mutate, report,
-            [list(g.criteria) for g in cfg.agent.assess.shards_for(cfg.criteria.ids())]),
+            [list(g.criteria) for g in cfg.agent.assess.shards_for(cfg.criteria.ids())], revise),
         clock=FakeClock(), progress=NullProgress())
     return out, RunDir(out.run_dir)
 
@@ -181,6 +188,55 @@ async def test_inv05_model_written_url_and_unknown_evidence_id(tmp_path: Path) -
     assert "EV-999" not in json.dumps(report["findings"]) and {e["evidence_id"] for e in f1["evidence"]} <= ledger
     deg = next(d for d in report["research_log"]["degradations"] if "not in the evidence register" in d["event"])
     assert any(deg["id"] in lim["degradation_ids"] for lim in report["limitations"])          # disclosed
+
+
+#: A passage of the reviewed document that holds a URL (added to the fixture's section 4.1, page 6).
+DOC_URL = "https://rooms.campus.example/stats/peak-weeks"
+URL_PASSAGE = f"Weekly booking counts for every exam week are published at {DOC_URL} for planning."
+
+
+@pytest.mark.parametrize("cited", [True, False], ids=["cited-by-shard-and-refine", "anchor-only"])
+async def test_inv05_document_url_in_a_cited_passage_and_an_anchor_is_kept(tmp_path: Path, cited: bool) -> None:
+    """The first INV-05 crash on record (d_hospital_v1_1): a URL of the reviewed document inside a
+    cited passage. Verify copies the ledger excerpt into the quote; the report's URL redaction must
+    not rewrite it (it is ledger-backed, ``allowed_urls``), or the quote leaves its excerpt and the
+    report stage crashes. Cited by a shard (doc evidence and an anchor) and by a refine revision
+    that quotes the register as the model sees it (URLs shown as ``[link removed]``); and as an
+    anchor quote only (INV-04 and the URL scan of INV-05)."""
+    pdf = tmp_path / "design.pages.txt"
+    text = PDF.read_text(encoding="utf-8")
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    assert text.count(line) == 1
+    pdf.write_text(text.replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
+    title = "Peak-day reminder volume is not tested"
+
+    def shard(p: dict[str, Any]) -> None:
+        f = next(f for f in p["findings"] if f["title"] == title)
+        f["doc_anchors"].append({**f["doc_anchors"][0], "quote": URL_PASSAGE})
+        if cited:
+            f["evidence"].append({"evidence_id": "NEW-2", "source_type": "doc", "quote": URL_PASSAGE,
+                                  "supports_claim": True, "derived_from": []})
+
+    def refine(ledger: list[dict[str, Any]], answer: dict[str, Any]) -> None:
+        ev = next(e["evidence_id"] for e in ledger if DOC_URL in (e.get("excerpt") or ""))
+        rendered = URL_PASSAGE.replace(DOC_URL, "[link removed]")      # the register hides URLs
+        answer["revisions"][0]["added_evidence"].append(
+            {"evidence_id": ev, "source_type": "doc", "quote": rendered, "supports_claim": True, "derived_from": []})
+
+    out, rd = await run(tmp_path, shard, pdf=pdf, revise=refine if cited else None)
+    report = load(rd)                                                   # written; every invariant passes
+    anchors = [a["quote"] for f in report["findings"] for a in f["doc_anchors"]]
+    assert URL_PASSAGE in anchors
+    if cited:
+        entry = next(e for e in report["evidence_ledger"] if DOC_URL in (e["excerpt"] or ""))
+        cites = [(f["title"], e) for f in report["findings"] for e in f["evidence"]
+                 if e["evidence_id"] == entry["evidence_id"]]
+        assert {t for t, _ in cites} == {title, "E-mail plan cannot send peak-day reminders"}
+        assert all(e["quote"] == entry["excerpt"] and DOC_URL in e["quote"] for _, e in cites)
+    assert "not in the evidence register" not in degradation_events(report)
+    assert "link removed" not in rd.report_json.read_text(encoding="utf-8")
+    assert [r.inv_id for r in check_all(report, rd.root) if r.inv_id in ("INV-04", "INV-05") and r.passed] \
+        == ["INV-04", "INV-05"]
 
 
 async def test_inv05_doc_only_run_cannot_claim_external_evidence(tmp_path: Path) -> None:
