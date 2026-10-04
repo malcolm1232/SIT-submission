@@ -356,15 +356,37 @@ if len(sys.argv) > 1:
 """
 
 
+#: Writes one line, then waits until the parent has seen it (the parent creates a file from
+#: ``on_line``) before writing the rest: the run finishes only if lines are delivered live.
+HANDSHAKE_CHILD = r"""
+import os, sys, time
+sys.stdout.write('{"type": "system", "subtype": "init"}\n')
+sys.stdout.flush()
+end = time.monotonic() + 10
+while not os.path.exists(sys.argv[1]):
+    if time.monotonic() > end:
+        sys.stdout.write('{"type": "late"}\n')
+        sys.exit(3)
+    time.sleep(0.01)
+sys.stdout.write('{"type": "result", "pad": "' + 'x' * 200000 + '"}\n')
+sys.stdout.write('{"type": "tail"}')
+sys.stdout.flush()
+"""
+
+
 async def test_subprocess_runner_streams_lines_as_they_arrive(tmp_path: Path) -> None:
-    got: list[tuple[float, str]] = []
-    loop = asyncio.get_running_loop()
-    run = await subprocess_runner([sys.executable, "-c", CHILD], "", {}, tmp_path, 30,
-                                  on_line=lambda s: got.append((loop.time(), s)))
-    assert run.returncode == 0
-    assert [json.loads(s)["type"] for _, s in got] == ["system", "system", "system", "result", "tail"]
-    assert len(got[3][1]) > 200_000                                    # a line longer than asyncio's 64 KiB limit
-    assert got[2][0] - got[0][0] >= 0.08                               # delivered live, not at exit
+    seen = tmp_path / "seen"
+    got: list[str] = []
+
+    def on_line(s: str) -> None:
+        got.append(s)
+        seen.touch()                                                   # the child goes on only after this
+
+    run = await subprocess_runner([sys.executable, "-c", HANDSHAKE_CHILD, str(seen)], "", {}, tmp_path, 30,
+                                  on_line=on_line)
+    assert run.returncode == 0                                         # delivered live, not at exit
+    assert [json.loads(s)["type"] for s in got] == ["system", "result", "tail"]
+    assert len(got[1]) > 200_000                                       # a line longer than asyncio's 64 KiB limit
     assert run.stdout.endswith('{"type": "tail"}')
 
 
