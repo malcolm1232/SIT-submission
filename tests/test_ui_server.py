@@ -314,6 +314,38 @@ def test_sse_reconnect_resumes_after_the_last_sequence(tmp_path: Path) -> None:
     assert client.get("/runs/fixture_run/events?after=x").status_code == 400
 
 
+def test_the_log_route_tails_progress_log_and_follows_it(tmp_path: Path) -> None:
+    """GET /runs/<id>/log: the last LOG_TAIL complete lines of progress.log as text, the byte offset after them,
+    and with ?after=<offset> only the lines written since; a half-written last line waits for its newline; a run
+    with no progress.log yet answers exists false, not 404."""
+    rd = fixture_run(tmp_path, lines=5)
+    client = TestClient(build_app(make_state(tmp_path)))
+    assert client.get("/runs/fixture_run/log").json() == {"exists": False, "lines": [], "offset": 0, "skipped": 0,
+                                                          "tail": rundata.LOG_TAIL}
+    log = rd / "progress.log"
+    first = [f"[00:0{i}] ingest     | line {i}" for i in range(rundata.LOG_TAIL + 3)]
+    log.write_text("\n".join(first) + "\n", encoding="utf-8")
+    got = client.get("/runs/fixture_run/log").json()
+    assert got["exists"] is True and got["lines"] == first[-rundata.LOG_TAIL:] and got["skipped"] == 3
+    assert got["offset"] == log.stat().st_size
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write("[00:09] assess     | shard 1 started\n[00:10] assess     | half a li")
+    more = client.get(f"/runs/fixture_run/log?after={got['offset']}").json()
+    assert more["lines"] == ["[00:09] assess     | shard 1 started"] and more["skipped"] == 0
+    assert more["offset"] == got["offset"] + len("[00:09] assess     | shard 1 started\n")
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write("ne\n")
+    rest = client.get(f"/runs/fixture_run/log?after={more['offset']}").json()
+    assert rest["lines"] == ["[00:10] assess     | half a line"] and rest["offset"] == log.stat().st_size
+    assert client.get(f"/runs/fixture_run/log?after={rest['offset']}").json()["lines"] == []
+    # An offset past the end (the file was replaced) starts over; a bad offset is refused; no such run is 404.
+    log.write_text("[00:00] run        | fresh\n", encoding="utf-8")
+    assert client.get(f"/runs/fixture_run/log?after={rest['offset']}").json()["lines"] == ["[00:00] run        | fresh"]
+    assert client.get("/runs/fixture_run/log?after=x").status_code == 400
+    assert client.get("/runs/nope/log").status_code == 404
+    assert client.get("/runs/../log").status_code in (404, 400)
+
+
 def test_a_stream_without_run_finished_is_a_running_run(tmp_path: Path) -> None:
     rd = fixture_run(tmp_path, lines=70)
     assert rundata.run_status(rd) == "running"

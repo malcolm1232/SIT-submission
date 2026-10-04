@@ -26,6 +26,9 @@
       <div id="rail-runs"></div>
       <div class="rail-head"><span>Tools</span><span id="rail-tools-note"></span></div>
       <div id="rail-tools"></div>
+      <!-- the open run's progress.log, tailed read-only through GET /runs/<id>/log; the same lines as the terminal -->
+      <div class="rail-head"><span>Logs</span><span id="rail-log-note"></span></div>
+      <div class="rail-log mono" id="rail-log" aria-live="off"></div>
     </div>
     <div class="navrail-foot">
       <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>

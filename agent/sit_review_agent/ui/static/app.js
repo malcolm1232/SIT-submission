@@ -53,7 +53,9 @@ const S = { meta: null, runId: null, es: null, model: null, info: null, page: "r
   // The Stop control's state across repaints (every event repaints the head): armed by a first click, sent by the second.
   stop: null,
   // The browser's clock when the last event arrived, and the one-second tick that adds the seconds since to the head clock.
-  lastAt: null, tick: null };
+  lastAt: null, tick: null,
+  // The open run's progress.log tail (GET /runs/<id>/log): the lines kept, the byte offset to read from next.
+  log: null };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -140,6 +142,40 @@ function setupRail() {
   const apply = () => { grid.classList.toggle("rail-collapsed", collapsed); toggle.setAttribute("aria-label", collapsed ? "Expand the rail" : "Collapse the rail"); toggle.querySelector(".label").textContent = collapsed ? "Expand" : "Collapse"; };
   toggle.addEventListener("click", () => { collapsed = !collapsed; try { localStorage.setItem(RAIL_KEY, collapsed ? "1" : "0"); } catch (e) { /* storage off: the rail still toggles */ } apply(); });
   apply();
+}
+
+// The Logs panel: the open run's progress.log, read from the server's route only (never a file the page guesses at),
+// first the last lines, then what was appended since the last read; the tick and the stream's end re-read it.
+function openLog(runId) {
+  S.log = runId ? { runId, lines: [], offset: 0, exists: null, skipped: 0, keep: null, busy: false, error: null } : null;
+  renderRailLog();
+  if (runId) pollLog();
+}
+
+async function pollLog() {
+  const L = S.log;
+  if (!L || L.busy) return;
+  L.busy = true;
+  try {
+    const r = await api("/runs/" + encodeURIComponent(L.runId) + "/log" + (L.offset ? "?after=" + L.offset : ""));
+    if (S.log !== L) return;
+    if (r.offset < L.offset) L.lines = [];                   // the file was replaced: the server started over
+    L.lines.push(...r.lines); L.offset = r.offset; L.exists = r.exists; L.keep = r.tail; L.skipped += r.skipped; L.error = null;
+    if (L.lines.length > L.keep) { L.skipped += L.lines.length - L.keep; L.lines.splice(0, L.lines.length - L.keep); }
+  } catch (e) { if (S.log === L) L.error = e.message; }
+  L.busy = false;
+  renderRailLog();
+}
+
+function renderRailLog() {
+  const box = clear($("rail-log")), note = $("rail-log-note");
+  const L = S.log;
+  if (!L) { note.textContent = ""; box.append(h("div", { class: "rail-empty", text: "open a run" })); return; }
+  if (L.error) { note.textContent = "not read"; box.append(h("div", { class: "rail-empty", text: L.error })); return; }
+  if (L.exists === false) { note.textContent = "no progress.log yet"; box.append(h("div", { class: "rail-empty", text: L.runId + "/progress.log is not written yet" })); return; }
+  note.textContent = L.exists === null ? "" : "last " + intl(L.lines.length) + (L.skipped ? " of " + intl(L.lines.length + L.skipped) : "") + " lines";
+  for (const line of L.lines) box.append(h("div", { class: "rail-logline" + (line.includes("| WARN ") ? " warn" : ""), text: line, title: line }));
+  box.scrollTop = box.scrollHeight;
 }
 
 async function refreshRuns() { const r = await api("/runs"); S.runs = r.runs; renderRailRuns(); }
@@ -395,7 +431,7 @@ function showDeveloper() {
     h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
     h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
     h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
-  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
 }
 
 // ------------------------------------------------------------------ the run, from the event stream
@@ -540,7 +576,8 @@ function applyEvent(m, ev) {
       const t = m.byCall.get(f.call_id), cr = t ? t.calls.get(f.call_id) : null;
       if (cr && f.list) cr.lists[f.list] = (cr.lists[f.list] || 0) + 1;
       if (f.list === "findings") {
-        m.draftedByCall.set(f.call_id, (m.draftedByCall.get(f.call_id) || 0) + 1);
+        // Distinct drafts only: a record repeated for the same call and index (a second stream of the same call) is one draft.
+        if (!m.seen.has(f.call_id + "#" + f.index)) m.draftedByCall.set(f.call_id, (m.draftedByCall.get(f.call_id) || 0) + 1);
         addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
         callDraft(cr, f.call_id + "#" + f.index, f);
       }
@@ -751,6 +788,7 @@ function tick() {
   if (!m || !isLive(m)) { stopTick(); return; }
   renderClock(m, S.info || {});
   renderAxis(m);
+  pollLog();
 }
 
 function renderClock(m, info) {
@@ -788,6 +826,18 @@ function renderAxis(m) {
     labels.append(h("span", { class: "lbl num" + (passed ? " passed" : "") + (s === span ? " end" : ""), style: "left:" + pct(s) }, name + " ", h("b", { text: clock(s) })));
   }
   line.append(h("i", { class: "cursor" + (live ? " live" : ""), style: "left:" + pct(now), title: clock(now) }));
+  // Two limits close together (verdict and the deadline) would overlap: a label that would step on the one before
+  // it on its row goes down a row. Measured once per render from the laid-out boxes, no timer involved.
+  const rights = [], edge = labels.getBoundingClientRect().right;
+  for (const el of labels.children) {
+    let r = el.getBoundingClientRect();
+    if (r.right > edge) { el.classList.add("end"); r = el.getBoundingClientRect(); }   // anchored to its right at the axis's end
+    let row = rights.findIndex((right) => r.left > right);
+    if (row < 0) row = rights.length;
+    rights[row] = r.right;
+    el.dataset.row = String(row);
+  }
+  labels.dataset.rows = String(rights.length);
   const next = marks.find(([, s]) => s > now);
   $("axis-note").textContent = (live ? "elapsed " : (m.finished || m.error ? "ended at " : "last event at ")) + clock(live ? now : m.lastT) + " of " + clock(span) +
     (live && next ? " · next limit: " + next[0] + " " + clock(next[1]) : "") + (live ? " · the cursor adds the seconds since the last event; the markers are the record's limits" : "");
@@ -897,6 +947,7 @@ function showRun(info, tabs) {
   });
   es.addEventListener("end", async (e) => {
     stopTick(); es.close(); S.es = null;
+    pollLog();
     const end = JSON.parse(e.data || "{}");
     const fresh = await api("/runs/" + encodeURIComponent(info.run_id));
     info.status = fresh.status;
@@ -1320,6 +1371,7 @@ async function route() {
     if (runId) {
       const info = await api("/runs/" + encodeURIComponent(runId));
       S.info = info;
+      if (!S.log || S.log.runId !== runId) openLog(runId);
       if (info.status === "running" || !info.has_report) showRun(info, null);
       else await showReview(info, q.get("tab"));
       renderRailTools();
@@ -1328,6 +1380,7 @@ async function route() {
     S.info = null;
     closeStream();
     S.model = null;
+    openLog(null);
     if (page === "review") await showDrop();
     else if (page === "runs") showRuns();
     else if (page === "replay") showReplay();

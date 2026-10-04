@@ -58,6 +58,11 @@ ul { padding-left: 18px; margin: 0; }
 .rail-run .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-run .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-run.active .meta { color: var(--navrail-fg); }
+/* the Logs panel: progress.log of the open run, newest at the bottom, scrolled to it on each read */
+.rail-log { flex: 1 1 auto; min-height: 60px; overflow-y: auto; overflow-x: hidden; font-size: 10.5px; line-height: 1.5; color: var(--navrail-fg); padding: 2px 8px 6px; }
+.rail-log .rail-logline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-log .rail-logline.warn { color: var(--amber); }
+.rail-log .rail-empty { padding: 4px 0; }
 .rail-run .meta .live { color: var(--accent-bright); }
 .rail-tool { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12px;
   color: var(--navrail-fg); padding: 5px 10px; }
@@ -230,6 +235,10 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .axis-labels { position: relative; height: 18px; margin-top: 8px; font-size: 11.5px; color: var(--fg-muted); }
 .axis-labels .lbl { position: absolute; top: 0; white-space: nowrap; transform: translateX(-50%); }
 .axis-labels .lbl.end { transform: translateX(-100%); }
+.axis-labels .lbl[data-row="1"] { top: 18px; }
+.axis-labels .lbl[data-row="2"] { top: 36px; }
+.axis-labels[data-rows="2"] { height: 36px; }
+.axis-labels[data-rows="3"] { height: 54px; }
 .axis-labels .lbl.passed { color: var(--fg-disabled); }
 .axis-labels .lbl b { font-weight: 500; color: var(--fg); }
 .axis-labels .lbl.passed b { color: var(--fg-disabled); }

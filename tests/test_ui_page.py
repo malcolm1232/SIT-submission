@@ -219,9 +219,14 @@ def test_stop_takes_two_clicks_and_states_what_the_signal_does(page) -> None:
     assert posts == []
     pg.click("#stop-btn")
     pg.click("#stop-btn")                                       # the second click sends the signal
-    pg.wait_for_function("document.querySelector('#stop-btn').textContent === 'SIGINT sent'")
+    # The signal ends the process (the fake exits 130 on it), so the stream ends and the Stop control goes with
+    # the running state; the button reads SIGINT sent until then.
+    pg.wait_for_function("document.querySelector('#stop-btn') === null || "
+                         "document.querySelector('#stop-btn').textContent === 'SIGINT sent'")
     assert posts == [base + "/runs/to_stop/stop"] and proc.code == 130
-    assert pg.locator("#stop-btn").is_disabled() and pg.locator("#stop-keep").is_hidden()
+    pg.wait_for_function("!document.querySelector('#finished-bar').hidden")
+    assert pg.locator("#finished-bar").inner_text() == "The process exited with code 130 before a run_finished event."
+    assert pg.locator("#stop-btn").count() == 0
 
 
 def _mmss(s: float) -> str:

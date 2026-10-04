@@ -15,6 +15,7 @@ Routes (design note section 9, W2)::
                                     https link to a PDF in ``document_url``, fetched by ``ui.fetch``)
     GET  /runs/<id>                 one run's summary and status
     GET  /runs/<id>/events          progress.jsonl as server-sent events (Last-Event-ID or ?after=N)
+    GET  /runs/<id>/log             the last lines of progress.log as JSON (?after=<byte offset> follows it)
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
@@ -290,6 +291,19 @@ def build_app(state: UIState) -> Starlette:
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    async def run_log(request: Request) -> Response:
+        """The tail of the run's ``progress.log`` (the same lines as the terminal), read-only: the last
+        ``rundata.LOG_TAIL`` complete lines, or with ``?after=<offset>`` the lines written since that byte."""
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        raw = request.query_params.get("after") or "0"
+        try:
+            after = max(0, int(raw))
+        except ValueError:
+            return _err(400, "after must be a byte offset.")
+        return _json(rundata.tail_log(rd / "progress.log", after=after))
+
     async def run_report(request: Request) -> Response:
         rd = run_dir_of(request)
         if rd is None:
@@ -427,6 +441,7 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs", start_run, methods=["POST"]),
         Route("/runs/{run_id}", run_info),
         Route("/runs/{run_id}/events", run_events),
+        Route("/runs/{run_id}/log", run_log),
         Route("/runs/{run_id}/report", run_report),
         Route("/runs/{run_id}/coverage", run_coverage),
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),
