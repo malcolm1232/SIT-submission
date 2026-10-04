@@ -1,0 +1,1403 @@
+{
+ "checkpoint_version": 1,
+ "created_utc": "2026-10-04T03:44:02Z",
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "4556235eb170f756870b38a75e94353fd213f06b73abde51c9921c5ea7bb033a",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "offsets": {
+  "ledger_jsonl": 0,
+  "llm_jsonl": 45596,
+  "tools_jsonl": 0
+ },
+ "ordinal": 3,
+ "phase": "understand",
+ "run_id": "ui-261004-034213-c5cb",
+ "seq": 2,
+ "state": {
+  "anchor_table": [],
+  "budget": {
+   "cache_creation_input_tokens": 56235,
+   "cache_read_input_tokens": 0,
+   "elapsed_s": 109.401,
+   "input_tokens": 56239,
+   "new_sources_by_iteration": [],
+   "output_tokens": 21945,
+   "phase_seconds": {
+    "ingest": 2.684,
+    "plan": 71.356,
+    "understand": 106.278
+   },
+   "research_iterations": 0,
+   "started_monotonic": 1277.537677916,
+   "tool_calls": 0
+  },
+  "completed_phases": [
+   "ingest",
+   "plan",
+   "understand"
+  ],
+  "coverage": [],
+  "created_utc": "2026-10-04T03:42:13Z",
+  "current_phase": "ingest",
+  "declined_sections": [],
+  "degradations": [
+   {
+    "event": "DOC-sit_sample_v1: native PDF block not sent because the configured model backend accepts text only",
+    "id": "DEG-001",
+    "impact": "figures, diagrams and tables rendered as images were not visible to the model; the review is based on the extracted text",
+    "type": "input_degraded"
+   }
+  ],
+  "documents": [
+   {
+    "doc_id": "DOC-sit_sample_v1",
+    "native_pdf": false,
+    "page_count": 30,
+    "pdf_path": "/Users/malco/Desktop/SIT-wt/demo4/runs/ui-261004-034213-c5cb/ui/input/sit_sample_v1.pdf",
+    "role": "under_review",
+    "sha256_pdf": "57f49eb28ade551d3a7dcf1160c9a6debea19bdb3477db68f05111df322bd540",
+    "sha256_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+    "text_path": "text/DOC-sit_sample_v1.pages.txt",
+    "title": "SIT Institutional Memory Platform — Detailed Design",
+    "version": "2.0"
+   }
+  ],
+  "fallback_events": [],
+  "finding_drafts": [],
+  "finding_ids": {
+   "prior": [],
+   "refine": {},
+   "refine_fields": {},
+   "rewrites": {},
+   "shards": {},
+   "unverified": [],
+   "verify": {}
+  },
+  "finding_meta": {},
+  "findings": [],
+  "intent_summary": {
+   "constraints": [
+    {
+     "ref": "P7",
+     "text": "PDPA compliance requires audit trails for every memory operation."
+    },
+    {
+     "ref": "NFR-10",
+     "text": "Vector-store cost must stay within SGD 800-1,200/month at 15,000 learners (Azure Singapore region, Memory Optimised 16-vCore tier)."
+    },
+    {
+     "ref": "NFR-5",
+     "text": "HIGHLY_RESTRICTED data must sit in a physically separate schema (memory_sensitive) with its own database credentials."
+    },
+    {
+     "ref": null,
+     "text": "SIT-AI-Factory-RAG (Azure AI Search) is a separate system with no shared infrastructure, and is out of scope."
+    },
+    {
+     "ref": null,
+     "text": "Authentication is OAuth 2.0 via Entra ID, and tokens are valid for 48 hours."
+    },
+    {
+     "ref": null,
+     "text": "The ten foundational principles take precedence over any later section that conflicts with them."
+    }
+   ],
+   "doc_anchors": [
+    {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "This is not a per-agent memory store. It is an institution-level platform that provides:",
+     "requirement_ids": [],
+     "section_ref": "1"
+    },
+    {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "Memory infrastructure for AI Tutor, AI Buddy, Academic Advisory, Counselling, Career, and Orientation agents",
+     "requirement_ids": [],
+     "section_ref": "1"
+    },
+    {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "SIT-AI-Factory-RAG (the Azure AI Search RAG project) - a separate system, in a separate resource group, with",
+     "requirement_ids": [],
+     "section_ref": "1"
+    }
+   ],
+   "key_assumptions": [
+    {
+     "ref": null,
+     "text": "A learner accumulates about 600 vectors over a full degree, which gives about 9.5M vectors in total at 15,000 learners."
+    },
+    {
+     "ref": null,
+     "text": "Every query is filtered by learner_id and slot_path, so each query searches only 500-800 vectors, not 9.5M."
+    },
+    {
+     "ref": null,
+     "text": "HNSW index overhead is about 1.4×, the index fits in RAM on a 128 GB SKU, and degradation starts at roughly 30-40M vectors."
+    },
+    {
+     "ref": null,
+     "text": "Azure Event Hubs can serve as the managed Kafka-API service (still pending confirmation)."
+    },
+    {
+     "ref": null,
+     "text": "Cohort namespace, compaction and non-SIT identity are not needed for launch of the initial six agents."
+    },
+    {
+     "ref": null,
+     "text": "Human counsellors access counselling data through a separate clinical system, not through this platform."
+    }
+   ],
+   "objectives": [
+    {
+     "ref": "P1",
+     "text": "The learner namespace is authoritative. Each agent's copy is backup only, and conflicts are resolved in favour of the namespace."
+    },
+    {
+     "ref": "P2",
+     "text": "Memory is private to the learner by default, shared only by exception, and anonymised for service learning."
+    },
+    {
+     "ref": "P3",
+     "text": "Access control happens before retrieval: the namespace restriction gates the query itself, not the results afterwards."
+    },
+    {
+     "ref": "P4",
+     "text": "Counselling hard wall: wellbeing/counselling/ is HIGHLY_RESTRICTED, with zero cross-domain reads, no MMP override and no exceptions."
+    },
+    {
+     "ref": "P5",
+     "text": "Agents share information only through the learner namespace. No agent accesses another agent's memory directly."
+    },
+    {
+     "ref": "P6",
+     "text": "No uncontrolled self-writing: every write is classified and policy-checked before it is stored."
+    },
+    {
+     "ref": "P7",
+     "text": "Every operation is audited (access, write, denial, compaction, deletion, escalation), as PDPA requires."
+    },
+    {
+     "ref": "P8",
+     "text": "Writes go asynchronously through Kafka; reads go through a Redis L1 cache, then PostgreSQL."
+    },
+    {
+     "ref": "P9",
+     "text": "Administrators, not agents, configure slot templates, sensitivity levels and retention rules."
+    },
+    {
+     "ref": "P10",
+     "text": "Minimum useful context: prefer summaries and facts over full transcripts, delivered in a token-budgeted context pack."
+    },
+    {
+     "ref": "NFR-1",
+     "text": "Scale to 15,000 learner namespaces and about 9.5 million vectors without changing database engine."
+    },
+    {
+     "ref": "NFR-8",
+     "text": "Onboard new domains or agents with a YAML template and a registry entry only, with no code changes."
+    }
+   ],
+   "statement": "The document is the detailed design for the SIT Institutional Memory Platform. The platform is meant to give all AI agents serving SIT learners one governed memory infrastructure at institution level, not a separate memory store per agent. It provides a structured namespace for each learner, access control applied before retrieval, a seven-dimension policy engine, audit trails for PDPA, a strict wall around counselling data, an async write path and cached read path, and an administrative control plane (the MMP). Scope covers six agents (Tutor, Buddy, Advisory, Counselling, Career, Orientation) serving about 15,000 learners. The separate SIT-AI-Factory-RAG system is out of scope."
+  },
+  "k_index": null,
+  "limitations": [],
+  "llm_calls": {
+   "plan": [
+    "llm-0002"
+   ],
+   "understand": [
+    "llm-0001"
+   ]
+  },
+  "mode": "dev",
+  "plan": {
+   "approved": true,
+   "criteria_skipped": [],
+   "questions": [
+    {
+     "capability": "none",
+     "criterion_id": "design_intent",
+     "evidence_ids": [],
+     "id": "RQ-001",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are the objectives, the ten principles (P1-P10), the FR/NFR set and the confirmed decisions (Section 25) stated clearly enough to review against? Is the rule that the principle wins in a conflict usable when principles conflict with each other, for example P1/FR-16 agent backup against P2/P6/P7?",
+     "rationale": "Every later finding has to trace to a stated objective, requirement or decision, so ambiguous or conflicting intent must be found first.",
+     "section_refs": [
+      "1",
+      "2",
+      "3",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-002",
+     "needs_external": true,
+     "queries": [
+      "pgvector HNSW filtering WHERE clause post-filter ef_search",
+      "pgvector iterative index scans filtered search recall",
+      "pgvector partial index partition per tenant filtering"
+     ],
+     "question": "Can pgvector HNSW with a separate B-tree index on (learner_id, slot_path) really restrict the search to 500-800 vectors per query? Or does HNSW filter after the index scan, so that filtered queries can return incomplete results and miss the NFR-2 latency/recall target?",
+     "rationale": "NFR-2 and the Section 12 sizing argument rest on this claim, and it decides whether the approved store choice meets its latency and recall objective.",
+     "section_refs": [
+      "11",
+      "12"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-003",
+     "needs_external": true,
+     "queries": [
+      "Azure Database for PostgreSQL flexible server pgvector HNSW supported version",
+      "pgvector HNSW index size 1536 dimensions memory per million vectors",
+      "Azure PostgreSQL flexible server memory optimized 16 vCore 128 GB"
+     ],
+     "question": "Does Azure Database for PostgreSQL Flexible Server in the Singapore region support pgvector with HNSW at the needed version? Do 128 GB RAM hold a ~57 GB raw vector set plus an ~80 GB HNSW index in memory, as the 'in-RAM index' latency claim assumes?",
+     "rationale": "The confirmed SKU decision and NFR-1/NFR-2 depend on the index fitting in memory at 9.5M vectors.",
+     "section_refs": [
+      "12",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "fitness_for_objectives",
+     "evidence_ids": [],
+     "id": "RQ-004",
+     "needs_external": true,
+     "queries": [
+      "PostgreSQL BM25 full text search ts_rank",
+      "Azure Database for PostgreSQL BM25 extension"
+     ],
+     "question": "Is the BM25 keyword fallback in the Embedder realistic on Azure PostgreSQL, given that native full-text ranking (ts_rank) is not BM25? And is the read path specified for records flagged embedded:false?",
+     "rationale": "The Embedder fallback is the availability path for FR-10 reads when the embedding service fails.",
+     "section_refs": [
+      "17"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "requirement_completeness",
+     "evidence_ids": [],
+     "id": "RQ-005",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are the following missing: a write-path error and feedback path (Validator or Classifier rejection after the agent has already received an ACK), dead-letter handling, idempotency or deduplication of retried Kafka messages, and read-your-writes or cache invalidation when a write lands during a cached session?",
+     "rationale": "FR-9/FR-10 make writes async and reads cached, so without these paths writes can be lost silently, duplicated or invisible, against P6/P7.",
+     "section_refs": [
+      "17",
+      "18",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "requirement_completeness",
+     "evidence_ids": [],
+     "id": "RQ-006",
+     "needs_external": false,
+     "queries": [],
+     "question": "Does the design define backup/restore, RPO/RTO, high availability for PostgreSQL, Redis and Event Hubs, the audit-store technology and its append-only enforcement, and retention or deletion propagation to Redis, the agent backup memory and the audit logs? Gaps the Pending Backlog already lists (Auditor retention, compaction, SIS failure handling) should be treated as acknowledged.",
+     "rationale": "NFR-7 retention enforcement and FR-15 deletion cannot be met if copies outside the primary tables are not covered.",
+     "section_refs": [
+      "11",
+      "13",
+      "17",
+      "20",
+      "26"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-007",
+     "needs_external": false,
+     "queries": [],
+     "question": "Do the numbers and statements agree across sections? Specifically: the per-learner breakdown (which sums to about 340) against the ~600 average; the MMP being outside the critical path (NFR-4) against Check 4 'MMP provisions slot' and PolicyEngine listed as an MMP component; orientation onboarding_progress typed WORKING (non-persistent) yet stored in a persisted slot; PUBLIC routed to memory_standard while the tier table lists INTERNAL+RESTRICTED only; and FR-9's order classify→embed→validate.",
+     "rationale": "The sizing, the availability claim (NFR-4) and the build-ready DDL and templates depend on these statements agreeing.",
+     "section_refs": [
+      "4",
+      "11",
+      "12",
+      "15",
+      "17",
+      "18",
+      "21",
+      "23"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "internal_consistency",
+     "evidence_ids": [],
+     "id": "RQ-008",
+     "needs_external": false,
+     "queries": [],
+     "question": "Does P6 ('all writes are classified and policy-checked') conflict with the immediate agent-own-memory writeback in Section 14 phase 5? Does the cached-context-pack read path conflict with Section 16 'policy decisions are not cached', so that a policy change or revocation does not affect packs already cached?",
+     "rationale": "These are contradictions between principles and flows that P3/P6 and FR-8 rely on.",
+     "section_refs": [
+      "3",
+      "13",
+      "14",
+      "16",
+      "18"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-009",
+     "needs_external": true,
+     "queries": [
+      "Microsoft Entra ID access token lifetime default configurable",
+      "Entra ID configurable token lifetime policy retirement refresh token",
+      "Entra ID continuous access evaluation token revocation"
+     ],
+     "question": "Can Microsoft Entra ID OAuth 2.0 issue or honour 48-hour access tokens? What are the default and configurable access/refresh token lifetimes, and how is revocation detected for a self-contained JWT?",
+     "rationale": "NFR-6, Gateway Check 3 and the confirmed 48-hour token decision depend on the identity provider actually supporting this behaviour.",
+     "section_refs": [
+      "5",
+      "6",
+      "15",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-010",
+     "needs_external": true,
+     "queries": [
+      "Azure Database for PostgreSQL flexible server pricing memory optimized E16ds v5 Southeast Asia",
+      "Azure Event Hubs Kafka support tier standard pricing"
+     ],
+     "question": "Is the SGD 800-1,200/month estimate credible for a Memory Optimised 16-vCore Azure Database for PostgreSQL Flexible Server in Southeast Asia, with storage, HA and backup? Is Event Hubs (Kafka-enabled tier), Redis and embedding cost included or excluded?",
+     "rationale": "NFR-10 is a stated cost constraint, and an underestimate would change governance and budget decisions.",
+     "section_refs": [
+      "12",
+      "25",
+      "2.2"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "claims_and_external_constraints",
+     "evidence_ids": [],
+     "id": "RQ-011",
+     "needs_external": true,
+     "queries": [
+      "Azure OpenAI text-embedding-3-small region availability Southeast Asia",
+      "Azure OpenAI data residency global standard deployment data zone",
+      "Singapore PDPA transfer limitation obligation overseas cloud"
+     ],
+     "question": "Is Azure OpenAI text-embedding-3-small available in an Azure Singapore (Southeast Asia) region or deployment type that keeps data in the region? Does sending HIGHLY_RESTRICTED counselling content to it raise data-residency or transfer concerns under the Singapore PDPA Transfer Limitation Obligation?",
+     "rationale": "The Embedder runs on all semantic writes, including the sensitive tier, so model availability and data location affect both feasibility and PDPA compliance.",
+     "section_refs": [
+      "11",
+      "17"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-012",
+     "needs_external": true,
+     "queries": [
+      "Singapore PDPA retention limitation obligation section 25",
+      "PDPA withdrawal of consent cease retain personal data",
+      "PDPC advisory guidelines key concepts protection obligation"
+     ],
+     "question": "Does the per-agent per-learner backup (FR-16, 'survives learner self-deletion', 'full store always present for all learners') conflict with the FR-15 deletion promise, the P2/P4 counselling hard wall and the Singapore PDPA obligations on retention limitation, consent withdrawal and protection? Is the backup covered by the Gateway, the tiering and audit?",
+     "rationale": "A duplicate copy of learner and counselling data outside the governed path may undermine the platform's main privacy objectives.",
+     "section_refs": [
+      "2.1",
+      "3",
+      "13",
+      "19",
+      "20"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-013",
+     "needs_external": false,
+     "queries": [],
+     "question": "Is HIGHLY_RESTRICTED isolation preserved end to end? This covers Redis cache tiering, audit-log content (slot_path/key for counselling), Event Hubs topic-level access control, embedding deployment separation, the authentication model of the MMP Admin API (acknowledged as unspecified), Super Admin 'Everything' against the no-override promise, and serving backup data to a learner whose token is EXPIRED.",
+     "rationale": "FR-5/NFR-5 and P4 require the hard wall at every layer, not only in the PostgreSQL schema.",
+     "section_refs": [
+      "11",
+      "15",
+      "17",
+      "18",
+      "19",
+      "21",
+      "28"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "security_and_privacy",
+     "evidence_ids": [],
+     "id": "RQ-014",
+     "needs_external": true,
+     "queries": [
+      "Microsoft Entra ID UPN change immutable identifier oid recommendation",
+      "Entra ID oid claim vs upn use as user key"
+     ],
+     "question": "Is using the mutable UPN as learner_id, the primary key everywhere, while the immutable oid is held as a secondary field, a risk to identity integrity and correct access control when a UPN changes or is reassigned?",
+     "rationale": "The confirmed learner_id decision affects how every namespace, audit entry and permission is linked to a learner.",
+     "section_refs": [
+      "6",
+      "25"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-015",
+     "needs_external": true,
+     "queries": [
+      "Azure Event Hubs Kafka dead letter retry consumer",
+      "Azure Event Hubs quotas limits partitions throughput units message size",
+      "Event Hubs at-least-once delivery checkpoint duplicates"
+     ],
+     "question": "How do Azure Event Hubs in Kafka mode behave on consumer failure and retry? Is there automatic retry or a dead-letter queue, what is the delivery guarantee (at-least-once), and what limits apply to partitions, throughput units or message size? Does the claim 'failed writes queue and retry automatically' hold for the term-start spike?",
+     "rationale": "FR-9, NFR-3 and the Section 18 resilience claims depend on these broker semantics.",
+     "section_refs": [
+      "18",
+      "25",
+      "26"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "search",
+     "criterion_id": "scalability_and_failure_modes",
+     "evidence_ids": [],
+     "id": "RQ-016",
+     "needs_external": true,
+     "queries": [
+      "pgvector HNSW build time memory maintenance_work_mem millions vectors",
+      "pgvector HNSW delete vacuum performance"
+     ],
+     "question": "Does the design handle concurrent writes from several agents to the same slot, ordering per learner, audit volume (logging every cache hit across 15,000 learners), HNSW index build and maintenance at 9.5M vectors with deletions, and the 30-40M growth ceiling?",
+     "rationale": "NFR-1/NFR-2 and FR-13 must hold at the stated load and over time, not only for a static dataset.",
+     "section_refs": [
+      "12",
+      "17",
+      "18"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "assumptions_and_dependencies",
+     "evidence_ids": [],
+     "id": "RQ-017",
+     "needs_external": false,
+     "queries": [],
+     "question": "Which confirmed decisions rest on pending items? This includes Write path 'Kafka (Azure Event Hubs)' confirmed while Kafka vs Event Hubs is still in the backlog, the Redis choice, Auditor retention and PDPA sign-off, and the Dispatcher conflict resolution that FR-16/P1 depend on. What priority should each have before build?",
+     "rationale": "Decisions marked confirmed that depend on open items create rework risk for build phases 4-6.",
+     "section_refs": [
+      "25",
+      "26",
+      "28",
+      "29"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-018",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can each acceptance criterion in Section 27 actually demonstrate its requirement? Examples: FR-5 tests only three agents and not the credential-level wall; FR-13 'exactly one entry per operation' under at-least-once delivery; the NFR-1 test without concurrent load; NFR-2's undefined 'normal load' and missing recall measure; FR-9 against NFR-3 tolerance; NFR-10 using measured data before build; FR-16 'does not attempt to write conflicting data'.",
+     "rationale": "Section 27 is the basis of the Phase 9 test plan, so criteria that cannot validate their requirement leave requirements unproven.",
+     "section_refs": [
+      "2",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "scholarly",
+     "criterion_id": "verifiability",
+     "evidence_ids": [],
+     "id": "RQ-019",
+     "needs_external": true,
+     "queries": [
+      "filtered approximate nearest neighbor search benchmark recall",
+      "ANN benchmark recall latency methodology"
+     ],
+     "question": "Is there a recognised benchmark method for filtered approximate-nearest-neighbour latency together with recall (for example ann-benchmarks style recall@k at a target QPS) that should be added to the NFR-2 benchmark?",
+     "rationale": "Measuring latency without recall can pass NFR-2 while filtered HNSW returns empty or incomplete results.",
+     "section_refs": [
+      "12",
+      "27"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "decision_preservation",
+     "evidence_ids": [],
+     "id": "RQ-020",
+     "needs_external": false,
+     "queries": [],
+     "question": "Can the likely refinements (pgvector filtering strategy such as partitioning or iterative scans, governed agent backup, token lifetime handling via refresh tokens, write-error feedback) be made while preserving the confirmed decisions on pgvector, the 48-hour window, async Kafka writes and automatic write-back? Which, if any, would need an explicit challenge backed by at least two pieces of evidence?",
+     "rationale": "Refinements must respect approved decisions unless strong evidence shows a decision cannot meet an objective.",
+     "section_refs": [
+      "25",
+      "12",
+      "15",
+      "18"
+     ],
+     "status": "open",
+     "summary": ""
+    },
+    {
+     "capability": "none",
+     "criterion_id": "operability_and_governance",
+     "evidence_ids": [],
+     "id": "RQ-021",
+     "needs_external": false,
+     "queries": [],
+     "question": "Are accountable owners named for template approval, sensitivity and retention policy (DPO), Super Admin emergency access, the PDPA sign-off, pending backlog items and cost monitoring? Are operational monitoring and alerting defined for the data plane (consumer lag, embedding backlog, cache hit rate, audit-store health), and not only for the MMP dashboard?",
+     "rationale": "The governance and PDPA objectives need accountable decisions and operational visibility, and the document lists roles but not owners or closure dates.",
+     "section_refs": [
+      "19",
+      "21",
+      "26",
+      "28",
+      "29"
+     ],
+     "status": "open",
+     "summary": ""
+    }
+   ]
+  },
+  "previous_run_dir": null,
+  "prior_review_id": null,
+  "prior_statuses": [],
+  "queries_issued": 0,
+  "refusals": [],
+  "registry": [
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Identity fields learner_id (UPN) + entra_object_id (oid) + email (pii:true)",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Identity fields",
+    "registry_id": "AD-001",
+    "statement": "Learner identity is the UPN learner_id plus entra_object_id (oid) plus email flagged pii:true.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Vector store PostgreSQL + pgvector on Azure Database for PostgreSQL",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Vector store",
+    "registry_id": "AD-002",
+    "statement": "The vector store is PostgreSQL with pgvector on Azure Database for PostgreSQL.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Azure SKU Memory Optimised, 16 vCores, 128 GB RAM",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Azure SKU",
+    "registry_id": "AD-003",
+    "statement": "The Azure SKU is Memory Optimised, 16 vCores, 128 GB RAM.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 12,
+     "quote": "HNSW parameters: m=16, ef_construction=64. Queries are always filtered by learner_id + slot_path",
+     "requirement_ids": [],
+     "section_ref": "12"
+    },
+    "doc_ref": "25 Confirmed Decisions - HNSW params / Vector count estimate",
+    "registry_id": "AD-004",
+    "statement": "HNSW parameters are m=16, ef_construction=64, and every query is filtered by learner_id and slot_path. Section 25 also confirms the estimate of about 9.5M vectors.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Azure AI Search Ruled out - RAG use case only (SIT-AI-Factory-RAG)",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Azure AI Search",
+    "registry_id": "AD-005",
+    "statement": "Azure AI Search is ruled out for this platform and kept for the RAG use case only.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Write path Async via Kafka (Azure Event Hubs)",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Write path",
+    "registry_id": "AD-006",
+    "statement": "The write path is asynchronous via Kafka (Azure Event Hubs).",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Read path Redis L1 → PostgreSQL (pgvector + event + doc tables)",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Read path",
+    "registry_id": "AD-007",
+    "statement": "The read path is Redis L1, then PostgreSQL (pgvector, event and document tables).",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 7,
+     "quote": "memory_sensitive schema (HIGHLY_RESTRICTED, separate credentials); vector, event, and document tables.",
+     "requirement_ids": [],
+     "section_ref": "5"
+    },
+    "doc_ref": "25 Confirmed Decisions - Two sensitivity tiers",
+    "registry_id": "AD-008",
+    "statement": "There are two tiers: memory_standard (INTERNAL and RESTRICTED) and memory_sensitive (HIGHLY_RESTRICTED, separate credentials).",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 19,
+     "quote": "orientation/ Time-bounded Expires: event-driven close OR 30-day wall-clock fallback",
+     "requirement_ids": [],
+     "section_ref": "20"
+    },
+    "doc_ref": "25 Confirmed Decisions - Orientation expiry",
+    "registry_id": "AD-009",
+    "statement": "Orientation slots expire when the orientation-close event fires, with a 30-day wall-clock fallback.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Unknown key in dev Warning logged + surfaced in MMP admin dashboard",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Template strictness / Unknown key in dev",
+    "registry_id": "AD-010",
+    "statement": "MEMORY_STRICT_MODE=true in production rejects unknown keys. In dev (false), unknown keys produce a warning that is logged and shown on the MMP dashboard.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "MMP provisioning SIS webhook (auto) + Admin API (manual override)",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - MMP provisioning",
+    "registry_id": "AD-011",
+    "statement": "Slots are provisioned automatically by SIS webhook, with the Admin API as a manual override.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Tutor style preference Shared in tutor_shared/ across all module instances",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Tutor style preference",
+    "registry_id": "AD-012",
+    "statement": "Tutoring style preference is held once in tutor_shared/ and shared across all module instances.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Auth token window 48 hours; EXPIRED → re-auth + agent backup; REVOKED → backup only",
+     "requirement_ids": [
+      "NFR-6"
+     ],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Auth token window",
+    "registry_id": "AD-013",
+    "statement": "Tokens last 48 hours. On EXPIRED the agent prompts re-authentication and serves from its backup; on REVOKED it serves from backup only.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 14,
+     "quote": "Learner namespace (permitted write slots only, via Kafka)",
+     "requirement_ids": [],
+     "section_ref": "14"
+    },
+    "doc_ref": "25 Confirmed Decisions - Write-back",
+    "registry_id": "AD-014",
+    "statement": "Write-back to the learner namespace is automatic, needs no learner confirmation, and is limited to permitted slots.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Access control timing Pre-retrieval - namespace restriction gates the query",
+     "requirement_ids": [],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Access control timing",
+    "registry_id": "AD-015",
+    "statement": "Access control happens before retrieval: the namespace restriction gates the query.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 25,
+     "quote": "Counselling Hard wall - no cross-domain reads, no MMP override, no exceptions",
+     "requirement_ids": [
+      "FR-5"
+     ],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Counselling",
+    "registry_id": "AD-016",
+    "statement": "Counselling has a hard wall: no cross-domain reads, no MMP override, no exceptions.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Cross-agent sharing Learner namespace is the only authorised bridge",
+     "requirement_ids": [
+      "FR-6"
+     ],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Cross-agent sharing",
+    "registry_id": "AD-017",
+    "statement": "The learner namespace is the only authorised bridge between agents.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Escalations Any agent writes, human + target domain reads, triggering agent cannot read back",
+     "requirement_ids": [
+      "FR-7"
+     ],
+     "section_ref": "25"
+    },
+    "doc_ref": "25 Confirmed Decisions - Escalations",
+    "registry_id": "AD-018",
+    "statement": "Any agent may write an escalation. Only humans and the target-domain agent may read it, and the triggering agent cannot read it back.",
+    "type": "approved_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Non-SIT / lifelong learner identity - platform-level unique ID, social-auth mapping to learner_id.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Non-SIT identity",
+    "registry_id": "AD-019",
+    "statement": "Identity for non-SIT and lifelong learners (a platform-level unique ID and social-auth mapping) is still to be designed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Cohort namespace design - group-level memory structure, provisioning rules.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Cohort namespace",
+    "registry_id": "AD-020",
+    "statement": "The cohort namespace structure and its provisioning rules are still to be designed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Memory Router Component 4 (Dispatcher) - full internal design including conflict-resolution edge cases.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Dispatcher",
+    "registry_id": "AD-021",
+    "statement": "The Dispatcher's full internal design, including conflict-resolution edge cases, is still to be designed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Memory Router Component 5 (Auditor) - log schema detail, retention period, PDPA alignment sign-off.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Auditor",
+    "registry_id": "AD-022",
+    "statement": "The Auditor's log schema detail, audit retention period and PDPA alignment sign-off are still pending.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Context Management - how the context pack evolves turn-by-turn within a session; mid-session",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Context Management",
+    "registry_id": "AD-023",
+    "statement": "How the context pack evolves turn by turn, and how mid-session compaction works, is still to be designed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Agent Dimension (full) - agent registration, versioning, multiple instances of the same agent type.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Agent Dimension",
+    "registry_id": "AD-024",
+    "statement": "Full design of agent registration, versioning, and multiple instances of the same agent type is still pending.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Memory Compaction - who triggers it, what rules apply, fidelity loss, what is retained versus archived.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Memory Compaction",
+    "registry_id": "AD-025",
+    "statement": "Compaction is still to be designed: who triggers it, which rules apply, how much fidelity is lost, and what is retained versus archived.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "MMP in detail - template versioning conflict resolution, SIS integration failure handling.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - MMP in detail",
+    "registry_id": "AD-026",
+    "statement": "How the MMP resolves template-versioning conflicts and handles SIS integration failures is still to be designed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Kafka vs Azure Event Hubs - confirm Azure Event Hubs as the managed Kafka-API alternative.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Kafka vs Azure Event Hubs",
+    "registry_id": "AD-027",
+    "statement": "Azure Event Hubs is still to be confirmed as the managed Kafka-API alternative.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 26,
+     "quote": "Redis - confirm Azure Cache for Redis versus local Redis for development environments.",
+     "requirement_ids": [],
+     "section_ref": "26"
+    },
+    "doc_ref": "26 Pending Backlog - Redis",
+    "registry_id": "AD-028",
+    "statement": "Whether to use Azure Cache for Redis or local Redis in development environments is still to be confirmed.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 30,
+     "quote": "A Policy Engine decision table or pseudocode - precedence rules across the seven dimensions, expressed as",
+     "requirement_ids": [],
+     "section_ref": "28"
+    },
+    "doc_ref": "28 Overall conclusion - spec gaps",
+    "registry_id": "AD-029",
+    "statement": "Three specifications are still open: the Policy Engine decision table, the MMP Admin API request/response schemas and auth model, and the MemoryClient SDK interface. Section 28 plans to close them in Build Phases 3 and 7.",
+    "type": "pending_decision"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 6,
+     "quote": "Audit every operation - access, write, denial, compaction, deletion, escalation are all logged. Required",
+     "requirement_ids": [
+      "P7"
+     ],
+     "section_ref": "3"
+    },
+    "doc_ref": "P7 / PDPA",
+    "registry_id": "AD-030",
+    "statement": "Every memory operation must be audited for PDPA compliance.",
+    "type": "constraint"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 5,
+     "quote": "Vector-store infrastructure cost shall remain within the SGD 800-1,200/month estimate at 15,000-learner",
+     "requirement_ids": [
+      "NFR-10"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-10",
+    "registry_id": "AD-031",
+    "statement": "Vector-store infrastructure cost must stay within SGD 800-1,200/month at 15,000-learner scale in the Azure Singapore region.",
+    "type": "constraint"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "SIT-AI-Factory-RAG (the Azure AI Search RAG project) - a separate system, in a separate resource group, with",
+     "requirement_ids": [],
+     "section_ref": "1"
+    },
+    "doc_ref": "1 Out of scope",
+    "registry_id": "AD-032",
+    "statement": "SIT-AI-Factory-RAG is a separate system in a separate resource group and shares no infrastructure with this platform.",
+    "type": "constraint"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 8,
+     "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+     "requirement_ids": [],
+     "section_ref": "6"
+    },
+    "doc_ref": "6 Learner Identity",
+    "registry_id": "AD-033",
+    "statement": "Authentication uses OAuth 2.0 via Entra ID, with tokens valid for 48 hours.",
+    "type": "constraint"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 6,
+     "quote": "Where a later section appears to conflict with one of these, the principle wins.",
+     "requirement_ids": [],
+     "section_ref": "3"
+    },
+    "doc_ref": "3 Foundational Principles",
+    "registry_id": "AD-034",
+    "statement": "The ten principles take precedence over any later section that conflicts with them.",
+    "type": "constraint"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "The Memory Access Gateway shall evaluate six ordered checks (agent registered, learner authenticated,",
+     "requirement_ids": [
+      "FR-4"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-4",
+    "registry_id": "AD-035",
+    "statement": "Before any store query runs, the Gateway evaluates six ordered checks. Any failure denies the request and the reason is logged.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 3,
+     "quote": "wellbeing/counselling/ shall be classified HIGHLY_RESTRICTED with zero cross-domain reads and no",
+     "requirement_ids": [
+      "FR-5"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-5",
+    "registry_id": "AD-036",
+    "statement": "wellbeing/counselling/ is HIGHLY_RESTRICTED, with zero cross-domain reads and no MMP override. This is enforced both in the policy engine and at schema/credential level.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Any registered agent may write to escalations/<id>/. Only human reviewers and the named target-domain",
+     "requirement_ids": [
+      "FR-7"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-7",
+    "registry_id": "AD-037",
+    "statement": "Any agent may write to escalations. Only human reviewers and the named target-domain agent may read them, and the triggering agent cannot read its own escalation back.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Every memory operation shall be evaluated against all seven policy dimensions: Storage, Sensitivity,",
+     "requirement_ids": [
+      "FR-8"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-8",
+    "registry_id": "AD-038",
+    "statement": "Every operation is evaluated against all seven policy dimensions.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and",
+     "requirement_ids": [
+      "FR-9"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-9",
+    "registry_id": "AD-039",
+    "statement": "Writes are enqueued with an immediate acknowledgement, then processed asynchronously in the order classify → embed → validate → route → audit.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Reads shall check an L1 cache first; on a cache miss, the platform shall query PostgreSQL, then rank,",
+     "requirement_ids": [
+      "FR-10"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-10",
+    "registry_id": "AD-040",
+    "statement": "Reads check the L1 cache first. On a miss they query PostgreSQL, then rank, budget and redact the results before caching and serving them.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "SIS events - registration, programme enrolment, module registration, module withdrawal, graduation -",
+     "requirement_ids": [
+      "FR-12"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-12",
+    "registry_id": "AD-041",
+    "statement": "SIS events automatically provision or expire namespace slots, with no manual step.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Every read, write, denial, token-validation outcome, provisioning event, compaction, deletion, and",
+     "requirement_ids": [
+      "FR-13"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-13",
+    "registry_id": "AD-042",
+    "statement": "Every read, write, denial, token validation, provisioning event, compaction, deletion and escalation is logged to an append-only audit store with the fields specified.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Learners shall be able to request deletion of their own user-deletable memory. Institutional records (e.g.",
+     "requirement_ids": [
+      "FR-15"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-15",
+    "registry_id": "AD-043",
+    "statement": "Learners can delete their own user-deletable memory. Institutional records are exempt from learner-initiated deletion.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Each agent shall maintain its own per-learner backup memory, used only when the learner namespace is",
+     "requirement_ids": [
+      "FR-16"
+     ],
+     "section_ref": "2.1"
+    },
+    "doc_ref": "FR-16",
+    "registry_id": "AD-044",
+    "statement": "Each agent's per-learner backup is used only in degraded mode and never overrides the authoritative namespace.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "The platform shall support at least 15,000 concurrent learner namespaces and ~9.5 million vectors",
+     "requirement_ids": [
+      "NFR-1"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-1",
+    "registry_id": "AD-045",
+    "statement": "Support at least 15,000 learner namespaces and about 9.5M vectors without changing database engine.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under",
+     "requirement_ids": [
+      "NFR-2"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-2",
+    "registry_id": "AD-046",
+    "statement": "Filtered vector similarity queries return within 5-15 ms under normal load.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "The agent-visible latency added by a memory write shall not exceed the time to enqueue the write to the",
+     "requirement_ids": [
+      "NFR-3"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-3",
+    "registry_id": "AD-047",
+    "statement": "The latency an agent sees for a write is no more than the broker enqueue time.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical",
+     "requirement_ids": [
+      "NFR-4"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-4",
+    "registry_id": "AD-048",
+    "statement": "MMP downtime does not affect agent read or write availability, because the MMP is outside the critical path.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "HIGHLY_RESTRICTED data shall be stored in a physically separate schema (memory_sensitive) with",
+     "requirement_ids": [
+      "NFR-5"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-5",
+    "registry_id": "AD-049",
+    "statement": "HIGHLY_RESTRICTED data is stored in a physically separate schema with separate credentials.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "Auth tokens shall be valid for 48 hours, with defined degraded-mode behaviour for EXPIRED and REVOKED",
+     "requirement_ids": [
+      "NFR-6"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-6",
+    "registry_id": "AD-050",
+    "statement": "Tokens are valid for 48 hours, and degraded-mode behaviour is defined for the EXPIRED and REVOKED states.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 4,
+     "quote": "All operations on personal data shall be logged; retention rules shall be enforceable per slot; PII-bearing",
+     "requirement_ids": [
+      "NFR-7"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-7",
+    "registry_id": "AD-051",
+    "statement": "All operations on personal data are logged, retention is enforceable per slot, and PII fields are flagged in the schema.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 5,
+     "quote": "New domains or agents shall be onboarded by publishing a new YAML slot template and registering the",
+     "requirement_ids": [
+      "NFR-8"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-8",
+    "registry_id": "AD-052",
+    "statement": "New domains or agents are onboarded through a YAML template and agent registration, with no code changes.",
+    "type": "requirement"
+   },
+   {
+    "doc_anchor": {
+     "doc_id": "DOC-sit_sample_v1",
+     "page": 5,
+     "quote": "Slot templates shall support a draft → published → deprecated lifecycle; writes shall validate against the",
+     "requirement_ids": [
+      "NFR-9"
+     ],
+     "section_ref": "2.2"
+    },
+    "doc_ref": "NFR-9",
+    "registry_id": "AD-053",
+    "statement": "Templates follow a draft → published → deprecated lifecycle, and writes are validated against the published version.",
+    "type": "requirement"
+   }
+  ],
+  "registry_frozen": true,
+  "registry_hashes": [
+   {
+    "iteration": 0,
+    "sha256": "da9fe8a4280008514a8eb9e0403892c5e311e7249bd05363c2d3f5ee6b6d2555"
+   }
+  ],
+  "review_inputs_found": [
+   "The document contains no comments from external reviewers and no change log. Its own Section 28 self-assessment (page 29) claims the database DDL is 'Ready' and 'concrete and complete'. This is a claim to check.",
+   "Section 28 (page 29) rates the Gateway, Validator, Embedder and the async write and cached read paths as 'Ready' and 'Directly codeable'. This is a claim to check.",
+   "Section 28 (page 30) claims the remaining backlog items (cohort namespace, compaction, non-SIT identity) are not needed for the launch scope of the initial six agents. This is a claim to check.",
+   "Section 24 (page 23) claims there is no open-source Memory Management Plane for agent memory, and that the listed capabilities have no direct precedent. This is a claim to check."
+  ],
+  "review_mode": "full",
+  "run_id": "ui-261004-034213-c5cb",
+  "sound_area_drafts": [],
+  "sound_areas": [],
+  "stop_reason": null,
+  "tool_calls": [],
+  "unanswered_questions": [],
+  "unresolved": [],
+  "verdict": null
+ }
+}

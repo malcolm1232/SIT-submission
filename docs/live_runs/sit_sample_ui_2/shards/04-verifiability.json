@@ -1,0 +1,1015 @@
+{
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "4556235eb170f756870b38a75e94353fd213f06b73abde51c9921c5ea7bb033a",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0006",
+  "criteria": [
+   "verifiability"
+  ],
+  "delta": {
+   "budget": {
+    "cache_creation_input_tokens": 42549,
+    "cache_read_input_tokens": 37103,
+    "input_tokens": 79656,
+    "output_tokens": 30271
+   },
+   "declined_sections": [],
+   "degradations": [],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0006"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 4,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "verifiability",
+  "outcome": "done",
+  "output": {
+   "coverage": [
+    {
+     "criterion_id": "verifiability",
+     "finding_ids": [
+      "FND-001",
+      "FND-002",
+      "FND-003",
+      "FND-004",
+      "FND-005",
+      "FND-006",
+      "FND-007",
+      "FND-008",
+      "FND-009",
+      "FND-010"
+     ],
+     "note": "Checked every FR/NFR criterion in Section 27 against its Section 2 requirement, plus the Section 12 sizing claims and the Section 28 readiness claims. FR-1, FR-2, FR-3, FR-4, FR-7, FR-10, FR-12, FR-14, NFR-4, NFR-5, NFR-8 and NFR-9 criteria are adequate. NFR-10 is a projection rather than a measurement, which is a minor point that was not raised.",
+     "outcome": "findings"
+    }
+   ],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "needs_testing",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "turn and attempts to read wellbeing/counselling/; all three attempts return",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "Memory Management Plane override path, enforced at both the policy-engine level and the",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 18,
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "requirement_ids": [],
+       "section_ref": "19"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "turn and attempts to read wellbeing/counselling/; all three attempts return",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "Memory Management Plane override path, enforced at both the policy-engine level and the",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-3",
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2",
+        "NEW-3"
+       ],
+       "evidence_id": "NEW-4",
+       "quote": "A test that only checks three agents and merely avoids the MMP path cannot show that Super Admin/MMP calls, other agents, cached context packs or memory_standard credentials are blocked from wellbeing/counselling/.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Extend the FR-5 test matrix and get the Section 19 Super Admin scope confirmed.",
+      "owner": "QA lead with DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 27.1 FR-5, add negative cases for every registered agent except the counsellor agent; for Institution Admin and Super Admin through every MMP Admin API endpoint (GET /namespaces/{id}, /audit, /policy/check, DELETE slots); for a Redis cache read after a counselling write; and for a direct DB connection with memory_standard credentials against memory_sensitive. Separately, state in Section 19 whether Super Admin 'Everything' excludes counselling content.",
+      "expected_benefit": "FR-5/P4 can be shown to hold for every principal and path, not just three agents.",
+      "issue": "The FR-5 criterion cannot show that no MMP override path exists or that enforcement happens at the credential level.",
+      "objective_refs": [
+       "FR-5",
+       "P4",
+       "NFR-5"
+      ],
+      "rationale": "The requirement makes a negative claim across all access paths. The test covers only one path, and the design describes admin roles that look like an override.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3",
+       "NEW-4"
+      ],
+      "verification": "Test-plan review shows one DENY case for each principal and path, and the Section 19 role table explicitly excludes counselling."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "high",
+     "statement": "FR-5 requires zero cross-domain reads, no MMP override path, and enforcement at both the policy-engine and schema/credential levels. The acceptance test only has three agents (advisory, tutor, career) attempt a read and confirms 'no MMP override path exercised'. Not exercising the override path does not show that no override path exists. Section 19 grants Super Admin 'Everything' and Section 21 gives Super admin 'Overrides... emergency access', so the most likely bypass is never tested. Buddy, Orientation, the Redis cache path and the credential layer are also left out, so passing this test would not show that the platform's strictest privacy promise (P4) holds.",
+     "tags": [
+      "counselling",
+      "hard-wall",
+      "acceptance-test",
+      "admin-override"
+     ],
+     "title": "FR-5 counselling hard-wall test omits MMP/Super Admin override and credential-level enforcement"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "needs_prototyping",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "HNSW parameters: m=16, ef_construction=64. Queries are always filtered by learner_id + slot_path - the",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "requirement_ids": [
+        "NFR-1"
+       ],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "p95 filtered similarity query latency ≤ 15 ms, p50 ≤ 10 ms, measured against",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "27.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "HNSW parameters: m=16, ef_construction=64. Queries are always filtered by learner_id + slot_path - the",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "HNSW index overhead (~1.4×) ~80 GB",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-7",
+       "quote": "Azure SKU required Memory Optimised, 16 vCores, 128 GB RAM",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-8",
+       "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-6",
+        "NEW-7"
+       ],
+       "evidence_id": "NEW-9",
+       "quote": "57 GB of raw vectors plus an ~80 GB HNSW index is about 137 GB, more than the 128 GB of RAM, before OS, shared buffers, the event/document tables and the duplicated memory_sensitive schema; the in-RAM latency premise is therefore unproven.",
+       "source_type": "inference",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-5"
+       ],
+       "evidence_id": "NEW-10",
+       "quote": "A global HNSW index plus a separate B-tree on learner_id/slot_path does not by itself confine the ANN search to 500-800 vectors; filtered recall and latency must be measured.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Run a filtered pgvector benchmark at full synthetic scale before confirming the SKU and HNSW parameters.",
+      "owner": "Platform architect / database engineer"
+     },
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Build a prototype in an early phase: load 9.5M synthetic 1536-dim vectors with the realistic per-learner distribution on the chosen SKU and measure p50/p95 latency and recall@k against exact search, for filtered queries at a defined concurrent QPS. Define 'normal load' in NFR-2 (e.g. peak concurrent sessions × reads/turn). Add a recall threshold and the load level to the Section 27.2 NFR-2 criterion. Correct the Section 12 memory arithmetic and say whether the index is meant to be fully RAM-resident.",
+      "expected_benefit": "NFR-1, NFR-2 and NFR-10 are confirmed before the SKU and index design are fixed.",
+      "issue": "The NFR-2 latency and the Section 12 search-space/RAM claims are unverified, and the acceptance criterion lacks a load level and a recall check.",
+      "objective_refs": [
+       "NFR-1",
+       "NFR-2",
+       "NFR-10"
+      ],
+      "rationale": "The SKU, HNSW parameters and cost estimate all depend on these claims. If they are wrong, retrieval quality or latency will fail at 15,000 learners.",
+      "supporting_evidence_ids": [
+       "NEW-5",
+       "NEW-6",
+       "NEW-7",
+       "NEW-8",
+       "NEW-9",
+       "NEW-10"
+      ],
+      "verification": "Benchmark report showing latency and recall at the defined load on the provisioned SKU, attached to Section 12."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "Section 12 claims the per-query search space is 500-800 vectors because queries are filtered. But the HNSW index is built over the whole embedding column, with only a separate B-tree on (learner_id, slot_path). Whether the planner pre-filters or post-filters, and whether filtered HNSW returns enough rows, has to be measured; it cannot be assumed. The memory figures (about 57 GB raw plus about 80 GB index) add up to more than the 128 GB of RAM on the chosen SKU, which weakens the 'in-RAM index' premise. NFR-2's 'normal load' is undefined, and the acceptance criterion measures latency only, with no concurrency level and no recall check.",
+     "tags": [
+      "pgvector",
+      "HNSW",
+      "latency",
+      "sizing"
+     ],
+     "title": "NFR-2 5-15 ms filtered-HNSW latency rests on unbenchmarked sizing and search-space assumptions"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "<- Agent receives immediate ACK -- non-blocking",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "With MEMORY_STRICT_MODE=true, a write with an undeclared key is",
+       "requirement_ids": [
+        "FR-11"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "Under load, the p99 agent-visible latency for a write call is within the Kafka",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-11",
+       "quote": "<- Agent receives immediate ACK -- non-blocking",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-12",
+       "quote": "+-- Validate against slot template (Validator)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-13",
+       "quote": "Under load, the p99 agent-visible latency for a write call is within the Kafka",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-11",
+        "NEW-12"
+       ],
+       "evidence_id": "NEW-14",
+       "quote": "Validation happens after the ACK, so a strict-mode rejection is only visible in storage or audit state, not to the writing agent; the criterion must name where rejection is observed.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "validation_need",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18, define the outcome of a rejected async write (e.g. a dead-letter topic plus an audit entry with outcome=DENIED and reason=UNKNOWN_KEY, optionally a callback or status endpoint). Alternatively, move the template-key check into the synchronous Gateway step. Rewrite the FR-11 criterion to assert that the record is not stored and that the DLQ/audit entry exists. Set a numeric p99 enqueue budget (ms) in FR-9/NFR-3 and fix the NFR-3 tolerance.",
+      "expected_benefit": "FR-9, FR-11 and NFR-3 become testable, and agents and admins can see when writes are silently dropped.",
+      "issue": "FR-11 rejection has no observable outcome, and the FR-9/NFR-3 thresholds are unquantified.",
+      "objective_refs": [
+       "FR-9",
+       "FR-11",
+       "NFR-3"
+      ],
+      "rationale": "A test needs a defined observable and a numeric threshold to pass or fail.",
+      "supporting_evidence_ids": [
+       "NEW-11",
+       "NEW-12",
+       "NEW-13",
+       "NEW-14"
+      ],
+      "verification": "Updated criteria contain numeric thresholds and a named rejection observable, and the test harness asserts both."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "The agent gets an immediate ACK at Kafka enqueue, and template validation runs later in the background consumer. So the FR-11 criterion's 'write... is rejected' cannot be seen by the caller, and the design defines no rejection or dead-letter signal back to the agent. FR-9's acceptance criterion refers to a 'Kafka enqueue time budget' that is never quantified, and NFR-3's tolerance is only an example ('e.g. ±10%'). As written, neither criterion has a fixed pass/fail threshold or a defined observable outcome.",
+     "tags": [
+      "kafka",
+      "async",
+      "validator",
+      "latency"
+     ],
+     "title": "Async write path makes FR-11 rejection and FR-9 latency budget unobservable as specified"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "condition per dimension) and confirms each produces a DENY attributable to",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "the decision algorithm - how the seven dimensions combine into a",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "28"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "condition per dimension) and confirms each produces a DENY attributable to",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-16",
+       "quote": "Redaction Should part of the memory be masked before serving to this agent?",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-17",
+       "quote": "the decision algorithm - how the seven dimensions combine into a",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "validation_need",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "When writing the Section 28 decision table, add the expected outcome per dimension (DENY, REDACT, EXPIRE/PURGE, ALLOW) and at least one test per pairwise precedence conflict. Update the Section 27.1 FR-8 criterion to assert those outcomes and reason codes.",
+      "expected_benefit": "FR-8 becomes testable, and Build Phase 3 has a defined oracle to test against.",
+      "issue": "The FR-8 criterion assumes DENY for every dimension and depends on an undefined algorithm.",
+      "objective_refs": [
+       "FR-8"
+      ],
+      "rationale": "Redaction and retention produce different outcomes, and precedence is undefined, so testers would have to make up the expected results.",
+      "supporting_evidence_ids": [
+       "NEW-15",
+       "NEW-16",
+       "NEW-17"
+      ],
+      "verification": "FR-8 test cases trace one-to-one to rows in the published decision table."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "The FR-8 criterion expects each of the seven dimensions to produce 'a DENY attributable to that dimension'. Redaction yields REDACT, and Retention and Deletion govern lifecycle rather than per-request denial. Section 28 also admits that the combination and precedence algorithm is unspecified. The review adds that this test cannot be written or passed until the decision table exists, and that the criterion itself needs rewriting to match the outcome types per dimension.",
+     "tags": [
+      "policy-engine",
+      "test-oracle"
+     ],
+     "title": "FR-8 policy-dimension test presumes DENY outcomes the unspecified algorithm does not define"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "log contains exactly one entry per operation with all required fields",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Every read, write, denial, token-validation outcome, provisioning event, compaction, deletion, and",
+       "requirement_ids": [
+        "FR-13"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "log contains exactly one entry per operation with all required fields",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-19",
+       "quote": "Every read, write, denial, token-validation outcome, provisioning event, compaction, deletion, and",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-20",
+       "quote": "- Every write (including async Kafka enqueue)",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "ambiguity",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 17 Auditor / Section 27.1 FR-13, define the expected audit event set per operation type (e.g. read = token_validation + read; write = token_validation + enqueue + persist or DLQ). Give each set a shared request/correlation ID, and add a test that a consumer failure still yields a terminal audit event.",
+      "expected_benefit": "FR-13 and the PDPA audit claim (P7) can be verified.",
+      "issue": "The audit-completeness oracle is ambiguous.",
+      "objective_refs": [
+       "FR-13",
+       "P7"
+      ],
+      "rationale": "One request produces several logged events, so 'exactly one' is undefined without a correlation model.",
+      "supporting_evidence_ids": [
+       "NEW-18",
+       "NEW-19",
+       "NEW-20"
+      ],
+      "verification": "The scripted test checks the expected event set per correlation ID, including the failure case."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "The FR-13 criterion requires exactly one audit entry per operation. But the Auditor logs token-validation outcomes, Kafka enqueue, and the consumer's write as separate events, so a single read or write produces several entries. The criterion also does not cover completeness when the write consumer fails, which matters because writes are async. Testers will either fail correct behaviour or loosen the criterion arbitrarily.",
+     "tags": [
+      "audit",
+      "PDPA",
+      "test-oracle"
+     ],
+     "title": "FR-13 'exactly one entry per operation' conflicts with multi-event logging per request"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "continues serving from its own backup memory and does not attempt to",
+       "requirement_ids": [
+        "FR-16"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "unreachable (degraded mode). The backup shall never override the authoritative learner namespace when",
+       "requirement_ids": [
+        "FR-16"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "continues serving from its own backup memory and does not attempt to",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-22",
+       "quote": "unreachable (degraded mode). The backup shall never override the authoritative learner namespace when",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-23",
+       "quote": "Memory Router Component 4 (Dispatcher) - full internal design including conflict-resolution edge cases.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "validation_need",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add to the Section 27.1 FR-16 criterion: seed key K with value A in the namespace and value B in the agent backup; with both available, the context pack contains A, and the audit source field = namespace. Define 'conflicting write-back' in the Dispatcher spec as the Pending Backlog item 3 is closed.",
+      "expected_benefit": "FR-16 and P1 can be verified.",
+      "issue": "The FR-16 criterion omits the precedence assertion and relies on an undefined notion of conflict.",
+      "objective_refs": [
+       "FR-16",
+       "P1"
+      ],
+      "rationale": "P1 is a foundational principle, and its test needs a positive precedence check.",
+      "supporting_evidence_ids": [
+       "NEW-21",
+       "NEW-22",
+       "NEW-23"
+      ],
+      "verification": "The test asserts context-pack content and the audit source for the seeded conflict."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "FR-16's key clause is that the backup must never override the authoritative namespace when both are available (P1). The test checks only that serving continues during an outage and that nothing conflicting is written back afterwards. It never asserts that, after restoration, a namespace value wins over a different backup value in the context pack. 'Conflicting data' is also undefined while conflict resolution sits in the Pending Backlog, so the pass condition cannot be judged.",
+     "tags": [
+      "degraded-mode",
+      "backup",
+      "conflict-resolution"
+     ],
+     "title": "FR-16 degraded-mode test does not verify 'backup never overrides namespace' nor define reconciliation"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "acceptance_criterion_cannot_validate",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "A learner-initiated deletion request removes user-deletable records and",
+       "requirement_ids": [
+        "FR-15"
+       ],
+       "section_ref": "27.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 13,
+       "quote": "survives learner deletion of their own memory (enabling session resume); rules are written by the system",
+       "requirement_ids": [],
+       "section_ref": "13"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-24",
+       "quote": "A learner-initiated deletion request removes user-deletable records and",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-25",
+       "quote": "survives learner deletion of their own memory (enabling session resume); rules are written by the system",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Decide whether agent-backup retention after learner deletion is acceptable, and record the decision.",
+      "owner": "DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Extend the Section 27.1 FR-15 criterion to assert that the deleted keys are absent from the Redis cache, are not re-materialised by in-flight Kafka messages, and are absent from the re-embed backlog. For the agent backup, either assert removal or have the DPO explicitly record the retention exception in Section 20.",
+      "expected_benefit": "FR-15 and NFR-7 claims can be shown to hold, or the retained copies are explicitly accepted.",
+      "issue": "The deletion test's scope leaves out derived and backup copies.",
+      "objective_refs": [
+       "FR-15",
+       "NFR-7"
+      ],
+      "rationale": "Verifying deletion means checking every place the data is held.",
+      "supporting_evidence_ids": [
+       "NEW-24",
+       "NEW-25"
+      ],
+      "verification": "Deletion test inspects every store and logs the result per store."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "medium",
+     "statement": "The FR-15 criterion checks that user-deletable records are removed and institutional records remain. It does not check derived copies: Redis context packs, unprocessed Kafka messages, re-embed backlog entries, or the agent per-learner backup, which the design says survives learner self-deletion. A pass would show deletion only from the primary tables, and the learner-facing deletion claim would remain unverified.",
+     "tags": [
+      "deletion",
+      "PDPA",
+      "cache",
+      "backup"
+     ],
+     "title": "FR-15 deletion test checks primary records only, not cache, embeddings or agent backup copies"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "internal_contradiction",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 29,
+       "quote": "Nothing further needed - DDL is concrete and complete (Section",
+       "requirement_ids": [],
+       "section_ref": "28"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "- Fall back to BM25 keyword search for retrieval",
+       "requirement_ids": [],
+       "section_ref": "17"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-26",
+       "quote": "Nothing further needed - DDL is concrete and complete (Section",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-27",
+       "quote": "- Fall back to BM25 keyword search for retrieval",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-26",
+        "NEW-27"
+       ],
+       "evidence_id": "NEW-28",
+       "quote": "The Section 11 DDL defines only memory_vectors, memory_events and memory_documents, with no embedded column, no full-text index, and no audit, registry or backup tables, so the fallback and the audit store cannot be generated from it.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "validation_need",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add the following to the Section 11 DDL: an embedded BOOLEAN column, a tsvector/full-text index for the keyword fallback, and tables for the audit store, agent_registry and agent backup (or state where these live). Add an acceptance test for the embedding-outage fallback (record stored with embedded=false, keyword retrieval works, backlog entry created). Downgrade the Section 28 ratings until this is done.",
+      "expected_benefit": "An accurate Section 28, and FR-13 and the embedder fallback become verifiable.",
+      "issue": "The readiness ratings do not match the specified DDL.",
+      "objective_refs": [
+       "FR-13",
+       "FR-10"
+      ],
+      "rationale": "Code generation from the spec would have to invent schema for the fallback and the audit store.",
+      "supporting_evidence_ids": [
+       "NEW-26",
+       "NEW-27",
+       "NEW-28"
+      ],
+      "verification": "Generated migrations include the tables and columns, and the fallback test passes."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Section 28 rates the DDL 'concrete and complete' and the Embedder 'directly codeable'. But the memory_vectors DDL has no embedded flag for the 'embedded: false' fallback, and nothing in the DDL supports the BM25 keyword fallback. The append-only audit store, agent registry, agent backup and namespace-registry tables are also undefined. No acceptance criterion exercises the embedding-unavailable fallback. The readiness self-assessment is the document's main verifiability claim, so these gaps would surface during code generation.",
+     "tags": [
+      "readiness",
+      "DDL",
+      "embedder-fallback"
+     ],
+     "title": "Section 28 'Ready' ratings overstate completeness of DDL and Embedder fallback"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "unsupported_or_incorrect_claim",
+     "confidence": 0.5,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "needs_investigation",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "Tokens issued at T are ACTIVE until T+48h, then transition to EXPIRED; a",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "27.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "6"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-29",
+       "quote": "Tokens issued at T are ACTIVE until T+48h, then transition to EXPIRED; a",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-30",
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-009",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Confirm which token lifetime can be configured, and the mechanism for the 48-hour window.",
+      "owner": "Identity / Entra ID administrator"
+     },
+     "no_change_rationale": null,
+     "rank": 9,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Find out whether Entra ID can be configured for 48-hour access tokens, or redefine NFR-6 as a platform session window (refresh-token based) with its own ACTIVE/EXPIRED state. Update the Section 27.2 test to use a controllable clock on that state machine.",
+      "expected_benefit": "NFR-6 becomes testable and the degraded-mode triggers are accurate.",
+      "issue": "It is unclear who owns the 48-hour lifetime, so the NFR-6 test may be untestable as written.",
+      "objective_refs": [
+       "NFR-6"
+      ],
+      "rationale": "Token issuance is delegated to Entra ID, so the platform may not be able to set the token's validity.",
+      "supporting_evidence_ids": [
+       "NEW-29",
+       "NEW-30"
+      ],
+      "verification": "Identity-team confirmation recorded in Section 6, and the test runs against the defined state owner."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "low",
+     "statement": "NFR-6 and its test treat a 48-hour token lifetime and the ACTIVE→EXPIRED transition as behaviour the platform controls. Authentication is delegated to Entra ID, so it needs checking whether the 48 hours is an access-token lifetime set by Entra ID or a platform session window built on refresh tokens. The test needs a different design depending on the answer.",
+     "tags": [
+      "auth",
+      "entra-id",
+      "token-lifetime"
+     ],
+     "title": "NFR-6 token-lifecycle test assumes the platform controls a 48-hour Entra ID token lifetime"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": null,
+     "confidence": 0.85,
+     "criterion_ids": [
+      "verifiability"
+     ],
+     "disposition": "no_change",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Each requirement from Section 2 is validated by a specific method with a concrete pass/fail acceptance criterion.",
+       "requirement_ids": [],
+       "section_ref": "27"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-31",
+       "quote": "Each requirement from Section 2 is validated by a specific method with a concrete pass/fail acceptance criterion.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-010",
+     "kind": "strength",
+     "next_step": null,
+     "no_change_rationale": "Full FR/NFR-to-test traceability already serves the stated build-readiness purpose.",
+     "rank": 10,
+     "reassessment": null,
+     "recommendation": null,
+     "secondary_dispositions": [],
+     "severity": null,
+     "statement": "Every FR and NFR in Section 2 has a named validation method and a concrete pass/fail criterion in Section 27, and Section 28 openly rates components Partial or Not ready where the spec is thin. This traceability is what the design's goal of build-readiness depends on. The defects found here are fixable refinements to individual criteria, not missing test coverage.",
+     "tags": [
+      "traceability",
+      "test-plan"
+     ],
+     "title": "Requirement-by-requirement acceptance matrix with honest readiness assessment"
+    }
+   ],
+   "sound_areas": [
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Six test cases, one per check, each asserting a DENY with the correct reason",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence_ids": [],
+     "related_finding_ids": [
+      "FND-010"
+     ],
+     "section_refs": [
+      "27.1",
+      "15"
+     ],
+     "why_sound": "The FR-4 criterion tests each of the six Gateway checks on its own, with a reason code and an all-pass ALLOW case. This directly verifies the ordered pre-retrieval control (P3)."
+    },
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "A credential valid for memory_standard is confirmed to fail authentication",
+       "requirement_ids": [
+        "NFR-5"
+       ],
+       "section_ref": "27.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "With the MMP process stopped, a scripted sequence of agent reads and",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "27.2"
+      }
+     ],
+     "evidence_ids": [],
+     "related_finding_ids": [
+      "FND-010"
+     ],
+     "section_refs": [
+      "27.2"
+     ],
+     "why_sound": "The NFR-5 test checks credential isolation in both directions, and the NFR-4 chaos test stops the MMP and runs agent traffic. Both are direct, falsifiable checks of their requirements."
+    },
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "Agent A writes an escalation; Agent A's own read attempt is denied; the",
+       "requirement_ids": [
+        "FR-7"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence_ids": [],
+     "related_finding_ids": [],
+     "section_refs": [
+      "27.1"
+     ],
+     "why_sound": "The FR-7 escalation test covers all three access rules (the triggering agent is denied, the target agent and a human reviewer are allowed), matching the requirement's wording."
+    }
+   ]
+  },
+  "prompt_hash": "39b4ba3b54b73444fbe00514392be05312853a0f56775e15afd69f672063e0cc",
+  "salvaged": 0
+ }
+}
