@@ -40,7 +40,7 @@ From: `agent/sit_review_agent/phases/ingest.py; agent/sit_review_agent/ingest/te
 
 ### understand: Understand: what the design says it is
 
-- Understand is one model call that reads the whole document once and writes the intent summary (the design's objectives and constraints) and a registry of the decisions the document says it has approved.
+- Understand is one model call that reads the whole document once and writes the intent summary (the design's objectives and constraints) and a registry of what the document has settled: its approved and pending decisions, constraints and key requirements.
 - Each entry carries a verbatim quote as its anchor, and the registry is then frozen and hashed, so no later call can rewrite what the document decided: later findings link to these entries and quote the same page text, which is what makes every claim traceable.
 - This run: {objectives} objectives, {constraints} constraints and {registry_entries} registry entries from {pages} pages.
   - until those numbers are in the stream: The document is {pages} pages and {sections} sections; the counts appear here when the call returns.
@@ -51,7 +51,7 @@ From: `agent/sit_review_agent/phases/understand.py; agent/sit_review_agent/state
 
 - Plan is one model call that turns the {criteria} review criteria into the questions to check, and marks the ones that need an outside source as research questions for the SIT MCP servers.
   - until those numbers are in the stream: Plan is one model call that turns the review criteria into the questions to check, and marks the ones that need an outside source as research questions for the SIT MCP servers.
-- Code adds a document-only question for any criterion the model neither asked about nor skipped with a reason, so every criterion is checked; research starts once understand and plan have both ended, while the assess shards never wait for the plan.
+- Code adds a document-only question for any criterion the model neither asked about nor skipped with a reason, so every criterion ends with a question or a stated reason to skip it; research starts once understand and plan have both ended, while the assess shards never wait for the plan.
 - This run: {questions} questions, {external} of them for an outside source.
 
 From: `agent/sit_review_agent/phases/plan.py build_plan; agent/sit_review_agent/states.py STAGE_1_DEPENDS`
@@ -65,12 +65,12 @@ From: `agent/sit_review_agent/phases/plan.py build_plan; agent/sit_review_agent/
 - So far {shards_drafted} of {shards} shards have answered, {shards_cut} ended at the limit, and {drafts} draft findings have streamed.
 - The merge, which is code, then numbered {merged_findings} findings in shard order, so no ID depends on which shard finished first.
 
-From: `agent/sit_review_agent/phases/assess.py; config/agent.yaml assess.shards; decisions #31 and #40`
+From: `agent/sit_review_agent/phases/assess.py; config/agent.yaml assess.shards; docs/ARCHITECTURE.md section 3; decisions #31 and #40`
 
 ### research: Research: asking the SIT MCP servers
 
-- Research asks the SIT MCP servers the plan's {research_questions} outside questions in rounds: the model asks for tool calls, the gateway runs them, and each result becomes a ledger entry (EV-nnn) before the model reads it, so it can cite only what it has read.
-  - until those numbers are in the stream: Research asks the SIT MCP servers the plan's outside questions in rounds: the model asks for tool calls, the gateway runs them, and each result becomes a ledger entry (EV-nnn) before the model reads it, so it can cite only what it has read.
+- Research asks the SIT MCP servers the plan's {research_questions} outside questions in rounds: the model asks for tool calls, the gateway runs them, and each successful result is recorded in the ledger (EV-nnn) before the model reads it, so it can cite only what it has read.
+  - until those numbers are in the stream: Research asks the SIT MCP servers the plan's outside questions in rounds: the model asks for tool calls, the gateway runs them, and each successful result is recorded in the ledger (EV-nnn) before the model reads it, so it can cite only what it has read.
 - It has asked {servers} with {tool_calls} tool calls; after each round the stop rules decide whether another round is worth it.
   - until those numbers are in the stream: {tools_offered} tools are offered from the enabled servers; after each round the stop rules decide whether another round is worth it.
   - until those numbers are in the stream: After each round the stop rules decide whether another round is worth it.
@@ -92,17 +92,17 @@ From: `agent/sit_review_agent/phases/refine.py split_revisions, repair_outcome; 
 
 ### verify: Verify: every quote against the page
 
-- Verify is code, not a model: each of the {anchors} anchors is searched for in the canonical page text, an exact match first, then a close match on the cited page or a page next to it.
-  - until those numbers are in the stream: Verify is code, not a model: each anchor is searched for in the canonical page text, an exact match first, then a close match on the cited page or a page next to it.
+- Verify is code: each of the {anchors} anchors is searched for in the canonical text of the cited page and the pages next to it, narrowed to the cited section and its neighbours, an exact match first, then a close match; the only model call is at most one request to re-quote the anchors that failed, made when time allows, and code checks those quotes again the same way.
+  - until those numbers are in the stream: Verify is code: each anchor is searched for in the canonical text of the cited page and the pages next to it, narrowed to the cited section and its neighbours, an exact match first, then a close match; the only model call is at most one request to re-quote the anchors that failed, made when time allows, and code checks those quotes again the same way.
 - Evidence is filled in from the ledger, so the model never writes a URL; a finding left with no anchor that resolves moves to the unresolved list as Unverified and is disclosed, never dropped silently.
 - This run: {resolved} of {anchors} anchors resolved, {unresolved_anchors} unresolved; {findings_verified} findings verified, {findings_unverified} unverified.
 
-From: `agent/sit_review_agent/phases/verify.py; agent/sit_review_agent/ingest/anchor.py verify_anchor; agent/sit_review_agent/state/evidence_ledger.py hydrate`
+From: `agent/sit_review_agent/phases/verify.py repair_slack_s; agent/sit_review_agent/ingest/anchor.py verify_anchor; agent/sit_review_agent/state/evidence_ledger.py hydrate`
 
 ### report: Report: the verdict and the record
 
-- Report is one model call that writes only the verdict, by {verdict_end} at the latest, and code then assembles report.json and report.md from the findings and the evidence ledger: every claim cites its finding and evidence IDs, and an ID that does not exist fails the run.
-  - until those numbers are in the stream: Report is one model call that writes only the verdict, and code then assembles report.json and report.md from the findings and the evidence ledger: every claim cites its finding and evidence IDs, and an ID that does not exist fails the run.
+- Report is one model call that writes only the verdict, by {verdict_end} at the latest, and code then assembles report.json and report.md from the findings and the evidence ledger: code removes any finding or evidence ID that names nothing, and if one still remains the invariant checks (INV-05 for evidence, INV-12 for findings) stop the run rather than publish the report.
+  - until those numbers are in the stream: Report is one model call that writes only the verdict, and code then assembles report.json and report.md from the findings and the evidence ledger: code removes any finding or evidence ID that names nothing, and if one still remains the invariant checks (INV-05 for evidence, INV-12 for findings) stop the run rather than publish the report.
 - The limitations section is written by code, one line per degradation (DEG-nnn): every limit reached, call ended early, failed tool or unverified finding is stated in the report rather than hidden, and only code can set the verdict to not assessed.
 - Verdict: {verdict} at confidence {confidence}, {final_findings} findings, {unresolved} unresolved items, {limitations} limitations.
 
@@ -110,13 +110,13 @@ From: `agent/sit_review_agent/phases/report.py assemble_review; agent/sit_review
 
 ### limits: Why the run has stage limits
 
-- Every stage has a fixed end on the run clock, not a share of the deadline: stage 1 by {stage_1_end}, refine by {refine_end}, the verdict by {verdict_end}, inside a {deadline} deadline, and each model call is bounded by the time left before its stage ends.
-  - until those numbers are in the stream: Every stage has a fixed end on the run clock, not a share of the deadline, and each model call is bounded by the time left before its stage ends.
+- Every stage has a fixed end on the run clock, set in seconds by the profile rather than as a share of the deadline and scaled only when a run is given a different deadline: stage 1 by {stage_1_end}, refine by {refine_end}, the verdict by {verdict_end}, inside a {deadline} deadline, and each model call is bounded by the time left before its stage ends.
+  - until those numbers are in the stream: Every stage has a fixed end on the run clock, set in seconds by the profile rather than as a share of the deadline and scaled only when a run is given a different deadline, and each model call is bounded by the time left before its stage ends.
 - The limits exist because the run is live in front of the panel and must end with a report; the figures are a configurable assumption, since the lab brief sets no time limit (decision #34).
-- A call that reaches its limit keeps every item it had finished and the run goes on to verify and the report, so only unfinished work is lost, and each stop is disclosed as a degradation; stops at a stage limit in this run: {limits_reached}.
-  - until those numbers are in the stream: A call that reaches its limit keeps every item it had finished and the run goes on to verify and the report, so only unfinished work is lost, and each stop is disclosed as a degradation.
+- An assess shard or a refine call that reaches its limit keeps every item it had finished, a cut plan or verdict is replaced by one built by code, and the run goes on to verify and the report, each stop disclosed as a degradation; stops at a stage limit in this run: {limits_reached}.
+  - until those numbers are in the stream: An assess shard or a refine call that reaches its limit keeps every item it had finished, a cut plan or verdict is replaced by one built by code, and the run goes on to verify and the report, each stop disclosed as a degradation.
 
-From: `config/profiles/demo.yaml stage_limits_s; agent/sit_review_agent/llm/runtime.py RunDeadline; agent/sit_review_agent/orchestrator.py _cap; decision #34`
+From: `config/profiles/demo.yaml stage_limits_s; agent/sit_review_agent/llm/runtime.py RunDeadline, effective_stage_limits; agent/sit_review_agent/orchestrator.py _cap; decision #34`
 
 ### finished: The run, in one paragraph
 
@@ -124,7 +124,7 @@ From: `config/profiles/demo.yaml stage_limits_s; agent/sit_review_agent/llm/runt
   - until those numbers are in the stream: The run stopped before its report: {run_error}.
   - until those numbers are in the stream: The run finished ({outcome}) at {wall} on the run clock.
 - Research gathered {ledger_entries} outside entries into the ledger with {tool_calls} tool calls; stops at a stage limit in this run: {limits_reached}.
-- The model cost is at least {cost_lower_bound}: a call ended by a limit logs its usage as unknown, never as zero.
+- The model cost is at least {cost_lower_bound}: a call that ended without a usage report, such as one cut by a limit, logs its usage as unknown, never as zero.
   - until those numbers are in the stream: The model cost was {cost}.
 
 From: `agent/sit_review_agent/manifest.py; agent/sit_review_agent/llm/gateway.py unrecorded_usage; docs/ARCHITECTURE.md section 6`
