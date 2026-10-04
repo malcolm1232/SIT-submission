@@ -15,7 +15,8 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_lakehouse_v1_1 | research_lakehouse | FULL | medium | 450 | 265.4 | completed_degraded | 26 | 6.39 (lb) | 0 | 3.46/4.39/5.02 | 4.85/5.26/5.30 |
 | d_iot_v1_1 | iot_fleet | FULL | medium | 432 | 265.0 | completed_degraded | 31 | 5.40 (lb) | 0 | 4.85/5.26/5.30 | 6.18/6.39/5.93 |
 | d_consent_v1_1 | consent_service | FULL | medium | 367 | 174.0 | completed_degraded | 23 | 5.82 | 0 | 6.18/6.39/5.93 | 4.87/7.27/6.87 |
-| d_hospital_v1_1 | hospital_scheduling | FULL | medium | 385 | - | crash rc=4 (FileNotFoundError) | - | - | - | 4.87/7.27/6.87 | 5.28/6.64/6.80 |
+| d_hospital_v1_1 | hospital_scheduling | FULL | medium | 385 | 219.6 | crashed in report (rc=4; StageCrash, INV-05 evidence quote invariant) | - | 5.91 | - | 4.87/7.27/6.87 | 5.28/6.64/6.80 |
+| d_ledger_v1_1 | ledger_migration | FULL | medium | 390 | 239.1 | completed_degraded | 24 | 6.13 | 0 | 5.28/6.64/6.80 | 6.06/5.45/6.06 |
 
 ## Scores
 
