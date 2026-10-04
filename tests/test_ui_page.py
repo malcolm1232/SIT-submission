@@ -278,6 +278,77 @@ def test_the_head_clock_ticks_only_the_seconds_since_the_last_event_and_stops_wi
     assert pg.evaluate("SIT.state.tick") is None
 
 
+def _record(seq: int, prev: dict[str, Any], type_: str, phase: str, kind: str, fields: dict[str, Any]) -> str:
+    """One progress.jsonl line in the schema shape, a second after ``prev`` on both clocks."""
+    return json.dumps({"v": 1, "seq": seq, "t": prev["t"] + 1, "run_s": (prev["run_s"] or 0) + 1, "type": type_,
+                       "phase": phase, "kind": kind, "console": True, "message": type_, "fields": fields}) + "\n"
+
+
+def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_so_far(page) -> None:
+    """Change C: each track row opens to its model calls (keyed by call_id) with the latest call_status fields
+    (reasoning tokens, items, chars) and the draft items streamed from it (severity, kind, title); the expansion
+    survives the repaint on the next event; a finished call reads closed at its record time."""
+    from sit_review_agent.ui.launcher import Launched
+
+    pg, base, runs, state = page
+    rd = runs / "calls"
+    (rd / "ui").mkdir(parents=True)
+    display = "dra review x.pdf --run-id calls"
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "calls", "display": display, "args": [],
+                                                       "document_name": "x.pdf"}), encoding="utf-8")
+    proc = _AliveProc()
+    state.launcher.runs["calls"] = Launched("calls", proc, display, "now")
+    lines = (FIXTURES / "progress.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)[:40]
+    head = [json.loads(ln) for ln in lines]
+    opened = {e["fields"]["call_id"]: e for e in head if e["type"] == "call_opened"}
+    closed = {e["fields"]["call_id"]: e for e in head if e["type"] in ("call_closed", "call_cut")}
+    live = next(e for cid, e in opened.items() if cid not in closed and e["fields"]["shard"])
+    cid, shard, shards = live["fields"]["call_id"], live["fields"]["shard"], len(head[0]["fields"]["shards"])
+    key = f"assess {shard}/{shards}"
+    status = {"call_id": cid, "phase": "assess", "label": "", "thinking_tokens": 1234, "items": 2, "chars": 5678}
+    lines.append(_record(41, head[-1], "call_status", "stage_1", "wait", {"calls": [status]}))
+    tick = json.loads(lines[-1])
+    draft = {"list": "findings", "index": 1, "call_id": cid, "shard": shard, "id": "FND-001", "severity": "high",
+             "kind": "risk", "title": "A drafted title"}
+    lines.append(_record(42, tick, "draft_item", "assess", "draft", draft))
+    (rd / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
+    pg.goto(base + "/?run=calls")
+    pg.wait_for_function("document.querySelectorAll('#drafts .draft').length >= 1")
+    row = pg.locator(f'.track[data-track="{key}"]')
+    assert row.locator(".name-btn").get_attribute("aria-expanded") == "false"
+    assert row.locator(".name-btn").get_attribute("data-calls") == "1"
+    assert pg.locator(f'.calls[data-track="{key}"]').count() == 0
+    row.locator(".name-btn").click()
+    calls = pg.locator(f'.calls[data-track="{key}"] .callrow')
+    assert calls.count() == 1
+    assert calls.first.get_attribute("data-call") == cid and calls.first.get_attribute("data-status") == "running"
+    assert calls.first.locator(".cid").inner_text() == cid
+    assert calls.first.locator(".about").inner_text() == f"assess · opened {_mmss(live['run_s'])}"
+    assert calls.first.locator(".pill").inner_text() == "running"
+    assert calls.first.locator(".cstatus").inner_text() == ("thinking ~1,234 tokens · 2 items · 5,678 chars · as of "
+                                                            + _mmss(tick["run_s"]))
+    drafts = pg.locator(f'.calls[data-track="{key}"] .cdraft')
+    assert drafts.count() == 1
+    assert drafts.first.locator(".pill").inner_text() == "high" and drafts.first.locator(".kind").inner_text() == "risk"
+    assert drafts.first.locator(".text").inner_text() == "A drafted title"
+    # The row stays open through the repaint of the next event, and the new status replaces the old one.
+    status2 = dict(status, thinking_tokens=2000, items=3, chars=9000)
+    with (rd / "progress.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(_record(43, json.loads(lines[-1]), "call_status", "stage_1", "wait", {"calls": [status2]}))
+    sel = f".calls[data-track='{key}'] .cstatus"
+    pg.wait_for_function(f"document.querySelector(\"{sel}\").textContent.startsWith('thinking ~2,000')")
+    assert pg.locator(f'.track[data-track="{key}"] .name-btn').get_attribute("aria-expanded") == "true"
+    assert pg.locator(sel).inner_text().startswith("thinking ~2,000 tokens · 3 items · 9,000 chars")
+    # A finished call: closed at its record time, no status line invented for it.
+    done_cid, done_ev = next((cid, e) for cid, e in closed.items() if opened[cid]["phase"] == "understand")
+    pg.locator('.track[data-track="understand"] .name-btn').click()
+    done = pg.locator('.calls[data-track="understand"] .callrow')
+    assert done.count() == 1 and done.first.get_attribute("data-call") == done_cid
+    assert done.first.locator(".pill").inner_text() == f"closed at {_mmss(done_ev['run_s'])}"
+    assert done.first.locator(".cstatus").inner_text() == ""
+    assert pg.locator(".calls .cdraft .text").all_inner_texts() == ["A drafted title"]     # titles only, no model text
+
+
 def test_a_fired_limit_is_stated_in_plain_words(page) -> None:
     pg, base, runs, _state = page
     evs = records(runs / "progress_cut" / "progress.jsonl")

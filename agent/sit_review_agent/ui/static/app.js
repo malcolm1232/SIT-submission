@@ -418,7 +418,23 @@ function newRunModel() {
     tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
     stopRule: null, doc: null, runId: null,
     // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
-    limitNotes: [], draftedByCall: new Map() };
+    limitNotes: [], draftedByCall: new Map(),
+    // The track rows the reader expanded to their calls; kept across repaints.
+    open: new Set() };
+}
+
+// One model call of a track (call_opened), with the latest call_status fields and the draft items streamed from it.
+function callRecord(t, callId, ev, f, now) {
+  if (!t.calls.has(callId)) {
+    t.calls.set(callId, { id: callId, phase: ev.phase, purpose: f.purpose ?? null, attempt: f.attempt ?? null, iteration: f.iteration ?? null,
+      openedAt: now, closedAt: null, outcome: null, kept: null, status: null, statusAt: null, drafts: [], lists: {}, seen: new Set() });
+  }
+  return t.calls.get(callId);
+}
+function callDraft(cr, key, d) {
+  if (!cr || cr.seen.has(key) || !d) return;
+  cr.seen.add(key);
+  cr.drafts.push({ severity: d.severity, kind: d.kind, title: d.title });
 }
 
 // Which recorded limit a stage runs against: stage 1 and its members, refine, verdict; report runs to the deadline.
@@ -432,7 +448,7 @@ function limitName(stage) { return stage === "stage_1" || STAGE1.includes(stage)
 function noteLimit(m, t, text) { m.limitNotes.push({ t, text }); }
 
 function track(m, key, label) {
-  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null });
+  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null, calls: new Map() });
   return m.tracks.get(key);
 }
 
@@ -496,6 +512,7 @@ function applyEvent(m, ev) {
       const t = track(m, key);
       t.call = f.call_id; if (t.status !== "cut") t.status = inFlight(m); if (t.start === null) t.start = now; if (f.shard_name) t.shard = f.shard_name;
       m.byCall.set(f.call_id, t);
+      callRecord(t, f.call_id, ev, f, now);
       break;
     }
     case "call_status":
@@ -505,26 +522,34 @@ function applyEvent(m, ev) {
         else if (typeof c.chars === "number" && c.chars > 0) { t.strong = null; t.text = "answer streaming (" + intl(c.chars) + " chars)"; }
         else if (typeof c.thinking_tokens === "number" && c.thinking_tokens > 0) { t.strong = null; t.text = "thinking ~" + intl(c.thinking_tokens) + " tokens"; }
         else { t.strong = null; t.text = "starting"; }
+        const cr = t.calls.get(c.call_id);
+        if (cr) { cr.status = { phase: c.phase ?? null, label: c.label || null, thinking: c.thinking_tokens ?? null, items: c.items ?? null, chars: c.chars ?? null }; cr.statusAt = now; }
       }
       break;
     case "call_retry": { const t = track(m, ev.phase); t.strong = null; t.text = "retry: " + words(f.reason); break; }
     case "call_closed": {
       const t = m.byCall.get(f.call_id); if (!t) break;
+      const cr = t.calls.get(f.call_id);
+      if (cr) { cr.closedAt = now; cr.outcome = f.outcome; if (typeof f.kept_items === "number") cr.kept = f.kept_items; }
       if (f.outcome === "cut") { t.status = "cut"; t.cutAt = now; t.end = now; t.strong = null; t.text = typeof f.kept_items === "number" ? "kept " + intl(f.kept_items) + " finished item(s)" : t.text; }
       else if (CALL_FAILED.includes(f.outcome)) { t.status = "failed"; t.end = now; t.strong = null; t.text = words(f.outcome); }
       else if (t.key.startsWith("assess ")) { t.status = "done"; t.end = now; }
       break;
     }
-    case "draft_item":
+    case "draft_item": {
+      const t = m.byCall.get(f.call_id), cr = t ? t.calls.get(f.call_id) : null;
+      if (cr && f.list) cr.lists[f.list] = (cr.lists[f.list] || 0) + 1;
       if (f.list === "findings") {
         m.draftedByCall.set(f.call_id, (m.draftedByCall.get(f.call_id) || 0) + 1);
         addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
+        callDraft(cr, f.call_id + "#" + f.index, f);
       }
       break;
+    }
     case "shard_drafted": {
       const t = m.byCall.get(f.call_id) || track(m, shardKey(m, f.shard));
       t.strong = intl(f.findings); t.text = " draft finding(s), " + intl(f.sound_areas) + " sound area(s), unverified";
-      for (const d of f.drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      for (const d of f.drafts || []) { addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id)); callDraft(t.calls.get(f.call_id), f.call_id + "#" + d.index, d); }
       break;
     }
     case "shard_cut": {
@@ -534,7 +559,8 @@ function applyEvent(m, ev) {
       const kept = "kept " + intl(f.kept) + " finished finding(s)" + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "");
       t.text = (f.degradation_id ? " in the report · " : "") + kept;
       if (f.degradation_id) t.disclose = { id: f.degradation_id, text: t.key + " cut at " + clock(t.cutAt) + ": " + kept };
-      for (const d of f.kept_drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      for (const d of f.kept_drafts || []) { addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id)); callDraft(t.calls.get(f.call_id), f.call_id + "#" + d.index, d); }
+      { const cr = t.calls.get(f.call_id); if (cr) { cr.outcome = cr.outcome || "cut"; cr.closedAt = cr.closedAt ?? t.cutAt; cr.kept = f.kept; } }
       {
         const lim = limitFor(m, "stage_1"), drafted = m.draftedByCall.get(f.call_id) || 0;
         const keptText = drafted ? intl(f.kept) + " of " + intl(drafted) + " drafts kept" : intl(f.kept) + " draft(s) kept";
@@ -551,6 +577,7 @@ function applyEvent(m, ev) {
     case "call_cut": {
       const t = m.byCall.get(f.call_id); if (!t) break;
       t.status = "cut"; t.cutAt = f.at_s ?? now; t.end = t.cutAt; t.strong = null; t.text = "kept " + intl(f.kept_items) + " finished item(s)";
+      { const cr = t.calls.get(f.call_id); if (cr) { cr.outcome = "cut"; cr.closedAt = t.cutAt; cr.kept = f.kept_items; } }
       {
         const lim = limitFor(m, f.stage);
         noteLimit(m, now, sentence(words(f.stage)) + ": the model call " + f.call_id + " was cut at " + clock(t.cutAt) + (lim !== null ? " (" + limitName(f.stage) + " ends by " + clock(lim) + ")" : "") + "; " + intl(f.kept_items) + " finished item(s) kept.");
@@ -592,9 +619,59 @@ function trackRow(m, t, limit) {
   const status = h("div", { class: "status" });
   { if (t.shard) status.append(t.shard + (t.strong || t.text ? " · " : "")); if (t.strong) status.append(h("b", { text: t.strong })); if (t.text) status.append(t.text); }
   status.title = status.textContent;
-  return h("div", { class: "track", "data-track": t.key, "data-status": t.status },
-    h("div", { class: "name" }, t.label, t.call ? h("span", { class: "call mono", text: t.call }) : null),
+  // A row with calls expands to them (keyed by call_id); the open set lives in the model so a repaint keeps it.
+  const n = t.calls.size, open = m.open.has(t.key);
+  const name = n ? h("button", { class: "name-btn", type: "button", "aria-expanded": String(open), "data-calls": String(n), title: (open ? "Hide" : "Show") + " the " + intl(n) + " model call" + (n === 1 ? "" : "s"),
+    onclick: () => { if (open) m.open.delete(t.key); else m.open.add(t.key); renderRun(m); } },
+    h("span", { class: "chev", text: open ? "▾" : "▸" }), t.label) : t.label;
+  return h("div", { class: "track" + (open ? " open" : ""), "data-track": t.key, "data-status": t.status },
+    h("div", { class: "name" }, name, t.call ? h("span", { class: "call mono", text: t.call }) : null),
     h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status);
+}
+
+// The latest call_status fields of a call, as the record has them: label, reasoning tokens, items, chars.
+function callStatusText(cr) {
+  const st = cr.status;
+  if (!st) return cr.closedAt === null ? "no status yet" : "";
+  const bits = [];
+  if (st.label) bits.push(st.label);
+  if (typeof st.thinking === "number" && st.thinking > 0) bits.push("thinking ~" + intl(st.thinking) + " tokens");
+  if (typeof st.items === "number" && st.items > 0) bits.push(intl(st.items) + (st.items === 1 ? " item" : " items"));
+  if (typeof st.chars === "number" && st.chars > 0) bits.push(intl(st.chars) + " chars");
+  return (bits.length ? bits.join(" · ") : "starting") + " · as of " + clock(cr.statusAt);
+}
+
+function callState(m, cr) {
+  if (cr.closedAt === null) return [inFlight(m), inFlight(m)];
+  if (cr.outcome === "cut") return ["cut", "cut at " + clock(cr.closedAt) + (typeof cr.kept === "number" ? ", " + intl(cr.kept) + " kept" : "")];
+  if (CALL_FAILED.includes(cr.outcome)) return ["failed", words(cr.outcome)];
+  return ["done", "closed at " + clock(cr.closedAt)];
+}
+
+// The calls of one track: one row per call_id with its purpose, state, latest status and the draft items it streamed.
+function callsBlock(m, t) {
+  const box = h("div", { class: "calls", "data-track": t.key });
+  for (const cr of t.calls.values()) {
+    const [st, stText] = callState(m, cr);
+    const about = [cr.purpose, typeof cr.attempt === "number" && cr.attempt > 0 ? "attempt " + intl(cr.attempt) : null].filter(Boolean).join(", ");
+    const lists = Object.entries(cr.lists).filter(([k]) => k !== "findings").map(([k, v]) => intl(v) + " " + words(k) + (v === 1 ? " item" : " items"));
+    const row = h("div", { class: "callrow", "data-call": cr.id, "data-status": st },
+      h("div", { class: "cid mono", text: cr.id }),
+      h("div", { class: "about" }, h("span", { class: "mono", text: about }), " · opened " + clock(cr.openedAt)),
+      h("div", {}, h("span", { class: "pill " + st, text: stText })),
+      h("div", { class: "cstatus", text: callStatusText(cr) }));
+    box.append(row);
+    if (cr.drafts.length || lists.length) {
+      const d = h("div", { class: "cdrafts" });
+      cr.drafts.forEach((x, i) => {
+        const sev = x.kind === "strength" ? "strength" : (x.severity || "");
+        d.append(h("div", { class: "cdraft" }, h("span", { class: "num mono", text: String(i + 1) }), sev ? h("span", { class: "pill " + sev, text: sev }) : null, x.kind && x.kind !== "strength" ? h("span", { class: "kind", text: words(x.kind) }) : null, h("span", { class: "text", text: x.title || "" })));
+      });
+      if (lists.length) d.append(h("div", { class: "clists", text: "also streamed: " + lists.join(", ") }));
+      box.append(d);
+    }
+  }
+  return box;
 }
 
 function stage1Summary(m, shards) {
@@ -614,7 +691,7 @@ function renderRun(m) {
   const keys = [...m.tracks.keys()];
   const shards = keys.filter((k) => k.startsWith("assess ")).sort((a, b) => parseInt(a.slice(7), 10) - parseInt(b.slice(7), 10));
   const order = [...STAGE1, ...(shards.length ? shards : ["assess"])];
-  for (const k of order) s1.append(trackRow(m, track(m, k), lim.stage_1_end ?? null));
+  for (const k of order) { const t = track(m, k); s1.append(trackRow(m, t, lim.stage_1_end ?? null)); if (m.open.has(k) && t.calls.size) s1.append(callsBlock(m, t)); }
   const summary = stage1Summary(m, shards);
   $("stage1-limit").textContent = (lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "") + (summary ? " · " + summary : "");
   const dis = clear($("stage1-disclosures"));
@@ -633,6 +710,7 @@ function renderRun(m) {
       const r = trackRow(m, t, limit ?? null);
       if (t.status === "waiting") r.querySelector(".status").textContent = row.about;
       seq.append(r);
+      if (m.open.has(row.phase) && t.calls.size) seq.append(callsBlock(m, t));
     }
   }
   const stop = $("stop-rule");

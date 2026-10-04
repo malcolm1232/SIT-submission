@@ -251,6 +251,24 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--fg); border-radius: 2px; }
 .bar.closed i { background: var(--fg-disabled); }
 .track .status { color: var(--fg-muted); line-height: 1.35; padding: 6px 0; }
+/* a track expands to its model calls: the chevron button is the row's name; the calls sit under the row */
+.track .name-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-weight: 500; color: inherit; }
+.track .name-btn:hover { color: var(--fg-2); }
+.track .name-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.track .name-btn .chev { color: var(--fg-disabled); font-size: 11px; width: 10px; display: inline-block; }
+.track .name-btn[aria-expanded="true"] .chev { color: var(--fg); }
+.calls { padding: 4px 10px 10px 34px; background: var(--bg-subtle); border-top: 1px solid var(--border-subtle); font-size: 12.5px; }
+.callrow { display: grid; grid-template-columns: 76px minmax(0, 1fr) 110px minmax(0, 1.4fr); gap: 12px; align-items: center; min-height: 30px; padding: 4px 0; }
+.callrow + .callrow { border-top: 1px solid var(--border-subtle); }
+.callrow .cid { color: var(--fg); }
+.callrow .about { color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.callrow .cstatus { color: var(--fg-2); }
+.cdrafts { padding: 0 0 6px 88px; }
+.cdraft { display: grid; grid-template-columns: 18px auto auto minmax(0, 1fr); gap: 8px; align-items: center; padding: 3px 0; font-size: 12.5px; }
+.cdraft .num { color: var(--fg-disabled); }
+.cdraft .kind { color: var(--fg-muted); white-space: nowrap; }
+.cdraft .text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clists { color: var(--fg-muted); font-size: 12px; padding-top: 4px; }
 .track .status b { color: var(--fg); font-weight: 500; }
 .disclose { display: flex; gap: 8px; align-items: baseline; padding: 8px 10px; font-size: 12.5px; color: var(--fg-2); border-bottom: 1px solid var(--border-subtle); background: var(--bg-subtle); }
 .disclose .k { color: var(--fg-muted); white-space: nowrap; }
