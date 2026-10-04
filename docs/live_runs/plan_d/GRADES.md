@@ -8,3 +8,5 @@ Grader: `sit-eval grade run`, key-blind, 2 samples, seed 0, Opus `high`, `--max-
 | d_clinical_v1_1 | clinical_rpm | complete | 77.0 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 3.0 | 3.0 | 1.0 | 2.0 | 3.0 | 4 | no | yes | 5 | 7.2604 |
 | d_lakehouse_v1_1 | research_lakehouse | complete | 80.5 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 4.0 | 3.0 | 1.5 | 2.0 | 3.0 | 5 | no | yes | 4 | 5.1185 |
 | d_iot_v1_1 | iot_fleet | complete | 80.5 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 4.0 | 3.5 | 1.0 | 2.0 | 3.0 | 4 | no | no | 4 | 5.3183 |
+| d_consent_v1_1 | consent_service | complete | 83.0 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 4.0 | 4.0 | 3.0 | 1.0 | 2.0 | 3.0 | 6 | no | yes | 5 | 6.4323 |
+| d_ledger_v1_1 | ledger_migration | complete | 83.2 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 3.5 | 3.5 | 2.0 | 3.0 | 3.0 | 2 | no | no | 4 | 4.8626 |
