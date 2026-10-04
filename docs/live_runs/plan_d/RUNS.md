@@ -22,6 +22,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_clinical_v2_1 | clinical_rpm | FULL | medium | 447 | 265.4 | completed_degraded | 35 | 7.34 (lb) | 0 | 4.85/6.30/6.84 | 4.38/6.15/6.68 |
 | d_lakehouse_v2_1 | research_lakehouse | FULL | medium | 505 | 265.5 | completed_degraded | 69 | 7.61 (lb) | 0 | 4.38/6.15/6.68 | 3.32/5.46/6.20 |
 | d_iot_v2_1 | iot_fleet | FULL | medium | 521 | 265.4 | completed_degraded | 70 | 6.98 (lb) | 0 | 3.32/5.46/6.20 | 4.18/5.74/6.24 |
+| d_consent_v2_1 | consent_service | FULL | medium | 256 | 229.2 | aborted_graceful in refine (rc=3) | - | 5.76 | - | 4.18/5.74/6.24 | 7.87/6.89/6.63 |
 
 ## Scores
 
@@ -36,3 +37,5 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_exam_v1_1 | exam_platform | 12/14 (0.857) | 0.929 | 0.750 strict / 0.938 adj | 0.917 | 1.000 | 0 of 16 | 3.57 | 211 | 5.75/7.54/7.11 | 9.33/8.46/7.61 |
 | d_payments_v2_1 | payments_orchestration | 8/9 (0.889) | 1.000 | 0.286 strict / 0.821 adj | 0.905 | 1.000 | 0 of 28 | 11.51 | 359 | 4.85/6.30/6.84 | 7.49/7.07/7.04 |
 | d_clinical_v2_1 | clinical_rpm | 6/9 (0.667) | 0.889 | 0.207 strict / 0.862 adj | 0.710 | 1.000 | 0 of 29 | 11.76 | 388 | 4.38/6.15/6.68 | 7.15/6.71/6.69 |
+| d_lakehouse_v2_1 | research_lakehouse | stopped_budget (--max-cost-usd 18 reached, rc=3; no metrics written) | - | - | - | - | - | 15.90 | 376 | 3.32/5.46/6.20 | 6.18/6.84/6.67 |
+| d_iot_v2_1 | iot_fleet | not scored: stopped by hand at 06:20 after the subscription session limit (291 of 337 judge calls errored; rescored after the 07:10 reset) | - | - | - | - | - | - | - | 4.18/5.74/6.24 | 4.80/5.46/6.06 |
