@@ -224,6 +224,77 @@ def test_stop_takes_two_clicks_and_states_what_the_signal_does(page) -> None:
     assert pg.locator("#stop-btn").is_disabled() and pg.locator("#stop-keep").is_hidden()
 
 
+def _mmss(s: float) -> str:
+    t = int(s)
+    return f"{t // 60:02d}:{t % 60:02d}"
+
+
+def test_the_head_clock_ticks_only_the_seconds_since_the_last_event_and_stops_with_the_stream(page) -> None:
+    """While the run is live the big clock is the record's last clock plus the seconds since that event arrived,
+    the record's clock is shown beside it unchanged, and the axis cursor is live; once the stream ends the clock is
+    the record's last clock exactly and nothing ticks."""
+    from sit_review_agent.ui.launcher import Launched
+
+    pg, base, runs, state = page
+    rd = runs / "ticking"
+    (rd / "ui").mkdir(parents=True)
+    display = "dra review x.pdf --run-id ticking"
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "ticking", "display": display, "args": [],
+                                                       "document_name": "x.pdf"}), encoding="utf-8")
+    proc = _AliveProc()
+    state.launcher.runs["ticking"] = Launched("ticking", proc, display, "now")
+    lines = (FIXTURES / "progress.jsonl").read_text(encoding="utf-8").splitlines(keepends=True)
+    head = [json.loads(ln) for ln in lines[:40]]
+    (rd / "progress.jsonl").write_text("".join(lines[:40]), encoding="utf-8")
+    pg.goto(base + "/?run=ticking")
+    shown = sum(1 for e in head if e["console"])
+    pg.wait_for_function(f"document.querySelectorAll('#status-feed .row').length === {shown}")
+    last = max(e["run_s"] for e in head if e["run_s"] is not None)
+    assert pg.locator("#clock-last").inner_text() == _mmss(last)
+    assert pg.locator("#clock-label").inner_text().startswith("run clock: last event at ")
+    first = pg.locator("#top-meta .t b").inner_text()
+    assert last <= int(first[:2]) * 60 + int(first[3:]) <= last + 10
+    pg.wait_for_function(f"document.querySelector('#top-meta .t b').textContent !== {first!r}", timeout=5000)
+    later = pg.locator("#top-meta .t b").inner_text()
+    assert int(later[:2]) * 60 + int(later[3:]) > int(first[:2]) * 60 + int(first[3:])
+    assert pg.locator("#clock-last").inner_text() == _mmss(last)             # the record's clock did not move
+    assert pg.locator("#axis-line .cursor.live").count() == 1
+    deadline = next(e["fields"]["deadline_s"] for e in head if e["type"] == "run_started")
+    lim = next(e["fields"]["stage_limits_s"] for e in head if e["type"] == "run_started")
+    assert pg.locator("#axis-labels .lbl").all_inner_texts() == [f"stage 1 ends {_mmss(lim['stage_1_end'])}",
+                                                                  f"refine ends {_mmss(lim['refine_end'])}",
+                                                                  f"verdict ends {_mmss(lim['verdict_end'])}",
+                                                                  f"deadline {_mmss(deadline)}"]
+    assert "the markers are the record's limits" in pg.locator("#axis-note").inner_text()
+    (rd / "progress.jsonl").write_text("".join(lines), encoding="utf-8")
+    proc.code = 0
+    pg.wait_for_function("!document.querySelector('#finished-bar').hidden")
+    evs = [json.loads(ln) for ln in lines]
+    end = max(e["run_s"] for e in evs if e["run_s"] is not None)
+    assert pg.locator("#top-meta .t b").inner_text() == _mmss(end)
+    assert pg.locator("#clock-label").inner_text() == "run clock, as of the last event"
+    assert pg.locator("#axis-line .cursor.live").count() == 0
+    assert pg.locator("#axis-note").inner_text() == f"ended at {_mmss(end)} of {_mmss(deadline)}"
+    assert pg.evaluate("SIT.state.tick") is None
+
+
+def test_a_fired_limit_is_stated_in_plain_words(page) -> None:
+    pg, base, runs, _state = page
+    evs = records(runs / "progress_cut" / "progress.jsonl")
+    cut = next(r["fields"] for r in evs if r["type"] == "shard_cut")
+    lim = next(r["fields"]["stage_limits_s"] for r in evs if r["type"] == "run_started")
+    open_run(pg, base, "progress_cut")
+    notes = pg.locator("#limit-notes .limit-note")
+    assert notes.count() == 1
+    assert notes.first.inner_text().split("\n") == [
+        _mmss(next(r["run_s"] for r in evs if r["type"] == "shard_cut")),
+        f"Stage 1 limit {_mmss(lim['stage_1_end'])} reached; assess shard {cut['shard']} (requirements and "
+        f"consistency) ended there at {_mmss(cut['cut_at_s'])}, {cut['kept']} draft(s) kept; not assessed: "
+        + ", ".join(cut["criteria_not_assessed"]) + "."]
+    assert pg.locator("#limit-notes .limit-note").count() == 1
+    assert pg.locator("#run-axis").is_visible() and pg.locator("#axis-line .mark").count() == 4
+
+
 # ------------------------------------------------------------------ a cut shard, a resumed run
 
 

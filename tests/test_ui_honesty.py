@@ -41,7 +41,8 @@ JS_NUMBERS = {
     "11": "start of hh:mm in an ISO time",
     "16": "end of hh:mm in an ISO time",
     "60": "seconds per minute",
-    "100": "percent for the bar width",
+    "100": "percent for the bar width and the axis positions",
+    "1000": "milliseconds per second: the one-second tick and the wall seconds since the last event",
 }
 
 
@@ -66,16 +67,38 @@ def test_no_fake_progress_or_completion_estimate() -> None:
                   "spinner", "indeterminate"):
         assert not re.search(rf"(?<![a-z]){re.escape(claim)}(?![a-z])", text), claim
     assert "It is not an estimate of completion." in HTML
-    assert "Times are as of the last event received." in HTML
+    assert ("Event times are the record's own run clock; the head clock and the axis cursor add only the seconds since "
+            "the last event arrived, counted on this browser's clock, and the limit markers are the run's recorded "
+            "limits.") in HTML
+    # No percentage is ever shown: the two "%" the script writes go into styles (a bar width, an axis position).
+    assert "%" not in _visible_text(HTML)
+    assert _code_only(JS).count('"%"') == 2
+    assert 'h("i", { style: "width:" + Math.min(100, (100 * pos) / limit).toFixed(1) + "%" })' in JS
+    assert 'const pct = (s) => Math.min(100, (100 * s) / span).toFixed(1) + "%";' in JS
 
 
-def test_the_bar_is_elapsed_over_the_limit_and_nothing_else() -> None:
+def test_the_clock_adds_only_the_wall_seconds_since_the_last_event() -> None:
+    """The contract since 2026-10-04: the track bars are elapsed over the limit on the record's clock; the head clock
+    and the axis cursor are the record's last clock plus the seconds since that event arrived (one tick a second),
+    and only while the run is live; the limits on the axis are the run_started record's."""
     widths = re.findall(r'style: "width:" \+ (.*?)\.toFixed', JS)
     assert widths == ["Math.min(100, (100 * pos) / limit)"]
-    # pos is the event clock (the track's end, or the last event's t), never the browser clock.
     assert "const pos = t.status === \"waiting\" ? null : (t.end ?? m.lastT);" in JS
-    for clock_source in ("Date.now", "new Date", "performance.now", "setInterval", "setTimeout"):
+    # The one browser-clock read, and what it adds.
+    assert "const since = isLive(m) && S.lastAt !== null ? (Date.now() - S.lastAt) / 1000 : 0;" in JS
+    assert "return m.lastT + since;" in JS
+    assert "S.lastAt = Date.now();" in JS and _code_only(JS).count("Date.now") == 2
+    assert "function isLive(m) { return S.es !== null && !m.replay && !m.finished && !m.error; }" in JS
+    assert JS.count("setInterval") == 1 and "S.tick = setInterval(tick, 1000);" in JS
+    for clock_source in ("new Date", "performance.now", "setTimeout"):
         assert clock_source not in JS, clock_source
+    # The axis: its span is the recorded deadline, its markers the recorded limits, its cursor the same live clock.
+    assert ('const span = typeof m.deadline === "number" ? m.deadline : '
+            '(marks.length ? marks[marks.length - 1][1] : null);') in JS
+    assert ('[["stage 1 ends", lim.stage_1_end], ["refine ends", lim.refine_end], ["verdict ends", lim.verdict_end], '
+            '["deadline", m.deadline]].filter(([, s]) => typeof s === "number")') in JS
+    assert "const now = liveT(m), live = isLive(m);" in JS
+    assert 'h("i", { class: "cursor" + (live ? " live" : ""), style: "left:" + pct(now), title: clock(now) })' in JS
 
 
 def test_the_run_view_never_parses_message_text() -> None:
@@ -225,7 +248,10 @@ def test_the_page_in_a_browser(served) -> None:
         titles = [d["title"] for d in reversed(drafts)]
         assert page.locator("#drafts .draft .text").all_inner_texts() == titles
         last = int(max(e["run_s"] for e in evs if e["run_s"] is not None))
-        assert page.locator("#top-meta b").first.inner_text() == f"{last // 60:02d}:{last % 60:02d}"
+        # The record's own clock is labelled as such; the big clock is that plus the seconds since the event arrived.
+        assert page.locator("#clock-last").inner_text() == f"{last // 60:02d}:{last % 60:02d}"
+        shown = page.locator("#top-meta .t b").inner_text()
+        assert last <= int(shown[:2]) * 60 + int(shown[3:]) <= last + 10, shown
         assert page.locator("#status-feed .row").count() == sum(1 for e in evs if e["console"])
         assert page.locator("#replay-stamp").count() == 0
         assert page.evaluate(MOTION) == 0
@@ -298,7 +324,7 @@ def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_prob
         assert entry.get_attribute("data-run") == "fixture_run" and entry.locator(".dot.live").count() == 1
         assert entry.locator(".meta").inner_text() == f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
         assert entry.locator(".meta .live").inner_text() == "refine"
-        assert page.locator("#top-meta b").first.inner_text() == _mmss(last)      # the same clock as the page head
+        assert page.locator("#clock-last").inner_text() == _mmss(last)          # the same record clock as the page head
         assert page.locator("#rail-runs-note").text_content() == "1 running"      # uppercase is the CSS caption
         assert page.locator("#rail-runs .rail-run .dot.live").count() == 1
 

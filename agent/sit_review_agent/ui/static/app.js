@@ -4,7 +4,9 @@
 // - every number shown comes from the run directory (via the server's JSON) or the event stream;
 // - the run view draws from each event's `event` and `fields` only and never parses `message`;
 // - review text is inserted as textContent, exactly as report.json has it (no rewording);
-// - no animation; times are as of the last event, never ticked by the browser clock;
+// - no animation; event times are the record's own run clock; the head clock and the axis cursor add only the wall
+//   seconds since the last event arrived (one tick a second, Date.now, nowhere else), never an estimate of completion;
+//   the stage limits and the deadline are the run_started record's;
 // - the rail's running entry is the open run's stream state; the tools dots are GET /tools; no probe on load.
 "use strict";
 
@@ -49,7 +51,9 @@ async function api(url, opts) {
 
 const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null,
   // The Stop control's state across repaints (every event repaints the head): armed by a first click, sent by the second.
-  stop: null };
+  stop: null,
+  // The browser's clock when the last event arrived, and the one-second tick that adds the seconds since to the head clock.
+  lastAt: null, tick: null };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -412,8 +416,20 @@ const CALL_FAILED = ["refusal", "truncated", "error", "cancelled", "interrupted"
 function newRunModel() {
   return { limits: null, deadline: null, profile: null, mode: null, replay: false, resumed: false, shardCount: null, lastT: 0,
     tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
-    stopRule: null, doc: null, runId: null };
+    stopRule: null, doc: null, runId: null,
+    // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
+    limitNotes: [], draftedByCall: new Map() };
 }
+
+// Which recorded limit a stage runs against: stage 1 and its members, refine, verdict; report runs to the deadline.
+function limitFor(m, stage) {
+  const lim = m.limits || {};
+  const s = { stage_1: lim.stage_1_end, ingest: lim.stage_1_end, understand: lim.stage_1_end, plan: lim.stage_1_end, research: lim.stage_1_end,
+    assess: lim.stage_1_end, merge: lim.stage_1_end, refine: lim.refine_end, verify: lim.refine_end, verdict: lim.verdict_end, report: m.deadline }[stage];
+  return typeof s === "number" ? s : null;
+}
+function limitName(stage) { return stage === "stage_1" || STAGE1.includes(stage) || stage === "assess" || stage === "merge" ? "stage 1" : words(stage); }
+function noteLimit(m, t, text) { m.limitNotes.push({ t, text }); }
 
 function track(m, key, label) {
   if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null });
@@ -454,7 +470,16 @@ function applyEvent(m, ev) {
       const t = track(m, ev.phase);
       if (t.status !== "cut" && t.status !== "failed") t.status = "done";
       t.end = now; if (t.start === null) t.start = now - (f.seconds || 0);
-      if (f.stopped_at_limit) { t.strong = null; t.text = "stopped at the stage limit"; }
+      if (f.stopped_at_limit) {
+        t.strong = null; t.text = "stopped at the stage limit";
+        const lim = limitFor(m, f.stage);
+        noteLimit(m, now, sentence(limitName(f.stage)) + " limit" + (lim !== null ? " " + clock(lim) : "") + " reached; " + ev.phase + " stopped there at " + clock(now) + ".");
+      }
+      break;
+    }
+    case "stage_limit_passed": {
+      const lname = f.limit === "stage_1_end" ? "stage 1" : words(f.limit);
+      noteLimit(m, now, sentence(lname) + " limit" + (typeof f.limit_s === "number" ? " " + clock(f.limit_s) : "") + " passed" + (typeof f.grace_s === "number" ? " by the " + dur(f.grace_s) + " grace" : "") + "; stopping " + (f.stopped || []).map(words).join(", ") + ".");
       break;
     }
     case "research_started": { const t = track(m, "research"); t.strong = null; t.text = intl(f.questions) + " question(s) to research"; break; }
@@ -491,7 +516,10 @@ function applyEvent(m, ev) {
       break;
     }
     case "draft_item":
-      if (f.list === "findings") addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
+      if (f.list === "findings") {
+        m.draftedByCall.set(f.call_id, (m.draftedByCall.get(f.call_id) || 0) + 1);
+        addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
+      }
       break;
     case "shard_drafted": {
       const t = m.byCall.get(f.call_id) || track(m, shardKey(m, f.shard));
@@ -507,6 +535,11 @@ function applyEvent(m, ev) {
       t.text = (f.degradation_id ? " in the report · " : "") + kept;
       if (f.degradation_id) t.disclose = { id: f.degradation_id, text: t.key + " cut at " + clock(t.cutAt) + ": " + kept };
       for (const d of f.kept_drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      {
+        const lim = limitFor(m, "stage_1"), drafted = m.draftedByCall.get(f.call_id) || 0;
+        const keptText = drafted ? intl(f.kept) + " of " + intl(drafted) + " drafts kept" : intl(f.kept) + " draft(s) kept";
+        noteLimit(m, now, "Stage 1 limit" + (lim !== null ? " " + clock(lim) : "") + " reached; assess shard " + f.shard + (f.shard_name ? " (" + words(f.shard_name) + ")" : "") + " ended there at " + clock(t.cutAt) + ", " + keptText + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "") + ".");
+      }
       break;
     }
     case "shard_failed": { const t = track(m, shardKey(m, f.shard)); t.status = "failed"; t.end = now; t.strong = null; t.text = f.error || "failed"; break; }
@@ -518,6 +551,10 @@ function applyEvent(m, ev) {
     case "call_cut": {
       const t = m.byCall.get(f.call_id); if (!t) break;
       t.status = "cut"; t.cutAt = f.at_s ?? now; t.end = t.cutAt; t.strong = null; t.text = "kept " + intl(f.kept_items) + " finished item(s)";
+      {
+        const lim = limitFor(m, f.stage);
+        noteLimit(m, now, sentence(words(f.stage)) + ": the model call " + f.call_id + " was cut at " + clock(t.cutAt) + (lim !== null ? " (" + limitName(f.stage) + " ends by " + clock(lim) + ")" : "") + "; " + intl(f.kept_items) + " finished item(s) kept.");
+      }
       break;
     }
     case "stop_rule": m.stopRule = f; break;
@@ -600,6 +637,9 @@ function renderRun(m) {
   }
   const stop = $("stop-rule");
   if (stop) { stop.hidden = !m.stopRule; stop.textContent = m.stopRule ? "Stop rule " + m.stopRule.code + " fired in " + words(m.stopRule.stage) + ": " + m.stopRule.detail + "; skipped to " + words(m.stopRule.to) + "." : ""; }
+  renderAxis(m);
+  const notes = clear($("limit-notes"));
+  for (const n of m.limitNotes) notes.append(h("div", { class: "limit-note" }, h("span", { class: "num mono", text: clock(n.t) }), h("span", { text: n.text })));
   $("draft-count").textContent = String(m.drafts.length);
   const d = clear($("drafts"));
   for (const x of m.drafts) {
@@ -615,7 +655,65 @@ function renderRun(m) {
   }
 }
 
-function closeStream() { if (S.es) { S.es.close(); S.es = null; } }
+function closeStream() { stopTick(); if (S.es) { S.es.close(); S.es = null; } }
+
+// ------------------------------------------------------------------ the head clock, the axis and the tick
+// A run is live while its stream is open and it is neither a replay nor ended. Only then does the head clock add the
+// seconds since the last event arrived, counted on this browser's clock; every other time on the page is the record's.
+
+function isLive(m) { return S.es !== null && !m.replay && !m.finished && !m.error; }
+function liveT(m) {
+  const since = isLive(m) && S.lastAt !== null ? (Date.now() - S.lastAt) / 1000 : 0;
+  return m.lastT + since;
+}
+function startTick() { stopTick(); S.tick = setInterval(tick, 1000); }
+function stopTick() { if (S.tick !== null) { clearInterval(S.tick); S.tick = null; } }
+function tick() {
+  const m = S.model;
+  if (!m || !isLive(m)) { stopTick(); return; }
+  renderClock(m, S.info || {});
+  renderAxis(m);
+}
+
+function renderClock(m, info) {
+  const meta = clear($("top-meta"));
+  const live = isLive(m);
+  meta.append(h("div", { class: "t" }, h("b", { text: clock(liveT(m)) }), m.deadline ? h("span", { text: " / " + clock(m.deadline) }) : null));
+  const l = h("div", { class: "l" });
+  if (live) l.append(h("span", { id: "clock-label" }, "run clock: last event at ", h("b", { class: "num", id: "clock-last", text: clock(m.lastT) }), ", plus the seconds since it arrived (this browser's clock)"));
+  else l.append(h("span", { id: "clock-label", text: "run clock, as of the last event" }));
+  if (m.resumed || info.resumed) l.append(h("span", { class: "pill", text: "resumed" }));
+  if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
+  meta.append(l);
+}
+
+// The recorded limits as markers on one axis from the start to the deadline (run_started: stage_limits_s, deadline_s).
+function limitMarks(m) {
+  const lim = m.limits || {};
+  return [["stage 1 ends", lim.stage_1_end], ["refine ends", lim.refine_end], ["verdict ends", lim.verdict_end], ["deadline", m.deadline]].filter(([, s]) => typeof s === "number");
+}
+
+function renderAxis(m) {
+  const box = $("run-axis");
+  if (!box) return;
+  const marks = limitMarks(m);
+  const span = typeof m.deadline === "number" ? m.deadline : (marks.length ? marks[marks.length - 1][1] : null);
+  box.hidden = span === null;
+  if (span === null) return;
+  const pct = (s) => Math.min(100, (100 * s) / span).toFixed(1) + "%";
+  const now = liveT(m), live = isLive(m);
+  const line = clear($("axis-line")), labels = clear($("axis-labels"));
+  line.append(h("i", { class: "fill" + (live ? "" : " closed"), style: "width:" + pct(now) }));
+  for (const [name, s] of marks) {
+    const passed = now >= s;
+    line.append(h("i", { class: "mark" + (passed ? " passed" : ""), style: "left:" + pct(s), title: name + " " + clock(s) }));
+    labels.append(h("span", { class: "lbl num" + (passed ? " passed" : "") + (s === span ? " end" : ""), style: "left:" + pct(s) }, name + " ", h("b", { text: clock(s) })));
+  }
+  line.append(h("i", { class: "cursor" + (live ? " live" : ""), style: "left:" + pct(now), title: clock(now) }));
+  const next = marks.find(([, s]) => s > now);
+  $("axis-note").textContent = (live ? "elapsed " : (m.finished || m.error ? "ended at " : "last event at ")) + clock(live ? now : m.lastT) + " of " + clock(span) +
+    (live && next ? " · next limit: " + next[0] + " " + clock(next[1]) : "") + (live ? " · the cursor adds the seconds since the last event; the markers are the record's limits" : "");
+}
 
 function renderTabs(tabs, note) {
   const t = clear($("top-tabs"));
@@ -636,12 +734,7 @@ function runTop(info, m, tabs) {
   if (info.no_tools) bits.push(h("span", {}, "document only (", h("span", { class: "mono", text: "--no-tools" }), ")"));
   if (info.started_at) bits.push("started " + hhmm(info.started_at));
   bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
-  const meta = clear($("top-meta"));
-  meta.append(h("div", { class: "t" }, h("b", { text: clock(m.lastT) }), m.deadline ? h("span", { text: " / " + clock(m.deadline) }) : null));
-  const l = h("div", { class: "l" }, "run clock, as of the last event");
-  if (m.resumed || info.resumed) l.append(h("span", { class: "pill", text: "resumed" }));
-  if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
-  meta.append(l);
+  renderClock(m, info);
   const a = clear($("top-action"));
   if (info.status === "running" && info.argv && !m.replay) renderStop(a, info);
   $("run-tabrow").hidden = !tabs || !tabs.length;
@@ -699,6 +792,7 @@ function showRun(info, tabs) {
   const m = newRunModel();
   S.model = m;
   S.stop = null;
+  S.lastAt = null;
   renderRun(m);
   runTop(info, m, tabs);
   renderRailTools();
@@ -711,10 +805,12 @@ function showRun(info, tabs) {
   }
   const es = new EventSource("/runs/" + encodeURIComponent(info.run_id) + "/events");
   S.es = es;
+  if (info.status === "running" && !info.replayed) startTick();
   let pending = false;
   const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); };
   es.addEventListener("progress", (e) => {
     const ev = JSON.parse(e.data);
+    S.lastAt = Date.now();
     applyEvent(m, ev);
     if (!pending) { pending = true; requestAnimationFrame(paint); }
     // The other rail rows are re-read at the open run's status cadence (one call_status record per tick),
@@ -722,7 +818,7 @@ function showRun(info, tabs) {
     if (ev.type === "call_status") refreshRuns().catch(() => {});
   });
   es.addEventListener("end", async (e) => {
-    es.close(); S.es = null;
+    stopTick(); es.close(); S.es = null;
     const end = JSON.parse(e.data || "{}");
     const fresh = await api("/runs/" + encodeURIComponent(info.run_id));
     info.status = fresh.status;

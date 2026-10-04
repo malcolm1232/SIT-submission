@@ -102,6 +102,13 @@
   </div>
   <div class="tabrow" id="run-tabrow" hidden><span class="tabs" id="top-tabs"></span></div>
   <div class="finished-bar" id="finished-bar" hidden></div>
+  <!-- the whole run on one axis: the recorded stage limits and the deadline as markers, the cursor at the live clock -->
+  <div class="axis" id="run-axis" hidden>
+    <div class="axis-head"><h2>The run against its limits</h2><span class="limit num" id="axis-note"></span></div>
+    <div class="axis-line" id="axis-line"></div>
+    <div class="axis-labels" id="axis-labels"></div>
+  </div>
+  <div id="limit-notes"></div>
   <div class="run-wrap">
     <div class="stages">
       <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num" id="stage1-limit"></span></div>
@@ -110,7 +117,7 @@
       <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
       <div class="tracks" id="seq-tracks"></div>
       <div class="notice" id="stop-rule" hidden></div>
-      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
+      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Event times are the record's own run clock; the head clock and the axis cursor add only the seconds since the last event arrived, counted on this browser's clock, and the limit markers are the run's recorded limits. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
     </div>
     <div class="feed">
       <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <span class="pill draft">draft, unverified</span></h2>
