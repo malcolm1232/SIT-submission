@@ -107,3 +107,44 @@ Fixed in v2: F02, F03, F04, F06, F08, F10, F12. Unchanged: F01, F05, F07, F09, F
 
 - v1: (not present in v1; introduced in v2)
 - v2: Backfill chunks are published at QoS 0, and the gateway marks a chunk's readings as delivered as soon as the chunk has been written to the socket, which keeps backfill short on weak links and saves the PUBACK traffic.
+
+## Cold read
+
+Date: 2026-10-04. A fresh-context reviewer read `design_v1.md` cold, listed every problem it saw, and only then opened the key.
+Not opened: `eval/blind/`, `docs/live_runs/`, the other synthetic items, and the source of `spec/convert_answer_keys.py` and `eval/build_pdfs.py`.
+
+### Flaws found cold
+
+- Found from the document alone: F01, F02, F04, F05, F06, F07, F08, F09, F10, F12, F13, F14.
+- F03 was found, but only with outside knowledge (the 128 KB AWS IoT Core payload limit); this is the item's planned external fact, so it stays as written.
+- F14 needs the general knowledge that Thailand and Indonesia are on UTC+7; the document gives MYT as UTC+8 and names the depots, which is enough for a careful reader.
+- Missed cold: F11 (the undefined "speed limit" in the speeding rule). It is plainly findable (PB-01 even shows that heavy-vehicle limit data is still pending); the miss was the reader's, not the item's. No wording change.
+
+### Problems found in the sound sections (each would have made a correct finding a "key error")
+
+1. Section 9 and Section 20.1: the unique key `(device_id, boot_id, seq)` was declared on tables partitioned by month on `device_ts`; PostgreSQL requires the partition key in every unique key of a partitioned table, so the stated deduplication could not be built. The key now includes `device_ts` (which a resend carries unchanged) in Section 9 and on all four tables of Section 20.1.
+2. Section 9: in-memory consumers ignored anything at or below a high-water mark of `seq`, which drops backfilled readings that arrive after newer live ones (Section 10 sends both at once), contradicting the retrospective evaluation of backfill in Section 16.2. Now they keep a 72-hour bitmap of seen sequence numbers, rebuilt from the store on assignment, and drop only a number already seen.
+3. Section 16.2: the range rule used only the mean of the four probes, so one probe out of range (a warm spot) was averaged away, with the heat rule firing only at H + 10 °C. Rule 1 now also fires on any single load-space probe, an excursion ends only when the mean and every probe are back in range, and a minute with no probe counts toward the data-gap rule.
+4. Section 8: the even-load reason ("every device of a type reports at the same rate") was false (trucks report every 10 s, 30 s or 15 min by state), and the capacity test "confirms with a factor of four headroom" did not match Section 28 (1,800 messages per second, not yet run). Now: about a hundred or more devices per partition average out, and the NFR-11 load test is to confirm.
+5. Section 12 and Section 8: the geofence service read only truck positions, and no topic carried trailer positions or trailer geofence events to the excursion service, so the door allowance of Section 16.2 rule 4 could not be evaluated. The geofence service now reads trailer positions from `coldchain.v1` and also writes trailer events there; the `coldchain.v1` row of Section 8 lists both.
+6. Section 15: deltas are built against each of the two previous releases, yet a gateway "two releases behind" was said to have no delta. Now "three or more releases behind".
+
+All six edits are identical in v1 and v2, so `v2_changes`, the v2 change list and `v2_changed_sections` are unaffected. The key's `why_sound` texts for Sections 8, 9, 12, 15 and 16 and the Section 9 trap were updated to match.
+
+### Other fixes
+
+7. Name: "FleetSense" is a real telematics product name (Telkomsel in Indonesia, and companies in the UK and South Africa). The platform is renamed "ArusFleet" (no match found) in both designs, the key, the README and the two bucket names. "Rimbun Logistics" and "Halcyon Telematics" have no exact real match.
+8. F03 source: the key's quoted AWS wording was a paraphrase. Re-fetched https://docs.aws.amazon.com/general/latest/gr/iot-core.html on 2026-10-04: row "MQTT payload size", "The payload for every publish request can be no larger than 128 KB. AWS IoT Core rejects publish and connect requests larger than this size.", value 128 Kilobytes, Adjustable No. F03's `distractor_notes` and `external_fact` now quote it verbatim. (The same page lists 100 publish requests per second per connection, not adjustable; no claim in the item exceeds it.)
+
+### Key consistency checked
+
+- Severity and category of F01 to F15 match their substance; F02 as a failure mode (unsafe behaviour of the mechanism) is defensible, though it also reads as a P4 contradiction.
+- Every number in the key was recomputed: F03 about 20 hours to 128 KB, F05 about 12 billion rows, F10 416 MB per truck, overage about USD 33,700 and total about USD 113,000, F14 00:30 MYT is 23:30 in UTC+7, v2 cost USD 88,894 with 6% headroom, F15 360 readings per chunk about 36 KB.
+- `flaw_counts` match (4 / 6 / 4; 3 / 3 / 2 / 2 / 1 / 1 / 1 / 1). `v2_changes` match the diff line by line: the seven fixed flaws are gone in v2, the seven unchanged ones keep the same sentence, and F15 appears only in v2 Section 10, carried by the backfill change. `expected_v2_open_flaws` is right. No `distractor_notes` leak into the documents.
+
+### Checks after the edits
+
+- PDFs rebuilt through `coldread_iot/build_iot_pdfs.py`: `design_v1.pdf` 17 pages, `design_v2.pdf` 18 pages, all probe checks passed. The worktree has no `.venv`, so the venv of the `item-ledger` worktree (which has `markdown`) was used with `PYTHONPATH=agent` of this worktree.
+- All 15 anchor quotes are exact and unique on their recorded pages (no page moved).
+- Canonical key through `coldread_iot/convert_iot.py --tier synthetic --verify-anchors`: `60 flaws converted across 4 keys; 0 key(s) failed validation`; the other three canonical keys are unchanged.
+- No-label scan: `design_v1.md:0`, `design_v2.md:0`. Em dash count 0 in both designs, both keys, the README and this note.

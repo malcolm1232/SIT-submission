@@ -91,7 +91,7 @@
         "(supporting) affects the 72-hour regional DR assumption in Section 23.2 as well"
       ],
       "acceptable_recommendation": "Upload the backlog in chunks well under 128 KB (for example a few hundred readings each), each published at QoS 1 and released from the buffer only on its own PUBACK, with resumable progress by sequence number; or upload large backlogs to S3 through a pre-signed URL obtained over MQTT; test with 24 and 72-hour gaps.",
-      "distractor_notes": "Public source: AWS IoT Core endpoints and quotas, message broker limits, 'Maximum MQTT payload size: 128 Kilobytes, not adjustable' (https://docs.aws.amazon.com/general/latest/gr/iot-core.html). The 72-hour buffer size and compression ratio themselves are plausible and not the finding."
+      "distractor_notes": "Public source: AWS IoT Core endpoints and quotas, message broker and protocol limits, row 'MQTT payload size': 'The payload for every publish request can be no larger than 128 KB. AWS IoT Core rejects publish and connect requests larger than this size.' Value 128 Kilobytes, Adjustable No (https://docs.aws.amazon.com/general/latest/gr/iot-core.html, re-fetched 2026-10-04). The 72-hour buffer size and compression ratio themselves are plausible and not the finding."
     },
     {
       "id": "F04",
@@ -371,27 +371,27 @@
   "sound_sections": [
     {
       "section_ref": "8 Streaming Backbone",
-      "why_sound": "Topics are keyed per device, so per-device ordering holds and load is even (every device of a type reports at the same rate). RF 3, min.insync.replicas 2, acks all and idempotent producers give durable writes across AZs. Consumers deduplicate instead of using Kafka transactions, which is right because duplicates can arise before MSK. The peak of about 560 messages per second matches Section 24.1 and is far inside a three-broker cluster. Seven-day retention allows replay.",
+      "why_sound": "Topics are keyed per device, so per-device ordering holds, and each partition carries about a hundred or more devices, so rate differences between moving, stationary and parked vehicles average out. RF 3, min.insync.replicas 2, acks all and idempotent producers give durable writes across AZs. Consumers deduplicate instead of using Kafka transactions, which is right because duplicates can arise before MSK. The peak of about 560 messages per second matches Section 24.1 and is far inside a three-broker cluster; the claim is tied to the NFR-11 load test still to run, not stated as already confirmed. Seven-day retention allows replay. Trailer positions and trailer geofence events travel on coldchain.v1, so the excursion service has what rule 4 of Section 16.2 needs.",
       "trap": "Flagging a hot partition, demanding Kafka exactly-once transactions, or claiming MSK cannot take the load."
     },
     {
       "section_ref": "9 Message Envelope, Time and Deduplication",
-      "why_sound": "Clock is GNSS-disciplined with explicit holdover and free-running states; device_ts and ingest_ts are both kept; future timestamps are flagged and kept out of live alerting; (device_id, boot_id, seq) gives a unique, reboot-safe dedupe key enforced by a unique index; ordering is by device time, so backfill slots in.",
-      "trap": "Flagging QoS 1 duplicates as unhandled, untrusted device clocks, or sequence resets on reboot (boot_id covers them)."
+      "why_sound": "Clock is GNSS-disciplined with explicit holdover and free-running states; device_ts and ingest_ts are both kept; future timestamps are flagged and kept out of live alerting; (device_id, boot_id, seq) gives a reboot-safe dedupe key, enforced by a unique index that also includes device_ts (which a resend carries unchanged, and which PostgreSQL requires in every unique key of a table partitioned on it); in-memory consumers drop only sequence numbers already seen, so backfilled readings below the newest seq are still processed; ordering is by device time, so backfill slots in.",
+      "trap": "Flagging QoS 1 duplicates as unhandled, untrusted device clocks, sequence resets on reboot (boot_id covers them), or claiming device_ts in the unique key weakens deduplication. The alert service's own loss of state on restart is F06 (Section 17.1), not this section."
     },
     {
       "section_ref": "12 Geofencing",
-      "why_sound": "An in-memory R-tree with exact point-in-polygon tests handles 38,000 polygons cheaply (about 60 MB). Two-fix confirmation, a 50 m exit buffer and an HDOP filter prevent flapping, and events carry the first qualifying fix time so dwell is not inflated. State is rebuilt on partition reassignment.",
+      "why_sound": "An in-memory R-tree with exact point-in-polygon tests handles 38,000 polygons cheaply (about 60 MB). Two-fix confirmation, a 50 m exit buffer and an HDOP filter prevent flapping, and events carry the first qualifying fix time so dwell is not inflated. Truck and trailer positions are both evaluated, trailer events are also put on coldchain.v1 for the door allowance, and state is rebuilt on partition reassignment.",
       "trap": "Flagging GPS jitter or flapping, demanding a dedicated geospatial database, or claiming dwell times are skewed by the confirmation rule."
     },
     {
       "section_ref": "15 Firmware Rollout Waves and Rollback",
-      "why_sound": "Five stratified waves with soak times, installs only when safe (ignition off, no active cold-chain trip, battery), A/B slots with a boot health check and automatic fallback, automatic halt criteria, and a manual decision to resume. Delta sizes are small.",
+      "why_sound": "Five stratified waves with soak times, installs only when safe (ignition off, no active cold-chain trip, battery), A/B slots with a boot health check and automatic fallback, automatic halt criteria, and a manual decision to resume. Delta sizes are small, deltas exist against the two previous releases and older gateways take the full image.",
       "trap": "Flagging missing rollback, updates during trips, or OTA data cost. Lack of image signing is real but belongs to Section 14 (F01), not to the rollout procedure."
     },
     {
       "section_ref": "16 Cold-Chain Excursion Rules and Mean Kinetic Temperature",
-      "why_sound": "Product temperature uses load-space probes, not supply air; freeze and heat rules fire immediately; the door allowance is capped, logged, site-bound and never applies to freeze or heat; data gaps are monitoring alerts and backfill is evaluated retrospectively. The MKT formula is the standard one with dH/R = 10,000 K (83.144 kJ/mol / 8.3144 J/mol/K) and is reported alongside min, max and time out of range.",
+      "why_sound": "Product temperature uses load-space probes, not supply air, and the range rule also fires on any single probe out of range for 15 minutes, so a warm or cold spot is not averaged away; freeze and heat rules fire immediately; a minute with no probe counts toward the data-gap rule; the door allowance is capped, logged, site-bound and never applies to freeze or heat; data gaps are monitoring alerts and backfill is evaluated retrospectively. The MKT formula is the standard one with dH/R = 10,000 K (83.144 kJ/mol / 8.3144 J/mol/K) and is reported alongside min, max and time out of range.",
       "trap": "Calling MKT wrong or asking for an arithmetic mean instead, claiming door allowance hides excursions, or demanding supply-air as product temperature. The in-memory alert runtime (17.1, F06) is a separate section."
     }
   ],
@@ -522,11 +522,11 @@
         ],
         "external_fact": {
           "claim": "The AWS IoT Core message broker accepts MQTT publish payloads of at most 128 KB; the quota is not adjustable, and AWS IoT Core rejects publish and connect requests larger than this size.",
-          "source": "AWS General Reference, 'AWS IoT Core endpoints and quotas', message broker and protocol limits ('Maximum MQTT payload size')",
+          "source": "AWS General Reference, 'AWS IoT Core endpoints and quotas', message broker and protocol limits (row 'MQTT payload size')",
           "verified": true,
           "verified_source_url": "https://docs.aws.amazon.com/general/latest/gr/iot-core.html",
           "verified_at": "2026-10-04",
-          "verification_note": "Checked by the authoring worker on 2026-10-04 by fetching the AWS page: 'Maximum MQTT payload size 128 Kilobytes, Adjustable No'. Owner sign-off still required."
+          "verification_note": "Checked by the authoring worker on 2026-10-04 and re-fetched by the cold reader the same day: row 'MQTT payload size', 'The payload for every publish request can be no larger than 128 KB. AWS IoT Core rejects publish and connect requests larger than this size.', value 128 Kilobytes, Adjustable No. Owner sign-off still required."
         }
       },
       "F04": {

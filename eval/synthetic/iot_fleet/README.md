@@ -1,6 +1,6 @@
 # Synthetic eval item: IoT Fleet Telematics and Cold-Chain Platform
 
-`design_v1.md` is the detailed design for the telematics and cold-chain platform of a fictional Southeast Asian logistics company, "Rimbun Logistics" (FleetSense v1.0, about 8,900 words, 30 numbered sections, FR and NFR IDs).
+`design_v1.md` is the detailed design for the telematics and cold-chain platform of a fictional Southeast Asian logistics company, "Rimbun Logistics" (ArusFleet v1.0, about 8,900 words, 30 numbered sections, FR and NFR IDs).
 Its structure follows the other synthetic items: requirements, principles, architecture, flows, data model, confirmed decisions, pending backlog, acceptance criteria, readiness assessment and build phases.
 The platform connects about 8,700 gateways (6,400 trucks and 2,300 reefer trailers) in Malaysia, Singapore, Thailand and Indonesia over MQTT and cellular to AWS IoT Core, Amazon MSK and Aurora PostgreSQL.
 It covers offline buffering and backfill, geofencing, driver behaviour scoring, remote commands, over-the-air firmware updates, cold-chain excursion rules and alerting, a dispatcher console, consignee tracking links, data retention and the audit pack that pharmaceutical customers and GDP inspectors request.
@@ -55,7 +55,7 @@ Sound sections: 8 Streaming Backbone, 9 Message Envelope Time and Deduplication,
 `eval/build_pdfs.py` and `spec/convert_answer_keys.py` list their items in code, and this item is not yet registered in them (nor in `eval/prereg.yaml`; one later change registers all new items).
 Until then, both were run unchanged on disk with this item added to their lists in memory only, from the repository root:
 
-- PDFs: `eval/build_pdfs.py` with `ITEMS = ["iot_fleet"]`. Last rebuilt 2026-10-04: `design_v1.pdf` 17 pages, `design_v2.pdf` 17 pages, all probe checks passed.
+- PDFs: `eval/build_pdfs.py` with `ITEMS = ["iot_fleet"]`. Last rebuilt 2026-10-04 after the cold read: `design_v1.pdf` 17 pages, `design_v2.pdf` 18 pages, all probe checks passed.
 - Canonical key: `spec/convert_answer_keys.py --tier synthetic --verify-anchors` with `("synthetic", "iot_fleet", "synthetic_json_v0")` in `ITEMS` and `"iot_fleet": {"F03", "F15"}` in `NEEDS_EXTERNAL`. Result: 0 keys failed validation, all 15 anchor quotes exact and unique on their recorded pages, `scored_run_ready` false (owner sign-off pending).
 
 When the item is registered, add those two entries to the scripts and `iot_fleet` to `ITEMS` in `eval/build_pdfs.py`.

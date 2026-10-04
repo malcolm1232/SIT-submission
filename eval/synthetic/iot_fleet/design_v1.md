@@ -1,4 +1,4 @@
-# Rimbun Logistics: FleetSense Telematics and Cold-Chain Platform
+# Rimbun Logistics: ArusFleet Telematics and Cold-Chain Platform
 
 ## Detailed Design
 
@@ -10,7 +10,7 @@
 | **Status** | Design phase, build not started |
 | **Last updated** | 2026-09-11 (architecture) · consolidated 2026-09-18 |
 | **Prepared by** | Rimbun Logistics Digital Engineering, Fleet Platforms Team |
-| **Companion documents** | FleetSense Conceptual Design v0.9; Cold-Chain Quality Manual QM-07; Gateway Hardware Specification GW-400 rev C |
+| **Companion documents** | ArusFleet Conceptual Design v0.9; Cold-Chain Quality Manual QM-07; Gateway Hardware Specification GW-400 rev C |
 
 ---
 
@@ -51,9 +51,9 @@
 
 ## 1. Purpose and Scope
 
-This document describes the architecture of FleetSense, the telematics and cold-chain monitoring platform of Rimbun Logistics Berhad. FleetSense collects position, vehicle and driving data from every Rimbun truck and temperature data from every refrigerated trailer, turns that data into live operational views for dispatchers, alerts people when a temperature-controlled load is at risk, scores driving behaviour, updates gateway firmware over the air, and produces the cold-chain records that customers and regulators inspect. It is written to a level of detail sufficient for an engineering team to begin implementation, and Section 29 assesses where that is and is not yet true.
+This document describes the architecture of ArusFleet, the telematics and cold-chain monitoring platform of Rimbun Logistics Berhad. ArusFleet collects position, vehicle and driving data from every Rimbun truck and temperature data from every refrigerated trailer, turns that data into live operational views for dispatchers, alerts people when a temperature-controlled load is at risk, scores driving behaviour, updates gateway firmware over the air, and produces the cold-chain records that customers and regulators inspect. It is written to a level of detail sufficient for an engineering team to begin implementation, and Section 29 assesses where that is and is not yet true.
 
-FleetSense replaces three systems: a vendor telematics portal used for the dry fleet in Malaysia and Singapore, a separate data-logger service used for reefer trailers, whose loggers are downloaded by cable at the depot, and a set of spreadsheets that the quality team uses to assemble temperature evidence for pharmaceutical customers. None of these share vehicle identities, and the reefer loggers give no live view at all.
+ArusFleet replaces three systems: a vendor telematics portal used for the dry fleet in Malaysia and Singapore, a separate data-logger service used for reefer trailers, whose loggers are downloaded by cable at the depot, and a set of spreadsheets that the quality team uses to assemble temperature evidence for pharmaceutical customers. None of these share vehicle identities, and the reefer loggers give no live view at all.
 
 ### In scope
 
@@ -61,7 +61,7 @@ Device connectivity and ingestion, offline buffering, the streaming backbone, li
 
 ### Out of scope
 
-Transport management (orders, route planning, billing), which remains in the existing TMS and is integrated through the trip feed in Section 6; workshop and maintenance management; the driver mobile app (a separate design consumes the FleetSense API); and fuel-card reconciliation.
+Transport management (orders, route planning, billing), which remains in the existing TMS and is integrated through the trip feed in Section 6; workshop and maintenance management; the driver mobile app (a separate design consumes the ArusFleet API); and fuel-card reconciliation.
 
 ### Volume baseline
 
@@ -156,13 +156,13 @@ Rimbun's pharmaceutical customers hold wholesale and distribution licences under
 4. **Record integrity.** Records are complete, consistent and accurate; original records are retained; any correction is attributable, dated and justified, and keeps the original value visible.
 5. **Audit access.** On request from the customer or a regulator's GDP inspector, Rimbun produces the complete temperature record for any shipment within the last five years within two working days.
 
-FleetSense applies the same monitoring to food customers, whose contracts are less demanding, so that there is one cold-chain process.
+ArusFleet applies the same monitoring to food customers, whose contracts are less demanding, so that there is one cold-chain process.
 
 ---
 
 ## 6. Target Architecture
 
-FleetSense runs in AWS ap-southeast-1 (Singapore) across three Availability Zones, with backups and an archive copy in ap-southeast-5 (Malaysia).
+ArusFleet runs in AWS ap-southeast-1 (Singapore) across three Availability Zones, with backups and an archive copy in ap-southeast-5 (Malaysia).
 
 ```
   Truck gateways (GW-400T)          Reefer gateways (GW-400R)
@@ -182,7 +182,7 @@ FleetSense runs in AWS ap-southeast-1 (Singapore) across three Availability Zone
      Aurora PostgreSQL (PostGIS)  <---------------------------+  S3 (Object Lock)
           ^                                                      ap-southeast-1, copy
           |                                                      to ap-southeast-5
-   FleetSense API (ECS Fargate) <---- Dispatcher console, Customer portal, Consignee link
+   ArusFleet API (ECS Fargate) <---- Dispatcher console, Customer portal, Consignee link
           |
           +----> TMS trip feed (in), HR incentive feed (out), SMS and push (SNS, FCM)
 ```
@@ -199,9 +199,9 @@ FleetSense runs in AWS ap-southeast-1 (Singapore) across three Availability Zone
 | Stream services | Stateless or state-rebuilding consumers on ECS Fargate: position writer, geofence service, driver-event scorer, excursion and alert service, cold-chain writer, archive writer. |
 | Aurora PostgreSQL | Operational store: vehicles, trips, positions, readings, geofences, events, excursions, users. PostGIS for spatial queries. |
 | S3 archive | Write-once copy of cold-chain readings and audit packs, held under Object Lock in compliance mode. |
-| FleetSense API | Single API for the console, the portal, consignee links, the driver app and integrations. |
+| ArusFleet API | Single API for the console, the portal, consignee links, the driver app and integrations. |
 
-The TMS publishes trip assignments (trip, truck, trailer, driver, customer, consignee, planned stops and temperature range) to the API, which is how FleetSense knows which load a reefer gateway is carrying.
+The TMS publishes trip assignments (trip, truck, trailer, driver, customer, consignee, planned stops and temperature range) to the API, which is how ArusFleet knows which load a reefer gateway is carrying.
 
 ---
 
@@ -228,9 +228,9 @@ All device data passes through Amazon MSK after AWS IoT Core. An IoT rule per me
 |---|---|---|---|
 | telemetry.v1 | vehicle_id | 48 | Drive messages and positions from truck gateways |
 | events.v1 | vehicle_id | 24 | Driver events, ignition, geofence events, command acknowledgements |
-| coldchain.v1 | trailer_id | 24 | Cold-chain readings, door events and reefer alarms |
+| coldchain.v1 | trailer_id | 24 | Cold-chain readings with the trailer's position, door events, reefer alarms and trailer geofence events |
 
-Every topic has replication factor 3 across three Availability Zones, `min.insync.replicas = 2`, and producers use `acks = all` with idempotence enabled. Keying by vehicle or trailer gives per-device ordering within a partition, which the stream services rely on. Load is spread evenly because every device of a type reports at the same rate; at the 2028 target the busiest topic (`telemetry.v1`) carries about 560 messages per second at peak, well inside the capacity of a three-broker `kafka.m7g.large` cluster, which the capacity test in Section 28 confirms with a factor of four headroom.
+Every topic has replication factor 3 across three Availability Zones, `min.insync.replicas = 2`, and producers use `acks = all` with idempotence enabled. Keying by vehicle or trailer gives per-device ordering within a partition, which the stream services rely on. Load is spread evenly because each partition carries the messages of about a hundred or more devices, so the differences between moving, stationary and parked vehicles average out; at the 2028 target the busiest topic (`telemetry.v1`) carries about 560 messages per second at peak, well inside the capacity of a three-broker `kafka.m7g.large` cluster, which the NFR-11 load test in Section 28 (1,800 messages per second for 4 hours) is to confirm.
 
 Consumers are idempotent (Section 9) rather than relying on Kafka transactions, because the IoT rule action cannot take part in a consumer-to-producer transaction and messages can be duplicated before they reach MSK. Topic retention is seven days, which lets any consumer rebuild its state or replay after a failure. Schemas are registered in the AWS Glue Schema Registry with backward-compatible evolution enforced.
 
@@ -251,7 +251,7 @@ Every device message carries the same envelope:
 
 The gateway's real-time clock is disciplined by GNSS whenever a fix is available. In holdover the oscillator drifts by less than 2 seconds per day, which is negligible against the 60-second reading interval. Readings taken while FREE_RUNNING are kept and flagged so that the audit pack can show them as such. On ingestion the platform adds `ingest_ts`; a message whose `device_ts` is more than 5 minutes ahead of `ingest_ts` is stored, flagged CLOCK_AHEAD, and excluded from live alerting until reviewed.
 
-MQTT QoS 1 means a message can arrive twice, and a gateway that resends its buffer after a reconnect can resend messages the platform already holds. Every consumer therefore deduplicates on `(device_id, boot_id, seq)`. Writers use an `INSERT ... ON CONFLICT DO NOTHING` on a unique key over these three columns; in-memory consumers keep a per-device high-water mark of `seq` per `boot_id` and ignore anything at or below it, after first checking the store for gaps. Ordering for business logic is by `device_ts` within a device, never by arrival order, so backfilled readings slot into place in the record.
+MQTT QoS 1 means a message can arrive twice, and a gateway that resends its buffer after a reconnect can resend messages the platform already holds. Every consumer therefore deduplicates on `(device_id, boot_id, seq)`. Writers use an `INSERT ... ON CONFLICT DO NOTHING` on a unique key over these three columns plus `device_ts`, which a resent message carries unchanged and which the month-partitioned tables of Section 20.2 must include in every unique key. In-memory consumers keep, per device and `boot_id`, a bitmap of the sequence numbers seen in the last 72 hours of device time, rebuilt from the store when a partition is assigned, and drop a message whose `seq` is already in it, so a backfilled reading below the newest `seq` is still processed. Ordering for business logic is by `device_ts` within a device, never by arrival order, so backfilled readings slot into place in the record.
 
 ---
 
@@ -301,9 +301,9 @@ The driver-event scorer consumes `events.v1` and `telemetry.v1`, attributes each
 
 Geofences are polygons (depots, customer sites, ports, border posts) or corridors (restricted roads for heavy vehicles), stored in Aurora with PostGIS in EPSG:4326 and edited in the console. There are about 38,000 at the 2028 target, with a median of 12 vertices.
 
-The geofence service consumes `telemetry.v1` and evaluates each position against an in-memory R-tree of geofence bounding boxes, followed by an exact point-in-polygon test on the candidates. The full set of geofences takes about 60 MB in memory, and the service reloads changed geofences every 60 seconds from a change table. Each service instance owns a set of MSK partitions and keeps the inside or outside state of each vehicle for each nearby geofence; on partition reassignment it rebuilds that state from the last stored geofence events of the vehicles it now owns before it processes new positions.
+The geofence service consumes truck positions from `telemetry.v1` and trailer positions from `coldchain.v1` and evaluates each position against an in-memory R-tree of geofence bounding boxes, followed by an exact point-in-polygon test on the candidates. The full set of geofences takes about 60 MB in memory, and the service reloads changed geofences every 60 seconds from a change table. Each service instance owns a set of MSK partitions and keeps the inside or outside state of each vehicle for each nearby geofence; on partition reassignment it rebuilds that state from the last stored geofence events of the vehicles it now owns before it processes new positions.
 
-GNSS fixes jitter, especially in container yards and under elevated roads. To avoid flapping, a vehicle enters a geofence only after two consecutive fixes inside the polygon, and leaves only after two consecutive fixes outside the polygon buffered by 50 metres. Fixes with a horizontal dilution of precision above 5 are used for the map but not for geofence state changes. Entry and exit events are written to `events.v1` with the `device_ts` of the first qualifying fix, so dwell times are not inflated by the confirmation rule.
+GNSS fixes jitter, especially in container yards and under elevated roads. To avoid flapping, a vehicle enters a geofence only after two consecutive fixes inside the polygon, and leaves only after two consecutive fixes outside the polygon buffered by 50 metres. Fixes with a horizontal dilution of precision above 5 are used for the map but not for geofence state changes. Entry and exit events are written to `events.v1` with the `device_ts` of the first qualifying fix, so dwell times are not inflated by the confirmation rule. A trailer's entry and exit events are also written to `coldchain.v1`, keyed by trailer, so that the excursion service sees them alongside the readings (Section 16.2, rule 4).
 
 ---
 
@@ -335,7 +335,7 @@ The reefer gateway accepts a setpoint only inside the trip's temperature range f
 
 ### 14.1 Build
 
-Gateway firmware is a Yocto-based Linux image plus the FleetSense agent. Releases are built by the firmware pipeline in Rimbun's CI from tagged commits in the firmware repository, produce a full image and a binary delta against each of the two previous releases, and are stored in the `fleetsense-firmware` S3 bucket. A release is promoted for rollout only after the hardware-in-the-loop test rig (20 gateways on a bench with simulated CAN, reefer serial and probes) passes for 48 hours.
+Gateway firmware is a Yocto-based Linux image plus the ArusFleet agent. Releases are built by the firmware pipeline in Rimbun's CI from tagged commits in the firmware repository, produce a full image and a binary delta against each of the two previous releases, and are stored in the `arusfleet-firmware` S3 bucket. A release is promoted for rollout only after the hardware-in-the-loop test rig (20 gateways on a bench with simulated CAN, reefer serial and probes) passes for 48 hours.
 
 ### 14.2 Image verification
 
@@ -363,7 +363,7 @@ A gateway installs an update only when it is safe to do so: a truck gateway only
 
 After switching slots the gateway must reach the health check within 10 minutes of boot: connected to AWS IoT Core, GNSS fix or holdover, all sensors present, and a successful publish. If it does not, the bootloader marks the new slot bad and boots the previous slot, which reports ROLLED_BACK. The rollout halts automatically at any wave if the rollback rate exceeds 0.5%, if the disconnected share of the wave rises more than 2 percentage points above the rest of the fleet, or if the median gap between expected and received readings per device rises by more than 10%. A halted rollout needs a release manager's decision to continue or abandon it.
 
-Deltas are about 6 MB and full images about 48 MB. With deltas the whole fleet's download fits within one day of the cellular pool, and a gateway that misses a delta (two releases behind) falls back to the full image.
+Deltas are about 6 MB and full images about 48 MB. With deltas the whole fleet's download fits within one day of the cellular pool, and a gateway that misses a delta (three or more releases behind) falls back to the full image.
 
 ---
 
@@ -371,19 +371,19 @@ Deltas are about 6 MB and full images about 48 MB. With deltas the whole fleet's
 
 ### 16.1 Product temperature
 
-The product temperature for a reading is the mean of the load-space probes that reported in that minute. Return-air and supply-air temperatures are recorded and charted but are not product temperature, since supply air is routinely below the range during pull-down. If fewer than two load-space probes report in a minute, the reading is flagged PROBE_DEGRADED and product temperature is taken from the probes that did report.
+The product temperature for a reading is the mean of the load-space probes that reported in that minute. Return-air and supply-air temperatures are recorded and charted but are not product temperature, since supply air is routinely below the range during pull-down. If fewer than two load-space probes report in a minute, the reading is flagged PROBE_DEGRADED and product temperature is taken from the probes that did report; if none reports, the reading carries no product temperature and counts as missing for the data-gap rule (rule 5 of Section 16.2).
 
 ### 16.2 Excursion rules
 
 For a trip with a range [L, H], from the trip's temperature range in the TMS:
 
-1. **Range excursion:** product temperature outside [L, H] for 15 consecutive minutes.
+1. **Range excursion:** product temperature, or any single load-space probe, outside [L, H] for 15 consecutive minutes.
 2. **Freeze excursion (2 to 8 °C loads only):** any single probe at or below 0 °C for one reading, which starts an excursion immediately because freezing can destroy vaccines and biologics.
 3. **Heat excursion:** any single probe above H + 10 °C for one reading.
 4. **Door allowance:** while the door sensor shows the door open inside a depot or customer-site geofence, the 15-minute timer of rule 1 is extended by up to 20 minutes for that door event. The allowance is recorded on the excursion record and in the audit pack; it never applies to rules 2 and 3, and it never applies outside a site geofence.
 5. **Data gap:** no reading for 10 minutes while the trailer is on an active trip and the gateway is not known to be in an offline stretch raises a monitoring alert, not an excursion; when the backfill arrives the rules are evaluated over it.
 
-An excursion ends when product temperature is back inside [L, H] for 10 consecutive minutes. Excursions found during backfill are raised retrospectively with their true start time.
+An excursion ends when product temperature and every load-space probe are back inside [L, H] for 10 consecutive minutes. Excursions found during backfill are raised retrospectively with their true start time.
 
 ### 16.3 Mean kinetic temperature
 
@@ -429,7 +429,7 @@ An audit pack is a PDF with a machine-readable CSV annex, generated per shipment
 
 ### 18.4 Archive
 
-The archive writer consumes `coldchain.v1` and writes the readings, unchanged and with their envelopes, as hourly Parquet files per market to the `fleetsense-coldchain-archive` bucket under S3 Object Lock in compliance mode with a five-year retention. Replication copies the bucket to ap-southeast-5. The archive is the long-term, tamper-evident copy; day-to-day queries use Aurora.
+The archive writer consumes `coldchain.v1` and writes the readings, unchanged and with their envelopes, as hourly Parquet files per market to the `arusfleet-coldchain-archive` bucket under S3 Object Lock in compliance mode with a five-year retention. Replication copies the bucket to ap-southeast-5. The archive is the long-term, tamper-evident copy; day-to-day queries use Aurora.
 
 ---
 
@@ -459,12 +459,12 @@ When a trip is dispatched, the TMS sends the consignee an SMS or email containin
 | driver | driver_id | Name, home depot, licence class, driver card ID |
 | trip | trip_id | From TMS: truck, trailer, driver, customer, consignee, temperature range, planned stops |
 | coupling | coupling_id | Trailer to truck couplings with start and end times (chain of custody) |
-| vehicle_position | (device_id, boot_id, seq) unique | device_ts, ingest_ts, geography(Point), speed, heading, HDOP |
-| drive_frame | (device_id, boot_id, seq) unique | 1 Hz frames, stored for 30 days for event disputes |
-| cold_chain_reading | (device_id, boot_id, seq) unique | trip_id, device_ts, probe values, supply and return air, setpoint, door, flags, correction_note, corrected_by |
+| vehicle_position | (device_id, boot_id, seq, device_ts) unique | device_ts, ingest_ts, geography(Point), speed, heading, HDOP |
+| drive_frame | (device_id, boot_id, seq, device_ts) unique | 1 Hz frames, stored for 30 days for event disputes |
+| cold_chain_reading | (device_id, boot_id, seq, device_ts) unique | trip_id, device_ts, probe values, supply and return air, setpoint, door, flags, correction_note, corrected_by |
 | probe | probe_serial | Calibration date, certificate reference, tolerance |
 | excursion | excursion_id | trip, rule, start, end, peak, MKT, door allowance, disposition |
-| driver_event | (device_id, boot_id, seq) unique | Event type, magnitude, driver_id, position |
+| driver_event | (device_id, boot_id, seq, device_ts) unique | Event type, magnitude, driver_id, position |
 | driver_score_daily | (driver_id, day) | Score, distance, events |
 | geofence | geofence_id | geography(Polygon), type, owner |
 | command | command_id | Type, target, sender, reason, outcome |
@@ -521,7 +521,7 @@ AWS IoT Core, MSK, Aurora and ECS all span three Availability Zones. The loss of
 
 ### 23.2 Region loss
 
-FleetSense does not run active in a second region. Aurora is an Aurora Global Database with a headless secondary cluster in ap-southeast-5 (replication lag typically under one second), and the S3 archive is replicated continuously. On loss of ap-southeast-1, the secondary is promoted and the rest of the platform is rebuilt in ap-southeast-5 from infrastructure code within the 4-hour RTO. Gateways keep buffering for up to 72 hours and reconnect through a DNS name controlled by Rimbun. Readings that were acknowledged in the lost region but had not yet replicated are recovered from the gateways: after the rebuild the platform sends every reefer gateway a RESEND_FROM command for the last 6 hours, and deduplication (Section 9) discards what the store already holds.
+ArusFleet does not run active in a second region. Aurora is an Aurora Global Database with a headless secondary cluster in ap-southeast-5 (replication lag typically under one second), and the S3 archive is replicated continuously. On loss of ap-southeast-1, the secondary is promoted and the rest of the platform is rebuilt in ap-southeast-5 from infrastructure code within the 4-hour RTO. Gateways keep buffering for up to 72 hours and reconnect through a DNS name controlled by Rimbun. Readings that were acknowledged in the lost region but had not yet replicated are recovered from the gateways: after the rebuild the platform sends every reefer gateway a RESEND_FROM command for the last 6 hours, and deduplication (Section 9) discards what the store already holds.
 
 ### 23.3 Dependencies
 
