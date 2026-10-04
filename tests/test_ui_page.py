@@ -458,7 +458,7 @@ RUN_ROW_BOXES = """() => { const row = document.querySelector('#rail-runs .rail-
 def test_the_open_runs_row_stays_in_view_beside_the_logs_panel(page) -> None:
     """The Runs list gave way first to the Logs panel and collapsed to 0 px at 1440x900: the header showed
     with no row, so the reader could not see which run was open. The list now keeps one whole row and
-    scrolls itself to the open run's row; the Logs panel keeps its 3 whole lines."""
+    scrolls itself to the open run's row; the Logs panel keeps its 3 whole lines, both in the default view."""
     pg, base, runs, state = page
     state.tools[:] = [{"name": f"server-{i}", "enabled": True} for i in range(4)]   # four, as config/tools.yaml
     for run in runs.iterdir():   # every run has a log first: writing one moves its run up the list
@@ -471,12 +471,12 @@ def test_the_open_runs_row_stays_in_view_beside_the_logs_panel(page) -> None:
     pg.goto(base + f"/?run={last}")
     pg.wait_for_function(f"document.querySelector('#rail-runs .rail-run.active').dataset.run === {last!r}")
     pg.wait_for_function("document.querySelectorAll('#rail-log .rail-logline').length === 60")
-    for where in ("opened", "logs in view"):
-        if where == "logs in view":
-            pg.evaluate("document.querySelector('.rail-log-frame').scrollIntoView({block: 'nearest'})")
-        m = pg.evaluate(RUN_ROW_BOXES)
-        assert m["list"][0] <= m["row"][0] and m["row"][1] <= m["list"][1], (where, m)   # whole inside the list
-        assert m["slot"][0] <= m["row"][0] and m["row"][1] <= m["slot"][1], (where, m)   # and inside the rail
+    # the default view at 1440x900 holds both, with no scroll of the rail: the open run's row ...
+    m = pg.evaluate(RUN_ROW_BOXES)
+    assert m["list"][0] <= m["row"][0] and m["row"][1] <= m["list"][1], m   # whole inside the list
+    assert m["slot"][0] <= m["row"][0] and m["row"][1] <= m["slot"][1], m   # and inside the rail
+    assert pg.evaluate("(s => s.scrollHeight <= s.clientHeight)(document.getElementById('navrail-slot'))")
+    # ... and at least 3 whole lines of the Logs panel
     m = pg.evaluate(LOG_BOXES)
     assert len(m["lines"]) >= 3, m
     assert m["lines"][0][0] >= m["top"] and m["lines"][-1][1] <= m["bottom"], m

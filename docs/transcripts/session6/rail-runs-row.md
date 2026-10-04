@@ -25,9 +25,12 @@ The 24 px overflow means the default view shows 1 whole log line until the slot 
 Scrolled to show the Logs, the RUNS header goes out of view above the row.
 Getting all of it on one screen needs 24 px from the rail chrome (for example the rail headers' 14 px top padding), which is a design call this card did not make.
 
+Planner ruling, second commit: the three rail section headers' top padding went from 14 px to 6 px, which takes the 24 px from the rail chrome.
+At 1440x900 the default view now shows the row (412.3 to 458.3) and 3 whole log lines (690.6 to 738.6) inside the slot (384.8 to 744.9) with no rail scroll; the test asserts that default view, and putting 14 px back makes it fail.
+
 ## Test and mutation
 New: `test_the_open_runs_row_stays_in_view_beside_the_logs_panel` (tests/test_ui_page.py, 1440x900, four tool servers as in config/tools.yaml, the open run is the last row of the list).
 Removing the `:has` min-height rule makes it fail; removing the list scroll line makes it fail; both files were restored and checked with `cmp`.
 
 ## Screenshots
-docs/transcripts/session6/ui-live/rail_runs_row_1440.png (Logs frame in view) and rail_runs_row_1280.png (default view).
+docs/transcripts/session6/ui-live/rail_runs_row_1440.png and rail_runs_row_1280.png, both the default view after the second commit.

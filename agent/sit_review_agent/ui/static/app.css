@@ -50,7 +50,7 @@ ul { padding-left: 18px; margin: 0; }
 #rail-runs:has(.rail-run) { min-height: calc(2 * var(--run-pad) + var(--run-line) + var(--run-meta-line)); }
 #rail-tools { flex: none; }
 .rail-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--navrail-muted);
-  padding: 14px 10px 6px; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+  padding: 6px 10px; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
 .rail-run { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12.5px;
   line-height: var(--run-line); color: var(--navrail-fg); padding: var(--run-pad) 10px; border-radius: var(--r-md); text-decoration: none; transition: background-color 150ms; }
 .rail-run:hover { background: var(--navrail-row); }
