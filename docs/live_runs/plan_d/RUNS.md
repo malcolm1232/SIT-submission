@@ -20,6 +20,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_exam_v1_1 | exam_platform | FULL | medium | 372 | 201.4 | completed_degraded | 21 | 6.16 | 0 | 6.06/5.45/6.06 | 5.75/7.54/7.11 |
 | d_payments_v2_1 | payments_orchestration | FULL | medium | 496 | 265.2 | completed_degraded | 38 | 5.84 (lb) | 0 | 5.75/7.54/7.11 | 4.85/6.30/6.84 |
 | d_clinical_v2_1 | clinical_rpm | FULL | medium | 447 | 265.4 | completed_degraded | 35 | 7.34 (lb) | 0 | 4.85/6.30/6.84 | 4.38/6.15/6.68 |
+| d_lakehouse_v2_1 | research_lakehouse | FULL | medium | 505 | 265.5 | completed_degraded | 69 | 7.61 (lb) | 0 | 4.38/6.15/6.68 | 3.32/5.46/6.20 |
 
 ## Scores
 
@@ -33,3 +34,4 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_ledger_v1_1 | ledger_migration | 12/14 (0.857) | 0.929 | 0.632 strict / 0.842 adj | 0.917 | 1.000 | 0 of 19 | 4.24 | 211 | 6.06/5.45/6.06 | 13.39/9.49/7.60 |
 | d_exam_v1_1 | exam_platform | 12/14 (0.857) | 0.929 | 0.750 strict / 0.938 adj | 0.917 | 1.000 | 0 of 16 | 3.57 | 211 | 5.75/7.54/7.11 | 9.33/8.46/7.61 |
 | d_payments_v2_1 | payments_orchestration | 8/9 (0.889) | 1.000 | 0.286 strict / 0.821 adj | 0.905 | 1.000 | 0 of 28 | 11.51 | 359 | 4.85/6.30/6.84 | 7.49/7.07/7.04 |
+| d_clinical_v2_1 | clinical_rpm | 6/9 (0.667) | 0.889 | 0.207 strict / 0.862 adj | 0.710 | 1.000 | 0 of 29 | 11.76 | 388 | 4.38/6.15/6.68 | 7.15/6.71/6.69 |
