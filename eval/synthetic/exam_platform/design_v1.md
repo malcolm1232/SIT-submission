@@ -51,7 +51,7 @@
 
 ## 1. Purpose and Scope
 
-This document describes the architecture of PHON, the platform through which the Siam Examinations and Certification Board (SECB) registers candidates for the National Upper Secondary Certificate (NUSC), collects fees, allocates venues and seats, tracks examination scripts from the hall to the marking centre, captures and moderates marks, computes grades, handles appeals, releases results to about 500,000 candidates at a fixed time, issues certificates, answers verification requests from employers and universities, and reports to the Ministry of Education. It is written to the level of detail an engineering team needs to begin implementation. Section 30 states where that is and is not yet true.
+This document describes the architecture of PHON, the platform through which the Siam Examinations and Certification Board (SECB) registers candidates for the National Secondary Certificate (NSC), collects fees, allocates venues and seats, tracks examination scripts from the hall to the marking centre, captures and moderates marks, computes grades, handles appeals, releases results to about 500,000 candidates at a fixed time, issues certificates, answers verification requests from employers and universities, and reports to the Ministry of Education. It is written to the level of detail an engineering team needs to begin implementation. Section 30 states where that is and is not yet true.
 
 PHON replaces four systems: a registration system run by a contractor since 2014, a marks system on an unsupported database, a results website that has failed on three of the last six release days, and a certificate register kept partly on paper. The platform is operated by SECB's Digital Platforms Division from AWS in the Asia Pacific (Thailand) Region, ap-southeast-7, with three Availability Zones.
 
@@ -261,7 +261,7 @@ Marked scripts are returned to the centre's capture room in their bundles, with 
 
 ### 13.1 Capture flow
 
-Capture operators key marks from the mark sheets at workstations in the capture room. The operator scans the bundle barcode and the `script_id` barcode, and the capture screen shows the paper's question structure (question number and maximum mark). The operator keys each question's mark; the screen refuses a mark above the maximum and a non-numeric entry, and totals are computed by the service, never keyed. Each keyed script is a `capture_entry` row with the operator, workstation, time and the per-question marks as a JSON array.
+Capture operators key marks from the mark sheets at workstations in the capture room. The operator scans the bundle barcode and the `script_id` barcode, and the capture screen shows the paper's question structure (question number and maximum mark). The operator keys each question's mark; the screen refuses a mark above the maximum and a non-numeric entry, and totals are computed by the service, never keyed. Each keyed script is a `capture_entry` row with the operator, workstation, time and the per-question marks as a JSON list.
 
 ### 13.2 Independent second entry
 
@@ -307,7 +307,7 @@ Before release, the Awarding Secretary runs the grade distribution report (grade
 
 ### 16.1 Clerical corrections before release
 
-Between the Awarding Secretary's sign-off and release day, marking centres may report clerical errors (a mark keyed against another candidate's script, a resolved value that does not match the mark sheet). The Results Officer enters a clerical correction with a second approval, and the Grading Service recomputes the affected candidate's grades; corrections may be entered until 07:00 on release day, and the results dataset is locked at 07:00 so that the result released at 08:00 reflects every correction entered before the lock.
+Between the Awarding Secretary's sign-off and release day, marking centres may report clerical errors (a mark keyed against a different candidate's script, a resolved value that does not match the mark sheet). The Results Officer enters a clerical correction with a second approval, and the Grading Service recomputes the affected candidate's grades; corrections may be entered until 07:00 on release day, and the results dataset is locked at 07:00 so that the result released at 08:00 reflects every correction entered before the lock.
 
 ### 16.2 Appeals after release
 
@@ -375,7 +375,7 @@ A certificate is re-issued after a successful appeal or a name correction; the e
 
 ### 20.3 Verification
 
-Verifiers call `POST /verify` with their API key and the certificate number, the candidate's name as printed and the candidate's date of birth; the service returns `VALID`, `SUPERSEDED` or `NOT_FOUND`, and for `VALID` the grades on the certificate. It never searches by name alone and never returns a record for a certificate number without a matching name and date of birth, so that a verifier learns nothing it was not given by the candidate beyond the grades the candidate chose to present. Requests are rate-limited per verifier (600 per minute) and all requests are logged with the verifier identity for the candidate to see in their portal ("who verified my certificate"). The QR code on the PDF statement and the certificate encodes a signed, time-unlimited verification token that opens a page with the same fields; the token is bound to the certificate number and reveals nothing more than the certificate itself.
+Verifiers call `POST /verify` with their API key and the certificate number, the candidate's name as printed and the candidate's date of birth; the service returns `VALID`, `SUPERSEDED` or `NO_MATCH`, and for `VALID` the grades on the certificate. It never searches by name alone and never returns a record for a certificate number without a matching name and date of birth, so that a verifier learns nothing it was not given by the candidate beyond the grades the candidate chose to present. Requests are rate-limited per verifier (600 per minute) and all requests are logged with the verifier identity for the candidate to see in their portal ("who verified my certificate"). The QR code on the PDF statement and the certificate encodes a signed, time-unlimited verification token that opens a page with the same fields; the token is bound to the certificate number and reveals nothing more than the certificate itself.
 
 ## 21. Data Model
 
@@ -385,7 +385,7 @@ Principal tables: `candidate` (national identity number, names, date of birth, s
 
 ### 21.2 Marks capture instance (RDS for PostgreSQL 16)
 
-Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted total, `question_marks` as a JSON array, `moderation_run_id`), `moderation_run` (component, marker or centre, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only replica endpoint.
+Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted total, `question_marks` as a JSON list, `moderation_run_id`), `moderation_run` (component, marker or centre, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only replica endpoint.
 
 ### 21.3 Identifiers and audit
 
@@ -393,7 +393,7 @@ Every table carries `created_at`, `created_by`, `updated_at` and `updated_by`; e
 
 ## 22. Event Bus and Transactional Outbox
 
-Domain events (`registration.confirmed`, `payment.settled`, `allocation.completed`, `custody.scanned`, `capture.accepted`, `moderation.signed`, `grades.computed`, `results.released`, `certificate.issued`) are written to an `outbox` table in the same transaction as the state change they describe, and relayed to MSK by a relay with `acks=all` and an idempotent producer, with the outbox row marked published only after the broker acknowledges. Consumers deduplicate by `event_id` in the same local transaction as their effect. Topics are keyed by the aggregate identifier (candidate, script, bundle or certificate) so that the events of one aggregate are consumed in commit order, except where a section states a different key for throughput. The cluster has 3 brokers, replication factor 3 and `min.insync.replicas` 2; topics have 12 partitions and 7 days' retention, against a peak of about 400 events per second during capture. Every event carries a `schema_version` and consumers ignore fields they do not know.
+Domain events (`registration.confirmed`, `payment.settled`, `allocation.completed`, `custody.scanned`, `capture.accepted`, `moderation.signed`, `grades.computed`, `results.released`, `certificate.issued`) are written to an `outbox` table in the same transaction as the state change they describe, and relayed to MSK by a relay with `acks=all` and an idempotent producer, with the outbox row marked published only after the broker acknowledges. Consumers deduplicate by `event_id` in the same local transaction as their effect. Topics are keyed by the aggregate identifier (candidate, script, bundle or certificate) so that the events of one aggregate are consumed in commit order, except where a section states a different key for throughput. The cluster has 3 brokers, replication factor 3 and `min.insync.replicas` 2; topics have 12 partitions and 7 days' retention, against a peak of about 400 events per second during capture. Every event carries a `event_version` and consumers ignore fields they do not know.
 
 ## 23. Data Protection and Retention
 
@@ -504,7 +504,7 @@ Every service emits structured logs, metrics and traces with the request identif
 | FR-12 | A synthetic candidate receives the result in the portal, the app and by SMS to a test handset. |
 | FR-13 | A test school downloads its results file and the file matches the candidates' released grades. |
 | FR-14 | A test appeal changes a grade; the new grade supersedes the old, the candidate and school are notified, and the certificate is re-issued as `SUPERSEDED` plus new. |
-| FR-15 | A verifier submits a valid certificate number with matching name and date of birth and receives `VALID` with grades; the same number with another name receives `NOT_FOUND`. |
+| FR-15 | A verifier submits a valid certificate number with matching name and date of birth and receives `VALID` with grades; the same number with another name receives `NO_MATCH`. |
 | FR-16 | The Ministry confirms receipt of the national statistics on the test release day. |
 | FR-17 | Every staff write in the test run has an `audit_log` row with before and after values. |
 
@@ -516,7 +516,7 @@ Every service emits structured logs, metrics and traces with the request identif
 | NFR-2 | A load test replays the previous release day's request pattern at 6,100 requests per second for 10 minutes against the production-sized results tier; failures are below 0.1 percent. |
 | NFR-3 | Page load is observed during the NFR-2 test. |
 | NFR-4 | 375,000 test messages are sent to the aggregator's test endpoint and the time to the last accepted message is recorded. |
-| NFR-5 | A penetration test of the results tier before release day finds no way for a signed-in test candidate to see another candidate's result. |
+| NFR-5 | A penetration test of the results tier before release day finds no way for a signed-in test candidate to see a different candidate's result. |
 | NFR-6 | The core Aurora writer is failed over during a write load and the data loss is measured; the marks capture instance is failed and restored in the April rehearsal. |
 | NFR-7 | The Data Protection Impact Assessment is signed off by the Data Protection Officer before registration opens. |
 | NFR-8 | 2,400 simulated operators key scripts for one hour and the 95th percentile response time is under 300 ms. |
