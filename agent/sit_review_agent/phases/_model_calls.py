@@ -31,7 +31,10 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   continues with its code fallback (understand: no intent or registry; plan: one document-only
   question per criterion; refine: the merged findings in severity and confidence order). An assess
   shard (``disclose=False``) discloses its own cut, keeping the findings the stream had finished
-  (``PhaseCall.partial``). Other :class:`LLMError`\\ s propagate.
+  (``PhaseCall.partial``). Other :class:`LLMError`\\ s propagate. A complete answer that broke the
+  phase's rules (``check``) gets one repair call; refine keeps the revisions that pass on their own and
+  asks that call only for the failing ones (``split``, :class:`KeptItems`), so a repair cut at the
+  stage limit costs the failing revisions, never the valid ones (rehearsal of 2026-10-04).
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
@@ -121,10 +124,31 @@ class PhaseCall:
     invalid: tuple[str, ...] = ()
     #: Omissions ``ask`` still found after the one repair call (the answer is used; the caller fills them in).
     omitted: tuple[str, ...] = ()
+    #: With ``split``: the complete first answer whose valid items were kept while the one repair call
+    #: asked only for the rest. The caller merges ``split.kept`` with what the repair call gave
+    #: (``result``, or ``partial`` when it was cut; nothing when it was declined or truncated twice)
+    #: and checks the merged set itself; ``check`` and ``ask`` are not run on the repair answer.
+    first: LLMResult[Any] | None = None
+    split: KeptItems | None = None
 
     @property
     def declined(self) -> bool:
         return self.result is None and not self.cut and not self.truncated and not self.invalid
+
+
+@dataclass(frozen=True)
+class KeptItems:
+    """The valid items of a complete answer that broke rules (``call_model(split=...)``), kept while
+    the one repair call asks only for the rest (refine, sit_sample_ui_1 rehearsal of 2026-10-04: one
+    revision of 55 failed, the whole answer was asked again, the repair ran into the stage limit and
+    51 findings were never refined)."""
+
+    #: The items of the first answer that pass on their own, as the model gave them.
+    kept: tuple[Any, ...]
+    #: The IDs of the items the repair call must answer for (failed or missing).
+    retry: tuple[str, ...]
+    #: Added to the correction of the repair brief: what is kept, what to answer again.
+    instruction: str
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -288,7 +312,8 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None, conversation: str | None = None,
                      disclose: bool = True, check: Callable[[Any], list[str]] | None = None,
-                     ask: Callable[[Any], list[str]] | None = None) -> PhaseCall:
+                     ask: Callable[[Any], list[str]] | None = None,
+                     split: Callable[[Any, list[str]], KeptItems | None] | None = None) -> PhaseCall:
     """One logical model call of ``phase`` with the phase-level retries described in the module
     docstring. Returns the result, or a declined :class:`PhaseCall` after a persistent refusal.
 
@@ -302,7 +327,16 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     re-review: prior findings with no status) lists what the answer left out: a non-empty list asks
     once through the same repair call (with ``check``'s problems, if any); what the repair answer still
     leaves out is returned in ``omitted`` with the answer, which is used, and the caller fills the gap
-    in code. A call already repaired once (a schema error) is not asked again."""
+    in code. A call already repaired once (a schema error) is not asked again.
+
+    ``split`` (refine) is given a complete answer that ``check`` or ``ask`` found problems with and the
+    problems; when it returns :class:`KeptItems`, those items are kept, the repair call asks only for
+    the rest (``KeptItems.instruction`` joins the correction) and the call returns right after the
+    repair call with ``first`` (the first answer) and ``split`` set, whatever the repair call's end:
+    the repair answer in ``result``, a cut with ``partial``, a persistent refusal or a second
+    truncation with neither. The caller merges the kept items with what came back and checks the whole;
+    ``check`` and ``ask`` are not run on a repair answer that covers only part of the whole. With
+    ``None`` from ``split`` (nothing to keep) the whole answer is asked again, as without ``split``."""
     effort = ctx.config.effort_for(phase)
     system = system_prompt(ctx).text
     docs = ordered_documents(ctx)
@@ -317,6 +351,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     repaired = widened = False
     k, reason = 0, ""
     truncated_ids: list[str | None] = []
+    first: LLMResult[Any] | None = None             # the answer whose valid items ``kept`` holds (``split``)
+    kept: KeptItems | None = None
     while True:
         # Yield once before every logical call, so the concurrent members of stage 1 (the K assess
         # shards, launched in order) reach their own first calls before a retry of this one: the
@@ -349,7 +385,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                           stage=phase.value, call_id=exc.call_id, category=exc.category)
                 continue
             if not disclose:
-                return PhaseCall(result=None, brief=brief, refusal_category=exc.category)
+                return PhaseCall(result=None, brief=brief, refusal_category=exc.category, first=first, split=kept)
             ctx.state.add_degradation(
                 DegradationType.OTHER,
                 f"the model declined the {phase.value} call after a reframed retry (refusal category: "
@@ -359,7 +395,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                 ctx.state.declined_sections.append(phase.value)
             ctx_event(ctx, f"model declined {phase.value} twice; continuing without it", "warn", event="declined",
                       stage=phase.value, call_id=exc.call_id, category=exc.category)
-            return PhaseCall(result=None, brief=brief, refusal_category=exc.category)
+            return PhaseCall(result=None, brief=brief, refusal_category=exc.category, first=first, split=kept)
         except LLMSchemaError as exc:
             if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
                 _note_call(ctx, phase, exc.call_id)
@@ -376,7 +412,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if disclose:
                 deadline_cut(ctx, phase, exc)
             return PhaseCall(result=None, brief=brief, cut=True, partial=getattr(exc, "partial", None),
-                             partial_complete=bool(getattr(exc, "partial_complete", False)), cut_id=exc.call_id)
+                             partial_complete=bool(getattr(exc, "partial_complete", False)), cut_id=exc.call_id,
+                             first=first, split=kept)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
             add_usage(ctx.state.budget, exc.usage)
@@ -384,7 +421,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if widened:                     # second truncation: degrade like a deadline cut, no third call
                 if disclose:
                     truncated_twice(ctx, phase, max_tokens, truncated_ids)
-                return PhaseCall(result=None, brief=brief, truncated=True, truncated_ids=tuple(truncated_ids))
+                return PhaseCall(result=None, brief=brief, truncated=True, truncated_ids=tuple(truncated_ids),
+                                 first=first, split=kept)
             wider = min(MAX_OUTPUT_TOKENS, max_tokens * 2)
             how = (f"with max_tokens={wider}" if wider > max_tokens
                    else f"at the same max_tokens={wider} (the output cap; it cannot be raised)")
@@ -394,6 +432,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                       reason="max_tokens_retry", stage=phase.value, call_id=exc.call_id, max_tokens=wider)
             continue
         record_result(ctx, phase, result)
+        if kept is not None:                # the repair call answered for the rest; the caller merges and checks
+            return PhaseCall(result=result, brief=brief, first=first, split=kept)
         problems = check(result.parsed) if check is not None and result.parsed is not None else []
         omitted = ask(result.parsed) if ask is not None and result.parsed is not None else []
         if omitted and not problems and repaired:
@@ -410,12 +450,26 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                           stage=phase.value, call_id=result.call_id, problems=len(problems),
                           public=f"{head} ({len(problems)} problem(s))")
                 return PhaseCall(result=None, brief=brief, invalid=tuple(problems))
+            # Rule repair. Of the four callers (understand, plan, the assess shards, refine) only refine
+            # passes ``check``/``ask``, so only refine reaches this retry; the others come through the
+            # schema and transport retries above, where a failed answer has no parsed items to keep.
+            # An answer that is a list of independently applicable items keeps its valid items through
+            # ``split`` and the repair call asks only for the rest; a single-object answer (understand,
+            # plan: one intent, one question list applied as a whole) would be asked again whole. A
+            # phase that later adds a ``check`` over a list answer (the assess shards' findings) must
+            # also pass ``split``, or a complete answer loses its valid items to one bad one
+            # (docs/transcripts/session6/refine-keep-good.md).
             repaired, k, reason = True, k + 1, "schema_repair"
             schema_error = ("The answer had the required structure but broke these rules:\n"
                             + "\n".join(f"- {p}" for p in problems))[:4000]
-            ctx_event(ctx, f"{phase.value} answer broke {len(problems)} rule(s); one repair call", "warn",
-                      event="call_retry", reason="rule_repair", stage=phase.value, call_id=result.call_id,
-                      problems=len(problems))
+            kept = split(result.parsed, problems) if split is not None else None
+            if kept is not None:
+                first = result
+                schema_error += "\n\n" + kept.instruction[:4000]
+            ctx_event(ctx, f"{phase.value} answer broke {len(problems)} rule(s); one repair call"
+                      + (f" for {len(kept.retry)} item(s), {len(kept.kept)} kept" if kept is not None else ""),
+                      "warn", event="call_retry", reason="rule_repair", stage=phase.value, call_id=result.call_id,
+                      problems=len(problems), **({"kept": len(kept.kept), "retry": len(kept.retry)} if kept else {}))
             continue
         return PhaseCall(result=result, brief=brief)
 
