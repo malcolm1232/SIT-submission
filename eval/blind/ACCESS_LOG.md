@@ -27,3 +27,16 @@ Nothing under `eval/blind/` was listed, opened, printed, copied or archived; thi
 Runs launched: none.
 Kind: exposure to derived copies outside `eval/blind/` (`eval/prereg.yaml`, `access_log_policy.exposure_entries`), not a read of a held-out file.
 Ruling, 2026-10-03 (SIT FABLE for the owner, `docs/USER_DECISIONS.md` #24): entries 1 and 2 do not count against the three-evaluation budget for the held-out set, because no agent output was scored against these items and only flaw counts were seen in entry 1; the same holds for entry 2.
+
+## Entry 3: 2026-10-05, unintended programmatic read of the held-out keys by the item converter
+
+Date: 2026-10-05 Singapore time, about 00:30 +08 (2026-10-04, about 16:30 UTC).
+Who: the session 6 register-items worker, a fresh-context agent session working on branch `s4/register-items` while registering five new synthetic items.
+What happened: it ran `python spec/convert_answer_keys.py --help` to read the usage; the script has no `--help` option, so it ran a full write-mode conversion across every tier, which read the held-out keys under `eval/blind/`, and it printed its notice that the access must be recorded here.
+The intended run was the synthetic-only form, `--tier synthetic`, as in `docs/HANDOVER_261004_PLANNER.md` §7.
+What was seen: nothing; no key content was printed to, read by or held in the context of any person or model.
+Files changed: none; `git status` was clean afterwards, so no file under `eval/blind/` changed.
+Runs launched: none; no agent run, scoring run, grading run or model call used these items.
+Kind: interim-rule breach (`docs/SEALING.md` §6 rule 1, a script opened files under `eval/blind/`), recorded under §6 rule 6; programmatic, unintended, no exposure.
+The pre-registration is still not frozen, so this entry carries no frozen prereg hash.
+Source of this entry: `docs/transcripts/session6/register-items.md`, section "Incident", copied here on 2026-10-05.
