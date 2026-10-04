@@ -1,13 +1,13 @@
 # Synthetic eval item: Hospital Clinic and Theatre Scheduling Platform
 
-`design_v1.md` is the detailed design for the clinic and theatre scheduling platform of a fictional Malaysian private hospital group, "Bayu Kasih Healthcare" (Temujanji v1.0, about 8,000 words, 30 numbered sections, FR and NFR IDs).
+`design_v1.md` is the detailed design for the clinic and theatre scheduling platform of a fictional Malaysian private hospital group, "Bayu Kasih Healthcare" (Jadwira v1.0, about 8,300 words, 30 numbered sections, FR and NFR IDs).
 Its structure follows the other synthetic items: requirements, principles, architecture, flows, data model, confirmed decisions, pending backlog, acceptance criteria, readiness assessment and build phases.
 The platform books about 2.6 million outpatient appointments a year across six hospitals through a web portal, a mobile app and a group call centre, schedules 52 operating theatres with surgeon and anaesthetist rosters, allocates beds and shared theatre equipment, sends SMS and WhatsApp reminders, and integrates with the EMR and billing over HL7 FHIR R4, all in AWS ap-southeast-5 on Aurora PostgreSQL, Amazon MSK and ECS.
 The group, its hospitals, its people, its EMR and billing suppliers (Ombak, Kirana) and its SMS aggregator (Lintas Mesej) are invented; only public technologies, public standards and public vendor limits are named.
 
 The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across all eight taxonomy categories, including one quantitative claim you can check against public SMS documentation (F06, the single-message character limit for non-GSM alphabets).
 It also has five deliberately sound sections that a good reviewer should leave alone.
-`design_v2.md` (v1.1, about 8,900 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F02, F04, F05, F06, F09, F11), the F04 fix introduces one new critical regression (F15, the FHIR Bridge retry topic lets a delayed old event overwrite a newer reschedule or cancellation in the EMR), and the other 7 flaws are unchanged.
+`design_v2.md` (v1.1, about 9,200 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F02, F04, F05, F06, F09, F11), the F04 fix introduces one new critical regression (F15, the FHIR Bridge retry topic lets a delayed old event overwrite a newer reschedule or cancellation in the EMR), and the other 7 flaws are unchanged.
 In `v2_changes`, the seven fixed flaws all have status `fixed`; the one whose fix introduced the regression also carries `introduced_new_flaw_id: "F15"`.
 F15 is listed in `flaws[]` with `introduced_in: "v2"` and `introduced_by_fix_of`.
 
@@ -54,7 +54,7 @@ Sound sections: 8 Outpatient Slot Model, 12 Consultant Sessions, Leave and Bulk 
 `eval/build_pdfs.py` and `spec/convert_answer_keys.py` list their items in code, and this item is not yet registered in them (nor in `eval/prereg.yaml`; one later change registers all new items).
 Until then, both were run unchanged on disk with this item added to their lists in memory only, from the repository root:
 
-- PDFs: `eval/build_pdfs.py` with `ITEMS = ["hospital_scheduling"]`. Last rebuilt 2026-10-04: `design_v1.pdf` 15 pages, `design_v2.pdf` 17 pages, all probe checks passed.
+- PDFs: `eval/build_pdfs.py` with `ITEMS = ["hospital_scheduling"]`. Last rebuilt 2026-10-05 after the cold read: `design_v1.pdf` 16 pages, `design_v2.pdf` 17 pages, all probe checks passed.
 - Canonical key: `spec/convert_answer_keys.py --tier synthetic --verify-anchors` with `("synthetic", "hospital_scheduling", "synthetic_json_v0")` in `ITEMS` and `"hospital_scheduling": {"F06", "F15"}` in `NEEDS_EXTERNAL`. Result: 0 keys failed validation, all 15 anchor quotes exact and unique on their recorded pages, `scored_run_ready` false (owner sign-off pending).
 
 When the item is registered, add those two entries to the scripts and `hospital_scheduling` to `ITEMS` in `eval/build_pdfs.py`.

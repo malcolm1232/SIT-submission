@@ -7,11 +7,11 @@
     "documents": {
       "v1": {
         "path": "design_v1.md",
-        "sha256": "5bf4d710d1b6c62be9b1c003d4641e1c3d03b200e1d7254ee1c992cf13811c40"
+        "sha256": "394f9844a1f953d6c062938ba985bbaab31d4bfa34cc082b969f3bf7d119f5db"
       },
       "v2": {
         "path": "design_v2.md",
-        "sha256": "f42aa2af9db6c732bac89abe3f58d6d9ed95018e947463cd4791179bfaa7e529"
+        "sha256": "8117d757ac67ffab73eaec783ed46a3e9396bd4ff12e895ba1d3841bfcf36cb4"
       }
     },
     "document_id": null,
@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/hospital_scheduling/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "ececa46c385b2283c111238d2182cd06bb44f7b4799c9f7bcc28a495d4cd9fd8"
+      "sha256": "ca013cf8b4b860090deb911a05a17aeff7902d4715c9bc0736b3e6c847522c62"
     }
   },
   "scoring": {
@@ -133,7 +133,7 @@
       "introduced_by_fix_of": null,
       "v2_status": "fixed",
       "caused_regression_flaw_id": null,
-      "v2_note": "theatre_case gains theatre_id and three btree_gist exclusion constraints on theatre, surgeon and anaesthetist periods including turnaround; the cache is now the editor's pre-check only.",
+      "v2_note": "theatre_case gains theatre_id and three btree_gist exclusion constraints on theatre, surgeon and anaesthetist periods including turnaround; the cache is now the editor's pre-check only; sedation-list cases carry a flag that leaves them out of the anaesthetist constraint.",
       "location": {
         "sections": [
           "13.2",
@@ -145,7 +145,7 @@
         ],
         "decision_ids": [],
         "anchor_quote": "finds no overlap it inserts the case into theatre_case",
-        "page": 8
+        "page": 9
       },
       "description": "The Theatre Service checks a new case for overlapping theatre, surgeon and anaesthetist bookings against the theatre calendar held in ElastiCache, which a consumer refreshes from the event bus, and inserts into theatre_case when the cache shows no overlap. theatre_case in Section 20.1 has no exclusion or unique constraint on the theatre, surgeon or anaesthetist periods (only equipment_reservation and clinic_slot have them).",
       "rationale": "The check and the insert are not atomic, and the cache is refreshed asynchronously from events published after commit. Two coordinators booking into the same session, or one coordinator and the drag-and-drop editor, can both read a free calendar and both insert; the theatre, the surgeon or the anaesthetist is then double-booked, and nothing in the database refuses it. FR-9 and Principle P5 say the platform enforces this rule; P1 says the database is the one book of availability, yet here the cache decides. Double-booked theatre time is found on the day, with patients fasted and ready.",
@@ -216,7 +216,7 @@
           "FR-3"
         ],
         "decision_ids": [],
-        "anchor_quote": "when the search returns exactly one patient Temujanji attaches the booking to that patient",
+        "anchor_quote": "when the search returns exactly one patient Jadwira attaches the booking to that patient",
         "page": 6
       },
       "description": "Principle P3 says a booking is attached to an existing patient only on an exact match of the national identifier together with the date of birth, and Section 7 applies that to the portal. Section 9.3 has the call centre search by name and date of birth and attach the booking to the single patient returned without asking for the MyKad number.",
@@ -347,7 +347,7 @@
       "introduced_by_fix_of": null,
       "v2_status": "fixed",
       "caused_regression_flaw_id": null,
-      "v2_note": "Continuous PostgreSQL logical replication to Cyberjaya with a 2-minute lag alarm, the outbox replicated and republished after failover, nightly snapshot kept as fallback; the NFR-6 criterion now measures the data loss.",
+      "v2_note": "Continuous PostgreSQL logical replication to Cyberjaya with a 2-minute lag alarm, the outbox replicated and republished after failover, nightly snapshot kept as fallback; schema changes applied to Cyberjaya first and sequences set above the replicated values on failover; the NFR-6 criterion now measures the data loss.",
       "location": {
         "sections": [
           "2.2 (NFR-6)",
@@ -434,7 +434,7 @@
         ],
         "decision_ids": [],
         "anchor_quote": "is kept within 160 characters, so each reminder is delivered and",
-        "page": 7
+        "page": 8
       },
       "description": "Section 11.3 says every reminder template in all four languages is kept within 160 characters and so goes as a single SMS, and the aggregator account rejects concatenated messages. The Chinese template is 96 characters and the Tamil template 142. The SMS cost line in 24.2 counts one message per reminder.",
       "rationale": "160 characters is the single-message limit for the GSM 03.38 7-bit alphabet. Chinese and Tamil characters are outside that alphabet, so those messages are sent as UCS-2, where a single SMS holds 70 characters (67 per part when concatenated). A 96-character Chinese reminder needs two parts and a 142-character Tamil one needs three; with concatenation rejected they are not sent at all, so Chinese- and Tamil-speaking patients get no SMS reminder (FR-8, NFR-3), and if concatenation were allowed the SMS cost line would be understated.",
@@ -763,7 +763,7 @@
         "refinement_now"
       ],
       "affected_decisions": [],
-      "acceptable_fix": "Make the dependency explicit and decide how Phase 2 goes live: an interim privilege table in Temujanji maintained by medical affairs from the spreadsheets, with the API integration as a later change; or move the privilege check (and DEC-08) to Phase 3 with the committees' agreement.",
+      "acceptable_fix": "Make the dependency explicit and decide how Phase 2 goes live: an interim privilege table in Jadwira maintained by medical affairs from the spreadsheets, with the API integration as a later change; or move the privilege check (and DEC-08) to Phase 3 with the committees' agreement.",
       "distractor_notes": "FR-10 and the rostering flow in Section 14 are fine in themselves. A finding that only says 'the credentialing project is risky' without the date mismatch is partial.",
       "overlapping_sound_section_ids": [],
       "disambiguation": null
@@ -868,7 +868,7 @@
           "NFR-8"
         ],
         "decision_ids": [],
-        "anchor_quote": "grows by about 10 million rows a year, so it stays a single unpartitioned table",
+        "anchor_quote": "booking_audit grows by about 10 million rows a year, so it stays a single unpartitioned",
         "page": 12
       },
       "description": "Section 20.2 says that at about 40 audit rows per appointment and 2.6 million appointments a year, booking_audit grows by about 10 million rows a year, and on that basis keeps it as a single unpartitioned table for the seven-year retention.",
@@ -897,7 +897,7 @@
         "refinement_now"
       ],
       "affected_decisions": [],
-      "acceptable_fix": "Redo the sizing with the correct arithmetic (and include theatre cases and admissions), partition booking_audit by month like the other large tables, and move older partitions to the Object Lock bucket rather than keeping them on the writer.",
+      "acceptable_fix": "Redo the sizing with the correct arithmetic (and include theatre cases and admissions), partition booking_audit by month, and move older partitions to the Object Lock bucket rather than keeping them on the writer.",
       "distractor_notes": "The 40 rows per appointment assumption itself can be questioned but is not the flaw; the multiplication is.",
       "overlapping_sound_section_ids": [],
       "disambiguation": null
@@ -1126,7 +1126,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Taking a slot is a conditional update from free to booked in the same transaction as the appointment insert, so a slot already taken on the writer is refused even when a reader showed it free. Two btree_gist exclusion constraints prevent overlapping booked slots per consultant and per room, and the FR-4 one-future-appointment rule is a partial unique index. The read-from-readers trade-off is stated and handled.",
+      "why_sound": "Taking a slot is a conditional update from free to booked in the same transaction as the appointment insert, so a slot already taken on the writer is refused even when a reader showed it free. Two btree_gist exclusion constraints prevent overlapping booked slots per consultant and per room, and the FR-4 one-future-appointment rule is a partial unique index on status booked (no time-dependent predicate). The tables are not partitioned (Section 20.2), so PostgreSQL 16 can hold these constraints across the whole table. The read-from-readers trade-off is stated and handled.",
       "trap": "Flagging reader lag as a double-booking risk (the conditional update on the writer handles it), asking for pessimistic locks or Redis locks on slots, or calling the 26-week generation horizon a scaling problem (about 3.2 million rows a year).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1148,7 +1148,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Leave closes sessions and moves appointments into a worklist rather than cancelling them; urgent and soon patients get clinical review and a nominated covering consultant whose privilege dates are checked; routine patients get the next free slots; every patient is told, non-responders are called, and nothing is cancelled until the patient has accepted, declined or missed two calls. Emergency leave follows the same flow with a 48-hour calling rule. Who moved what and why is recorded.",
+      "why_sound": "Leave closes sessions and moves appointments into a worklist rather than cancelling them; urgent and soon patients get clinical review and a nominated covering consultant who already holds clinic sessions at that hospital; booked theatre cases go to the theatre coordinator for rebooking; non-responders are called after 72 hours or by 48 hours before the appointment, whichever comes first; routine patients get the next free slots; every patient is told, non-responders are called, and nothing is cancelled until the patient has accepted, declined or missed two calls. Emergency leave follows the same flow with a 48-hour calling rule. Who moved what and why is recorded.",
       "trap": "Flagging 'appointments are cancelled when a consultant takes leave' (they are not), asking for automatic rebooking without clinical review, or treating the six-week notice as a hard rule (it is 'where possible' and emergency leave is covered).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1170,7 +1170,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Events are written in the same transaction as the change (no dual write), relayed with acks=all and an idempotent producer, marked published only after the broker acknowledges, and consumers deduplicate by event_id in the same local transaction as their effect. Keys are aggregate IDs so per-appointment and per-case ordering holds; 12 partitions, RF 3 and min.insync.replicas 2 are more than enough for about 30 events a second; schema versioning and 7-day retention are stated.",
+      "why_sound": "Events are written in the same transaction as the change (no dual write), relayed with acks=all and an idempotent producer, marked published only after the broker acknowledges, and consumers deduplicate by event_id in the same local transaction as their effect. Keys are aggregate IDs so per-appointment and per-case ordering holds; one active relay task (advisory lock, standby in another zone) publishes in outbox `seq` order, which is commit order per aggregate; 12 partitions, RF 3 and min.insync.replicas 2 are more than enough for a few events a second; schema versioning and 7-day retention are stated.",
       "trap": "Flagging at-least-once delivery as a defect (deduplication is designed), demanding Kafka transactions or exactly-once, claiming a hot partition or that MSK cannot take the load, or calling the 200 ms polling a bottleneck.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1192,7 +1192,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "The mapping is correct FHIR R4: Schedule and Slot for sessions and slots, Appointment statuses including noshow and waitlist (waitlist is a valid R4 Appointment status), Encounter class IMP with a bed Location for admissions, Device participants for equipment, ServiceRequest for the procedure. Conditional create on the Temujanji identifier makes resends safe, conditional update sends the full resource, a theatre case's two resources go in a transaction Bundle that the server must apply atomically, and patient references use the MRN identifier.",
+      "why_sound": "The mapping is correct FHIR R4: Schedule and Slot for sessions and slots, Appointment statuses including noshow and waitlist (waitlist is a valid R4 Appointment status), Encounter class IMP with a bed Location for admissions, Device participants for equipment, ServiceRequest for the procedure. Conditional create on the Jadwira identifier makes resends safe, conditional update sends the full resource, a theatre case's two resources go in a transaction Bundle that the server must apply atomically, and patient references use the MRN identifier.",
       "trap": "Claiming FHIR R4 Appointment has no waitlist status (it does), objecting to the full-resource conditional update as such (it is how FHIR update works; the v2 ordering problem is in Section 17.3, not here), or asking for a 'batch' Bundle, which is not atomic.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],

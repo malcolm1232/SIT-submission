@@ -1,4 +1,4 @@
-# Bayu Kasih Healthcare: Temujanji Clinic and Theatre Scheduling Platform
+# Bayu Kasih Healthcare: Jadwira Clinic and Theatre Scheduling Platform
 
 ## Detailed Design
 
@@ -10,8 +10,8 @@
 | **Status** | Design phase, build not started |
 | **Last updated** | 2026-10-02 (review revisions); previous 1.0 consolidated 2026-09-18 |
 | **Prepared by** | Bayu Kasih Digital, Patient Access Platform Team |
-| **Approvers** | Dr. Farah Iskandar (Group Chief Medical Officer); Daniel Teoh (Group Chief Information Officer); Kavitha Raman (Head of Patient Access) |
-| **Companion documents** | Temujanji Conceptual Design v1.1; Privacy Impact Assessment (draft 0.4); Ombak EMR Integration Specification v2.3; Kirana Billing Interface Agreement; Lintas Mesej Service Description rev 4 |
+| **Approvers** | Dr. Farah Iskandar (Group Chief Medical Officer); Desmond Yap (Group Chief Information Officer); Kavitha Raman (Head of Patient Access) |
+| **Companion documents** | Jadwira Conceptual Design v1.1; Privacy Impact Assessment (draft 0.4); Ombak EMR Integration Specification v2.3; Kirana Billing Interface Agreement; Lintas Mesej Service Description rev 4 |
 
 ### Revision history
 
@@ -71,9 +71,9 @@ This version updates the sections listed below after the design review of 2026-0
 
 ## 1. Purpose and Scope
 
-This document describes the architecture of Temujanji, the clinic and theatre scheduling platform of Bayu Kasih Healthcare Berhad ("the group"). Temujanji is the single system in which outpatient appointments are booked, operating theatre time is planned, surgeons and anaesthetists are rostered, beds and shared equipment are allocated, and patients are reminded of what has been booked for them. It is written to a level of detail sufficient for an engineering team to begin implementation; Section 29 gives an explicit assessment of where that is and is not yet true.
+This document describes the architecture of Jadwira, the clinic and theatre scheduling platform of Bayu Kasih Healthcare Berhad ("the group"). Jadwira is the single system in which outpatient appointments are booked, operating theatre time is planned, surgeons and anaesthetists are rostered, beds and shared equipment are allocated, and patients are reminded of what has been booked for them. It is written to a level of detail sufficient for an engineering team to begin implementation; Section 29 gives an explicit assessment of where that is and is not yet true.
 
-Today each of the group's six hospitals runs its own appointment book inside the scheduling module of its EMR instance, theatre lists are kept in spreadsheets shared by the theatre coordinators, and bed management is done by telephone between the admissions desk and the wards. The call centre cannot see availability across hospitals, a patient who books at two hospitals has two unrelated records, and no report shows group-wide waiting times. Temujanji replaces the hospital appointment books and the theatre spreadsheets with one platform, while the Ombak EMR remains the clinical record and Kirana Billing remains the financial system.
+Today each of the group's six hospitals runs its own appointment book inside the scheduling module of its EMR instance, theatre lists are kept in spreadsheets shared by the theatre coordinators, and bed management is done by telephone between the admissions desk and the wards. The call centre cannot see availability across hospitals, a patient who books at two hospitals has two unrelated records, and no report shows group-wide waiting times. Jadwira replaces the hospital appointment books and the theatre spreadsheets with one platform, while the Ombak EMR remains the clinical record and Kirana Billing remains the financial system.
 
 ### In scope
 
@@ -81,7 +81,7 @@ Outpatient appointment booking through the patient web portal, the Bayu Kasih mo
 
 ### Out of scope
 
-Clinical documentation, orders and results (Ombak EMR); pricing, deposits, guarantee letters from insurers and invoicing (Kirana Billing, which Temujanji calls but does not replace); nurse and allied health rostering (Workforce module of the HR system); emergency department triage and bed requests from the emergency department, which continue through the existing bed management desk until Phase 3.
+Clinical documentation, orders and results (Ombak EMR); pricing, deposits, guarantee letters from insurers and invoicing (Kirana Billing, which Jadwira calls but does not replace); nurse and allied health rostering (Workforce module of the HR system); emergency department triage and bed requests from the emergency department, which continue through the existing bed management desk until Phase 3.
 
 ### Volume baseline
 
@@ -103,7 +103,7 @@ On an average clinic day the group therefore handles about 8,600 outpatient appo
 
 ## 2. Requirements
 
-Requirements carry stable IDs. Each is traced to its acceptance test in Section 28.
+Requirements carry stable IDs. Section 28 gives the acceptance tests for the requirements verified in user acceptance testing (UAT) and early production; the others are verified in the build team's system tests.
 
 ### 2.1 Functional Requirements
 
@@ -145,13 +145,13 @@ Requirements carry stable IDs. Each is traced to its acceptance test in Section 
 
 ## 3. Foundational Principles
 
-**P1. One book of availability.** There is exactly one place where a slot, a theatre session or a bed is free or taken: the Temujanji database. Every channel, every hospital and every downstream system reads availability from it or from events it publishes.
+**P1. One book of availability.** There is exactly one place where a slot, a theatre session or a bed is free or taken: the Jadwira database. Every channel, every hospital and every downstream system reads availability from it or from events it publishes.
 
-**P2. The EMR is the clinical record.** Temujanji holds scheduling facts only. Diagnoses, notes and orders stay in the Ombak EMR; Temujanji stores a referral reason code and a procedure code where scheduling needs them, nothing more.
+**P2. The EMR is the clinical record.** Jadwira holds scheduling facts only. Diagnoses, notes and orders stay in the Ombak EMR; Jadwira stores a referral reason code and a procedure code where scheduling needs them, nothing more.
 
 **P3. Positive patient identification.** A booking is attached to an existing patient only on an exact match of a national identifier (MyKad number, or passport number and nationality) together with the date of birth. Where that cannot be done the patient is registered as new, and Medical Records merges any duplicate later.
 
-**P4. Events, not shared tables.** Other systems learn about schedule changes from events on the event bus. No system reads Temujanji's tables directly.
+**P4. Events, not shared tables.** Other systems learn about schedule changes from events on the event bus. No system reads Jadwira's tables directly.
 
 **P5. Safety over throughput.** Where a scheduling rule protects a patient (theatre, surgeon or anaesthetist availability, equipment, a bed that suits the patient), the rule is enforced by the platform and cannot be overridden from a channel.
 
@@ -167,7 +167,7 @@ The group operates six hospitals: Bayu Kasih Petaling Jaya (312 beds, 14 theatre
 
 Consultants in Malaysian private hospitals are mostly independent practitioners who hold practising privileges at one or more of the group's hospitals. A consultant's clinic sessions, theatre sessions and leave are agreed with the hospital's medical affairs office. About 70 consultants hold privileges at two or more hospitals.
 
-| User group | Approximate number | Main use of Temujanji |
+| User group | Approximate number | Main use of Jadwira |
 |---|---:|---|
 | Patients | 1.9 million registered | Book, confirm, cancel and reschedule; receive reminders |
 | Call-centre agents (group contact centre, Petaling Jaya) | 85 | Book on behalf of patients for all hospitals |
@@ -191,7 +191,7 @@ Consultants in Malaysian private hospitals are mostly independent practitioners 
 
 ## 6. Target Architecture
 
-Temujanji runs in the AWS Asia Pacific (Malaysia) Region, ap-southeast-5, across three Availability Zones. Patient-facing traffic enters through Amazon CloudFront and an Application Load Balancer; staff traffic enters through the group network over AWS Direct Connect.
+Jadwira runs in the AWS Asia Pacific (Malaysia) Region, ap-southeast-5, across three Availability Zones. Patient-facing traffic enters through Amazon CloudFront and an Application Load Balancer; staff traffic enters through the group network over AWS Direct Connect.
 
 ```
  Patients (web, app)    Call centre, clinics, theatres, admissions
@@ -232,17 +232,17 @@ Temujanji runs in the AWS Asia Pacific (Malaysia) Region, ap-southeast-5, across
 | Analytics Extract | Nightly extract to the group analytics bucket (Section 22) |
 | ElastiCache (Redis OSS) | Theatre calendar cache and patient web sessions |
 
-All services are containers on Amazon ECS with AWS Fargate, three tasks or more per service spread across the three Availability Zones.
+All services are containers on Amazon ECS with AWS Fargate, three tasks or more per service spread across the three Availability Zones; the Outbox Relay runs one active task with standbys (Section 16).
 
 ---
 
 ## 7. Patient Identity and Registration
 
-The group master patient index (MPI) lives in the Ombak EMR, which issues the MRN. Temujanji keeps a local copy of the MPI fields it needs (MRN, name, date of birth, sex, national identifier, phone, email, address) refreshed from FHIR Patient events.
+The group master patient index (MPI) lives in the Ombak EMR, which issues the MRN. Jadwira keeps a local copy of the MPI fields it needs (MRN, name, date of birth, sex, national identifier, phone, email, address) refreshed from FHIR Patient events.
 
 Patients who use the web portal or the app sign in through the patient identity provider, Amazon Cognito, with a verified mobile number. On first use the patient links the account to an MRN by entering the MyKad or passport number and the date of birth; the link is made on an exact match of both, in line with P3, or a new registration is created.
 
-Front-desk staff register walk-in patients from the MyKad chip reader, which supplies the national identifier, name and date of birth directly. A new registration created by Temujanji is posted to the EMR as a FHIR Patient create, and the MRN returned by the EMR is stored on the booking before the booking is confirmed.
+Front-desk staff register walk-in patients from the MyKad chip reader, which supplies the national identifier, name and date of birth directly. A new registration created by Jadwira is posted to the EMR as a FHIR Patient create, and the MRN returned by the EMR is stored on the booking before the booking is confirmed.
 
 ---
 
@@ -250,7 +250,7 @@ Front-desk staff register walk-in patients from the MyKad chip reader, which sup
 
 A consultant's clinic sessions are generated from a session template: hospital, room, weekday, start and end time, slot length per visit type (new patient 20 minutes, follow-up 10 minutes by default) and the number of slots held back for urgent referrals. Templates generate concrete slots 26 weeks ahead in a nightly job.
 
-Each slot is one row in `clinic_slot` with its consultant, hospital, room, period (`tstzrange`) and status. An appointment takes a slot by updating that row from `free` to `booked` in the same transaction that inserts the `appointment` row: `UPDATE clinic_slot SET status = 'booked', appointment_id = $1 WHERE slot_id = $2 AND status = 'free'`. If the update affects no row the slot has been taken in the meantime and the channel is shown the next free slots. Two exclusion constraints back this up: no two `booked` slots of the same consultant may overlap in time, and no two `booked` slots in the same room may overlap, enforced with `btree_gist` on (`consultant_id`, `period`) and (`room_id`, `period`). The FR-4 rule is a partial unique index on (`patient_id`, `consultant_id`, `visit_type`) for appointments in the future with status `booked`.
+Each slot is one row in `clinic_slot` with its consultant, hospital, room, period (`tstzrange`) and status. An appointment takes a slot by updating that row from `free` to `booked` in the same transaction that inserts the `appointment` row: `UPDATE clinic_slot SET status = 'booked', appointment_id = $1 WHERE slot_id = $2 AND status = 'free'`. If the update affects no row the slot has been taken in the meantime and the channel is shown the next free slots. Two exclusion constraints back this up: no two `booked` slots of the same consultant may overlap in time, and no two `booked` slots in the same room may overlap, enforced with `btree_gist` on (`consultant_id`, `period`) and (`room_id`, `period`). The FR-4 rule is a partial unique index on `appointment` over (`patient_id`, `consultant_id`, `visit_type`) for rows with status `booked`, the consultant and visit type being copied from the slot; check-in, the no-show marking of Section 10.3 and cancellation all move an appointment out of `booked`, so the index covers the appointments still to come.
 
 Slot search reads from the Aurora readers. A slot shown as free on a reader may already be taken on the writer, and that case is handled by the conditional update above, which runs on the writer. Urgent slots held back by the template are released for general booking 48 hours before the session if no urgent referral has taken them.
 
@@ -268,7 +268,7 @@ Front-desk staff book follow-ups at the end of a consultation, check patients in
 
 ### 9.3 Call centre
 
-The group contact centre takes about 6,200 calls a day, of which about 3,900 lead to a booking, a change or a cancellation. Agents can book at any hospital. To keep calls short, the agent searches by the caller's name and date of birth, and when the search returns exactly one patient Temujanji attaches the booking to that patient's MRN without asking for the MyKad number. When the search returns no patient or more than one, the agent asks for the MyKad or passport number. Average handling time in the pilot was 3 minutes 40 seconds, against 5 minutes 50 seconds in the current per-hospital process.
+The group contact centre takes about 6,200 calls a day, of which about 3,900 lead to a booking, a change or a cancellation. Agents can book at any hospital. To keep calls short, the agent searches by the caller's name and date of birth, and when the search returns exactly one patient Jadwira attaches the booking to that patient's MRN without asking for the MyKad number. When the search returns no patient or more than one, the agent asks for the MyKad or passport number. Average handling time in the pilot was 3 minutes 40 seconds, against 5 minutes 50 seconds in the current per-hospital process.
 
 ### 9.4 Referral bookings
 
@@ -304,7 +304,7 @@ The Reminder Scheduler reads `appointment.booked` and `appointment.rescheduled` 
 
 ### 11.2 Content and the manage-booking link
 
-Reminders carry the patient's first name, the date and time, the hospital and the clinic. Each reminder carries a manage-booking link of the form `https://bkh.my/r/{token}`, where `token` is a random 128-bit value generated for that reminder, stored hashed on the reminder row and valid until the appointment time. The page it opens shows the date and time, the hospital and the clinic, and a confirm button that works in one tap; it shows no name, consultant or specialty. Cancelling or rescheduling from the page requires a one-time code sent to the patient's registered mobile number, or signing in to the portal. A link that has expired or been used for a cancellation shows only the call-centre number. The link lets the large share of patients who never install the app act on a reminder in one tap; in the pilot, 61 percent of confirmations came through it.
+Reminders carry the patient's first name, the date and time, the hospital and the clinic. Each reminder carries a manage-booking link of the form `https://book.bayukasih-health.my/r/{token}`, where `token` is a random 128-bit value generated for that reminder, stored hashed on the reminder row and valid until the appointment time. The page it opens shows the date and time, the hospital and the clinic, and a confirm button that works in one tap; it shows no name, consultant or specialty. Cancelling or rescheduling from the page requires a one-time code sent to the patient's registered mobile number, or signing in to the portal. A link that has expired or been used for a cancellation shows only the call-centre number. The link lets the large share of patients who never install the app act on a reminder in one tap; in the pilot, 61 percent of confirmations came through it.
 
 ### 11.3 SMS templates
 
@@ -329,11 +329,11 @@ The Reminder Service records the provider's acceptance of each message. WhatsApp
 
 ## 12. Consultant Sessions, Leave and Bulk Rescheduling
 
-A consultant or the clinic secretary requests leave in Temujanji at least six weeks ahead where possible; the hospital's medical affairs officer approves it. Approval closes the consultant's sessions in the leave period, and the affected appointments enter a rescheduling worklist instead of being cancelled outright.
+A consultant or the clinic secretary requests leave in Jadwira at least six weeks ahead where possible; the hospital's medical affairs officer approves it. Approval closes the consultant's clinic and theatre sessions in the leave period. The affected appointments enter a rescheduling worklist instead of being cancelled outright, and booked theatre cases are listed for the theatre coordinator to rebook with the surgeon's secretary.
 
-The worklist groups appointments by triage category. Urgent and soon patients are reviewed by the clinic nurse, who may move them to a covering consultant of the same specialty the consultant has nominated; routine patients are offered the consultant's next free slots after the leave. Every affected patient is told by their reminder channel, and patients who do not respond within 72 hours are called by the call centre. No appointment is cancelled until the patient has accepted a new slot, declined, or failed to respond to two calls. Emergency leave (illness, bereavement) follows the same flow with the call centre calling every patient with an appointment in the next 48 hours.
+The worklist groups appointments by triage category. Urgent and soon patients are reviewed by the clinic nurse, who may move them to a covering consultant of the same specialty the consultant has nominated; routine patients are offered the consultant's next free slots after the leave. Every affected patient is told by their reminder channel, and patients who have not responded within 72 hours, or by 48 hours before their appointment if that comes first, are called by the call centre. No appointment is cancelled until the patient has accepted a new slot, declined, or failed to respond to two calls. Emergency leave (illness, bereavement) follows the same flow with the call centre calling every patient with an appointment in the next 48 hours.
 
-The worklist records who moved each appointment and why, and the consultant's practising-privilege dates are checked before a covering consultant is offered.
+The worklist records who moved each appointment and why, and a covering consultant can be offered only at a hospital where that consultant already holds clinic sessions.
 
 ---
 
@@ -343,13 +343,13 @@ The worklist records who moved each appointment and why, and the consultant's pr
 
 Each theatre has morning (08:00 to 13:00), afternoon (13:30 to 18:30) and, at Petaling Jaya and Cheras, evening (18:30 to 22:00) sessions. Sessions are allocated to surgeons from the weekly master schedule (Section 14). A theatre list is the ordered set of cases in a session; theatre coordinators and surgeons' secretaries book cases into sessions, and the coordinator finalises the list at 14:00 on the day before.
 
-When the coordinator finalises a list, Temujanji fixes the case order and planned start times, sends the list to the ward and the pre-operative assessment clinic, and sends each patient the fasting instructions and arrival time that the anaesthetist has set for the case. Changes after finalisation are possible but each one re-sends the arrival time to the patient and the ward and is shown in red on the list until the ward acknowledges it.
+When the coordinator finalises a list, Jadwira fixes the case order and planned start times, sends the list to the ward and the pre-operative assessment clinic, and sends each patient the fasting instructions and arrival time that the anaesthetist has set for the case. Changes after finalisation are possible but each one re-sends the arrival time to the patient and the ward and is shown in red on the list until the ward acknowledges it.
 
 ### 13.2 Booking a case
 
 A case booking names the patient, the procedure, the operating surgeon, the anaesthetist, the planned duration (from the surgeon's own median for that procedure, or the group median when the surgeon has fewer than ten cases) and the equipment it needs. A turnaround of 20 minutes is added after each case, or 40 minutes after a case needing a laminar-flow clean.
 
-The interactive list editor checks the requested theatre, the surgeon and the anaesthetist for overlapping cases against the theatre calendar held in ElastiCache, which the schedule-change consumer refreshes from the event bus; the cache keeps that check fast enough for the editor, which re-validates the whole list on every drag and drop. The booking itself is decided by the database: the Theatre Service inserts the case into `theatre_case` with its `theatre_id` and a `planned_period` that includes the turnaround, and three exclusion constraints with `btree_gist` on (`theatre_id`, `planned_period`), (`surgeon_id`, `planned_period`) and (`anaesthetist_id`, `planned_period`) reject any case that overlaps another in the same theatre or with the same surgeon or anaesthetist, whatever the cache showed. A rejected insert is returned to the editor as a conflict with the overlapping case, and the cache entry is refreshed. The sedation lists of Section 14, where one anaesthetist supervises two adjacent endoscopy rooms, are modelled as one anaesthetist session covering both rooms, so they do not conflict with the constraint. A booked case appears on the theatre list, in the EMR and on the ward's pre-operative worklist.
+The interactive list editor checks the requested theatre, the surgeon and the anaesthetist for overlapping cases against the theatre calendar held in ElastiCache, which the schedule-change consumer refreshes from the event bus; the cache keeps that check fast enough for the editor, which re-validates the whole list on every drag and drop. The booking itself is decided by the database: the Theatre Service inserts the case into `theatre_case` with its `theatre_id` and a `planned_period` that includes the turnaround, and three exclusion constraints with `btree_gist` on (`theatre_id`, `planned_period`), (`surgeon_id`, `planned_period`) and (`anaesthetist_id`, `planned_period`) reject any case that overlaps another in the same theatre or with the same surgeon or anaesthetist, whatever the cache showed. A rejected insert is returned to the editor as a conflict with the overlapping case, and the cache entry is refreshed. Cases on the sedation lists of Section 14, where one anaesthetist supervises two adjacent endoscopy rooms, carry a `sedation_list` flag copied from their session and are left out of the anaesthetist constraint by its `WHERE` clause; the weekly roster already gives that anaesthetist those two rooms and no other session at the same time. A booked case appears on the theatre list, in the EMR and on the ward's pre-operative worklist.
 
 ### 13.3 Changes on the day
 
@@ -367,7 +367,7 @@ The weekly master schedule assigns each theatre session to a surgeon (or to a sp
 
 Anaesthetists are rostered to sessions weekly. An anaesthetist may cover only one theatre at a time, except for sedation lists where one anaesthetist supervises two adjacent endoscopy rooms, which the roster marks explicitly.
 
-Before a surgeon is given a session or a case, Temujanji checks that the surgeon holds current practising privileges at that hospital for the procedure's specialty (Decision DEC-08).
+Before a surgeon is given a session or a case, Jadwira checks that the surgeon holds current practising privileges at that hospital for the procedure's specialty (Decision DEC-08).
 
 ---
 
@@ -375,7 +375,7 @@ Before a surgeon is given a session or a case, Temujanji checks that the surgeon
 
 ### 15.1 Beds
 
-The group has 1,180 beds in 74 wards, of which 64 are single rooms with negative pressure for airborne isolation and 112 are other single rooms. Elective admissions are booked in Temujanji with an expected date and length of stay; on the day of admission the admissions desk allocates a bed.
+The group has 1,180 beds in 74 wards, of which 64 are single rooms with negative pressure for airborne isolation and 112 are other single rooms. Elective admissions are booked in Jadwira with an expected date and length of stay; on the day of admission the admissions desk allocates a bed.
 
 Admission requests carry the patient's infection-control flags from the EMR (for example MRSA, CRE, or suspected or confirmed tuberculosis), which are displayed on the admission screen. The allocator proposes the first free bed that matches the requested ward, the room class covered by the patient's guarantee letter or deposit, and the patient's sex for shared rooms, and the admissions officer confirms it with one click. Bed status (free, occupied, being cleaned, blocked) is updated by ward staff and housekeeping from the ward tablet.
 
@@ -387,13 +387,13 @@ Shared theatre equipment is registered per hospital with its type and the theatr
 
 ## 16. Event Bus and Transactional Outbox
 
-Every service writes its domain events to an `outbox` table in the same transaction as the change they describe. The Outbox Relay polls the outbox every 200 ms, publishes each row to Amazon MSK with the producer settings `acks=all` and `enable.idempotence=true`, and marks the row published only after the broker has acknowledged it. A relay that crashes between publish and mark republishes the row, so consumers see each event at least once and must deduplicate by `event_id`.
+Every service writes its domain events to an `outbox` table in the same transaction as the change they describe. The Outbox Relay polls the outbox every 200 ms, publishes each row to Amazon MSK with the producer settings `acks=all` and `enable.idempotence=true`, and marks the row published only after the broker has acknowledged it. The relay runs as one active task, which holds a PostgreSQL advisory lock, with a standby task in another Availability Zone that takes the lock if the active task stops. It publishes unpublished rows in the order of the outbox's `seq` identity column, which for two changes to one aggregate is their commit order, because the second change waits for the first's row lock before it writes its outbox row. A relay that crashes between publish and mark republishes the row, so consumers see each event at least once and must deduplicate by `event_id`.
 
 Topics are `schedule.appointment`, `schedule.theatre`, `schedule.bed` and `patient.registration`, each with 12 partitions, replication factor 3 and `min.insync.replicas=2`. The message key is the aggregate's ID (appointment ID, case ID, admission ID), so all events of one appointment or case are in one partition and are consumed in the order in which they were committed. Events carry a schema version and are validated against a schema registry on publish. Retention is 7 days.
 
 Consumers deduplicate with a `processed_event` table of their own, keyed by `event_id` and written in the same local transaction as the consumer's effect, so a republished event is recognised and skipped. Schema changes are backward compatible within a major version; a breaking change publishes to a new topic version in parallel until every consumer has moved.
 
-Peak event volume is about 30 events per second during the morning booking peak, which is far below what a three-broker MSK cluster sustains, so the bus is sized for durability and availability, not throughput.
+Peak event volume is a few events per second during the morning booking peak (1.3 bookings, changes and cancellations a second at the 2028 volume of Section 24.1, plus theatre and bed changes), which is far below what a three-broker MSK cluster sustains, so the bus is sized for durability and availability, not throughput.
 
 ---
 
@@ -401,7 +401,7 @@ Peak event volume is about 30 events per second during the morning booking peak,
 
 ### 17.1 Direction of flow
 
-Temujanji owns scheduling (P1); the Ombak EMR owns the patient record and the MPI (P2). Patient registrations and demographic changes flow from the EMR to Temujanji as FHIR Patient events through the EMR's subscription interface. Schedule changes flow from Temujanji to the EMR and to Kirana Billing through the FHIR Bridge.
+Jadwira owns scheduling (P1); the Ombak EMR owns the patient record and the MPI (P2). Patient registrations and demographic changes flow from the EMR to Jadwira as FHIR Patient events through the EMR's subscription interface. Schedule changes flow from Jadwira to the EMR and to Kirana Billing through the FHIR Bridge.
 
 ### 17.2 FHIR Bridge
 
@@ -413,24 +413,24 @@ The bridge commits offsets manually, and only after every FHIR call for an event
 
 ### 17.4 Volumes
 
-About 26,000 schedule events a day reach the bridge, which makes about 31,000 FHIR calls a day to the EMR and 2,400 to billing. The Ombak EMR's FHIR endpoint is rated by its supplier at 50 requests per second per hospital instance.
+About 32,000 schedule events a day reach the bridge, which makes about 38,000 FHIR calls a day to the EMR and about 8,500 to billing, most of them attended consultations. The Ombak EMR's FHIR endpoint is rated by its supplier at 50 requests per second per hospital instance.
 
 ---
 
 ## 18. FHIR Resource Mapping
 
-Temujanji uses HL7 FHIR R4 (4.0.1) resources as follows.
+Jadwira uses HL7 FHIR R4 (4.0.1) resources as follows.
 
-| Temujanji concept | FHIR R4 resource | Notes |
+| Jadwira concept | FHIR R4 resource | Notes |
 |---|---|---|
 | Clinic session | Schedule | `actor` references the Practitioner and the Location (clinic room) |
 | Clinic slot | Slot | `status` is `free`, `busy` or `busy-unavailable` |
 | Outpatient appointment | Appointment | `status` is `booked`, `arrived`, `fulfilled`, `cancelled` or `noshow`; waitlist entries use `waitlist` |
 | Theatre case | Appointment with `serviceType` theatre, plus ServiceRequest for the procedure | Participants: Patient, operating surgeon, anaesthetist, theatre Location |
 | Admission | Encounter (`class` IMP) with `location` the allocated bed | Status `planned`, then `in-progress` |
-| Equipment reservation | Appointment participant of type Device | Device resource per equipment unit |
+| Equipment reservation | Appointment participant whose `actor` is a Device | Device resource per equipment unit |
 
-Every resource carries Temujanji's own identifier in `identifier` with the system `https://fhir.bayukasih-health.my/temujanji`. Creates are sent as conditional creates (`If-None-Exist` on that identifier), so a resent event does not create a duplicate. Updates are sent as conditional updates on the same identifier with the full current state of the resource. A theatre case's Appointment and ServiceRequest are sent together as a Bundle of type `transaction`, which the FHIR specification requires the server to process as a single unit that succeeds or fails as a whole. Patient references use the MRN identifier, never a name.
+Every resource carries Jadwira's own identifier in `identifier` with the system `https://fhir.bayukasih-health.my/jadwira`. Creates are sent as conditional creates (`If-None-Exist` on that identifier), so a resent event does not create a duplicate. Updates are sent as conditional updates on the same identifier with the full current state of the resource. A theatre case's Appointment and ServiceRequest are sent together as a Bundle of type `transaction`, which the FHIR specification requires the server to process as a single unit that succeeds or fails as a whole. Patient references use the MRN identifier, never a name.
 
 ---
 
@@ -438,7 +438,7 @@ Every resource carries Temujanji's own identifier in `identifier` with the syste
 
 All timestamps are stored as `timestamptz` in UTC and displayed in Malaysia Time (MYT, UTC+8). Peninsular Malaysia, Sabah and Sarawak all observe UTC+8 and Malaysia has no daylight saving time, so one display zone serves every hospital, including Kota Kinabalu.
 
-Public holidays differ between states: national holidays apply everywhere, while state holidays (for example Thaipusam in Selangor, Penang and Johor but not in Sabah, and Harvest Festival in Sabah only) apply per hospital. The holiday calendar is a table keyed by state and date, loaded each November from the federal and state gazettes for the following year and approved by the group's medical affairs office. Session templates skip holidays of the hospital's state. Holidays declared at short notice (for example a replacement holiday) are added by medical affairs and trigger the bulk rescheduling flow of Section 12 for the affected sessions.
+Public holidays differ between states: national holidays apply everywhere, while state holidays (for example Thaipusam in Selangor, Penang and Johor but not in Sabah, and the Harvest Festival in Sabah and Labuan only) apply per hospital. The holiday calendar is a table keyed by state and date, loaded each November from the federal and state gazettes for the following year and approved by the group's medical affairs office. Session templates skip holidays of the hospital's state. Holidays declared at short notice (for example a replacement holiday) are added by medical affairs and trigger the bulk rescheduling flow of Section 12 for the affected sessions.
 
 Islamic holidays whose dates depend on moon sighting are loaded with their expected dates and confirmed or moved by medical affairs when the date is announced; the rescheduling flow handles a move.
 
@@ -452,22 +452,22 @@ Islamic holidays whose dates depend on moon sighting are loaded with their expec
 |---|---|---|
 | `patient` | `patient_id`, `mrn`, `national_id`, `name`, `dob`, `sex`, `phone`, `email`, `whatsapp_opt_in` | Local copy of MPI fields (Section 7) |
 | `clinic_session` | `session_id`, `consultant_id`, `hospital_id`, `room_id`, `period` | Generated from templates |
-| `clinic_slot` | `slot_id`, `session_id`, `period`, `status`, `appointment_id` | Exclusion constraints (Section 8) |
-| `appointment` | `appointment_id`, `booking_no`, `patient_id`, `slot_id`, `status`, `channel`, `triage` | |
+| `clinic_slot` | `slot_id`, `session_id`, `consultant_id`, `room_id`, `period`, `status`, `appointment_id` | Exclusion constraints (Section 8) |
+| `appointment` | `appointment_id`, `booking_no`, `patient_id`, `slot_id`, `consultant_id`, `visit_type`, `status`, `channel`, `triage` | |
 | `waitlist_entry` | `entry_id`, `patient_id`, `specialty`, `consultant_id`, `triage`, `created_at` | |
 | `theatre_session` | `session_id`, `theatre_id`, `surgeon_id`, `anaesthetist_id`, `period` | |
-| `theatre_case` | `case_id`, `session_id`, `theatre_id`, `patient_id`, `procedure_code`, `surgeon_id`, `anaesthetist_id`, `planned_period` | Exclusion constraints on theatre, surgeon and anaesthetist (Section 13.2) |
+| `theatre_case` | `case_id`, `session_id`, `theatre_id`, `patient_id`, `procedure_code`, `surgeon_id`, `anaesthetist_id`, `sedation_list`, `planned_period` | Exclusion constraints on theatre, surgeon and anaesthetist (Section 13.2) |
 | `equipment_reservation` | `reservation_id`, `equipment_id`, `case_id`, `period` | Exclusion constraint (Section 15.2) |
 | `admission` | `admission_id`, `patient_id`, `bed_id`, `expected_period`, `status` | |
 | `reminder` | `reminder_id`, `appointment_id`, `channel`, `due_at`, `status` | |
 | `booking_audit` | `audit_id`, `entity`, `entity_id`, `action`, `actor`, `channel`, `before`, `after`, `created_at` | Append-only (Section 21) |
-| `outbox` | `event_id`, `topic`, `key`, `payload`, `published_at` | Section 16 |
+| `outbox` | `event_id`, `seq`, `topic`, `key`, `payload`, `published_at` | Section 16 |
 
 The `booking_no` is a 9-digit number allocated from a single group-wide sequence, printed on appointment cards and quoted by patients to the call centre and front desk. It is unique across all hospitals so that one number identifies a booking anywhere in the group.
 
 ### 20.2 Physical design
 
-`clinic_slot` and `appointment` are partitioned by month on the slot start; partitions older than 25 months are detached and archived to Amazon S3 in Parquet. At about 40 audit rows per appointment and 2.6 million appointments a year, `booking_audit` grows by about 10 million rows a year, so it stays a single unpartitioned table for the full seven-year retention period. The writer is a db.r7g.2xlarge instance with two readers of the same size.
+`clinic_slot` and `appointment` are not partitioned, so that the exclusion constraints and the unique index of Section 8 apply across the whole table; a monthly job copies rows whose slot ended more than 25 months ago to Amazon S3 in Parquet and deletes them, which keeps each table to about 8 million rows. At about 40 audit rows per appointment and 2.6 million appointments a year, `booking_audit` grows by about 10 million rows a year, so it stays a single unpartitioned table for the full seven-year retention period. The writer is a db.r7g.2xlarge instance with two readers of the same size.
 
 ---
 
@@ -505,15 +505,15 @@ Every service runs at least three tasks across three Availability Zones. Aurora 
 
 ### 23.2 Dependencies
 
-When the Ombak EMR is unavailable, bookings continue and the bridge's events wait in the topics until the EMR returns. When Lintas Mesej or the WhatsApp Business Platform is unavailable, reminders are queued and the other channel is used for reminders that would otherwise be late. When the patient identity provider is unavailable, patients cannot sign in and are directed to the call centre.
+When the Ombak EMR is unavailable, bookings for registered patients continue and the bridge's events wait in the topics until the EMR returns; a new patient, who cannot be given an MRN until then, is booked on paper under the downtime procedure of Section 23.4. When the WhatsApp Business Platform is unavailable, reminders that would otherwise be late go by SMS; when Lintas Mesej is unavailable, SMS reminders are queued until it returns, because the patients they are for have not opted in to WhatsApp. When the patient identity provider is unavailable, patients cannot sign in and are directed to the call centre.
 
 ### 23.3 Region loss
 
-The Cyberjaya data centre holds a continuously updated copy of the scheduling database: a PostgreSQL logical replication publication on the Aurora writer covers every table of Section 20.1, including `outbox` and `booking_audit`, and a subscription on the group's on-premises PostgreSQL cluster applies the changes over Direct Connect. Replication lag is measured every 30 seconds from the subscriber and alarmed at 2 minutes; in the pilot it stayed under 10 seconds. AWS Backup also takes a daily snapshot of the Aurora cluster at 01:00 and copies it to Cyberjaya, kept for 35 days, as the fallback should the subscription need to be re-initialised. On loss of the ap-southeast-5 Region, the platform is started in Cyberjaya on the replicated database and the group's VMware hosts, which have been sized to run Temujanji at reduced capacity; the MSK topics are not copied, and the Outbox Relay in Cyberjaya republishes from the replicated `outbox` table every row not yet marked published, so no committed event is lost. The data lost on region loss is bounded by the replication lag, which meets the NFR-6 recovery point objective of 5 minutes with margin. P7 rules out a second AWS Region outside Malaysia.
+The Cyberjaya data centre holds a continuously updated copy of the scheduling database: a PostgreSQL logical replication publication on the Aurora writer covers every table of Section 20.1, including `outbox` and `booking_audit`, and a subscription on the group's on-premises PostgreSQL cluster applies the changes over Direct Connect. Logical replication carries neither sequence values nor schema changes, so schema migrations are applied to the Cyberjaya cluster before the Aurora writer, and on failover every sequence in Cyberjaya, including the `booking_no` sequence, is set above the highest value in its replicated table before the platform takes bookings. Replication lag is measured every 30 seconds from the subscriber and alarmed at 2 minutes; in the pilot it stayed under 10 seconds. AWS Backup also takes a daily snapshot of the Aurora cluster at 01:00 and copies it to Cyberjaya, kept for 35 days, as the fallback should the subscription need to be re-initialised. On loss of the ap-southeast-5 Region, the platform is started in Cyberjaya on the replicated database and the group's VMware hosts, which have been sized to run Jadwira at reduced capacity; the MSK topics are not copied, and the Outbox Relay in Cyberjaya republishes from the replicated `outbox` table every row not yet marked published, so no committed event is lost. The data lost on region loss is bounded by the replication lag, which meets the NFR-6 recovery point objective of 5 minutes with margin. P7 rules out a second AWS Region outside Malaysia.
 
 ### 23.4 Downtime procedure
 
-Each clinic and theatre prints the next day's lists at 18:00 so that, if Temujanji is unavailable, the day can run from paper; bookings made on paper are entered when the platform returns.
+Each clinic and theatre prints the next day's lists at 18:00 so that, if Jadwira is unavailable, the day can run from paper; bookings made on paper are entered when the platform returns.
 
 ---
 
@@ -580,7 +580,7 @@ The platform team runs a weekly on-call rotation of six engineers. The integrati
 | ID | Item | Owner | Status |
 |---|---|---|---|
 | PB-01 | Seremban hospital onboarding (2027) | Patient Access | Planned for Phase 3 |
-| PB-02 | Emergency department bed requests in Temujanji | Bed Management | Phase 3 |
+| PB-02 | Emergency department bed requests in Jadwira | Bed Management | Phase 3 |
 | PB-03 | Replacement of the credentialing register, today a spreadsheet kept by each hospital's medical advisory committee secretariat, by a Credentialing Service with an API | Medical Affairs | Vendor selection not started; earliest API availability first quarter of 2028 |
 | PB-04 | Self check-in kiosks in clinic lobbies | Patient Access | Not scheduled |
 | PB-05 | Online payment of deposits at booking | Finance | Depends on Kirana Billing release 9 |
@@ -602,7 +602,7 @@ The platform team runs a weekly on-call rotation of six engineers. The integrati
 | FR-9 | Scripted bookings of overlapping cases for the same theatre, surgeon and anaesthetist are refused. |
 | FR-11 | 200 simulated admissions are each allocated a bed matching ward, room class and sex. |
 | FR-13 | A two-week leave for a consultant with 300 appointments produces a complete worklist, and every patient is notified. |
-| FR-14 | Over a one-week parallel run, every appointment and case in Temujanji is present in the EMR with the same status, and every chargeable event is present in Kirana Billing. |
+| FR-14 | Over a one-week parallel run, every appointment and case in Jadwira is present in the EMR with the same status, and every chargeable event is present in Kirana Billing. |
 | FR-16 | Every action in the FR-1 script has an audit row with actor and channel. |
 
 ### 28.2 Non-functional requirements
