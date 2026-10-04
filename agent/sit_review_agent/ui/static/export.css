@@ -33,4 +33,41 @@ td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border-subtle); ver
 .turn .q { font-weight: 500; white-space: pre-wrap; }
 .turn .a { white-space: pre-wrap; }
 .turn .foot { font-size: 12px; color: var(--fg-muted); margin: 6px 0 0; }
-@media print { .wrap { max-width: none; padding: 0; } h2 { break-after: avoid; } .turn { break-inside: avoid; } }
+.exp-head .part { font-size: 13px; margin: 8px 0 0; }
+.empty { color: var(--fg-muted); margin-top: 24px; }
+/* the sidebar of the single page (decision #43): the review page's dark rail (app.css .navrail), one entry per
+   part, each part's headings under it, and a small link to the part's own file. Without script every section
+   shows and the entries are plain links to the first heading of each part. */
+.layout { display: grid; grid-template-columns: var(--navrail-w) minmax(0, 1fr); min-height: 100vh; }
+.layout > .wrap { width: 100%; }
+.toc { background: var(--navrail-bg); color: var(--navrail-fg); border-right: 1px solid var(--navrail-rule); }
+.toc-inner { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; display: flex; flex-direction: column;
+  gap: 2px; padding: 16px 12px 24px; }
+.toc-brand { padding: 4px 10px 6px; color: var(--navrail-fg-strong); font-family: var(--serif); font-size: 21px;
+  line-height: 28px; letter-spacing: -0.01em; white-space: nowrap; }
+.toc-brand .ai { color: var(--accent-bright); }
+.toc-group { font-family: var(--mono); font-size: 10px; line-height: 14px; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--navrail-muted); padding: 16px 10px 8px; }
+.toc a { text-decoration: none; word-break: normal; }
+.toc-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; line-height: 18px; font-weight: 500;
+  color: var(--navrail-fg); padding: 9px 10px; border-radius: var(--r-pill); }
+.toc a.toc-item { color: var(--navrail-fg); }
+.toc a.toc-item:hover { background: var(--navrail-row); color: var(--navrail-fg-strong); }
+.toc a.toc-item.active { background: var(--navrail-active-bg); color: var(--navrail-active-fg); font-weight: 600; }
+.toc-item .num { width: 14px; flex: none; font-family: var(--mono); font-size: 11px; color: var(--navrail-muted); text-align: right; }
+.toc-item.active .num { color: var(--navrail-active-fg); }
+.toc a.toc-file { display: inline-block; margin: 0 0 2px 34px; font-size: 11px; line-height: 16px; color: var(--navrail-muted);
+  text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--navrail-rule); }
+.toc a.toc-file:hover { color: var(--navrail-fg-strong); }
+.toc-heads { list-style: none; margin: 0 0 6px; padding: 0 0 0 34px; }
+.toc-heads li { margin: 0; }
+.toc-heads a { display: block; padding: 3px 0; font-size: 12px; line-height: 16px; color: var(--navrail-muted); }
+.toc-heads a:hover { color: var(--navrail-fg-strong); }
+@media (max-width: 820px) {
+  .layout { display: block; }
+  .toc-inner { position: static; max-height: none; }
+  .toc-heads { display: none; }   /* on a phone each part is one line and its file link */
+  .wrap { padding: 24px 16px 48px; }
+}
+@media print { .wrap { max-width: none; padding: 0; } h2 { break-after: avoid; } .turn { break-inside: avoid; }
+  .layout { display: block; } .toc { display: none; } }

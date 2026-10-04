@@ -126,11 +126,16 @@ def test_the_export_is_report_md_rendered_and_its_finding_text_equals_report_jso
         assert o["objective_ref"] in html
 
 
-def test_the_export_is_self_contained_with_no_script_and_no_external_resource(flow_runs: Path) -> None:
+def test_the_export_is_self_contained_with_one_fixed_script_and_no_external_resource(flow_runs: Path) -> None:
     html = export.export_html(flow_runs / "ui_flow_1", replayed=False)
     doc = parse(html)
     tags = {t for t, _ in doc.tags}
-    assert "script" not in tags and "link" not in tags and "img" not in tags and "iframe" not in tags
+    assert "link" not in tags and "img" not in tags and "iframe" not in tags
+    # the one script is the sidebar's own (decision #43), never model text; the part files have none
+    assert [t for t, _ in doc.tags].count("script") == 1 and f"<script>{export.NAV_JS}</script>" in html
+    for gi in range(len(export.GROUPS)):
+        part = export.export_part(flow_runs / "ui_flow_1", export.PART_NAMES[gi], replayed=False)
+        assert "script" not in {t for t, _ in parse(part).tags}
     for _, attrs in doc.tags:
         assert "src" not in attrs and not any(k.startswith("on") for k in attrs)
     assert "@import" not in html and "url(" not in html
@@ -155,7 +160,8 @@ def test_model_text_cannot_inject_markup_or_load_an_image(tmp_path: Path) -> Non
     (rd / "report.json").write_text("{}", encoding="utf-8")
     html = export.export_html(rd, replayed=False)
     doc = parse(html)
-    assert "script" not in {t for t, _ in doc.tags} and "img" not in {t for t, _ in doc.tags}
+    assert [t for t, _ in doc.tags].count("script") == 1 and f"<script>{export.NAV_JS}</script>" in html
+    assert "img" not in {t for t, _ in doc.tags}
     assert all(not str(a.get("href", "")).startswith("javascript") for _, a in doc.tags)
     assert "&lt;script&gt;" in html
 
@@ -192,8 +198,9 @@ def test_export_and_raw_downloads_are_served(flow_runs: Path) -> None:
     view = client.get("/runs/ui_flow_1/export.html")
     assert view.status_code == 200 and view.headers["content-type"].startswith("text/html")
     assert view.headers["content-disposition"].startswith("inline")
-    dl = client.get("/runs/ui_flow_1/export.html?download=1")
-    assert dl.headers["content-disposition"] == 'attachment; filename="ui_flow_1_review.html"'
+    dl = client.get("/runs/ui_flow_1/export.html?download=1")      # the Download control: the bundle (#43)
+    assert dl.headers["content-type"] == "application/zip"
+    assert dl.headers["content-disposition"] == 'attachment; filename="ui_flow_1_review.zip"'
     md = client.get("/runs/ui_flow_1/report.md")
     assert md.content == (FLOW / "report.md").read_bytes()
     assert md.headers["content-disposition"] == 'attachment; filename="ui_flow_1_report.md"'
@@ -693,9 +700,13 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     assert pg.locator("#out-download").inner_text().startswith("Download review (HTML, ")
     with pg.expect_download() as dl:
         pg.click("#out-download")
-    assert dl.value.suggested_filename == "ui_flow_1_review.html"
-    saved = Path(dl.value.path()).read_text(encoding="utf-8")
-    assert export.CHAT_HEADING in saved and "<script" not in saved
+    assert dl.value.suggested_filename == "ui_flow_1_review.zip"     # the bundle (decision #43)
+    import zipfile
+
+    with zipfile.ZipFile(dl.value.path()) as z:
+        assert z.namelist() == export.bundle_names(runs / "ui_flow_1")
+        saved = z.read(export.INDEX_NAME).decode("utf-8")
+    assert export.CHAT_HEADING in saved and saved.count("<script") == 1
     with pg.expect_download() as md:
         pg.click("#out-md")
     assert md.value.suggested_filename == "ui_flow_1_report.md"

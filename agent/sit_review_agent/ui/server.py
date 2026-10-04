@@ -19,7 +19,10 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
     GET  /runs/<id>/doc.pdf         the reviewed PDF, only if its SHA-256 matches the manifest
-    GET  /runs/<id>/export.html     the review as one self-contained HTML file (``?download=1`` saves it)
+    GET  /runs/<id>/export.html     the review as one self-contained HTML page with a sidebar of its eight
+                                    parts (``?download=1`` saves the bundle, as export.zip does)
+    GET  /runs/<id>/export.zip      the bundle: index.html (that page), the eight parts, report.md, report.json
+    GET  /runs/<id>/export/<part>   one part as a standalone file (``01_summary.html`` ... ``08_traceability.html``)
     GET  /runs/<id>/report.md       the run's report.md, as a download
     GET  /runs/<id>/report.json     the run's report.json, as a download
     GET  /runs/<id>/outputs         whether Email is configured, and the share link (or how to get one)
@@ -327,13 +330,26 @@ def build_app(state: UIState) -> Starlette:
                             headers={"Content-Disposition": f'inline; filename="{safe_name(pdf.name)}"'})
 
     async def run_export(request: Request) -> Response:
+        """``export.html`` (the sidebar page), ``export.html?download=1`` and ``export.zip`` (the bundle),
+        ``export/<part>.html`` (one standalone part, or ``export/index.html``, the page beside them)."""
         rd = run_dir_of(request)
         if rd is None or not (rd / "report.md").is_file():
             return _err(404, "This run has no report.md to export.")
-        html = export.export_html(rd, replayed=rundata.summary(rd)["replayed"])
-        how = "attachment" if request.query_params.get("download") == "1" else "inline"
+        replayed = rundata.summary(rd)["replayed"]
+        part = request.path_params.get("part")
+        if part is not None:
+            try:
+                html = export.export_part(rd, part, replayed=replayed)
+            except KeyError:
+                return _err(404, "No such part of the export.")
+            return Response(html, media_type="text/html; charset=utf-8",
+                            headers={"Content-Disposition": f'inline; filename="{rd.name}_{part}"'})
+        if request.url.path.endswith(".zip") or request.query_params.get("download") == "1":
+            return Response(export.export_zip(rd, replayed=replayed), media_type="application/zip",
+                            headers={"Content-Disposition": f'attachment; filename="{export.bundle_name(rd.name)}"'})
+        html = export.export_html(rd, replayed=replayed, part_links="export/")
         return Response(html, media_type="text/html; charset=utf-8",
-                        headers={"Content-Disposition": f'{how}; filename="{export.export_name(rd.name)}"'})
+                        headers={"Content-Disposition": f'inline; filename="{export.export_name(rd.name)}"'})
 
     def raw_file(name: str, media_type: str) -> Any:
         async def handler(request: Request) -> Response:
@@ -429,6 +445,8 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),
         Route("/runs/{run_id}/doc.pdf", run_pdf),
         Route("/runs/{run_id}/export.html", run_export),
+        Route("/runs/{run_id}/export.zip", run_export),
+        Route("/runs/{run_id}/export/{part}", run_export),
         Route("/runs/{run_id}/report.md", raw_file("report.md", "text/markdown; charset=utf-8")),
         Route("/runs/{run_id}/report.json", raw_file("report.json", "application/json")),
         Route("/runs/{run_id}/outputs", run_outputs),
