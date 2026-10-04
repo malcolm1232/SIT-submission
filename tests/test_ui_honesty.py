@@ -296,7 +296,12 @@ def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_prob
         assert open_calls == ["refine"]
         entry = page.locator("#rail-runs .rail-run.active")
         assert entry.get_attribute("data-run") == "fixture_run" and entry.locator(".dot.live").count() == 1
-        assert entry.locator(".meta").inner_text() == f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
+        expected = f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
+        # the page reduces the stream event by event: wait for the last one, not the first rows (a loaded
+        # Mac showed the entry mid-stream, at "assess · 01:33")
+        page.wait_for_function("t => document.querySelector('#rail-runs .rail-run.active .meta')?.innerText === t",
+                               arg=expected)
+        assert entry.locator(".meta").inner_text() == expected
         assert entry.locator(".meta .live").inner_text() == "refine"
         assert page.locator("#top-meta b").first.inner_text() == _mmss(last)      # the same clock as the page head
         assert page.locator("#rail-runs-note").text_content() == "1 running"      # uppercase is the CSS caption
