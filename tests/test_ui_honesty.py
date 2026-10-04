@@ -320,9 +320,14 @@ def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_prob
         closed = {e["fields"]["call_id"] for e in evs if e["type"] in ("call_closed", "call_cut")}
         open_calls = [ph for cid, ph in opened.items() if cid not in closed]
         assert open_calls == ["refine"]
+        want = f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
+        # The first rows can render before the whole replayed stream is reduced (seen under load as
+        # "assess · 01:... 2 calls open"); wait for the end state, then read it.
+        page.wait_for_function("(w) => { const m = document.querySelector('#rail-runs .rail-run.active .meta');"
+                               " return m !== null && m.innerText === w; }", arg=want)
         entry = page.locator("#rail-runs .rail-run.active")
         assert entry.get_attribute("data-run") == "fixture_run" and entry.locator(".dot.live").count() == 1
-        assert entry.locator(".meta").inner_text() == f"refine · {_mmss(last)} of {_mmss(deadline)} · 1 call open"
+        assert entry.locator(".meta").inner_text() == want
         assert entry.locator(".meta .live").inner_text() == "refine"
         assert page.locator("#clock-last").inner_text() == _mmss(last)          # the same record clock as the page head
         assert page.locator("#rail-runs-note").text_content() == "1 running"      # uppercase is the CSS caption
