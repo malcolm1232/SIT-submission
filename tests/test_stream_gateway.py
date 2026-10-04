@@ -376,3 +376,173 @@ async def test_subprocess_runner_cut_keeps_what_streamed(tmp_path: Path) -> None
     assert ei.value.stdout.endswith('{"type": "tail"}')               # everything read is kept
     assert len(got) == 4                                               # an unterminated line may be cut mid-way
     assert isinstance(ei.value, LLMTimeoutError) is False
+
+
+# ------------------------------------------------------------------------------ a repeated answer
+
+
+def answer_message(answer: dict[str, Any], *, start: dict[str, int], end: dict[str, int] | None,
+                   cut_at: int | None = None, rejected: bool = True) -> list[str]:
+    """One API message of ``claude -p --json-schema`` that writes ``answer`` in a StructuredOutput
+    block, in the order the CLI 2.1.288 writes it: the block, the tool result, then the message's
+    final counts. ``cut_at`` stops the lines inside the block (the message is still being written);
+    ``rejected`` makes the tool result the CLI's schema rejection."""
+    text = json.dumps(answer)
+    body = text if cut_at is None else text[:cut_at]
+    lines = [ev({"type": "message_start", "message": {"usage": {**start}}}),
+             ev({"type": "content_block_start", "index": 1,
+                 "content_block": {"type": "tool_use", "name": "StructuredOutput", "input": {}}})]
+    lines += [ev({"type": "content_block_delta", "index": 1,
+                  "delta": {"type": "input_json_delta", "partial_json": body[k:k + 50]}})
+              for k in range(0, len(body), 50)]
+    if cut_at is not None:
+        return lines
+    lines += [ev({"type": "content_block_stop", "index": 1}),
+              json.dumps({"type": "user", "message": {"role": "user", "content": [
+                  {"type": "tool_result", "tool_use_id": "t", "is_error": rejected,
+                   "content": "rejected" if rejected else "ok"}]}})]
+    if end is not None:
+        lines.append(ev({"type": "message_delta", "delta": {"stop_reason": "tool_use"}, "usage": {**end}}))
+    lines.append(ev({"type": "message_stop"}))
+    return lines
+
+
+FIRST_START = {"input_tokens": 2, "output_tokens": 4, "cache_creation_input_tokens": 30976,
+               "cache_read_input_tokens": 0}
+FIRST_END = {**FIRST_START, "output_tokens": 15000}
+SECOND_START = {"input_tokens": 2, "output_tokens": 1, "cache_creation_input_tokens": 11573,
+                "cache_read_input_tokens": 37103}
+
+
+def repeat_stream(first: dict[str, Any], second: dict[str, Any], *, second_cut_at: int | None = None) -> list[str]:
+    """A call whose first complete answer the CLI rejects and whose model writes a second one (the
+    shards 4 and 6 of ``sit_sample_ui_2``: 3 CLI turns)."""
+    lines = [json.dumps({"type": "system", "subtype": "init", "model": "claude-opus-5-5"})]
+    lines += answer_message(first, start=FIRST_START, end=FIRST_END)
+    lines += answer_message(second, start=SECOND_START, end={**SECOND_START, "output_tokens": 14000},
+                            cut_at=second_cut_at, rejected=False)
+    if second_cut_at is None:
+        lines.append(json.dumps(result_event(second, num_turns=3)))
+    return lines
+
+
+def delivered(runner: StreamRunner) -> list[str]:
+    """Lines a scripted runner passes on; ``between`` runs after ``on_line``, so the line on which
+    the gateway ended the call is not in it."""
+    got: list[str] = []
+    runner.between = got.append
+    return got
+
+
+async def test_a_repeated_answer_ends_the_call_at_the_first(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ans = {"findings": [finding(i) for i in range(1, 4)]}
+    lines = repeat_stream(ans, ans)
+    runner = StreamRunner(lines)
+    got = delivered(runner)
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req())
+    assert res.parsed == Findings.model_validate(ans) and res.stop_reason == "end_turn"
+    assert len(runner.calls) == 1 and [a.outcome for a in res.attempts] == ["ok"]
+    second_start = lines.index(ev({"type": "message_start", "message": {"usage": SECOND_START}}))
+    assert len(got) == second_start                     # ended as the second API message started
+    entry = log(rd)[-1]
+    assert entry["outcome"] == "ok" and entry["num_turns"] == 2 and entry["ended_at_first_answer"] is True
+    assert entry["complete_answers"] == 1 and entry["cli_messages"] == 2
+    assert entry["cli_answer_rejections"] == [{"is_error": True, "text": "rejected"}]   # the CLI's schema check
+    assert entry["terminal_reason"] == "first_complete_answer" and entry["usage_basis"] == "stream_messages"
+    # measured usage of the streamed messages: the answering message in full, the input of the next
+    measured = Usage(4, 15001, 30976 + 11573, 37103)
+    assert res.usage == measured and gw.usage_total() == measured and entry["usage"] == measured.__dict__
+    assert entry["cost_basis"] == "list_price" and entry["call_cost_usd"] == pytest.approx(
+        (4 * 4.0 + 42549 * 5.0 + 37103 * 0.20 + 15001 * 20.0) / 1e6)
+    assert gw.cost_total_usd == pytest.approx(entry["call_cost_usd"])
+
+
+async def test_a_different_second_answer_is_not_used(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    first = {"findings": [finding(i) for i in range(1, 4)]}
+    second = {"findings": [finding(9)]}
+    runner = StreamRunner(repeat_stream(first, second))
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req())
+    assert res.parsed == Findings.model_validate(first)
+    assert log(rd)[-1]["num_turns"] == 2 and log(rd)[-1]["ended_at_first_answer"] is True
+
+
+async def test_an_unusable_first_answer_lets_the_cli_ask_again(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    first = {"findings": "not a list"}                  # fails the gateway's own check too
+    second = {"findings": [finding(1)]}
+    lines = repeat_stream(first, second)
+    runner = StreamRunner(lines)
+    got = delivered(runner)
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req())
+    assert res.parsed == Findings.model_validate(second) and len(got) == len(lines)
+    entry = log(rd)[-1]
+    assert entry["num_turns"] == 3 and "ended_at_first_answer" not in entry
+    assert entry["cli_answer_rejections"] == [{"is_error": True, "text": "rejected"}]
+    assert res.usage == Usage(1137, 400, 0, 0)          # the result event's usage, as before
+
+
+async def test_a_single_answer_still_ends_with_the_result_event(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ans = {"findings": [finding(1)]}
+    lines = [json.dumps({"type": "system", "subtype": "init"}),
+             *answer_message(ans, start=FIRST_START, end=FIRST_END, rejected=False),
+             json.dumps(result_event(ans))]
+    runner = StreamRunner(lines)
+    got = delivered(runner)
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req())
+    assert len(got) == len(lines) and res.usage == Usage(1137, 400, 0, 0)
+    assert log(rd)[-1]["num_turns"] == 2 and "ended_at_first_answer" not in log(rd)[-1]
+    assert "cli_answer_rejections" not in log(rd)[-1]                 # a taken answer is no rejection
+
+
+async def test_a_repeated_tool_call_envelope_ends_at_the_first(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    tools = [{"name": "search_web", "description": "d", "input_schema": {"type": "object"}}]
+    first = {"tool_calls": [{"id": "call-0001", "name": "search_web", "input": {"q": "a"}}], "final": None}
+    second = {"tool_calls": [{"id": "call-0001", "name": "search_web", "input": {"q": "b"}}], "final": None}
+    gw, rd = gateway(tmp_path, cfg, StreamRunner(repeat_stream(first, second)))
+    res = await gw.call(assess_req(tools))
+    assert res.stop_reason == "tool_use" and [u.input for u in res.tool_uses] == [{"q": "a"}]
+    assert [u.id for u in res.tool_uses] == ["call-0001"] and log(rd)[-1]["ended_at_first_answer"] is True
+
+
+async def test_a_legacy_runner_keeps_the_cli_answer(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    first = {"findings": [finding(1)]}
+    second = {"findings": [finding(2)]}
+    stdout = "".join(line + "\n" for line in repeat_stream(first, second))
+
+    async def legacy(argv: list[str], stdin: str, env: dict[str, str], cwd: Path, timeout_s: float) -> CompletedRun:
+        return CompletedRun(0, stdout, "")
+
+    gw, rd = gateway(tmp_path, cfg, legacy)
+    res = await gw.call(assess_req())
+    # a runner that is not live cannot be ended early; the call ran to the CLI's own end
+    assert res.parsed == Findings.model_validate(second) and log(rd)[-1]["num_turns"] == 3
+
+
+REPEAT_CHILD = r"""
+import sys, time
+for line in open(sys.argv[1]):
+    sys.stdout.write(line)
+    sys.stdout.flush()
+time.sleep(30)
+"""
+
+
+async def test_the_subprocess_runner_is_killed_at_the_repeat(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ans = {"findings": [finding(1), finding(2)]}
+    script = tmp_path / "lines.jsonl"
+    script.write_text("".join(line + "\n" for line in repeat_stream(ans, ans, second_cut_at=40)))
+
+    async def runner(argv: list[str], stdin: str, env: dict[str, str], cwd: Path, timeout_s: float, *,
+                     on_line: Callable[[str], None] | None = None) -> CompletedRun:
+        return await subprocess_runner([sys.executable, "-c", REPEAT_CHILD, str(script)], "", {}, cwd, 20,
+                                       on_line=on_line)
+
+    gw, rd = gateway(tmp_path, cfg, runner)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    res = await gw.call(assess_req())
+    assert loop.time() - t0 < 10                        # the child sleeps 30 s after its lines: it was killed
+    assert res.parsed == Findings.model_validate(ans) and log(rd)[-1]["num_turns"] == 2

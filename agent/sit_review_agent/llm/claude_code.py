@@ -39,6 +39,17 @@ estimated usage; its ``llm.jsonl`` entry keeps ``usage: null`` with ``usage_unre
 estimate apart as ``estimated_usage`` (``estimated: true``) with ``salvaged_items`` and
 ``partial``. The JSON output mode is not used by the gateway any more; a single JSON object
 on stdout (``--output-format json``, as the harness judges still run it) is still read.
+
+First complete answer (measured on the 4 Oct 2026 rehearsal, ``docs/live_runs/sit_sample_ui_2``):
+``--json-schema`` makes the CLI check each ``StructuredOutput`` call against the schema itself; when
+its check rejects a complete answer it returns the rejection as the tool result and the model writes
+the whole answer again in a new API turn (3 CLI turns instead of 2, the second turn reading the first
+from the cache). Three of six assess shards did this; the two that finished spent 84 and 91 s on
+the repeat. The gateway therefore
+checks every complete answer block as it closes with the checks of a finished call; when the CLI
+starts another API message after an answer the gateway accepts, the call ends there (the runner
+kills ``claude -p``) and that answer is used, with the usage measured from the streamed messages
+(``ended_at_first_answer`` in ``llm.jsonl``; the cost is at list prices, ``cost_basis: list_price``).
 """
 
 from __future__ import annotations
@@ -92,7 +103,7 @@ from sit_review_agent.llm.gateway import (
     request_sha256,
     unrecorded_usage,
 )
-from sit_review_agent.llm.partial import StreamParser, parse_cli_stdout
+from sit_review_agent.llm.partial import RepeatedAnswer, StreamParser, parse_cli_stdout
 from sit_review_agent.llm.runtime import (
     FirstCallNetwork,
     RuntimeLimits,
@@ -859,7 +870,8 @@ class ClaudeCodeGateway:
                               chars=p.answer_chars)
 
         return StreamParser(root=("final",) if request.tools else (), on_item=on_item,
-                            on_event=on_event if self.progress is not None else None)
+                            on_event=on_event if self.progress is not None else None,
+                            accept=lambda data: self._usable(request, data), stop_on_repeat=self._runner_streams)
 
     async def _attempt(self, request: LLMRequest, conv: _Conversation, call_id: str, argv: list[str], prompt: str,
                        env: dict[str, str], base_entry: dict[str, Any], *, timeout_s: float | None = None,
@@ -868,8 +880,14 @@ class ClaudeCodeGateway:
         t = self.timeout_s if timeout_s is None else timeout_s
         t0 = self.clock.monotonic()
         stream = self._stream_parser(request, call_id)
+        early = False
         try:
             run = await self._run(argv, prompt, env, phase, call_id, t, stream)
+        except RepeatedAnswer:
+            # The CLI rejected a complete answer this gateway accepts and the model began writing it
+            # again; the runner killed claude -p and the accepted answer is the call's answer.
+            early = True
+            run = CompletedRun(returncode=0, stdout="", stderr="")
         except TimeoutError as exc:
             if not self._runner_streams:
                 stream.feed_text(getattr(exc, "stdout", "") or "")
@@ -890,7 +908,10 @@ class ClaudeCodeGateway:
         except OSError as exc:
             raise _AttemptFailed(LLMUnavailableError(f"could not start claude -p: {exc}", call_id=call_id,
                                                      phase=phase), retry=True) from None
-        if self._runner_streams:
+        if early:
+            assert stream.accepted is not None
+            found = _first_answer_result(stream)
+        elif self._runner_streams:
             stream.flush()
             found, _ = parse_cli_stdout(run.stdout, stream)
         else:
@@ -911,6 +932,9 @@ class ClaudeCodeGateway:
         cost = out.get("total_cost_usd")
         cost_cumulative = float(cost) if isinstance(cost, int | float) else conv.cost_seen
         call_cost = max(0.0, cost_cumulative - conv.cost_seen)
+        if early:                   # no result event: the cost of the measured usage at list prices
+            call_cost = _list_price_usd(usage)
+            cost_cumulative = conv.cost_seen + call_cost
         self._cost += call_cost
         call_usage = self._call_model_usage(out, conv)
         self._served.update(call_usage)
@@ -963,6 +987,10 @@ class ClaudeCodeGateway:
                       "usage": usage.__dict__, "content": result["content"], "num_turns": out.get("num_turns"),
                       "total_cost_usd": out.get("total_cost_usd"), "call_cost_usd": call_cost,
                       "terminal_reason": out.get("terminal_reason"), "cli_stop_reason": stop,
+                      **({"cli_answer_rejections": stream.rejections} if stream.rejections else {}),
+                      **({"ended_at_first_answer": True, "complete_answers": len(stream.answers),
+                          "cli_messages": stream.messages, "usage_basis": "stream_messages",
+                          "cost_basis": "list_price"} if early else {}),
                       "elapsed_s": round(self.clock.monotonic() - t0, 3)})   # latency (robustness OPS-10)
         return result
 
@@ -979,6 +1007,24 @@ class ClaudeCodeGateway:
                 data = json.loads(str(out.get("result") or ""))
             except ValueError:
                 raise schema_error("claude -p returned no structured_output") from None
+        return self._interpret_data(request, data, call_id)
+
+    def _usable(self, request: LLMRequest, data: dict[str, Any]) -> bool:
+        """Whether a complete streamed answer passes the same checks as the answer of a finished
+        call (:meth:`_interpret_data`), without issuing tool-call ids."""
+        try:
+            self._interpret_data(request, data, "", issue_ids=False)
+        except LLMSchemaError:
+            return False
+        return True
+
+    def _interpret_data(self, request: LLMRequest, data: Any, call_id: str, *,
+                        issue_ids: bool = True) -> dict[str, Any]:
+        phase = request.phase.value
+
+        def schema_error(msg: str) -> LLMSchemaError:
+            return LLMSchemaError(msg, call_id=call_id, phase=phase)
+
         if not isinstance(data, dict):
             raise schema_error("structured output is not a JSON object")
 
@@ -993,7 +1039,8 @@ class ClaudeCodeGateway:
                     if not isinstance(c, dict) or not isinstance(c.get("name"), str) \
                             or not isinstance(c.get("input"), dict):
                         raise schema_error(f"malformed tool call in envelope: {str(c)[:200]}")
-                    uses.append(ToolUse(id=self._issue_tool_id(str(c.get("id") or "")), name=c["name"],
+                    tid = str(c.get("id") or "")
+                    uses.append(ToolUse(id=self._issue_tool_id(tid) if issue_ids else tid, name=c["name"],
                                         input=c["input"]))
                 content = [{"type": "tool_use", "id": u.id, "name": u.name, "input": u.input} for u in uses]
                 return {"stop_reason": "tool_use", "content": content, "parsed": None, "text": "",
@@ -1034,6 +1081,31 @@ class ClaudeCodeGateway:
             raise LLMAuthError(f"`{self.executable} --version` exited {run.returncode}; {hint}")
 
 
+#: Number of CLI turns of a call that ends at its first complete answer, as ``claude -p`` counts a
+#: call that ends normally: the answering API turn and the StructuredOutput tool result.
+FIRST_ANSWER_TURNS = 2
+
+
+def _first_answer_result(stream: StreamParser) -> dict[str, Any]:
+    """The result object of a call ended at :class:`~sit_review_agent.llm.partial.RepeatedAnswer`:
+    the accepted answer, the measured usage of the streamed API messages and the turn count of a
+    call that ends there. The CLI never wrote its own ``result`` event, so there is no
+    ``total_cost_usd`` or ``modelUsage``."""
+    u = stream.accepted_usage()
+    return {"type": "result", "subtype": "success", "is_error": False, "structured_output": stream.accepted,
+            "stop_reason": "tool_use", "num_turns": FIRST_ANSWER_TURNS, "terminal_reason": "first_complete_answer",
+            "usage": dict(u.__dict__)}
+
+
+def _list_price_usd(usage: Usage) -> float:
+    """``usage`` at the list prices the manifest uses for its estimates (``manifest.PRICE_TABLE``)."""
+    from sit_review_agent.manifest import PRICE_TABLE
+
+    p = PRICE_TABLE["usd_per_mtok"]
+    return (usage.input_tokens * p["input"] + usage.cache_creation_input_tokens * p["cache_write"]
+            + usage.cache_read_input_tokens * p["cache_read"] + usage.output_tokens * p["output"]) / 1e6
+
+
 def _estimate_fields(stream: StreamParser | None) -> dict[str, Any]:
     """``llm.jsonl`` fields of an attempt that streamed but reported no usage: the estimate, kept
     apart from ``usage`` and marked estimated, and what was salvaged. The keys are the names of the
@@ -1045,6 +1117,8 @@ def _estimate_fields(stream: StreamParser | None) -> dict[str, Any]:
     est = stream.estimated_usage()
     if est is not None:
         fields["estimated_usage"] = {**est.__dict__, "estimated": True, "basis": stream.estimate_basis()}
+    if stream.rejections:
+        fields["cli_answer_rejections"] = stream.rejections
     partial = stream.partial()
     fields["salvaged_items"] = stream.item_count()
     if partial is not None:
