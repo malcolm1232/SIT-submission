@@ -50,6 +50,8 @@ checks every complete answer block as it closes with the checks of a finished ca
 starts another API message after an answer the gateway accepts, the call ends there (the runner
 kills ``claude -p``) and that answer is used, with the usage measured from the streamed messages
 (``ended_at_first_answer`` in ``llm.jsonl``; the cost is at list prices, ``cost_basis: list_price``).
+A call with tools (research, the one conversation that resumes) is never ended early: its next call
+would resume a session that ends in the CLI's rejection of the envelope the gateway took.
 """
 
 from __future__ import annotations
@@ -869,9 +871,11 @@ class ClaudeCodeGateway:
             self.tracker.update(call_id, thinking_tokens=p.thinking_tokens, items=p.item_count(),
                               chars=p.answer_chars)
 
+        # Not with tools: a resumed research session would end in the CLI's rejection of the envelope taken.
         return StreamParser(root=("final",) if request.tools else (), on_item=on_item,
                             on_event=on_event if self.progress is not None else None,
-                            accept=lambda data: self._usable(request, data), stop_on_repeat=self._runner_streams)
+                            accept=lambda data: self._usable(request, data),
+                            stop_on_repeat=self._runner_streams and not request.tools)
 
     async def _attempt(self, request: LLMRequest, conv: _Conversation, call_id: str, argv: list[str], prompt: str,
                        env: dict[str, str], base_entry: dict[str, Any], *, timeout_s: float | None = None,

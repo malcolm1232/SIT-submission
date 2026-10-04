@@ -519,14 +519,40 @@ async def test_a_single_answer_still_ends_with_the_result_event(tmp_path: Path, 
     assert "cli_answer_rejections" not in log(rd)[-1]                 # a taken answer is no rejection
 
 
-async def test_a_repeated_tool_call_envelope_ends_at_the_first(tmp_path: Path, cfg: EffectiveConfig) -> None:
-    tools = [{"name": "search_web", "description": "d", "input_schema": {"type": "object"}}]
+SEARCH_TOOLS = [{"name": "search_web", "description": "d", "input_schema": {"type": "object"}}]
+
+
+async def test_a_repeated_tool_call_envelope_is_not_ended_early(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """A call with tools resumes its session on the next call (research); ended at the first envelope,
+    that session would end in the CLI's rejection of the envelope taken, so the CLI's flow runs on."""
     first = {"tool_calls": [{"id": "call-0001", "name": "search_web", "input": {"q": "a"}}], "final": None}
     second = {"tool_calls": [{"id": "call-0001", "name": "search_web", "input": {"q": "b"}}], "final": None}
-    gw, rd = gateway(tmp_path, cfg, StreamRunner(repeat_stream(first, second)))
-    res = await gw.call(assess_req(tools))
-    assert res.stop_reason == "tool_use" and [u.input for u in res.tool_uses] == [{"q": "a"}]
-    assert [u.id for u in res.tool_uses] == ["call-0001"] and log(rd)[-1]["ended_at_first_answer"] is True
+    lines = repeat_stream(first, second)
+    runner = StreamRunner(lines)
+    got = delivered(runner)
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req(SEARCH_TOOLS))
+    assert len(got) == len(lines)                       # not killed: every line through the result event
+    assert res.stop_reason == "tool_use" and [u.input for u in res.tool_uses] == [{"q": "b"}]
+    entry = log(rd)[-1]
+    assert entry["num_turns"] == 3 and "ended_at_first_answer" not in entry
+    assert res.usage == Usage(1137, 400, 0, 0)          # the result event's usage
+
+
+async def test_a_single_tool_call_envelope_ends_with_the_result_event(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ans = {"tool_calls": [{"id": "call-0001", "name": "search_web", "input": {"q": "a"}}], "final": None}
+    lines = [json.dumps({"type": "system", "subtype": "init"}),
+             *answer_message(ans, start=FIRST_START, end=FIRST_END, rejected=False),
+             json.dumps(result_event(ans))]
+    runner = StreamRunner(lines)
+    got = delivered(runner)
+    gw, rd = gateway(tmp_path, cfg, runner)
+    res = await gw.call(assess_req(SEARCH_TOOLS))
+    assert len(got) == len(lines) and res.usage == Usage(1137, 400, 0, 0)
+    assert res.stop_reason == "tool_use" and [u.id for u in res.tool_uses] == ["call-0001"]
+    entry = log(rd)[-1]
+    assert entry["num_turns"] == 2 and "ended_at_first_answer" not in entry
+    assert "cli_answer_rejections" not in entry
 
 
 async def test_a_legacy_runner_keeps_the_cli_answer(tmp_path: Path, cfg: EffectiveConfig) -> None:
