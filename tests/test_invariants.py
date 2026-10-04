@@ -34,18 +34,21 @@ DOC_URL = "https://rooms.campus.example/stats/peak-weeks"
 
 def test_inv05_accepts_a_url_of_the_cited_excerpt_and_of_the_document(review_dict: dict[str, Any],
                                                                      booking_pages: str) -> None:
-    """A URL inside a doc excerpt and its quote, or in the reviewed document, is ledger-backed text
-    (``allowed_urls``); a URL found in no excerpt and no document is not."""
+    """A URL of the reviewed document is ledger-backed (``allowed_urls``), in a cited doc quote or in
+    a statement; a URL in a doc excerpt counts only when the document text holds it (a doc excerpt
+    can be a model's anchor quote, so it backs nothing by itself); a URL in no document is not."""
     ok = copy.deepcopy(review_dict)
     passage = f" Weekly counts are published at {DOC_URL}."
     ledger = next(e for e in ok["evidence_ledger"] if e["evidence_id"] == "EV-004")
     ledger["excerpt"] += passage
     cite = next(e for f in ok["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
     cite["quote"] += passage
-    assert inv.check_INV_05(ok, texts={"DOC-booking-v1": booking_pages}).problems == []
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    assert inv.check_INV_05(ok, texts={"DOC-booking-v1": pages}).problems == []
+    assert inv.check_INV_05(ok, texts={"DOC-booking-v1": booking_pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {DOC_URL}."]
     in_doc = copy.deepcopy(review_dict)
     in_doc["findings"][0]["statement"] += f" The usage page is {DOC_URL}."
-    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
     assert inv.check_INV_05(in_doc, texts={"DOC-booking-v1": pages}).problems == []
     assert any(DOC_URL in p for p in inv.check_INV_05(in_doc, texts={"DOC-booking-v1": booking_pages}).problems)
     bad = copy.deepcopy(ok)
@@ -55,13 +58,19 @@ def test_inv05_accepts_a_url_of_the_cited_excerpt_and_of_the_document(review_dic
 
 
 def test_allowed_urls_ignores_inference_statements() -> None:
-    """An inference entry's excerpt is the model's own statement: its URLs back nothing."""
+    """An inference excerpt is the model's own statement and a doc excerpt may be a model's anchor
+    quote: neither backs a URL; an external excerpt (the tool result) and the document text do."""
     entries = [{"url_or_citation": "inference:EV-002", "source_type": "inference",
                 "excerpt": "Per https://made-up.example/x the quota is low."},
                {"url_or_citation": "doc:DOC-a#p1/s1", "source_type": "doc",
-                "excerpt": f"Counts are at {DOC_URL}."}]
-    assert inv.allowed_urls(entries, ["See https://docs.example/a, then go."]) == {
-        "inference:EV-002", "doc:DOC-a#p1/s1", DOC_URL, "https://docs.example/a"}
+                "excerpt": f"Counts are at {DOC_URL} and https://made-up.example/anchor."},
+               {"url_or_citation": "https://vendor.example/limits", "source_type": "external",
+                "excerpt": "Quotas: see https://vendor.example/limits/sms for SMS."}]
+    assert inv.allowed_urls(entries, [f"See https://docs.example/a, then go. Counts: {DOC_URL}"]) == {
+        "inference:EV-002", "doc:DOC-a#p1/s1", "https://vendor.example/limits", "https://vendor.example/limits/sms",
+        DOC_URL, "https://docs.example/a"}
+    assert inv.allowed_urls(entries, []) == {
+        "inference:EV-002", "doc:DOC-a#p1/s1", "https://vendor.example/limits", "https://vendor.example/limits/sms"}
 
 
 def test_inv07_requires_disclosure(review_dict: dict[str, Any]) -> None:

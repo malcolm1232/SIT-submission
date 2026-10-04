@@ -88,13 +88,16 @@ def _urls_in(text: str) -> set[str]:
 
 def allowed_urls(ledger_entries: Iterable[Mapping[str, Any]], document_texts: Iterable[str]) -> set[str]:
     """The URLs and DOIs report text may hold (INV-05), the one set the report phase's redaction keeps:
-    every ledger entry's ``url_or_citation``, plus every URL in the excerpt of a ``doc`` or ``external``
-    entry (recorded text, not model text) and in the canonical text of a reviewed document. A URL
-    the model wrote that is in none of them is not ledger-backed."""
+    every ledger entry's ``url_or_citation``, every URL in the excerpt of an ``external`` entry (the
+    tool result's own text) and every URL in the canonical text of a reviewed document. A ``doc``
+    excerpt is never a source: when the model's quote is not in the document, verify records the
+    model's anchor quote as the excerpt (``ResolveEvidence.doc_entry``), so a doc excerpt can be
+    model text; a URL in a real doc excerpt is in the document text anyway. An ``inference`` excerpt
+    is the model's statement. A URL the model wrote that is in none of these is not ledger-backed."""
     out: set[str] = set()
     for e in ledger_entries:
         out.add(e["url_or_citation"])
-        if e["source_type"] in ("doc", "external") and e.get("excerpt"):
+        if e["source_type"] == "external" and e.get("excerpt"):
             out |= _urls_in(e["excerpt"])
     for t in document_texts:
         out |= _urls_in(t)
@@ -204,8 +207,8 @@ def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None
     """Every cited evidence ID is in the ledger and hydrated from it; doc/external quotes occur in
     the ledger excerpt; external entries resolve to an ``ok`` tool call of the same server/tool and
     were read before being cited; no URL or DOI in report text outside :func:`allowed_urls` (the
-    ledger's sources, doc and external excerpts and the canonical texts named by
-    ``documents[].text_path``, or ``texts``)."""
+    ledger's sources, external excerpts and the canonical texts named by ``documents[].text_path``,
+    or ``texts``; never a doc excerpt)."""
     r = _as_dict(review)
     problems: list[str] = []
     ledger = {e["evidence_id"]: e for e in r["evidence_ledger"]}

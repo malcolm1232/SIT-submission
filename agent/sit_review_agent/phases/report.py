@@ -24,7 +24,7 @@ What assembly guarantees by construction (each is disclosed, never hidden):
 * failed tool calls, cap stops and model fallbacks that no phase recorded as a degradation get
   one (INV-07);
 * a URL or DOI in free text that is not ledger-backed (:func:`~sit_review_agent.invariants.allowed_urls`:
-  a ledger ``url_or_citation``, or a URL in a doc or external excerpt or in a reviewed document) is
+  a ledger ``url_or_citation``, a URL in an external excerpt or one in a reviewed document) is
   replaced by ``[link removed: not in the evidence register]`` and disclosed as a degradation
   (INV-05). Verbatim passages are never rewritten: an anchor quote (INV-04) and a doc or external
   evidence quote that occurs in its ledger excerpt (INV-05) keep their text, as in :func:`settle_refs`;

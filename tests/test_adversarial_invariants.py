@@ -239,6 +239,29 @@ async def test_inv05_document_url_in_a_cited_passage_and_an_anchor_is_kept(tmp_p
         == ["INV-04", "INV-05"]
 
 
+async def test_inv05_made_up_url_in_a_made_up_anchor_never_reaches_the_report(tmp_path: Path) -> None:
+    """A doc citation whose quote is not in the document is recorded with the finding's first anchor
+    quote as its ledger excerpt (``doc_entry``); when that anchor is made up too, the excerpt is
+    model text. A made-up URL inside it must not become ledger-backed (``allowed_urls`` never reads
+    doc excerpts): the run ends fail-closed with INV-05 naming the URL, and no report.json holds it."""
+    evil = "https://made-up.example/paper"
+
+    def fabricate(p: dict[str, Any]) -> None:
+        f = finding(p, "FND-004")
+        f["statement"] += f" See {evil} for the provider's real quota."
+        f["doc_anchors"].insert(0, {**f["doc_anchors"][0], "quote":
+                                    f"The provider quota is documented in full at {evil} for every tenant and region."})
+        f["evidence"].append({"evidence_id": "NEW-9", "source_type": "doc", "quote": "not in the document at all",
+                              "supports_claim": True, "derived_from": []})
+
+    out, rd = await run(tmp_path, fabricate)
+    assert not rd.report_json.exists() or evil not in rd.report_json.read_text(encoding="utf-8")
+    assert rd.failure.is_file()
+    failure = json.loads(rd.failure.read_text(encoding="utf-8"))
+    assert failure["phase"] == "report"
+    assert failure["problems"] == [f"INV-05: URL/DOI in report text not in the ledger: {evil}"]
+
+
 async def test_inv05_doc_only_run_cannot_claim_external_evidence(tmp_path: Path) -> None:
     """--no-tools: a shard's answer cites a new item as external evidence (there is no such entry: no
     tool ran, and a shard is shown no register). The citation must be dropped, never re-pointed at a
