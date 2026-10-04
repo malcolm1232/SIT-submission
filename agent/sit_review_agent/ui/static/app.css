@@ -44,12 +44,15 @@ ul { padding-left: 18px; margin: 0; }
 /* the surface slot (rail.css .navrail-slot): here it carries the runs and the tool servers */
 /* a rail too short for the tool servers and the Logs panel's minimum scrolls instead of cutting them off */
 .navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow-x: hidden; overflow-y: auto; }
-#rail-runs { flex: 0 1000 auto; min-height: 0; overflow-y: auto; }   /* the runs list gives way first so every tool server stays in view */
+/* the runs list gives way first so every tool server stays in view, down to one whole run row: the open run
+   stays in view (renderRailRuns scrolls its row in) and the Logs frame gives way below that, to its 3 lines */
+#rail-runs { --run-pad: 6px; --run-line: 18px; --run-meta-line: 16px; flex: 0 1000 auto; min-height: 0; overflow-y: auto; }
+#rail-runs:has(.rail-run) { min-height: calc(2 * var(--run-pad) + var(--run-line) + var(--run-meta-line)); }
 #rail-tools { flex: none; }
 .rail-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--navrail-muted);
   padding: 14px 10px 6px; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
 .rail-run { display: grid; grid-template-columns: 12px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 12.5px;
-  color: var(--navrail-fg); padding: 6px 10px; border-radius: var(--r-md); text-decoration: none; transition: background-color 150ms; }
+  line-height: var(--run-line); color: var(--navrail-fg); padding: var(--run-pad) 10px; border-radius: var(--r-md); text-decoration: none; transition: background-color 150ms; }
 .rail-run:hover { background: var(--navrail-row); }
 .rail-run.active { background: var(--navrail-row); color: var(--navrail-fg-strong); }
 .rail-run .dot, .rail-tool .dot { width: 6px; height: 6px; border-radius: 50%; border: 1px solid currentColor; justify-self: center; }
@@ -57,7 +60,7 @@ ul { padding-left: 18px; margin: 0; }
 .rail-run .dot.done { background: currentColor; }
 .rail-run .dot.ended { border-color: var(--navrail-muted); }
 .rail-run .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail-run .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-run .meta { grid-column: 2; font-size: 11px; line-height: var(--run-meta-line); color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-run.active .meta { color: var(--navrail-fg); }
 /* the Logs panel: progress.log of the open run, newest at the bottom, scrolled to it on each read.
    The frame takes the rail's free height; the scroller inside is a whole number of 16 px lines tall

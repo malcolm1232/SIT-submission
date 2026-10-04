@@ -85,7 +85,8 @@ function runMetaText(r) {
 }
 
 function renderRailRuns() {
-  const box = clear($("rail-runs"));
+  const box = $("rail-runs"), kept = box.scrollTop;  // a re-render keeps a hand scroll of the list
+  clear(box);
   const running = S.runs.filter((r) => r.status === "running").length;
   $("rail-runs-note").textContent = running ? intl(running) + " running" : "none running";
   if (!S.runs.length) box.append(h("div", { class: "rail-empty", text: "no run directory yet" }));
@@ -95,6 +96,11 @@ function renderRailRuns() {
       onclick: (e) => { e.preventDefault(); go(r.run_id); } },
       h("span", { class: "dot " + dot }), h("span", { class: "title", text: r.run_id }), h("span", { class: "meta num" }, runMetaText(r))));
   }
+  // the open run's row is always in view: the list keeps one row's height (app.css) and scrolls itself, and
+  // only itself (scrollIntoView would also scroll the rail's slot away from the Logs panel), to that row
+  const open = box.querySelector(".rail-run.active");
+  const top = open ? open.offsetTop - box.offsetTop : kept;
+  box.scrollTop = open ? Math.min(Math.max(kept, top + open.offsetHeight - box.clientHeight), top) : kept;
 }
 
 function toolMeta(t, noTools) {

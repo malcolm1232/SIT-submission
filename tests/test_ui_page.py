@@ -447,3 +447,37 @@ def test_the_logs_panel_shows_whole_lines_at_the_newest_and_at_the_top(page) -> 
             # and the rail shows the whole panel, scrolled into view where the rail is short
             assert m["slot"][0] <= m["top"] and m["bottom"] <= m["slot"][1], (width, where, m)
         assert pg.locator("#rail-log .rail-logline").last.text_content() == "[00:59] assess     | OK line 59"
+
+
+RUN_ROW_BOXES = """() => { const row = document.querySelector('#rail-runs .rail-run.active');
+  const list = document.getElementById('rail-runs').getBoundingClientRect();
+  const s = document.getElementById('navrail-slot').getBoundingClientRect(), r = row.getBoundingClientRect();
+  return {row: [r.top, r.bottom], list: [list.top, list.bottom], slot: [s.top, s.bottom]}; }"""
+
+
+def test_the_open_runs_row_stays_in_view_beside_the_logs_panel(page) -> None:
+    """The Runs list gave way first to the Logs panel and collapsed to 0 px at 1440x900: the header showed
+    with no row, so the reader could not see which run was open. The list now keeps one whole row and
+    scrolls itself to the open run's row; the Logs panel keeps its 3 whole lines."""
+    pg, base, runs, state = page
+    state.tools[:] = [{"name": f"server-{i}", "enabled": True} for i in range(4)]   # four, as config/tools.yaml
+    for run in runs.iterdir():   # every run has a log first: writing one moves its run up the list
+        (run / "progress.log").write_text(
+            "".join(f"[00:{i:02d}] assess     | OK line {i}\n" for i in range(60)), encoding="utf-8")
+    pg.goto(base + "/")
+    pg.wait_for_function("document.querySelectorAll('#rail-runs .rail-run').length >= 2 && "
+                         "document.querySelectorAll('#rail-tools .rail-tool').length === 4")
+    last = pg.locator("#rail-runs .rail-run").last.get_attribute("data-run")   # the row furthest down the list
+    pg.goto(base + f"/?run={last}")
+    pg.wait_for_function(f"document.querySelector('#rail-runs .rail-run.active').dataset.run === {last!r}")
+    pg.wait_for_function("document.querySelectorAll('#rail-log .rail-logline').length === 60")
+    for where in ("opened", "logs in view"):
+        if where == "logs in view":
+            pg.evaluate("document.querySelector('.rail-log-frame').scrollIntoView({block: 'nearest'})")
+        m = pg.evaluate(RUN_ROW_BOXES)
+        assert m["list"][0] <= m["row"][0] and m["row"][1] <= m["list"][1], (where, m)   # whole inside the list
+        assert m["slot"][0] <= m["row"][0] and m["row"][1] <= m["slot"][1], (where, m)   # and inside the rail
+    m = pg.evaluate(LOG_BOXES)
+    assert len(m["lines"]) >= 3, m
+    assert m["lines"][0][0] >= m["top"] and m["lines"][-1][1] <= m["bottom"], m
+    assert m["slot"][0] <= m["top"] and m["bottom"] <= m["slot"][1], m
