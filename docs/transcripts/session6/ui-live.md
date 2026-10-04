@@ -2,7 +2,7 @@
 
 Worker: SIT FABLE for the planner, 4 Oct 2026, worktree `SIT-wt/ui-live`, branch `s4/ui-live` from `c136554`.
 Malcolm's word for this task, 4 Oct 2026 at about 11:55 after his first rehearsal run in the review UI: "What happens if stop run? Timing isn't like PER SECOND. Each 'assess' idk can I either see what it's doing? Or more into the backend or logs? To have more visibility. And why does it cut at 04.25. Can I have more visibility on each of the stages?"
-The four changes are the planner's rulings (shot calling delegated to it on 3 Oct 02:50); decision row 43 in `docs/USER_DECISIONS.md` records them.
+The four changes are the planner's rulings (shot calling delegated to it on 3 Oct 02:50); decision row 44 in `docs/USER_DECISIONS.md` records them.
 Not pushed: a separate verifier pushes.
 
 ## The four commits

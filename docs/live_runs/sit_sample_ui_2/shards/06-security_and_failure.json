@@ -1,0 +1,1130 @@
+{
+ "hashes": {
+  "canonical_text": "7be073ff2e98e50998367a46b92ed5dbf85815177eb36c2e2c12a0f52a458de8",
+  "effective_config": "4556235eb170f756870b38a75e94353fd213f06b73abde51c9921c5ea7bb033a",
+  "prompts_bundle": "6f0ee28ab9acf35152a2d4456207a8a068222149422e66d801c8195455c28ba7"
+ },
+ "result": {
+  "call_id": "llm-0008",
+  "criteria": [
+   "security_and_privacy",
+   "scalability_and_failure_modes"
+  ],
+  "delta": {
+   "budget": {
+    "cache_creation_input_tokens": 51186,
+    "cache_read_input_tokens": 30960,
+    "input_tokens": 82150,
+    "output_tokens": 33576
+   },
+   "declined_sections": [],
+   "degradations": [],
+   "fallback_events": [],
+   "llm_calls": {
+    "assess": [
+     "llm-0008"
+    ]
+   },
+   "refusals": []
+  },
+  "detail": "",
+  "index": 6,
+  "iteration": 0,
+  "model": "claude-opus-5-5",
+  "name": "security_and_failure",
+  "outcome": "done",
+  "output": {
+   "coverage": [
+    {
+     "criterion_id": "security_and_privacy",
+     "finding_ids": [
+      "FND-001",
+      "FND-002",
+      "FND-003",
+      "FND-004",
+      "FND-006",
+      "FND-007",
+      "FND-009",
+      "FND-010",
+      "FND-011"
+     ],
+     "note": "Checked: agent backup governance, admin roles against the counselling wall, token states, audit path, tier isolation across Kafka, embedder, Redis and credentials, and aggregates.",
+     "outcome": "findings"
+    },
+    {
+     "criterion_id": "scalability_and_failure_modes",
+     "finding_ids": [
+      "FND-003",
+      "FND-004",
+      "FND-005",
+      "FND-008"
+     ],
+     "note": "Checked: async retry and idempotency, audit under MMP or consumer failure, degraded mode, and filtered pgvector latency and RAM fit at 9.5M vectors.",
+     "outcome": "findings"
+    }
+   ],
+   "findings": [
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.8,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 13,
+       "quote": "the agent backup survives learner deletion of their own memory (enabling session resume)",
+       "requirement_ids": [
+        "FR-16"
+       ],
+       "section_ref": "13"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Learners shall be able to request deletion of their own user-deletable memory.",
+       "requirement_ids": [
+        "FR-15"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 7,
+       "quote": "Every memory operation, from every agent, for every learner, flows through the same governed path.",
+       "requirement_ids": [],
+       "section_ref": "5"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-1",
+       "quote": "the agent backup survives learner deletion of their own memory (enabling session resume)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-2",
+       "quote": "Learners shall be able to request deletion of their own user-deletable memory.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-3",
+       "quote": "Every memory operation, from every agent, for every learner, flows through the same governed path.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-1",
+        "NEW-2",
+        "NEW-3"
+       ],
+       "evidence_id": "NEW-4",
+       "quote": "A deleted record that persists in every agent's backup is not deleted in substance, and backup writes that bypass the Router are neither policy-checked nor audited, so FR-13, FR-15 and P7 cannot all hold as written.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-001",
+     "kind": "gap",
+     "next_step": {
+      "action": "Decide the retention and deletion policy for agent backups and record it in Section 20.",
+      "owner": "Data governance officer / DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 1,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 13, 20 and FR-16: (a) apply tier, retention and pii rules to agent backup; (b) propagate learner deletion to backups, or limit backup to a short-lived cache with a TTL; (c) forbid HIGHLY_RESTRICTED content in backups outside memory_sensitive; (d) audit backup reads and writes. Add the backup to the FR-15 test.",
+      "expected_benefit": "Deletion, audit and the counselling hard wall would hold across every copy of learner data.",
+      "issue": "Agent backup memory is an ungoverned second copy of learner data. It outlives deletion and holds counselling data outside the sensitive tier.",
+      "objective_refs": [
+       "FR-13",
+       "FR-15",
+       "FR-5",
+       "FR-16",
+       "P7"
+      ],
+      "rationale": "FR-15, FR-13, P4 and P7 all assume that the namespace is the only governed copy of learner data.",
+      "supporting_evidence_ids": [
+       "NEW-1",
+       "NEW-2",
+       "NEW-3",
+       "NEW-4"
+      ],
+      "verification": "Extend the FR-15 deletion boundary test: after a learner deletion, each agent's backup holds no user-deletable records. Extend the FR-13 audit test to cover backup reads."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "high",
+     "statement": "Each agent keeps a full per-learner copy (session, episodic, long_term, procedural). It is written 'always, immediate', outside the Kafka/Gateway path, and it deliberately survives learner self-deletion. This contradicts the claim that every operation flows through the governed path. It also undermines FR-15 deletion, FR-13 audit completeness and the counselling hard wall: the counsellor agent's backup would hold HIGHLY_RESTRICTED data outside memory_sensitive. No sensitivity tier, retention rule, policy check or audit applies to the backup.",
+     "tags": [
+      "PDPA",
+      "deletion",
+      "backup",
+      "audit"
+     ],
+     "title": "Agent per-learner backup memory sits outside governance, deletion and audit"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.75,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 18,
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "requirement_ids": [],
+       "section_ref": "19"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 20,
+       "quote": "Super admin Overrides, corrections, emergency access (always audit-logged)",
+       "requirement_ids": [],
+       "section_ref": "21"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "wellbeing/counselling/ shall be classified HIGHLY_RESTRICTED with zero cross-domain reads and no",
+       "requirement_ids": [
+        "FR-5"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-5",
+       "quote": "Super Admin Everything - always audit-logged, mandatory reason required",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-6",
+       "quote": "Super admin Overrides, corrections, emergency access (always audit-logged)",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-7",
+       "quote": "wellbeing/counselling/ shall be classified HIGHLY_RESTRICTED with zero cross-domain reads and no",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-8",
+       "quote": "request/response JSON schemas and auth on the Admin API itself are not yet specified",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-002",
+     "kind": "risk",
+     "next_step": {
+      "action": "Confirm whether any break-glass access to counselling memory exists and, if so, define it outside the MMP.",
+      "owner": "DPO with Head of Counselling"
+     },
+     "no_change_rationale": null,
+     "rank": 2,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Amend Section 19 and the Section 21 user table so that Super Admin and MMP roles explicitly exclude memory_sensitive. The MMP should never hold memory_sensitive credentials. Clinical access goes only through the separate clinical system. Specify Admin API auth (Entra roles) before Build Phase 6.",
+      "expected_benefit": "FR-5 can be enforced without exception, and the unspecified Admin API auth cannot become a route into counselling data.",
+      "issue": "Super-admin scope covers counselling data, which contradicts the 'no MMP override' rule.",
+      "objective_refs": [
+       "FR-5",
+       "P4",
+       "FR-14"
+      ],
+      "rationale": "FR-5 requires the hard wall to be enforced at both policy and credential level, and P4 says the principle wins in any conflict.",
+      "supporting_evidence_ids": [
+       "NEW-5",
+       "NEW-6",
+       "NEW-7",
+       "NEW-8"
+      ],
+      "verification": "Add to the FR-5 test: a super-admin token calling the Admin API and Policy dry-run against wellbeing/counselling/ is DENIED. Confirm that the MMP deployment has no memory_sensitive credential."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "Section 19 grants the Super Admin role access to 'Everything', and Section 21 gives the super admin 'Overrides, corrections, emergency access'. FR-5 and P4, however, forbid any MMP override path to wellbeing/counselling/. The MMP Admin API exposes audit, namespace and DELETE operations, and its own authentication is not yet specified (acknowledged in Section 28). The review adds that the role model itself opens a path around the hard wall.",
+     "tags": [
+      "RBAC",
+      "counselling",
+      "admin"
+     ],
+     "title": "Super Admin 'everything' and MMP emergency access conflict with counselling hard wall"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "security_and_privacy",
+      "scalability_and_failure_modes"
+     ],
+     "disposition": "governance_decision",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "On revocation: inform the learner, serve from agent backup only, no re-authentication path is offered.",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "6"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 15,
+       "quote": "REVOKED -> inform learner (token revoked, contact support).",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "15"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-9",
+       "quote": "On revocation: inform the learner, serve from agent backup only, no re-authentication path is offered.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-9"
+       ],
+       "evidence_id": "NEW-10",
+       "quote": "If the requester behind a revoked token is not the learner, serving from the backup discloses that learner's memory to the person whose access was just cut off.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-003",
+     "kind": "risk",
+     "next_step": {
+      "action": "Decide degraded-mode scope per token state and update Sections 6, 14 and 15.",
+      "owner": "Platform security lead"
+     },
+     "no_change_rationale": null,
+     "rank": 3,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 6, 14 and 15: on REVOKED, serve only agent-global (non-learner) context and load no per_learner backup. On EXPIRED, limit backup use to the current session's working memory until re-authentication.",
+      "expected_benefit": "Revocation would be effective, protecting learner privacy (P2) and FR-4 check 3.",
+      "issue": "Degraded mode on REVOKED discloses stored learner memory.",
+      "objective_refs": [
+       "FR-4",
+       "NFR-6",
+       "P2"
+      ],
+      "rationale": "Revocation is the control used to stop access, and the backup holds the same personal data as the namespace.",
+      "supporting_evidence_ids": [
+       "NEW-9",
+       "NEW-10"
+      ],
+      "verification": "Extend the NFR-6 test: with a REVOKED token, the context pack contains no per-learner entries."
+     },
+     "secondary_dispositions": [
+      "refinement_now"
+     ],
+     "severity": "high",
+     "statement": "On REVOKED, the design keeps serving the session from the agent's per-learner backup. Revocation usually signals a compromised account or a terminated relationship, so continuing to surface that learner's stored memory to the unauthenticated requester defeats the purpose of revoking. The same applies, more mildly, to EXPIRED tokens, where serving continues before re-authentication.",
+     "tags": [
+      "auth",
+      "revocation",
+      "degraded-mode"
+     ],
+     "title": "Revoked token still yields learner data via agent backup"
+    },
+    {
+     "acknowledged_in_doc": true,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "security_and_privacy",
+      "scalability_and_failure_modes"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical",
+       "requirement_ids": [
+        "NFR-4"
+       ],
+       "section_ref": "2.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "AuditStore, Admin API (port 8003), and a dashboard for quality, PII, usage, cost, and warnings.",
+       "requirement_ids": [],
+       "section_ref": "5"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-11",
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-12",
+       "quote": "MMP downtime shall not affect agent read or write availability, because the MMP is not in the critical",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-13",
+       "quote": "AuditStore, Admin API (port 8003), and a dashboard for quality, PII, usage, cost, and warnings.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-12",
+        "NEW-13"
+       ],
+       "evidence_id": "NEW-14",
+       "quote": "If the audit sink is part of the MMP, then either audit entries are lost while the MMP is down (breaking FR-13) or agent operations fail (breaking NFR-4).",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-004",
+     "kind": "risk",
+     "next_step": {
+      "action": "Specify the audit sink placement and failure semantics as part of Pending Backlog item 4.",
+      "owner": "Platform architect"
+     },
+     "no_change_rationale": null,
+     "rank": 4,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 17, 18 and 21: place the audit sink in the request path, separate from the MMP (for example a dedicated append-only audit topic and table). Write the enqueue audit at the Gateway before the ACK and the outcome audit at the consumer, including validation rejects. Define fail-closed or buffered behaviour if the audit sink is unavailable.",
+      "expected_benefit": "FR-13 completeness and NFR-4 availability can both be met.",
+      "issue": "The audit write point and its failure behaviour are undefined.",
+      "objective_refs": [
+       "FR-13",
+       "NFR-4",
+       "P7"
+      ],
+      "rationale": "PDPA auditability (P7) must hold under partial failure, and NFR-4 isolates the MMP.",
+      "supporting_evidence_ids": [
+       "NEW-11",
+       "NEW-12",
+       "NEW-13",
+       "NEW-14"
+      ],
+      "verification": "Combine the NFR-4 chaos test with the FR-13 completeness test: with the MMP stopped and a consumer killed mid-batch, every operation still has exactly one audit entry."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "high",
+     "statement": "The write audit entry is the last step of the background consumer, so a consumer crash, a poison message or a validation reject before that step can leave an ACKed write with no audit entry. The AuditStore is listed as an MMP component, yet NFR-4 says MMP downtime must not affect agent reads and writes. The design does not say where read and denial audits are written when the MMP is down, or whether operations block when audit fails. FR-13 and P7 (PDPA) need a defined, fail-closed or durably buffered audit path.",
+     "tags": [
+      "audit",
+      "PDPA",
+      "Kafka",
+      "availability"
+     ],
+     "title": "Audit completeness depends on async consumer and MMP-hosted AuditStore"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.7,
+     "criterion_ids": [
+      "scalability_and_failure_modes"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "overwhelm the store; failed writes queue and retry automatically",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-15",
+       "quote": "overwhelm the store; failed writes queue and retry automatically",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-16",
+       "quote": "Writes shall be enqueued to a message broker (agent receives an immediate acknowledgement) and",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-15",
+        "NEW-16"
+       ],
+       "evidence_id": "NEW-17",
+       "quote": "Validation runs in the consumer after the ACK, so permanent rejects cannot be fixed by retrying and need a terminal path; redelivery without a stable message ID duplicates append-only events.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-005",
+     "kind": "gap",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 5,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18: classify errors as transient (retry with backoff and a maximum attempt count) or permanent (dead-letter topic, audit entry, MMP dashboard warning). Require a client-generated memory_id/event_id as an idempotency key with upsert-or-ignore semantics. Optionally run a synchronous Validator pre-check at the Gateway so most rejects happen before the ACK.",
+      "expected_benefit": "FR-9 stays reliable under failure, FR-11 rejects are visible, and episodic memory is free of duplicates.",
+      "issue": "Retry, poison-message and duplicate handling are unspecified.",
+      "objective_refs": [
+       "FR-9",
+       "FR-11",
+       "NFR-3"
+      ],
+      "rationale": "Writes peak when 15,000 learners start term, so unbounded retries or partition blocking would stall all writes.",
+      "supporting_evidence_ids": [
+       "NEW-15",
+       "NEW-16",
+       "NEW-17"
+      ],
+      "verification": "Fault-injection test: an invalid write lands in the dead-letter queue within N attempts; a duplicated Kafka message produces one row."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Agents get an ACK before validation, so strict-mode rejects, sensitivity-ceiling rejects and type mismatches happen after the agent believes the write succeeded. No mechanism tells the agent or learner about the failure. The claim that failed writes 'retry automatically' gives no bound: a deterministically invalid message would retry forever or block a partition. At-least-once redelivery could also duplicate rows in the append-only event table, because no idempotency key is defined.",
+     "tags": [
+      "Kafka",
+      "retry",
+      "idempotency",
+      "DLQ"
+     ],
+     "title": "Async write path lacks dead-letter, idempotency and post-ACK rejection feedback"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "separate topics per sensitivity tier keep HIGHLY_RESTRICTED writes physically isolated in transit.",
+       "requirement_ids": [],
+       "section_ref": "18"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 3,
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "2.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-18",
+       "quote": "separate topics per sensitivity tier keep HIGHLY_RESTRICTED writes physically isolated in transit.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-19",
+       "quote": "processed asynchronously by a background consumer performing classify → embed → validate → route →",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-18",
+        "NEW-19"
+       ],
+       "evidence_id": "NEW-20",
+       "quote": "Because classification happens after topic routing and embedding happens before validation, misclassified or invalid sensitive content can transit the standard topic and the embedding service.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-006",
+     "kind": "risk",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 6,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18 and FR-9: derive the tier from the slot's template ceiling at the Gateway before choosing a topic, and fail closed (route to sensitive) when unknown. Reorder the consumer to classify → validate → embed → route → audit. State that consumers on the sensitive topic use the separate embedding deployment named in Section 11.",
+      "expected_benefit": "End-to-end tier isolation for counselling data.",
+      "issue": "Tier routing and embedding precede the checks that should govern them.",
+      "objective_refs": [
+       "FR-5",
+       "NFR-5",
+       "FR-9"
+      ],
+      "rationale": "NFR-5 and FR-5 rely on HIGHLY_RESTRICTED data never entering standard-tier components.",
+      "supporting_evidence_ids": [
+       "NEW-18",
+       "NEW-19",
+       "NEW-20"
+      ],
+      "verification": "Test: a write to wellbeing/counselling/ never appears on memory.write.standard, and a rejected write produces no embedding call."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "The tier topic is chosen at enqueue time, but the consumer's first step 'confirms' sensitivity. A write the classifier upgrades to HIGHLY_RESTRICTED has therefore already passed through memory.write.standard. The pipeline also embeds before validating, so content that will be rejected is still sent to the embedding service. Section 11 calls for a separate embedding deployment for the sensitive tier, while the pipeline names a single model, so the sensitive-tier isolation claim is not carried through end to end.",
+     "tags": [
+      "tier isolation",
+      "Kafka",
+      "embedding"
+     ],
+     "title": "Sensitivity confirmed only after topic selection; single embedding model in write pipeline"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.65,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 16,
+       "quote": "Policy decisions are not cached - they are evaluated fresh on every request",
+       "requirement_ids": [
+        "FR-8"
+       ],
+       "section_ref": "16"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 18,
+       "quote": "session context pack is cached so repeated queries within a session skip PostgreSQL entirely",
+       "requirement_ids": [
+        "FR-10"
+       ],
+       "section_ref": "18"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-21",
+       "quote": "Policy decisions are not cached - they are evaluated fresh on every request",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-22",
+       "quote": "session context pack is cached so repeated queries within a session skip PostgreSQL entirely",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-21",
+        "NEW-22"
+       ],
+       "evidence_id": "NEW-23",
+       "quote": "A fresh policy decision on top of a cached, already-redacted pack does not re-apply redaction or deletion, so the cache determines what is served until the session closes.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-007",
+     "kind": "gap",
+     "next_step": null,
+     "no_change_rationale": null,
+     "rank": 7,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Section 18: use a separate Redis instance or credentials for the sensitive tier, or do not cache HIGHLY_RESTRICTED packs. Key cache entries by agent, learner, slot set and policy/template version, and invalidate them on policy change, permission change, deletion and token revocation events.",
+      "expected_benefit": "Counselling isolation and timely enforcement of revocations and deletions.",
+      "issue": "The cache bypasses tier isolation and the freshness of policy decisions.",
+      "objective_refs": [
+       "NFR-5",
+       "FR-8",
+       "FR-15",
+       "FR-10"
+      ],
+      "rationale": "NFR-5 isolation and the Section 16 intent that rule changes apply immediately both need to cover the cache.",
+      "supporting_evidence_ids": [
+       "NEW-21",
+       "NEW-22",
+       "NEW-23"
+      ],
+      "verification": "Test: revoke an agent's read permission mid-session; the next read is DENIED and served from no cache."
+     },
+     "secondary_dispositions": [],
+     "severity": "medium",
+     "statement": "Whole context packs are cached for the session TTL, and repeated queries skip PostgreSQL. The design does not separate the Redis cache by sensitivity tier, so the counsellor's packs (HIGHLY_RESTRICTED) share a cache and credentials with the standard tier. Cached packs also reflect the policy and redaction in force when they were built. A permission or template change, or a learner deletion, mid-session therefore does not take effect, which contradicts the stated intent that rule changes take effect immediately.",
+     "tags": [
+      "Redis",
+      "cache",
+      "invalidation"
+     ],
+     "title": "Redis context-pack cache is not tier-separated and serves stale authorisation"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "scalability_or_failure_mode",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "scalability_and_failure_modes"
+     ],
+     "disposition": "needs_prototyping",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 12,
+       "quote": "effective search space per query is 500-800 vectors, not 9.5 million.",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "12"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 4,
+       "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under",
+       "requirement_ids": [
+        "NFR-2"
+       ],
+       "section_ref": "2.2"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-24",
+       "quote": "effective search space per query is 500-800 vectors, not 9.5 million.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-25",
+       "quote": "Filtered vector similarity queries (scoped by learner_id and slot_path) shall return within 5-15 ms under",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-24"
+       ],
+       "evidence_id": "NEW-26",
+       "quote": "The Section 12 figures (~57 GB raw plus ~80 GB HNSW index, about 137 GB) exceed the 128 GB RAM of the chosen SKU before OS and other overheads, so a fully in-RAM index is not assured.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-008",
+     "kind": "validation_need",
+     "next_step": {
+      "action": "Run a pgvector filtered-search prototype at full synthetic scale and report latency, recall and RAM use.",
+      "owner": "Platform data engineer"
+     },
+     "no_change_rationale": null,
+     "rank": 8,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Before Build Phase 5, benchmark three options on a synthetic 9.5M-vector set: (a) the B-tree pre-filter with exact distance, (b) HNSW with a filter, and (c) partitioning by learner hash. Measure p95 latency and recall@k. Record the plan choice and memory footprint in Section 12.",
+      "expected_benefit": "Confidence that NFR-1, NFR-2 and NFR-10 hold, or an early change of index strategy.",
+      "issue": "The latency and recall premise for filtered vector search is unverified.",
+      "objective_refs": [
+       "NFR-1",
+       "NFR-2",
+       "NFR-10"
+      ],
+      "rationale": "NFR-1, NFR-2 and NFR-10 cost all rest on this premise.",
+      "supporting_evidence_ids": [
+       "NEW-24",
+       "NEW-25",
+       "NEW-26"
+      ],
+      "verification": "The NFR-2 benchmark is extended with recall@k ≥ an agreed threshold alongside p95 ≤ 15 ms."
+     },
+     "secondary_dispositions": [
+      "needs_testing"
+     ],
+     "severity": "medium",
+     "statement": "The design assumes the learner_id + slot_path filter shrinks the search space to 500-800 vectors. With a single global HNSW index, whether the filter narrows the graph search or is applied after it depends on the query plan; post-filtering can return too few results. The sizing also puts about 57 GB of raw vectors plus about 80 GB of index against 128 GB RAM, so the 'in-RAM index' basis of NFR-2 is doubtful. This needs a benchmark, not an assertion.",
+     "tags": [
+      "pgvector",
+      "HNSW",
+      "latency",
+      "sizing"
+     ],
+     "title": "Filtered HNSW latency/recall and memory fit at 9.5M vectors unproven"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.6,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 27,
+       "quote": "A credential valid for memory_standard is confirmed to fail authentication",
+       "requirement_ids": [
+        "NFR-5"
+       ],
+       "section_ref": "27.2"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 8,
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "requirement_ids": [
+        "NFR-6"
+       ],
+       "section_ref": "6"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 13,
+       "quote": "Only the authenticated learner's entry loads into context per session.",
+       "requirement_ids": [],
+       "section_ref": "13"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-27",
+       "quote": "A credential valid for memory_standard is confirmed to fail authentication",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-28",
+       "quote": "Authentication is OAuth 2.0 via Entra ID. Tokens are valid for 48 hours.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [
+        "NEW-27",
+        "NEW-28"
+       ],
+       "evidence_id": "NEW-29",
+       "quote": "Separate credentials protect the sensitive schema only if they are held by a separate workload; and a per-agent store of all learners' refresh tokens is a high-value secret store with no stated protection.",
+       "source_type": "inference",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-009",
+     "kind": "gap",
+     "next_step": {
+      "action": "Confirm the achievable Entra ID token lifetime and the vault approach for refresh tokens.",
+      "owner": "Identity / security architect"
+     },
+     "no_change_rationale": null,
+     "rank": 9,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "In Sections 11 and 17: run sensitive-tier Dispatcher/consumer workloads with a separate managed identity, the only holder of the memory_sensitive credential. In Section 13: store tokens in a secrets vault or keep them in session only, never in persistent agent memory. Confirm the 48-hour token validity against Entra ID token lifetime policy.",
+      "expected_benefit": "A meaningful credential-level hard wall and less exposure from token theft.",
+      "issue": "Credential and token custody is unspecified.",
+      "objective_refs": [
+       "FR-5",
+       "NFR-5",
+       "NFR-6"
+      ],
+      "rationale": "FR-5 requires enforcement at the credential level, and stored tokens are reusable secrets.",
+      "supporting_evidence_ids": [
+       "NEW-27",
+       "NEW-28",
+       "NEW-29"
+      ],
+      "verification": "Extend the NFR-5 test: the standard-tier workload identity cannot obtain the memory_sensitive credential. Scan agent stores for token material."
+     },
+     "secondary_dispositions": [
+      "needs_investigation"
+     ],
+     "severity": "medium",
+     "statement": "NFR-5 separates credentials for memory_sensitive, but one Dispatcher routes to both schemas. If a single Router process holds both credentials, the separation does not stop a compromised or buggy Router from reading counselling data, and the NFR-5 test only checks that the credentials differ. Separately, every agent's per-learner store holds access and refresh tokens for all learners, with no requirement for secret storage, encryption or rotation. The 48-hour token lifetime also needs checking against Entra ID policy.",
+     "tags": [
+      "secrets",
+      "credentials",
+      "Entra ID"
+     ],
+     "title": "Credential separation not tied to process isolation; learner refresh tokens stored in agent memory"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": "security_privacy_gap",
+     "confidence": 0.55,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "refinement_now",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 6,
+       "quote": "Private by default - memory is private to the learner, shared by exception, anonymised for service",
+       "requirement_ids": [
+        "P2"
+       ],
+       "section_ref": "3"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 21,
+       "quote": "Example: ICT-2024-intake concept difficulty patterns from AI Tutor aggregate.",
+       "requirement_ids": [],
+       "section_ref": "22"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-30",
+       "quote": "Private by default - memory is private to the learner, shared by exception, anonymised for service",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-31",
+       "quote": "Example: ICT-2024-intake concept difficulty patterns from AI Tutor aggregate.",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-010",
+     "kind": "gap",
+     "next_step": {
+      "action": "Set the minimum aggregation threshold and the approved anonymisation technique.",
+      "owner": "Data governance officer / DPO"
+     },
+     "no_change_rationale": null,
+     "rank": 10,
+     "reassessment": null,
+     "recommendation": {
+      "change_summary": "Add a subsection to Section 22 defining aggregation rules (minimum group size k, suppression of free text, exclusion of RESTRICTED as well as HIGHLY_RESTRICTED sources) and a DPO sign-off gate. Add an acceptance test.",
+      "expected_benefit": "Aggregate sharing stays consistent with P2 and PDPA obligations.",
+      "issue": "No anonymisation standard covers data shared across learners.",
+      "objective_refs": [
+       "P2",
+       "NFR-7"
+      ],
+      "rationale": "P2 depends on aggregates being genuinely non-identifying.",
+      "supporting_evidence_ids": [
+       "NEW-30",
+       "NEW-31"
+      ],
+      "verification": "Test: aggregates for groups smaller than k are suppressed, and no aggregate record contains learner_id or pii fields."
+     },
+     "secondary_dispositions": [
+      "governance_decision"
+     ],
+     "severity": "medium",
+     "statement": "Cross-learner patterns and cohort aggregates are readable by all agents and described as 'anonymised' or 'sensitivity-stripped'. No method, minimum group size or re-identification test is defined. Cohort-level patterns from small intakes or modules can identify individuals, which undercuts P2 'private by default'. Cohort design is in the backlog, but the anonymisation standard is not listed there.",
+     "tags": [
+      "anonymisation",
+      "aggregates",
+      "privacy"
+     ],
+     "title": "Anonymisation method for cross-learner and cohort patterns unspecified"
+    },
+    {
+     "acknowledged_in_doc": false,
+     "affected_decisions": [],
+     "category": null,
+     "confidence": 0.8,
+     "criterion_ids": [
+      "security_and_privacy"
+     ],
+     "disposition": "no_change",
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 15,
+       "quote": "Access control is pre-retrieval. The namespace check gates the query itself - not the returned results.",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "15"
+      },
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 26,
+       "quote": "Six test cases, one per check, each asserting a DENY with the correct reason",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "27.1"
+      }
+     ],
+     "evidence": [
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-32",
+       "quote": "Access control is pre-retrieval. The namespace check gates the query itself - not the returned results.",
+       "source_type": "doc",
+       "supports_claim": true
+      },
+      {
+       "derived_from": [],
+       "evidence_id": "NEW-33",
+       "quote": "Six test cases, one per check, each asserting a DENY with the correct reason",
+       "source_type": "doc",
+       "supports_claim": true
+      }
+     ],
+     "id": "FND-011",
+     "kind": "strength",
+     "next_step": null,
+     "no_change_rationale": "The checks fail closed, are logged and are testable per check, which directly meets FR-4 and P3.",
+     "rank": 11,
+     "reassessment": null,
+     "recommendation": null,
+     "secondary_dispositions": [],
+     "severity": null,
+     "statement": "Section 15 defines six ordered checks that gate the query itself, deny on any failure with a logged reason, and check read and write permissions separately. FR-4 is backed by one acceptance test per check. This gives a concrete, testable enforcement point for P3 and FR-4.",
+     "tags": [
+      "access control",
+      "gateway"
+     ],
+     "title": "Ordered pre-retrieval Gateway checks with deny-and-log and per-check tests"
+    }
+   ],
+   "sound_areas": [
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 15,
+       "quote": "Access control is pre-retrieval. The namespace check gates the query itself - not the returned results.",
+       "requirement_ids": [
+        "FR-4"
+       ],
+       "section_ref": "15"
+      }
+     ],
+     "evidence_ids": [
+      "NEW-32",
+      "NEW-33"
+     ],
+     "related_finding_ids": [
+      "FND-011"
+     ],
+     "section_refs": [
+      "15",
+      "27.1"
+     ],
+     "why_sound": "The Gateway enforces access before retrieval with ordered, fail-closed, logged checks, and each check has a matching test. This meets FR-4 and P3."
+    },
+    {
+     "doc_anchors": [
+      {
+       "doc_id": "DOC-sit_sample_v1",
+       "page": 17,
+       "quote": "separate topics per sensitivity tier keep HIGHLY_RESTRICTED writes physically isolated in transit.",
+       "requirement_ids": [
+        "FR-9"
+       ],
+       "section_ref": "18"
+      }
+     ],
+     "evidence_ids": [
+      "NEW-18"
+     ],
+     "related_finding_ids": [
+      "FND-005",
+      "FND-006"
+     ],
+     "section_refs": [
+      "18"
+     ],
+     "why_sound": "An async Kafka write path with separate per-tier topics is an appropriate way to absorb term-start write spikes without blocking agents (NFR-3), subject to the failure handling in FND-005."
+    }
+   ]
+  },
+  "prompt_hash": "5bb89152d4294f070790a6be10d364124450adbc23f7f6323ad8b9431e7ca2aa",
+  "salvaged": 0
+ }
+}

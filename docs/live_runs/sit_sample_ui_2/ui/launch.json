@@ -1,0 +1,20 @@
+{
+ "run_id": "ui-261004-034213-c5cb",
+ "display": "dra review runs/ui-261004-034213-c5cb/ui/input/sit_sample_v1.pdf --profile demo --run-id ui-261004-034213-c5cb",
+ "args": [
+  "review",
+  "runs/ui-261004-034213-c5cb/ui/input/sit_sample_v1.pdf",
+  "--profile",
+  "demo",
+  "--run-id",
+  "ui-261004-034213-c5cb"
+ ],
+ "started_at": "2026-10-04T03:42:13Z",
+ "pid": 5683,
+ "document": "ui-261004-034213-c5cb/ui/input/sit_sample_v1.pdf",
+ "document_name": "sit_sample_v1.pdf",
+ "v1": null,
+ "profile": "demo",
+ "no_tools": false,
+ "source_url": null
+}
