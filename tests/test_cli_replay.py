@@ -228,10 +228,24 @@ def test_replay_refuses_run_dirs_lacking_data(cfgdir: Path, tmp_path: Path) -> N
     old = tmp_path / "old"
     shutil.copytree(src, old)
     man = json.loads((old / "manifest.json").read_text(encoding="utf-8"))
+    files = man["extra"]["prompts"]["files"]
+    assert "prompts/assess.md" in files
+    # a prompt file added since the run is not a change to the run's prompts (the bundle hash differs, the files
+    # the run rendered do not)
     man["prompts_bundle_sha256"] = "f" * 64
     (old / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
     res = invoke(["replay", str(old), "--config", str(cfgdir)])
-    assert res.exit_code == 2 and "prompts changed" in res.output
+    assert "prompts changed" not in res.output, res.output
+    # a prompt file the run rendered has changed: refused, naming the file
+    man["extra"]["prompts"]["files"]["prompts/assess.md"] = "f" * 64
+    (old / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    res = invoke(["replay", str(old), "--config", str(cfgdir)])
+    assert res.exit_code == 2 and "prompts changed since the run (prompts/assess.md)" in res.output
+    # an older record without the file map is held to the bundle hash
+    del man["extra"]["prompts"]["files"]
+    (old / "manifest.json").write_text(json.dumps(man), encoding="utf-8")
+    res = invoke(["replay", str(old), "--config", str(cfgdir)])
+    assert res.exit_code == 2 and "prompts changed since the run (bundle" in res.output
     # 5. no such run
     assert invoke(["replay", str(tmp_path / "nope"), "--config", str(cfgdir)]).exit_code == 2
 

@@ -51,6 +51,7 @@ from sit_review_agent.clock import FakeClock, isoformat_z
 from sit_review_agent.config import EffectiveConfig, Transport
 from sit_review_agent.errors import AgentError, ExitCode, InputError, LLMError, ReplayMiss, ToolError
 from sit_review_agent.hashing import sha256_file, sha256_json
+from sit_review_agent.prompts import PromptBundle
 from sit_review_agent.rundir import JsonlWriter, RunDir, write_json_atomic
 from sit_review_agent.states import PhaseName
 
@@ -59,6 +60,30 @@ BANNER_PREFIX = "> **Replayed evidence.**"
 
 #: Backends whose request-hash recipe :func:`request_hash` knows.
 KNOWN_BACKENDS = ("anthropic_api", "claude_code", "fake")
+
+
+def _check_prompts(manifest: Mapping[str, Any]) -> None:
+    """Refuse a replay whose prompts are not the run's. Every prompt file the run recorded
+    (``extra.prompts.files``, path to SHA-256) must exist unchanged now; a prompt file added since the
+    run (one another condition renders, such as ``assess_single.md`` for B0) changes the bundle hash but
+    not what this run's calls rendered, so it does not refuse. A manifest without the file map (an older
+    record) is held to the whole bundle hash. The request-body hash of every replayed call remains the
+    hard check (:class:`ReplayMismatch`)."""
+    bundle = PromptBundle.load()
+    commit = manifest.get("git_commit") or "the run's commit"
+    files = ((manifest.get("extra") or {}).get("prompts") or {}).get("files")
+    if isinstance(files, dict) and files:
+        now = {f"prompts/{n}": h for n, h in bundle.files.items()}
+        changed = sorted(p for p, h in files.items() if now.get(p) != h)
+        if changed:
+            raise ReplayDataError(f"prompts changed since the run ({', '.join(changed)}); replay needs the prompts "
+                                  f"the run used: check out {commit}")
+        return
+    recorded = str(manifest.get("prompts_bundle_sha256") or "")
+    if recorded and recorded != bundle.bundle_sha256:
+        raise ReplayDataError(f"prompts changed since the run (bundle {recorded[:12]} recorded, "
+                              f"{bundle.bundle_sha256[:12]} now); replay needs the prompts the run used: check out "
+                              f"{commit}")
 
 
 class ReplayDataError(InputError):
@@ -342,7 +367,6 @@ def _needs_catalogue(config: EffectiveConfig, state: Mapping[str, Any]) -> bool:
 
 def load_source(run_dir: Path) -> SourceRun:
     """Read and check a recorded run directory; :class:`ReplayDataError` names what is missing."""
-    from sit_review_agent.prompts import PromptBundle
 
     rd = RunDir(Path(run_dir))
     if not rd.root.is_dir():
@@ -379,12 +403,7 @@ def load_source(run_dir: Path) -> SourceRun:
     if catalogue is None and _needs_catalogue(config, state):
         raise ReplayDataError(f"{rd.root}: cannot replay the research stage: {source}. Replay needs the tool "
                               "list each research call offered (see the replay section of agent/README.md)")
-    recorded = str(manifest.get("prompts_bundle_sha256") or "")
-    current = PromptBundle.load().bundle_sha256
-    if recorded and recorded != current:
-        commit = manifest.get("git_commit") or "the run's commit"
-        raise ReplayDataError(f"prompts changed since the run (bundle {recorded[:12]} recorded, {current[:12]} now); "
-                              f"replay needs the prompts the run used: check out {commit}")
+    _check_prompts(manifest)
     return SourceRun(rd=rd, config=config, state=state, report=report, manifest=manifest, calls=calls,
                      tool_entries=tool_entries, catalogue=catalogue, catalogue_source=source, backend=backend,
                      config_source=config_source, listings=listings)
