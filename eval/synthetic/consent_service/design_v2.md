@@ -261,7 +261,7 @@ Purpose codes are never reused. A retired purpose keeps its history and its even
 
 A customer is identified by their Merbau ID subject (`mid`, a UUID issued by the group identity provider over OIDC). Online channels always carry the `mid` of the signed-in customer. The contact centre and stores look the customer up by mobile number or email and confirm identity with a one-time code sent to the registered mobile number before any change is recorded.
 
-A contact point is a channel address: a Singapore telephone number, an email address or an app installation. Consents for the purposes MKT-SMS and MKT-VOICE are held per contact point, because the DNC provisions apply per Singapore telephone number and because a customer may have several lines (family plans average 2.3 lines per account holder). Consents for the other purposes are held per customer.
+A contact point is a channel address: a Singapore telephone number, an email account or an app installation. Consents for the purposes MKT-SMS and MKT-VOICE are held per contact point, because the DNC provisions apply per Singapore telephone number and because a customer may have several lines (family plans average 2.3 lines per account holder). Consents for the other purposes are held per customer.
 
 The `contact_point` table links each contact point to the `mid` that owns it. When a mobile line is terminated, the consents held on its number remain on the contact point record, which keeps the history of the number complete for audit.
 
@@ -347,7 +347,7 @@ The Merbau Data Hub cluster is shared by the group's data products. Any service 
 
 ### 14.3 Event payload
 
-Each event describes a single change: the subject, one purpose, the new state, the `seq`, the channel and actor, and the effective time. Each event also carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email address and postal address), so that consumers never need to call back into Izin to act on an event.
+Each event describes a single change: the subject, one purpose, the new state, the `seq`, the channel and actor, and the effective time. Each event also carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email and postal address), so that consumers never need to call back into Izin to act on an event.
 
 Events use a versioned Avro schema in the Data Hub schema registry with backward-compatible evolution only.
 
@@ -369,7 +369,7 @@ The relay attempts to publish each outbox row up to five times with exponential 
 
 Consumers apply events in the order received. Kempen and the contact centre CRM treat any non-200 response or timeout from the Eligibility API as "do not contact" (P5), and Kempen records the skipped recipients with the reason so that Marketing can see the effect.
 
-Each partner file contains, per customer whose partner-sharing state changed since the previous file, the name, mobile number, email address, Rewards tier and the new state. The partner contract requires the partner to stop using the customer's details for marketing within one business day of a withdrawal appearing in a file.
+Each partner file contains, per customer whose partner-sharing state changed since the previous file, the name, mobile number, email, Rewards tier and the new state. The partner contract requires the partner to stop using the customer's details for marketing within one business day of a withdrawal appearing in a file.
 
 ---
 
@@ -396,7 +396,7 @@ A GRANTED state captured through Izin always carries an evidence reference (Sect
 
 A consent receipt is a record, given to the customer, of a consent change: what changed, when, through which channel, and the notice version that applied. The Receipt Service creates a receipt for each change request (a request that changes several purposes at once gets one receipt listing all of them).
 
-Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence, for reference in calls and letters. The receipt link carries a separate random 128-bit token (`https://izin.merbau.sg/r/{token}`), stored only as its SHA-256 hash, and the link expires 30 days after issue. Without signing in, the receipt page shows the customer's first name, the masked mobile number or email address the receipt was sent to, the receipt number, and the purposes changed with their new states and the time of the change. The current state of every other purpose, and the full contact details, are shown only after the customer signs in with Merbau ID.
+Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence, for reference in calls and letters. The receipt link carries a separate random 128-bit token (`https://izin.merbau.sg/r/{token}`), stored only as its SHA-256 hash, and the link expires 30 days after issue. Without signing in, the receipt page shows the customer's first name, the masked mobile number or email the receipt was sent to, the receipt number, and the purposes changed with their new states and the time of the change. The current state of every other purpose, and the full contact details, are shown only after the customer signs in with Merbau ID.
 
 Receipts are sent by SMS to the mobile number on the profile, or by email where the customer has no mobile number. Receipts are not themselves marketing and are sent under SVC-NOTICE.
 
@@ -447,10 +447,10 @@ CREATE TABLE consent_event (
   evidence_ref     text,
   idempotency_key  text NOT NULL,
   captured_at      timestamptz NOT NULL,
-  recorded_at      timestamptz NOT NULL DEFAULT now(),
+  stored_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (subject_type, subject_id, purpose_code, seq),
   UNIQUE (actor_type, idempotency_key)
-) PARTITION BY RANGE (recorded_at);
+) PARTITION BY RANGE (stored_at);
 
 CREATE TABLE consent_state (
   subject_type     text NOT NULL,
@@ -481,7 +481,7 @@ CREATE TABLE outbox (
 );
 ```
 
-`consent_event` is partitioned by month of `recorded_at`. Customer profile fields used in events and receipts (name, NRIC number, date of birth, postal address) are read from the group customer master at write time and are not stored in Izin tables.
+`consent_event` is partitioned by month of `stored_at`. Customer profile fields used in events and receipts (name, NRIC number, date of birth, postal address) are read from the group customer master at write time and are not stored in Izin tables.
 
 ---
 
@@ -653,7 +653,7 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | FR-6 | Eligibility decision table test | For every combination in Section 16, the API returns the documented decision. |
 | FR-7 | DNC test with the registry test environment | Numbers registered in the test registry are refused without evidential consent and allowed with it. |
 | FR-8 | Preference centre end-to-end test | Every purpose is listed with its state and notice text; a change made in the app is shown on the web after reload. |
-| FR-9 | Receipt test | For 500 changes across every channel, each produces exactly one receipt within five minutes, sent to the mobile number or, for profiles with no mobile number, the email address; the receipt link opens the receipt without sign-in, shows only the fields listed in Section 17, and stops working after 30 days. |
+| FR-9 | Receipt test | For 500 changes across every channel, each produces exactly one receipt within five minutes, sent to the mobile number or, for profiles with no mobile number, the email; the receipt link opens the receipt without sign-in, shows only the fields listed in Section 17, and stops working after 30 days. |
 | FR-10 | Partner API conformance test | A registered partner can submit only its listed purposes; an unregistered certificate is refused. |
 | FR-11 | Evidence export test | For 50 seeded customers, the export contains every event, the notice texts and the DNC results, and the signature verifies. |
 | FR-12 | Keyword and IVR test | A STOP reply and the IVR opt-out each produce a withdrawal on the number within one minute. |

@@ -242,7 +242,7 @@ Purpose codes are never reused. A retired purpose keeps its history and its even
 
 A customer is identified by their Merbau ID subject (`mid`, a UUID issued by the group identity provider over OIDC). Online channels always carry the `mid` of the signed-in customer. The contact centre and stores look the customer up by mobile number or email and confirm identity with a one-time code sent to the registered mobile number before any change is recorded.
 
-A contact point is a channel address: a Singapore telephone number, an email address or an app installation. Consents for the purposes MKT-SMS and MKT-VOICE are held per contact point, because the DNC provisions apply per Singapore telephone number and because a customer may have several lines (family plans average 2.3 lines per account holder). Consents for the other purposes are held per customer.
+A contact point is a channel address: a Singapore telephone number, an email account or an app installation. Consents for the purposes MKT-SMS and MKT-VOICE are held per contact point, because the DNC provisions apply per Singapore telephone number and because a customer may have several lines (family plans average 2.3 lines per account holder). Consents for the other purposes are held per customer.
 
 The `contact_point` table links each contact point to the `mid` that owns it. When a mobile line is terminated, the consents held on its number remain on the contact point record, which keeps the history of the number complete for audit.
 
@@ -328,7 +328,7 @@ The Merbau Data Hub cluster is shared by the group's data products. Any service 
 
 ### 14.3 Event payload
 
-Each event describes a single change: the subject, one purpose, the new state, the `seq`, the channel and actor, and the effective time. Each event also carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email address and postal address), so that consumers never need to call back into Izin to act on an event.
+Each event describes a single change: the subject, one purpose, the new state, the `seq`, the channel and actor, and the effective time. Each event also carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email and postal address), so that consumers never need to call back into Izin to act on an event.
 
 Events use a versioned Avro schema in the Data Hub schema registry with backward-compatible evolution only.
 
@@ -350,7 +350,7 @@ The relay attempts to publish each outbox row up to five times with exponential 
 
 Consumers apply events in the order received. Kempen and the contact centre CRM treat any non-200 response or timeout from the Eligibility API as "do not contact" (P5), and Kempen records the skipped recipients with the reason so that Marketing can see the effect.
 
-Each partner file contains, per customer whose partner-sharing state changed since the previous file, the name, mobile number, email address, Rewards tier and the new state. The partner contract requires the partner to stop using the customer's details for marketing within one business day of a withdrawal appearing in a file.
+Each partner file contains, per customer whose partner-sharing state changed since the previous file, the name, mobile number, email, Rewards tier and the new state. The partner contract requires the partner to stop using the customer's details for marketing within one business day of a withdrawal appearing in a file.
 
 ---
 
@@ -377,7 +377,7 @@ A GRANTED state captured through Izin always carries an evidence reference (Sect
 
 A consent receipt is a record, given to the customer, of a consent change: what changed, when, through which channel, and the notice version that applied. The Receipt Service creates a receipt for each change request that FR-9 requires one for (a request that changes several purposes at once gets one receipt listing all of them).
 
-Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence. A receipt is viewable at `https://izin.merbau.sg/r/{receipt_number}` without signing in, so that customers who changed their preferences through the contact centre or in a store can open it from the SMS link. The receipt page shows the customer's name, mobile number, email address, the purposes changed with their new states, and the current state of every other purpose.
+Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence. A receipt is viewable at `https://izin.merbau.sg/r/{receipt_number}` without signing in, so that customers who changed their preferences through the contact centre or in a store can open it from the SMS link. The receipt page shows the customer's name, mobile number, email, the purposes changed with their new states, and the current state of every other purpose.
 
 Receipts are sent by SMS to the mobile number on the profile, or by email where the customer has no mobile number. Receipts are not themselves marketing and are sent under SVC-NOTICE.
 
@@ -428,10 +428,10 @@ CREATE TABLE consent_event (
   evidence_ref     text,
   idempotency_key  text NOT NULL,
   captured_at      timestamptz NOT NULL,
-  recorded_at      timestamptz NOT NULL DEFAULT now(),
+  stored_at        timestamptz NOT NULL DEFAULT now(),
   UNIQUE (subject_type, subject_id, purpose_code, seq),
   UNIQUE (actor_type, idempotency_key)
-) PARTITION BY RANGE (recorded_at);
+) PARTITION BY RANGE (stored_at);
 
 CREATE TABLE consent_state (
   subject_type     text NOT NULL,
@@ -462,7 +462,7 @@ CREATE TABLE outbox (
 );
 ```
 
-`consent_event` is partitioned by month of `recorded_at`. Customer profile fields used in events and receipts (name, NRIC number, date of birth, postal address) are read from the group customer master at write time and are not stored in Izin tables.
+`consent_event` is partitioned by month of `stored_at`. Customer profile fields used in events and receipts (name, NRIC number, date of birth, postal address) are read from the group customer master at write time and are not stored in Izin tables.
 
 ---
 
