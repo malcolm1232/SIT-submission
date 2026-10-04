@@ -69,7 +69,8 @@ complete answer with problems is split (``call_model(split=...)``, :func:`split_
 revision that holds on its own (the same test as the salvage above) is kept as the model gave it; the
 findings without one are named in the correction of the one repair call, which is asked for those
 only and told the free ranks. What comes back (the repair answer, or the finished revisions of a repair
-cut at the stage limit; nothing from one declined or truncated twice) is merged with the kept revisions
+cut at the stage limit; nothing from one declined, truncated twice, off the schema or failed with
+another model error, which ``call_model`` returns instead of raising) is merged with the kept revisions
 and goes through :func:`salvage_revisions` as one set (:func:`repair_outcome`): a repaired revision
 that still fails is dropped, never applied, and its finding is unrefined as above. A revision the
 repair gives for a kept finding is ignored. The disclosure states the counts ("54 of 55 refine
@@ -375,6 +376,10 @@ def repair_outcome(call: PhaseCall, drafts: Sequence[FindingDraft]) -> Repair | 
         how = "was cut by the stage limit"
     elif call.truncated:
         given, how = [], "was truncated twice at the output cap"
+    elif call.repair_error == "LLMSchemaError":
+        given, how = [], "did not match the output schema"
+    elif call.repair_error is not None:
+        given, how = [], f"failed ({call.repair_error})"
     else:
         given, how = [], "was declined"
 
@@ -534,10 +539,17 @@ class RefinePhase:
                     DegradationType.OTHER,
                     "the refine revisions could not be applied after one repair call for the failing ones",
                     REFINE_FALLBACK_IMPACT)
+            elif call.repair_error is not None:
+                ctx.state.add_degradation(
+                    DegradationType.OTHER,
+                    f"the refine revisions could not be applied: the repair call for the failing ones failed "
+                    f"({call.repair_error})", REFINE_FALLBACK_IMPACT)
+            if call.split is not None and call.declined and phase.value not in ctx.state.declined_sections:
+                ctx.state.declined_sections.append(phase.value)    # declined only when nothing was applied
             prior_statuses(answers, set(ids))
             ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order", "warn",
                       event="refine_fallback", cut=call.cut, truncated=call.truncated, invalid=bool(call.invalid),
-                      declined=not (call.cut or call.truncated or call.invalid))
+                      declined=not (call.cut or call.truncated or call.invalid or call.repair_error))
             return ctx                                     # cut, truncated or declined: disclosed by call_model
         else:
             raw = result.parsed

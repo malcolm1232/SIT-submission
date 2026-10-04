@@ -34,7 +34,10 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   (``PhaseCall.partial``). Other :class:`LLMError`\\ s propagate. A complete answer that broke the
   phase's rules (``check``) gets one repair call; refine keeps the revisions that pass on their own and
   asks that call only for the failing ones (``split``, :class:`KeptItems`), so a repair cut at the
-  stage limit costs the failing revisions, never the valid ones (rehearsal of 2026-10-04).
+  stage limit costs the failing revisions, never the valid ones (rehearsal of 2026-10-04). A repair
+  call of that kind that fails on the schema or with another :class:`LLMError` returns the kept items
+  with ``PhaseCall.repair_error`` set instead of raising, so the run keeps them and reaches its
+  report; a failure of the first call still propagates.
 * **Progress (rule 6):** a step line before and after every call and on every retry; the 10 s
   heartbeat during a call comes from the live gateways (``AnthropicGateway`` and
   ``ClaudeCodeGateway`` emit it when built with ``progress``, as ``llm.backend.build_llm_gateway``
@@ -59,7 +62,16 @@ from typing import Any, Protocol, TypeVar
 from pydantic import BaseModel, ValidationError
 
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMDeadlineError, LLMRefusalError, LLMSchemaError, LLMTruncatedError
+from sit_review_agent.errors import (
+    EffortChangedError,
+    FakeScriptExhausted,
+    LLMBadRequestError,
+    LLMDeadlineError,
+    LLMError,
+    LLMRefusalError,
+    LLMSchemaError,
+    LLMTruncatedError,
+)
 from sit_review_agent.ingest.pdf import Document
 from sit_review_agent.ingest.text import flatten_for_match, normalise_quote, quote_tokens
 from sit_review_agent.llm.backend import supports_native_pdf
@@ -130,10 +142,14 @@ class PhaseCall:
     #: and checks the merged set itself; ``check`` and ``ask`` are not run on the repair answer.
     first: LLMResult[Any] | None = None
     split: KeptItems | None = None
+    #: With ``split``: the class name of the error that ended the repair call (``LLMSchemaError`` or
+    #: another :class:`LLMError`, never a deadline), which is returned instead of raised.
+    repair_error: str | None = None
 
     @property
     def declined(self) -> bool:
-        return self.result is None and not self.cut and not self.truncated and not self.invalid
+        return (self.result is None and not self.cut and not self.truncated and not self.invalid
+                and self.repair_error is None)
 
 
 @dataclass(frozen=True)
@@ -309,6 +325,21 @@ def truncated_twice(ctx: RunContext, phase: PhaseName, max_tokens: int, call_ids
               call_ids=[c for c in call_ids if c])
 
 
+#: Errors that name a bug in the agent or a test script, never a model's failure: always raised.
+_CODE_BUGS = (FakeScriptExhausted, EffortChangedError, LLMBadRequestError)
+
+
+def _repair_failed(ctx: RunContext, phase: PhaseName, brief: RenderedPrompt, exc: LLMError,
+                   first: LLMResult[Any] | None, kept: KeptItems) -> PhaseCall:
+    """The repair call for the failing items only failed (schema or another model error): the kept
+    items stand, the caller merges and discloses (``PhaseCall.repair_error``)."""
+    name = type(exc).__name__
+    ctx_event(ctx, f"{phase.value} repair call failed ({name}); the {len(kept.kept)} kept item(s) stand", "warn",
+              event="answer_unusable", stage=phase.value, call_id=exc.call_id, problems=len(kept.retry),
+              error=name, kept=len(kept.kept), retry=len(kept.retry))
+    return PhaseCall(result=None, brief=brief, first=first, split=kept, repair_error=name)
+
+
 async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, schema: type[BaseModel] | None, *,
                      iteration: int = 0, purpose: str | None = None, conversation: str | None = None,
                      disclose: bool = True, check: Callable[[Any], list[str]] | None = None,
@@ -334,7 +365,9 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     the rest (``KeptItems.instruction`` joins the correction) and the call returns right after the
     repair call with ``first`` (the first answer) and ``split`` set, whatever the repair call's end:
     the repair answer in ``result``, a cut with ``partial``, a persistent refusal or a second
-    truncation with neither. The caller merges the kept items with what came back and checks the whole;
+    truncation with neither, a schema or other model error with ``repair_error`` (never raised:
+    the kept items survive it; a persistent refusal there adds nothing to ``declined_sections``,
+    the caller decides). The caller merges the kept items with what came back and checks the whole;
     ``check`` and ``ask`` are not run on a repair answer that covers only part of the whole. With
     ``None`` from ``split`` (nothing to keep) the whole answer is asked again, as without ``split``."""
     effort = ctx.config.effort_for(phase)
@@ -391,7 +424,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                 f"the model declined the {phase.value} call after a reframed retry (refusal category: "
                 f"{exc.category or 'none given'})",
                 f"the {phase.value} step was completed without model output; see the report's limitations")
-            if phase.value not in ctx.state.declined_sections:
+            if kept is None and phase.value not in ctx.state.declined_sections:   # with kept items the caller decides
                 ctx.state.declined_sections.append(phase.value)
             ctx_event(ctx, f"model declined {phase.value} twice; continuing without it", "warn", event="declined",
                       stage=phase.value, call_id=exc.call_id, category=exc.category)
@@ -400,6 +433,8 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
                 _note_call(ctx, phase, exc.call_id)
             add_usage(ctx.state.budget, exc.usage)
+            if kept is not None:
+                return _repair_failed(ctx, phase, brief, exc, first, kept)
             if repaired:
                 raise
             repaired, schema_error, k, reason = True, _short_error(exc), k + 1, "schema_repair"
@@ -431,6 +466,15 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             ctx_event(ctx, f"answer truncated at max_tokens; retrying once {how}", "warn", event="call_retry",
                       reason="max_tokens_retry", stage=phase.value, call_id=exc.call_id, max_tokens=wider)
             continue
+        except LLMError as exc:
+            # A failed repair call for the failing items only keeps the valid ones (and the run its
+            # report); a failure of any other call, or a code bug, propagates.
+            if kept is None or isinstance(exc, _CODE_BUGS):
+                raise
+            if exc.call_id and exc.call_id not in ctx.state.llm_calls.get(phase.value, []):
+                _note_call(ctx, phase, exc.call_id)
+            add_usage(ctx.state.budget, exc.usage)
+            return _repair_failed(ctx, phase, brief, exc, first, kept)
         record_result(ctx, phase, result)
         if kept is not None:                # the repair call answered for the rest; the caller merges and checks
             return PhaseCall(result=result, brief=brief, first=first, split=kept)
