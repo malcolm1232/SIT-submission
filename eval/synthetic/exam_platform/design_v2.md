@@ -6,11 +6,16 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
-| **Status** | Design phase; build not started |
-| **Last updated** | 2026-09-18 (architecture); consolidated 2026-09-26 |
+| **Version** | 1.1 |
+| **Status** | Design phase; build not started; revised after the October 2026 architecture review |
+| **Last updated** | 2026-10-14 (architecture); consolidated 2026-10-16 |
 | **Prepared by** | Siam Examinations and Certification Board (SECB), Digital Platforms Division |
 | **Companion documents** | PHON Conceptual Design v1.3; Examination Regulations 2027 (Chief Examiner's Office); Marking Centre Operations Manual; Data Protection Impact Assessment (draft) |
+
+| Version | Date | Sections changed |
+|---|---|---|
+| 1.0 | 2026-09-26 | First consolidated design |
+| 1.1 | 2026-10-16 | 2.2 (NFR-3); 14.2; 14.3; 18.2; 18.4; 19.1; 21.2; 24.2; 25.2; 27 (DEC-02, DEC-09); 29.1 (FR-8); 29.2 (NFR-2, NFR-3, NFR-6) |
 
 ---
 
@@ -46,6 +51,12 @@
 28. Pending Backlog
 29. Validation and Acceptance Criteria
 30. Implementation Readiness Assessment and Build Phases
+
+---
+
+## Changes since version 1.0
+
+Version 1.1 revises the following sections after the architecture review of October 2026 and the Chief Examiner's Office's comments on the moderation design. Section 2.2 restates NFR-3 with a measurable threshold. Sections 14.2 and 14.3 record moderation adjustments per script in their own table. Sections 18.2 and 25.2 describe the results tier serving pre-rendered result objects, with the sizing restated for the observed release-day peak. Section 18.4 and DEC-09 add a second SMS aggregator. Section 19.1 changes the publication time of the school results files. Section 21.2 lists the marks capture tables after the moderation change. Section 24.2 and DEC-02 describe the marks capture database deployment. Section 29.1 revises the FR-8 acceptance test and Section 29.2 the NFR-2, NFR-3 and NFR-6 tests. All other sections are unchanged from version 1.0.
 
 ---
 
@@ -93,7 +104,7 @@ Question-paper setting and printing (a separate secure facility), on-screen mark
 |---|---|
 | NFR-1 | The registration portal shall be available 99.9 percent of the time during the registration window, measured monthly. |
 | NFR-2 | The results portal and app shall serve every candidate's result during the first hour after release with no more than 0.1 percent of requests failing, at the release-day load described in Section 4. |
-| NFR-3 | Results pages shall load quickly for the great majority of candidates throughout the release window. |
+| NFR-3 | Results reads shall complete within 2 seconds at the 95th percentile, measured from the API Gateway request to the complete response, in every one-minute interval of the first hour after release at the release-day load described in Section 4. |
 | NFR-4 | SMS results shall be delivered to every candidate who opted in within 20 minutes of release. |
 | NFR-5 | A result shall be visible to the candidate it belongs to and to that candidate's school, and to nobody else outside SECB's results team. |
 | NFR-6 | Registration data, captured marks, moderated marks and grades shall be recoverable to within 5 minutes of any failure, including the loss of a database instance or an Availability Zone. |
@@ -283,11 +294,11 @@ Moderation aligns marking standards across markers and centres. For each compone
 
 ### 14.2 Applying adjustments
 
-Adjustments are applied by updating `mark` on the `script_mark` row to the moderated value, and the moderation run records, per marker and component, the formula applied and the number of scripts affected. A moderation run for a component is executed once the component's capture is complete, by a Moderation Officer, and produces a moderation report listing each marker's formula and the distribution of marks before and after. The Chief Examiner's Office signs the report, and the component is then available to grade computation.
+Adjustments are applied by writing one `mark_adjustment` row per script, carrying the `script_mark` row it applies to, the moderation run, the formula parameters, the captured mark and the resulting moderated mark; `script_mark.mark` is never updated after capture, and the moderated mark the Grading Service reads is the captured mark with the adjustment of the signed run applied, so that an appeal has both values and the difference between them. The moderation run records, per marker and component, the formula applied and the number of scripts affected. A moderation run for a component is executed once the component's capture is complete, by a Moderation Officer, and produces a moderation report listing each marker's formula and the distribution of marks before and after. The Chief Examiner's Office signs the report, and the component is then available to grade computation.
 
 ### 14.3 Re-runs
 
-Where the Chief Examiner's Office changes a formula after a run, the Moderation Officer re-runs moderation for the affected marker's scripts with the new formula; the report records both runs.
+Where the Chief Examiner's Office changes a formula after a run, the Moderation Officer re-runs moderation for the affected marker's scripts with the new formula; the re-run writes new `mark_adjustment` rows and marks the earlier run's rows for those scripts `SUPERSEDED` (they are never deleted), and the report records both runs.
 
 ## 15. Grade Computation and Grade Boundaries
 
@@ -335,7 +346,7 @@ The results portal is a static single-page application served by CloudFront; the
 
 ### 18.2 Results Service
 
-The Results Service authorises a request by validating the Cognito session token that API Gateway forwards, and it serves `GET /results/{candidate_id}` for any `candidate_id` in the path when the token is valid. The response is built from the `grade` rows of the candidate's latest `grading_run`, joined to the subject catalogue, and cached in the service's in-memory cache for 60 seconds after the first read for that candidate.
+The Results Service authorises a request by validating the Cognito session token that API Gateway forwards, and it serves `GET /results/{candidate_id}` for any `candidate_id` in the path when the token is valid. The response is the rendered result object for that `candidate_id` in the results bucket (Section 25.2), returned as stored; the service queries no database on the release path.
 
 ### 18.3 Statement of results
 
@@ -343,7 +354,7 @@ The portal offers a PDF statement of results, rendered on request by the Results
 
 ### 18.4 SMS results
 
-Candidates who opted in receive one SMS per candidate at release, with the grade per subject in a fixed template (subject code and grade, separated by spaces) that fits a single message. The Notification Service queues one message per candidate in grade-independent order at 07:55 and begins sending at 08:00:00 through the Ratchaphruek Messaging REST API. The aggregator's contracted throughput is 200 messages per second, so the 375,000 messages for candidates who opted in are all delivered within 15 minutes of the embargo lifting, inside NFR-4. Delivery receipts are stored against the message; a candidate whose message is rejected or expires receives an email instead.
+Candidates who opted in receive one SMS per candidate at release, with the grade per subject in a fixed template (subject code and grade, separated by spaces) that fits a single message. The Notification Service queues one message per candidate in grade-independent order at 07:55 and begins sending at 08:00:00 through two aggregators, Ratchaphruek Messaging and Dok Bua Telecom, each over its REST API. The contracted throughput is 400 messages per second from Ratchaphruek Messaging and 200 from Dok Bua Telecom, 600 in all, so the 375,000 messages for candidates who opted in are handed to the aggregators within about 11 minutes of the embargo lifting, and with the aggregators' own delivery time of under 5 minutes at that rate the last message reaches its handset within about 16 minutes, inside NFR-4. Delivery receipts are stored against the message; a candidate whose message is rejected or expires receives an email instead.
 
 ### 18.5 Contact centre
 
@@ -353,7 +364,7 @@ SECB's contact centre has a read-only results console scoped to the candidate th
 
 ### 19.1 School results files
 
-School result files, one CSV and one PDF per school listing each candidate's grades, are published to the school portal at 06:00 on release day so that schools can prepare their briefing to candidates before the candidates see their own results. School users download the files from the portal with their multi-factor session; downloads are logged.
+School result files, one CSV and one PDF per school listing each candidate's grades, are published to the school portal at 08:00 on release day, at the same moment as the candidate release, and the school's briefing to its candidates follows the release. School users download the files from the portal with their multi-factor session; downloads are logged.
 
 ### 19.2 School statistics
 
@@ -385,7 +396,7 @@ Principal tables: `candidate` (national identity number, names, date of birth, s
 
 ### 21.2 Marks capture instance (RDS for PostgreSQL 16)
 
-Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted total, `question_marks` as a JSON array, `moderation_run_id`), `moderation_run` (component, marker or centre, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only replica endpoint.
+Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted captured total, `question_marks` as a JSON array; immutable after acceptance), `mark_adjustment` (one row per script per moderation run: `script_mark` reference, `moderation_run_id`, formula parameters, captured mark, moderated mark, status `CURRENT` or `SUPERSEDED`), `moderation_run` (component, marker or centre, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only replica endpoint.
 
 ### 21.3 Identifiers and audit
 
@@ -421,7 +432,7 @@ The core Aurora cluster has a writer and two readers in three Availability Zones
 
 ### 24.2 Marks capture instance
 
-The marks capture database is a single-Availability-Zone RDS for PostgreSQL instance (db.r6g.xlarge) in ap-southeast-7a with automated daily snapshots at 02:00 retained for 35 days, and on loss of the instance or its zone it is restored from the most recent snapshot into another zone. The instance is isolated from the internet and reachable only from the capture service and the marking-centre network. Capture operators' sessions are held in the browser, so that an operator whose request fails can resubmit the script once the service is back.
+The marks capture database is a Multi-AZ RDS for PostgreSQL deployment (db.r6g.xlarge, with a synchronous standby in ap-southeast-7b) with continuous backup to S3 and point-in-time recovery to any second in the last 35 days, and on loss of the instance or its zone the standby is promoted within about two minutes with no committed transaction lost. The instance is isolated from the internet and reachable only from the capture service and the marking-centre network. Capture operators' sessions are held in the browser, so that an operator whose request fails can resubmit the script once the service is back.
 
 ### 24.3 Dependencies
 
@@ -439,7 +450,7 @@ The registration tier is sized for the evening peak of about 300 requests per se
 
 ### 25.2 Results tier
 
-The results tier is sized from the sustained average of the previous release day (about 40 requests per second over the 24 hours) with a multiplier of 3 for the release hour, giving a design load of 120 requests per second served by six Results Service pods (two per zone, each measured at 40 requests per second in the prototype) reading from one Aurora reader at db.r6g.large added for the day. The 60-second in-memory cache (Section 18.2) absorbs repeat reads by the same candidate. The scaling runbook step at 06:00 (Section 17.3) applies these numbers.
+The results tier is sized for the observed release-day peak and serves pre-rendered objects. At 02:00 on release day the Results Service renders every candidate's result (the JSON response and the PDF statement of results) from the results snapshot taken at that time into a private S3 bucket keyed by `candidate_id`, and a results read returns the rendered object, so that the release path touches no database. The tier is sized for 8,000 requests per second with 120 Results Service pods (40 per zone, each measured at 90 requests per second against S3 in the prototype), pre-warmed by the 06:00 runbook step (Section 17.3), with S3 request rates spread across 64 key prefixes. Rendered objects are immutable from the 02:00 render until the scheduled re-render at 20:00 on release day, which picks up the day's appeals and clerical entries, so that every candidate reads the same object throughout the release window and no read depends on the database or the cache state.
 
 ### 25.3 Front door
 
@@ -462,14 +473,14 @@ Every service emits structured logs, metrics and traces with the request identif
 | ID | Decision | Rationale |
 |---|---|---|
 | DEC-01 | AWS, ap-southeast-7 (Thailand), three Availability Zones; no cross-Region replication | Data remains in the country; three zones meet NFR-6 for the core |
-| DEC-02 | Aurora PostgreSQL 16 for the core; RDS for PostgreSQL 16 for marks capture, isolated in the marking-centre network | Separation of the capture tier from the internet-facing tier |
+| DEC-02 | Aurora PostgreSQL 16 for the core; Multi-AZ RDS for PostgreSQL 16 with point-in-time recovery for marks capture, isolated in the marking-centre network | Separation of the capture tier from the internet-facing tier; NFR-6 for captured marks |
 | DEC-03 | Amazon MSK with a transactional outbox for all domain events | No dual writes; per-aggregate ordering |
 | DEC-04 | Amazon Cognito for candidates, schools and verifiers; corporate SSO for staff | Managed identity; MFA for schools and staff |
 | DEC-05 | Private candidates are identity-proofed through the national digital identity service, at identity assurance level 2, from the opening of registration for the March 2027 sitting | Prevents impersonation at registration; removes the in-person document check at district offices |
 | DEC-06 | Double entry by two independent operators with third-operator resolution for all marks | Capture accuracy; the Chief Examiner's Office requires it |
 | DEC-07 | Moderation applied per marker by a linear formula approved by the Chief Examiner's Office | Established practice under the Regulations |
 | DEC-08 | Release at 08:00 Indochina Time, embargo enforced by the Results Service against the writer clock | One clock, fail closed |
-| DEC-09 | SMS results through Ratchaphruek Messaging at the contracted 200 messages per second | Existing contract; covers NFR-4 |
+| DEC-09 | SMS results through two aggregators, Ratchaphruek Messaging (400 messages per second) and Dok Bua Telecom (200 messages per second) | Combined 600 messages per second covers NFR-4 with a second provider for resilience |
 | DEC-10 | Certificates signed with a KMS-held key, random certificate numbers, verification by number plus name plus date of birth | Minimal disclosure; verifiable without an account |
 | DEC-11 | Candidate-level nightly export to the Ministry's analytics tenant | Ministry's longitudinal analysis programme |
 | DEC-12 | Results and certificates retained 30 years; contact details two years | Certificate queries; PDPA retention principle |
@@ -497,7 +508,7 @@ Every service emits structured logs, metrics and traces with the request identif
 | FR-5 | Twenty test candidates with each accommodation type are allocated, and the seat list shows the correct room type and adjusted end time for each. |
 | FR-6 | A script with no scan at the marking centre 24 hours after its bag's receipt appears on the missing-script report. |
 | FR-7 | Marker allocation for a test component places no bundle with a marker from the same school, as checked by a direct query. |
-| FR-8 | The tester keys a batch of 200 scripts in the first-entry screen, then keys the same batch again in the second-entry screen, and confirms that the comparison report shows zero differences and that the marks appear in `script_mark`. |
+| FR-8 | Two operators from different shift teams key a batch of 200 scripts in the first-entry and second-entry screens from two copies of the mark sheets into which 30 differences have been seeded; the comparison report must list exactly those 30 scripts, the resolution queue must offer them to a third operator only (the first two operators must not see them), and `script_mark` must hold only resolved values for the 30 and the agreed values for the 170. |
 | FR-9 | A moderation run on a test component applies the approved formula; the moderation report lists each marker's formula and count. |
 | FR-10, NFR-9 | A grade computation run is repeated on the same inputs and produces byte-identical `grade` rows. |
 | FR-11 | At 07:59:50 a synthetic candidate's results read returns HTTP 423; at 08:00:00 it returns the result. |
@@ -513,11 +524,11 @@ Every service emits structured logs, metrics and traces with the request identif
 | Requirement | Acceptance test |
 |---|---|
 | NFR-1 | Availability of the registration portal is measured over the November test window from synthetic checks every minute. |
-| NFR-2 | A load test replays the previous release day's request pattern at 6,100 requests per second for 10 minutes against the production-sized results tier; failures are below 0.1 percent. |
-| NFR-3 | Page load is observed during the NFR-2 test. |
+| NFR-2 | A load test replays the previous release day's request pattern scaled to 8,000 requests per second for 30 minutes against the production-sized results tier serving rendered objects for 500,000 synthetic candidates; failures are below 0.1 percent. |
+| NFR-3 | During the NFR-2 test the 95th percentile response time is computed per one-minute interval from the API Gateway access logs and is under 2 seconds in every interval. |
 | NFR-4 | 375,000 test messages are sent to the aggregator's test endpoint and the time to the last accepted message is recorded. |
 | NFR-5 | A penetration test of the results tier before release day finds no way for a signed-in test candidate to see another candidate's result. |
-| NFR-6 | The core Aurora writer is failed over during a write load and the data loss is measured; the marks capture instance is failed and restored in the April rehearsal. |
+| NFR-6 | The core Aurora writer and the marks capture primary are each failed over during a write load and the committed transactions lost are counted (the target is none); point-in-time recovery of both to a chosen second is exercised in the April rehearsal and the recovered data is compared with the source. |
 | NFR-7 | The Data Protection Impact Assessment is signed off by the Data Protection Officer before registration opens. |
 | NFR-8 | 2,400 simulated operators key scripts for one hour and the 95th percentile response time is under 300 ms. |
 | NFR-10 | 50 verification requests per second for 10 minutes; 99 percent answered within 2 seconds. |
