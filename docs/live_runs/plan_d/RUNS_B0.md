@@ -15,6 +15,7 @@ Hallucination flags count G1 failures plus adjudicated HALLUCINATED findings (th
 | d_b0_consent_v1_2 | consent_service | B0 | medium | 249 | completed_degraded | 14 | 1 | 0.77 | 5.41, 49 | 4.48, 53 | 11 of 14 | 0.786 | 0.917 | 0.900 | 1.000 | 0 | 2.82 |
 | d_b0_hospital_v1_2 | hospital_scheduling | B0 | medium | 217 | completed_degraded | 15 | 1 | 0.69 | 4.50, 53 | 8.01, 49 | 12 of 14 | 0.857 | 1.000 | 0.967 | 1.000 | 0 | 2.42 |
 | d_b0_ledger_v1_1 | ledger_migration | B0 | medium | 281 | completed_degraded | 19 | 1 | 0.83 | 7.86, 49 | 6.75, 47 | 12 of 14 | 0.929 | 1.000 | 0.917 | 1.000 | 0 | 3.84 |
+| d_b0_exam_v1_1 | exam_platform | B0 | medium | 207 | completed_degraded | 15 | 1 | 0.67 | 6.69, 47 | 6.91, 48 | 12 of 14 | 0.929 | 0.929 | 0.917 | 1.000 | 0 | 2.77 |
 
 Notes
 
