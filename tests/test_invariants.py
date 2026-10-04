@@ -73,6 +73,30 @@ def test_allowed_urls_ignores_inference_statements() -> None:
         "inference:EV-002", "doc:DOC-a#p1/s1", "https://vendor.example/limits", "https://vendor.example/limits/sms"}
 
 
+def test_inv05_quote_cut_inside_a_url_passes_only_when_the_excerpt_urls_are_backed(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """A doc quote that ends partway through a URL of its excerpt is skipped by the URL scan when
+    every URL of the excerpt is allowed (here: in the document text); when the excerpt's URL is not
+    allowed (an excerpt that is a model's anchor quote, URL in no document), the cut URL still fails."""
+    r = copy.deepcopy(review_dict)
+    passage = f" Weekly counts are published at {DOC_URL} for planning."
+    ledger = next(e for e in r["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] += passage
+    cite = next(e for f in r["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
+    cut = DOC_URL[: DOC_URL.index("/stats") + 4]
+    cite["quote"] = f"Weekly counts are published at {cut}"
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == []
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": booking_pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {cut}"]
+    other = copy.deepcopy(r)                                            # a URL of its own in a quote
+    other_cite = next(e for f in other["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
+    other_cite["quote"] += " https://made-up.example/x"
+    problems = inv.check_INV_05(other, texts={"DOC-booking-v1": pages}).problems
+    assert any(p.endswith("evidence EV-004 quote not in the ledger excerpt") for p in problems)
+    assert "URL/DOI in report text not in the ledger: https://made-up.example/x" in problems
+
+
 def test_inv07_requires_disclosure(review_dict: dict[str, Any]) -> None:
     bad = copy.deepcopy(review_dict)
     bad["stop_reason"] = {"code": "deadline", "group": "cap", "detail": None}

@@ -340,7 +340,10 @@ def _ensure_disclosures(ctx: RunContext, calls: list[ResearchLogEntry], stop: St
 def _verbatim_quote(node: dict[str, Any], excerpts: Mapping[str, str]) -> bool:
     """True when ``node["quote"]`` is a checked verbatim passage: a document anchor's quote (INV-04
     resolves it in the canonical text) or a doc or external citation whose quote occurs in its
-    ledger excerpt (verify copied or checked it; INV-05 compares the two)."""
+    ledger excerpt (verify copied or checked it; INV-05 compares the two). INV-05's URL scan skips
+    such a quote only when every URL of its excerpt is allowed
+    (:func:`~sit_review_agent.invariants.quote_backed_by_excerpt`); a kept quote whose excerpt holds an
+    unbacked URL (a model's anchor quote recorded as the excerpt) fails the run closed, by design."""
     if "section_ref" in node and "doc_id" in node:
         return True
     if node.get("source_type") in ("doc", "external"):

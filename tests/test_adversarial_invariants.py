@@ -239,6 +239,35 @@ async def test_inv05_document_url_in_a_cited_passage_and_an_anchor_is_kept(tmp_p
         == ["INV-04", "INV-05"]
 
 
+async def test_inv05_quote_cut_inside_a_document_url_is_kept(tmp_path: Path) -> None:
+    """A refine revision quotes a passage of the document that holds a URL and stops partway through
+    the URL. The quote is verbatim in its excerpt, so verify keeps it and the report never rewrites
+    it; INV-05's URL scan skips it because every URL of that excerpt is backed by the document text
+    (``quote_backed_by_excerpt``), so the cut URL does not crash the report stage."""
+    pdf = tmp_path / "design.pages.txt"
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
+    cut = URL_PASSAGE[: URL_PASSAGE.index("/stats") + 4]               # ends inside DOC_URL
+    title = "Peak-day reminder volume is not tested"
+
+    def shard(p: dict[str, Any]) -> None:
+        f = next(f for f in p["findings"] if f["title"] == title)
+        f["doc_anchors"].append({**f["doc_anchors"][0], "quote": URL_PASSAGE})
+        f["evidence"].append({"evidence_id": "NEW-2", "source_type": "doc", "quote": URL_PASSAGE,
+                              "supports_claim": True, "derived_from": []})
+
+    def refine(ledger: list[dict[str, Any]], answer: dict[str, Any]) -> None:
+        ev = next(e["evidence_id"] for e in ledger if DOC_URL in (e.get("excerpt") or ""))
+        answer["revisions"][0]["added_evidence"].append(
+            {"evidence_id": ev, "source_type": "doc", "quote": cut, "supports_claim": True, "derived_from": []})
+
+    out, rd = await run(tmp_path, shard, pdf=pdf, revise=refine)
+    report = load(rd)                                                   # written; every invariant passes
+    assert cut in [e["quote"] for f in report["findings"] for e in f["evidence"]]
+    assert "link removed" not in rd.report_json.read_text(encoding="utf-8")
+    assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
+
+
 async def test_inv05_made_up_url_in_a_made_up_anchor_never_reaches_the_report(tmp_path: Path) -> None:
     """A doc citation whose quote is not in the document is recorded with the finding's first anchor
     quote as its ledger excerpt (``doc_entry``); when that anchor is made up too, the excerpt is
