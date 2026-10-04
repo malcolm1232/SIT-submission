@@ -1,7 +1,7 @@
 {
   "item_id": "synthetic-consent-service-001",
   "domain": "Customer Consent and Preference Management Service (fictional Singapore telco-and-retail group: PDPA purpose-based consent across web, app, contact centre, stores and partners; withdrawal propagation over Kafka; DNC Registry checks; receipts; regulator evidence export; about 8.7 million customer profiles)",
-  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01-F14 (4 critical, 6 major, 4 minor) and 5 sound sections. design_v2.md (v1.1) fixes 7 of them (F01 critical, F02 critical, F04 critical, F05 major, F06 major, F11 minor, F12 minor). The F05 fix introduces a new critical regression, F15 (expired DNC results served until the next successful refresh, fail-open against P5 and NFR-9). The other 7 flaws are unchanged. v2 has a neutral revision-history table and a 'Changes since version 1.0' section listing the changed sections, as a real re-review would; neither names flaws. Severity is the expected impact if built as written. Graders should match findings to flaws by substance (what_a_correct_finding_must_mention), not by wording. A finding that names the right section but the wrong mechanism should get no more than partial credit. v2_changes convention: a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly seven v2_changes entries have status 'fixed'.",
+  "version_notes": "design_v1.md (v1.0) contains 14 planted flaws F01-F14 (4 critical, 6 major, 4 minor) and 5 sound sections. design_v2.md (v1.1) fixes 7 of them (F01 critical, F02 critical, F04 critical, F05 major, F06 major, F11 minor, F12 minor). The F05 fix introduces a new major regression, F15 (expired DNC results served until the next successful refresh, fail-open against P5 and NFR-9). The other 7 flaws are unchanged. v2 has a neutral revision-history table and a 'Changes since version 1.0' section listing the changed sections, as a real re-review would; neither names flaws. Severity is the expected impact if built as written. Graders should match findings to flaws by substance (what_a_correct_finding_must_mention), not by wording. A finding that names the right section but the wrong mechanism should get no more than partial credit. v2_changes convention: a flaw whose fix introduced a new flaw has status 'fixed' plus introduced_new_flaw_id; the new flaw is listed in flaws[] with introduced_in 'v2' and introduced_by_fix_of. So exactly seven v2_changes entries have status 'fixed'.",
   "flaw_counts": {
     "total_v1": 14,
     "by_severity": {
@@ -107,14 +107,14 @@
         "NFR-6",
         "FR-9"
       ],
-      "description": "Receipt numbers are R plus a ten-digit value from a Postgres sequence, and a receipt is viewable at https://izin.merbau.sg/r/{receipt_number} without signing in. The page shows the customer's name, mobile number, email and the state of every purpose.",
+      "description": "Receipt numbers are R plus a ten-digit value from a Postgres sequence, and a receipt is viewable at https://izin.keruing.sg/r/{receipt_number} without signing in. The page shows the customer's name, mobile number, email and the state of every purpose.",
       "why_it_is_a_flaw": "Sequential identifiers in an unauthenticated URL let anyone enumerate every receipt (an insecure direct object reference) and harvest the names, mobile numbers, emailes and preferences of millions of customers. This breaches the PDPA Protection Obligation and NFR-6 and is a notifiable data breach in waiting.",
       "what_a_correct_finding_must_mention": [
         "receipt URL uses the sequential receipt number and needs no authentication",
         "anyone can enumerate receipts (IDOR / guessable identifiers)",
         "exposes personal data (name, mobile, email, preferences) of customers at scale"
       ],
-      "acceptable_recommendation": "Use an unguessable random token (at least 128 bits) unrelated to the receipt number, expire it, minimise and mask what the unauthenticated page shows, require Merbau ID sign-in for full details, and rate-limit and monitor the endpoint.",
+      "acceptable_recommendation": "Use an unguessable random token (at least 128 bits) unrelated to the receipt number, expire it, minimise and mask what the unauthenticated page shows, require Keruing ID sign-in for full details, and rate-limit and monitor the endpoint.",
       "distractor_notes": "Sending receipts under SVC-NOTICE (not marketing) is correct. Having a human-readable receipt number for reference is fine as long as it is not the access credential."
     },
     {
@@ -131,7 +131,7 @@
         "NFR-9"
       ],
       "description": "Section 16 states that under the PDPA a DNC Registry result remains valid for 30 days from receipt, and on that basis refreshes every number in 28 daily cohorts, serving campaign checks from the cache. The DNC result decides SMS and voice marketing for migrated GRANTED records without evidence (Section 16 table, Section 25).",
-      "why_it_is_a_flaw": "Since 1 February 2021 the prescribed duration is 21 days: a check must have been made within 21 days before the specified message is sent. With a 28-day cycle, numbers are served from results 22 to 28 days old for about a quarter of the time, so marketing SMS and calls would be sent without a valid DNC check, in breach of section 43 of the PDPA and NFR-9, exposing Merbau to financial penalties per message.",
+      "why_it_is_a_flaw": "Since 1 February 2021 the prescribed duration is 21 days: a check must have been made within 21 days before the specified message is sent. With a 28-day cycle, numbers are served from results 22 to 28 days old for about a quarter of the time, so marketing SMS and calls would be sent without a valid DNC check, in breach of section 43 of the PDPA and NFR-9, exposing Keruing to financial penalties per message.",
       "what_a_correct_finding_must_mention": [
         "the DNC result validity is 21 days, not 30 (PDPC Advisory Guidelines on the DNC Provisions, revised 1 Feb 2021)",
         "the 28-day refresh cycle serves results older than 21 days",
@@ -153,14 +153,14 @@
         "NFR-8",
         "FR-6"
       ],
-      "description": "Section 24.2 says the monthly Rewards newsletter of 3.0 million recipients in a one-hour window is about 83 requests per second to the Eligibility API, and provisions 300 requests per second with a 429 rate limit above that. Kempen treats any non-200 response as 'do not contact' (Section 15).",
-      "why_it_is_a_flaw": "3,000,000 recipients in 3,600 seconds is about 833 requests per second, ten times the stated figure and almost three times the provisioned rate. The API gateway would reject most eligibility checks with 429, Kempen would skip those recipients as not eligible, and about two thirds of the largest campaign would not be sent (or the send would take about three hours). NFR-8 is sized on the wrong number and its acceptance test at 300 requests per second would pass anyway.",
+      "description": "Section 24.2 says the monthly Rewards newsletter of 3.0 million recipients in a one-hour window is about 83 requests per second to the Eligibility API, and provisions 300 requests per second with a 429 rate limit above that. Seruan treats any non-200 response as 'do not contact' (Section 15).",
+      "why_it_is_a_flaw": "3,000,000 recipients in 3,600 seconds is about 833 requests per second, ten times the stated figure and almost three times the provisioned rate. The API gateway would reject most eligibility checks with 429, Seruan would skip those recipients as not eligible, and about two thirds of the largest campaign would not be sent (or the send would take about three hours). NFR-8 is sized on the wrong number and its acceptance test at 300 requests per second would pass anyway.",
       "what_a_correct_finding_must_mention": [
         "3.0 million in one hour is about 833 requests per second, not 83",
         "the 300 requests per second provisioning / rate limit is below the real peak",
         "consequence: 429s treated as not eligible, so most of the campaign is skipped (or the window overruns)"
       ],
-      "acceptable_recommendation": "Size the Eligibility API for at least 833 requests per second with headroom (or offer a bulk eligibility endpoint), pace Kempen sends to the provisioned rate, and make Kempen retry 429s with backoff rather than drop recipients; set NFR-8 and its load test at the corrected figure.",
+      "acceptable_recommendation": "Size the Eligibility API for at least 833 requests per second with headroom (or offer a bulk eligibility endpoint), pace Seruan sends to the provisioned rate, and make Seruan retry 429s with backoff rather than drop recipients; set NFR-8 and its load test at the corrected figure.",
       "distractor_notes": "Fail-closed handling of errors (P5) is correct for compliance; the finding is the arithmetic and the sizing, not the fail-closed policy."
     },
     {
@@ -179,7 +179,7 @@
         "FR-10"
       ],
       "description": "Seri Assurance in Kuala Lumpur receives nightly files with customers' names, mobile numbers, emailes and Rewards tiers. Section 22 says residency is fully met because every Izin store is in ap-southeast-1 and partner processing is the partner's responsibility. No requirement covers transfers of personal data outside Singapore, and the Regulatory Basis table in Section 5 omits it.",
-      "why_it_is_a_flaw": "Under the PDPA Transfer Limitation Obligation (section 26) Merbau must ensure that personal data transferred outside Singapore receives a standard of protection comparable to the PDPA, typically through legally enforceable obligations on the recipient. NFR-7 covers only where Izin stores data, so the design has no requirement for the contractual safeguards, the transfer assessment or controls on the Malaysian partner, and the residency claim does not address the actual cross-border flow.",
+      "why_it_is_a_flaw": "Under the PDPA Transfer Limitation Obligation (section 26) Keruing must ensure that personal data transferred outside Singapore receives a standard of protection comparable to the PDPA, typically through legally enforceable obligations on the recipient. NFR-7 covers only where Izin stores data, so the design has no requirement for the contractual safeguards, the transfer assessment or controls on the Malaysian partner, and the residency claim does not address the actual cross-border flow.",
       "what_a_correct_finding_must_mention": [
         "personal data goes to a partner in Malaysia (Kuala Lumpur) via the partner file",
         "no requirement addresses cross-border transfer (NFR-7 covers Izin's own stores only; partner responsibility claim)",
@@ -202,7 +202,7 @@
       "requirement_ids": [
         "NFR-6"
       ],
-      "description": "Every consent event carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email and postal address). The topic sits on the shared Merbau Data Hub cluster where any service with a Data Hub client certificate can consume any topic.",
+      "description": "Every consent event carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email and postal address). The topic sits on the shared Keruing Data Hub cluster where any service with a Data Hub client certificate can consume any topic.",
       "why_it_is_a_flaw": "Consumers need the subject, purpose and state, not NRIC numbers and addresses. Broadcasting full identity data on every change to every holder of a cluster certificate breaks P7 (minimum data) and NFR-6 (least privilege), widens the breach surface to every data product in the group, and puts NRIC numbers (which PDPC guidance says should be collected and disclosed only where necessary) on a shared bus with no per-topic access control.",
       "what_a_correct_finding_must_mention": [
         "events carry full PII including NRIC, date of birth and address",
@@ -290,10 +290,10 @@
       "requirement_ids": [
         "NFR-2"
       ],
-      "description": "The acceptance criterion for NFR-2 withdraws consent for 20 test customers in the app in UAT and checks only that Kempen shows them as withdrawn within 24 hours.",
+      "description": "The acceptance criterion for NFR-2 withdraws consent for 20 test customers in the app in UAT and checks only that Seruan shows them as withdrawn within 24 hours.",
       "why_it_is_a_flaw": "NFR-2 covers withdrawals in every channel and every internal consumer plus the partner file. The test uses one channel, one consumer, a tiny sample and a quiet environment, with no batch consumers, no other changes for the same customers and no relay or consumer failure, so it would pass while withdrawals fail to reach analytics or partners (as happens with the compacted topic and the weekly relay replay).",
       "what_a_correct_finding_must_mention": [
-        "the NFR-2 test covers only the app channel and only Kempen",
+        "the NFR-2 test covers only the app channel and only Seruan",
         "does not test the other consumers (analytics, CRM, Rewards, partner file), other channels, load or failure conditions"
       ],
       "acceptable_recommendation": "Test withdrawals from every channel at realistic load, including withdrawals followed by other changes for the same customer and relay and consumer restarts, and check every consumer and the next partner file against the 24-hour limit.",
@@ -313,13 +313,13 @@
       "requirement_ids": [
         "FR-10"
       ],
-      "description": "DEC-09 confirms that Seri Assurance captures Merbau consent (PTN-INS and MKT-EMAIL) in its own app from Phase 4, and Sections 29 and 30 mark the Partner Consent API and Phase 4 as ready. PB-03 says the data-sharing agreement and the legal opinion on whether consent captured by Seri for Merbau purposes is valid consent given to Merbau are still pending with Group Legal.",
-      "why_it_is_a_flaw": "The confirmed decision and the build plan depend on an unresolved legal question. If the opinion is negative or conditional (for example requiring Merbau's own notice and capture), the partner capture flow, the evidence model for partner-captured consent and the Phase 4 scope change.",
+      "description": "DEC-09 confirms that Seri Assurance captures Keruing consent (PTN-INS and MKT-EMAIL) in its own app from Phase 4, and Sections 29 and 30 mark the Partner Consent API and Phase 4 as ready. PB-03 says the data-sharing agreement and the legal opinion on whether consent captured by Seri for Keruing purposes is valid consent given to Keruing are still pending with Group Legal.",
+      "why_it_is_a_flaw": "The confirmed decision and the build plan depend on an unresolved legal question. If the opinion is negative or conditional (for example requiring Keruing's own notice and capture), the partner capture flow, the evidence model for partner-captured consent and the Phase 4 scope change.",
       "what_a_correct_finding_must_mention": [
-        "DEC-09 (partner captures Merbau consent) depends on PB-03 (legal opinion and data-sharing agreement pending)",
+        "DEC-09 (partner captures Keruing consent) depends on PB-03 (legal opinion and data-sharing agreement pending)",
         "readiness / build phase marks it ready although it is unresolved"
       ],
-      "acceptable_recommendation": "Mark DEC-09 as provisional and gate Phase 4 partner capture on PB-03, or design the partner flow so Merbau presents its own notice and records consent itself.",
+      "acceptable_recommendation": "Mark DEC-09 as provisional and gate Phase 4 partner capture on PB-03, or design the partner flow so Keruing presents its own notice and records consent itself.",
       "distractor_notes": ""
     },
     {
@@ -343,7 +343,7 @@
     {
       "id": "F15",
       "category": "scalability_failure_mode",
-      "severity": "critical",
+      "severity": "major",
       "introduced_in": "v2",
       "introduced_by_fix_of": "F05",
       "section_refs": [
@@ -370,27 +370,27 @@
   "sound_sections": [
     {
       "section_ref": "7 Purpose Catalogue and Notice Versioning",
-      "why_sound": "Purposes are specific and versioned; each consent records the purpose version and notice version shown; material changes (new data, recipient or channel) require fresh consent while editorial changes do not; codes are never reused and retired purposes keep their history; service and legal-obligation processing are catalogued with their non-consent basis.",
+      "why_sound": "Purposes are specific and versioned; each consent records the purpose version and notice version shown, and consent_state keeps the purpose version so a grant for an older purpose version answers as not granted; material changes (new data, recipient or channel) require fresh consent while editorial changes do not; codes are never reused and retired purposes keep their history; service and legal-obligation processing are catalogued with their non-consent basis.",
       "trap": "Demanding re-consent for every wording or translation change, claiming service messages (SVC-NOTICE) need marketing consent or must honour withdrawal, or asking for consent for the legal-obligation subscriber registration records."
     },
     {
       "section_ref": "9 Consent Record Model",
-      "why_sound": "Append-only events with a per-subject-and-purpose sequence, a row lock plus a unique constraint on seq (no lost updates), idempotency by actor and key, and event, state and outbox written in one transaction (no dual write). The projection is verified by sampling and full rebuild. Withdrawal is an event, not a deletion, and retention is set separately.",
+      "why_sound": "Append-only events with a per-subject-and-purpose sequence, a row lock on the state row, with the state row's primary key covering the first change (no lost updates), idempotency by actor and key in an unpartitioned request_key table, and event, state and outbox written in one transaction (no dual write). The projection is verified by sampling and full rebuild. Withdrawal is an event, not a deletion, and retention is set separately.",
       "trap": "Flagging a dual-write or projection-drift risk (handled by the single transaction and the nightly sample check), demanding that withdrawal delete the customer's data, or recommending event sourcing through Kafka as the system of record."
     },
     {
       "section_ref": "10 Capture in Web and App",
-      "why_sound": "One row and one unticked toggle per purpose, no select-all, consent never a condition of sign-up (PDPA s14(2)), notice version validated, idempotency key per screen, session recorded as evidence, and absence of a record treated as not granted.",
+      "why_sound": "One row and one unticked toggle per purpose, no select-all, consent never a condition of sign-up (PDPA s14(2)), notice version validated, an idempotency key per change reused for its retries, session recorded as evidence, and absence of a record treated as not granted.",
       "trap": "Requiring double opt-in (not required in Singapore), claiming the sign-up bundles consent with terms, or asking for a pre-ticked default for convenience."
     },
     {
       "section_ref": "13 Withdrawal Semantics",
-      "why_sound": "Withdrawal is accepted in every channel that accepts a grant; the Eligibility API reads from the writer so the next check reflects it (read-your-writes, DEC-07); the likely consequences are shown without delaying the withdrawal (PDPA s16); service messages continue because they are not consent-based; withdrawal of SMS or voice consent ends the evidential-consent exemption so the DNC result applies; Kempen re-checks at send time.",
+      "why_sound": "Withdrawal is accepted in every channel that accepts a grant; the Eligibility API reads from the writer so the next check reflects it (read-your-writes, DEC-07); the likely consequences are shown beside the toggle and withdrawal is the same single action as granting, with no confirmation step (PDPA s16, FR-4); service messages continue because they are not consent-based; withdrawal of SMS or voice consent ends the evidential-consent exemption, and a WITHDRAWN number is refused whatever its DNC result (consistent with the Section 16 table); Seruan re-checks at send time.",
       "trap": "Flagging that service messages continue after withdrawal, demanding deletion of data on withdrawal, or calling the consequence notice an obstacle to withdrawal. (Propagation delays belong to Section 14 findings, not to this section.)"
     },
     {
       "section_ref": "23 Resilience and Disaster Recovery",
-      "why_sound": "Aurora's six-way, three-AZ storage with a four-of-six write quorum gives RPO 0 on AZ loss (NFR-4 as worded); MSK RF 3, min ISR 2, acks=all; services spread across AZs. The single-region design is a recorded decision (DEC-04) forced by NFR-7 and by AWS having one Singapore region, with snapshot copies to a locked vault in a separate account and an RTO and RPO for region loss accepted in the risk register. During outages marketing stops (P5) and service messages continue.",
+      "why_sound": "Aurora's six-way, three-AZ storage with a four-of-six write quorum gives RPO 0 on AZ loss (NFR-4 as worded); MSK RF 3, min ISR 2, acks=all; API services spread across AZs and the relay's active and standby pods in different AZs. The single-region design is a recorded decision (DEC-04) forced by NFR-7 and by AWS having one Singapore region, with snapshot copies to a locked vault in a separate account and an RTO and RPO for region loss accepted in the risk register. During outages marketing stops (P5) and service messages continue.",
       "trap": "Recommending a cross-region replica outside Singapore (conflicts with NFR-7 and DEC-04), claiming NFR-4 is violated by the region-loss RPO (NFR-4 is scoped to node and AZ failure), or calling fail-closed marketing during an outage a defect."
     }
   ],
@@ -412,7 +412,7 @@
     {
       "flaw_id": "F04",
       "status": "fixed",
-      "note": "Receipt link uses a separate random 128-bit token stored as a hash, expiring after 30 days; unauthenticated page shows first name, masked contact and the changed purposes only; full details after Merbau ID sign-in."
+      "note": "Receipt link uses a separate random 128-bit token stored as a hash, expiring after 30 days; unauthenticated page shows first name, masked contact and the changed purposes only; full details after Keruing ID sign-in."
     },
     {
       "flaw_id": "F05",
@@ -423,7 +423,7 @@
     {
       "flaw_id": "F06",
       "status": "fixed",
-      "note": "Peak corrected to about 833 requests per second; Eligibility API provisioned for 1,000 per second, Kempen paced to 800 per second; NFR-8 and its acceptance test updated."
+      "note": "Peak corrected to about 833 requests per second; Eligibility API provisioned for 1,000 per second, Seruan paced to 800 per second; NFR-8 and its acceptance test updated."
     },
     {
       "flaw_id": "F07",
@@ -514,7 +514,7 @@
       "F03": {
         "core_insight": "Consent events are deleted after 24 months while consents stay in force in consent_state, so for long-standing consents Izin can no longer show how, when, by which channel and under which notice they were given, contradicting NFR-5 and Section 20 (and P3) and removing the evidence the DNC evidential-consent exemption relies on.",
         "anchor_quote": "Consent events older than 24 months are deleted by dropping their monthly partition",
-        "anchor_page": 12,
+        "anchor_page": 13,
         "anchor_doc": "design_v1",
         "anchor_section": "19",
         "expected_disposition": "refinement_now",
@@ -555,9 +555,9 @@
         }
       },
       "F06": {
-        "core_insight": "3.0 million recipients in one hour is about 833 requests per second, not 83, so the Eligibility API's 300 per second limit rejects most checks with 429 and Kempen, treating errors as not eligible, skips most of the largest campaign.",
+        "core_insight": "3.0 million recipients in one hour is about 833 requests per second, not 83, so the Eligibility API's 300 per second limit rejects most checks with 429 and Seruan, treating errors as not eligible, skips most of the largest campaign.",
         "anchor_quote": "goes to 3.0 million recipients in a one-hour send window, which is about 83 requests per second",
-        "anchor_page": 14,
+        "anchor_page": 15,
         "anchor_doc": "design_v1",
         "anchor_section": "24.2",
         "expected_disposition": "refinement_now",
@@ -569,7 +569,7 @@
       "F07": {
         "core_insight": "Customer personal data is sent nightly to Seri Assurance in Kuala Lumpur, yet the only residency requirement covers Izin's own stores and the design declares partner processing out of its responsibility, so there is no requirement for the PDPA transfer limitation safeguards on that cross-border transfer.",
         "anchor_quote": "Residency is fully met by this placement: every Izin data store is in ap-southeast-1, and partner processing after the nightly file is delivered is the partner's own responsibility",
-        "anchor_page": 13,
+        "anchor_page": 14,
         "anchor_doc": "design_v1",
         "anchor_section": "22",
         "expected_disposition": "governance_decision",
@@ -582,7 +582,7 @@
       "F08": {
         "core_insight": "Every consent event carries full identity data including NRIC, date of birth and address on a shared Kafka cluster that any certificate holder can read, contradicting P7 and NFR-6 and exposing that data to every group data product.",
         "anchor_quote": "Each event also carries the customer's full profile snapshot (name, NRIC number, date of birth, mobile number, email and postal address)",
-        "anchor_page": 8,
+        "anchor_page": 9,
         "anchor_doc": "design_v1",
         "anchor_section": "14.3",
         "expected_disposition": "refinement_now",
@@ -626,9 +626,9 @@
         ]
       },
       "F12": {
-        "core_insight": "The NFR-2 acceptance test withdraws 20 app consents in UAT and checks only Kempen, so it cannot show that withdrawals from every channel reach every consumer and the partner file within 24 hours under load or failure.",
+        "core_insight": "The NFR-2 acceptance test withdraws 20 app consents in UAT and checks only Seruan, so it cannot show that withdrawals from every channel reach every consumer and the partner file within 24 hours under load or failure.",
         "anchor_quote": "withdraw marketing consent for 20 test customers in the app and confirm that each",
-        "anchor_page": 16,
+        "anchor_page": 17,
         "anchor_doc": "design_v1",
         "anchor_section": "28.2 (NFR-2)",
         "expected_disposition": "refinement_now",
@@ -638,9 +638,9 @@
         ]
       },
       "F13": {
-        "core_insight": "DEC-09 confirms partner capture of Merbau consent by Seri Assurance in Phase 4 and the plan marks it ready, while PB-03 says the legal opinion on whether such consent is valid for Merbau and the data-sharing agreement are still pending.",
-        "anchor_quote": "Seri Assurance captures Merbau consent (PTN-INS and MKT-EMAIL) in its own",
-        "anchor_page": 15,
+        "core_insight": "DEC-09 confirms partner capture of Keruing consent by Seri Assurance in Phase 4 and the plan marks it ready, while PB-03 says the legal opinion on whether such consent is valid for Keruing and the data-sharing agreement are still pending.",
+        "anchor_quote": "Seri Assurance captures Keruing consent (PTN-INS and MKT-EMAIL) in its own",
+        "anchor_page": 16,
         "anchor_doc": "design_v1",
         "anchor_section": "26 (DEC-09)",
         "expected_disposition": "governance_decision",
@@ -652,7 +652,7 @@
       "F14": {
         "core_insight": "The consent_state sizing uses 5.2 million customers although Section 1's design target is 8.7 million, so the storage and in-memory working-set claim is understated.",
         "anchor_quote": "5.2 million customers × 7 consent purposes × 180 bytes",
-        "anchor_page": 14,
+        "anchor_page": 15,
         "anchor_doc": "design_v1",
         "anchor_section": "24.3",
         "expected_disposition": "refinement_now",
@@ -663,7 +663,7 @@
       "F15": {
         "core_insight": "v2 serves DNC results older than 21 days until the next successful refresh so that a registry outage never blocks a campaign, which is fail-open against P5 and NFR-9: marketing is sent without a valid DNC check, possibly to numbers registered in the meantime.",
         "anchor_quote": "keeps its last result and is served from it until the next successful refresh",
-        "anchor_page": 9,
+        "anchor_page": 10,
         "anchor_doc": "design_v2",
         "anchor_section": "16",
         "expected_disposition": "refinement_now",
@@ -703,7 +703,7 @@
       {
         "id": "AD-002",
         "doc_ref": "Event bus topic",
-        "statement": "Event bus topic: Amazon MSK (Merbau Data Hub cluster), topic consent.changes, 24 partitions, compacted, keyed by mid",
+        "statement": "Event bus topic: Amazon MSK (Keruing Data Hub cluster), topic consent.changes, 24 partitions, compacted, keyed by mid",
         "location": {
           "sections": [
             "26 Confirmed Decisions"
@@ -712,7 +712,7 @@
           "decision_ids": [
             "DEC-02"
           ],
-          "anchor_quote": "Amazon MSK (Merbau Data Hub cluster), topic consent.changes, 24 partitions",
+          "anchor_quote": "Amazon MSK (Keruing Data Hub cluster), topic consent.changes, 24 partitions",
           "page": 15
         },
         "flaw_ids": [
@@ -823,14 +823,14 @@
             "DEC-08"
           ],
           "anchor_quote": "Receipts by SMS, or email where no mobile number exists",
-          "page": 15
+          "page": 16
         },
         "flaw_ids": []
       },
       {
         "id": "AD-009",
         "doc_ref": "Partner capture by Seri Assurance",
-        "statement": "Partner capture by Seri Assurance: Seri Assurance captures Merbau consent (PTN-INS and MKT-EMAIL) in its own app through the Partner Consent API from Phase 4",
+        "statement": "Partner capture by Seri Assurance: Seri Assurance captures Keruing consent (PTN-INS and MKT-EMAIL) in its own app through the Partner Consent API from Phase 4",
         "location": {
           "sections": [
             "26 Confirmed Decisions"
@@ -839,8 +839,8 @@
           "decision_ids": [
             "DEC-09"
           ],
-          "anchor_quote": "Seri Assurance captures Merbau consent (PTN-INS and MKT-EMAIL) in its own",
-          "page": 15
+          "anchor_quote": "Seri Assurance captures Keruing consent (PTN-INS and MKT-EMAIL) in its own",
+          "page": 16
         },
         "flaw_ids": [
           "F13"
@@ -859,7 +859,7 @@
             "DEC-10"
           ],
           "anchor_quote": "Partner files nightly by SFTP with PGP encryption",
-          "page": 15
+          "page": 16
         },
         "flaw_ids": [
           "F07"
@@ -878,7 +878,7 @@
             "DEC-11"
           ],
           "anchor_quote": "Legacy preferences migrated per Section 25",
-          "page": 15
+          "page": 16
         },
         "flaw_ids": [
           "F01"
@@ -897,7 +897,7 @@
             "DEC-12"
           ],
           "anchor_quote": "Consent events retained 24 months",
-          "page": 15
+          "page": 16
         },
         "flaw_ids": [
           "F03"
