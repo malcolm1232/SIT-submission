@@ -819,19 +819,25 @@ async def test_refine_rejects_an_unexplained_conclusion_change(tmp_path: Path, c
     assert any("rejected (no revision reason" in e.message for e in ctx.progress.events)
 
 
-async def test_refine_revisions_that_break_the_rules_get_one_repair_then_the_fallback(
+async def test_refine_revisions_that_break_the_rules_get_one_repair_for_the_failing_ones(
         tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """The keep and the withdrawal hold on their own and are applied; the merge into a withdrawn finding
+    fails twice and leaves FND-003 unrefined (tests/test_refine_keep_good.py has the rest)."""
     bad = {"revisions": [keep("FND-002", 1, "high", "refinement_now"), gone("FND-003", "merge", "FND-001"),
                          gone("FND-001", "withdraw")]}          # merge into a withdrawn finding, twice
     ctx = await _merged(tmp_path, cfg, [FakeResponse(parsed=bad), FakeResponse(parsed=bad)])
-    before = [f.model_dump() for f in ctx.state.finding_drafts]
+    before = {f.id: f for f in ctx.state.finding_drafts}
     await RefinePhase().run(ctx)
     first, repair = ctx.llm.calls[-2:]
     assert repair.conversation_id == "refine-0-r1" and repair.purpose == "refine:schema_repair"
     assert "merge into FND-001, which is not kept" in brief_of(repair)
-    assert [f.model_dump() for f in ctx.state.finding_drafts] == before     # merged findings stand, severity order
-    [d] = [d for d in ctx.state.degradations if "refine revisions could not be applied" in d.event]
-    assert "severity and confidence order" in d.impact
+    assert "one revision for each of these 1 finding(s) only: FND-003" in brief_of(repair)
+    assert [(f.id, f.rank) for f in ctx.state.finding_drafts] == [("FND-002", 1), ("FND-003", 2)]
+    assert ctx.state.finding_drafts[1].model_dump(exclude={"rank"}) == before["FND-003"].model_dump(exclude={"rank"})
+    assert ctx.state.finding_ids.refine == {"FND-001": None}
+    [d] = [d for d in ctx.state.degradations if "refine" in d.event]
+    assert d.type is DegradationType.OTHER and "2 of 3 refine revisions" in d.impact
+    assert "1 unrefined (FND-003)" in d.impact
     assert len(ctx.state.llm_calls["refine"]) == 2
 
 

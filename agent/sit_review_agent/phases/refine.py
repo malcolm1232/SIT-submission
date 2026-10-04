@@ -62,6 +62,22 @@ says how many of the n revisions (one per merged finding) were applied, how many
 the others were dropped, and that the rest of the findings were not refined; the ``refined`` event
 carries ``salvaged_items`` (the runtime's count for the cut call) = ``applied`` + ``dropped``.
 
+Repair for the failing revisions only (sit_sample_ui_1 rehearsal of 2026-10-04: one revision of 55
+broke a rule, the whole answer was asked again, the repair ran into the stage limit with 4 revisions
+and 51 findings were never refined, so none of the 41 external ledger entries reached a finding): a
+complete answer with problems is split (``call_model(split=...)``, :func:`split_revisions`). Every
+revision that holds on its own (the same test as the salvage above) is kept as the model gave it; the
+findings without one are named in the correction of the one repair call, which is asked for those
+only and told the free ranks. What comes back (the repair answer, or the finished revisions of a repair
+cut at the stage limit; nothing from one declined or truncated twice) is merged with the kept revisions
+and goes through :func:`salvage_revisions` as one set (:func:`repair_outcome`): a repaired revision
+that still fails is dropped, never applied, and its finding is unrefined as above. A revision the
+repair gives for a kept finding is ignored. The disclosure states the counts ("54 of 55 refine
+revisions ... applied: 54 kept from the first answer ..., and 0 repaired at the limit ...; 1 unrefined
+(FND-030)"); none is recorded when every revision was applied as given. Each refined finding's history
+names the call that gave its revision. An answer where nothing holds, or nothing is missing, is asked
+again whole, as before.
+
 Fallback (cut with no finished revision that can be applied, truncated twice, declined twice, or
 revisions that still cannot be applied after the repair call): the merged findings stay as merged,
 ranked by severity and confidence (``phases.assess.rank_by_severity``), disclosed. With no drafts
@@ -91,6 +107,8 @@ from sit_review_agent.llm.outputs import (
 from sit_review_agent.models import DegradationType, PriorFindingStatus
 from sit_review_agent.phases._model_calls import (
     REFINE_FALLBACK_IMPACT,
+    KeptItems,
+    PhaseCall,
     answer_vars,
     call_model,
     changed_fields,
@@ -172,60 +190,89 @@ def _one(r: FindingRevisionDraft) -> FindingRevisionDraft:
     return r.model_copy(update={"rank": 1}) if r.action is RevisionAction.KEEP else r
 
 
-def salvage_revisions(partial: Mapping[str, Any] | None, drafts: Sequence[FindingDraft]) -> Salvage | None:
-    """The revision set a cut refine call's finished revisions (``partial["revisions"]``) give over
-    ``drafts`` (module docstring, "Cut with finished revisions"); ``None`` when nothing had finished."""
-    items = list((partial or {}).get("revisions") or [])
-    if not items:
-        return None
-    by_id = {d.id: d for d in drafts}
+def _parse_items(items: Sequence[Any],
+                 by_id: Mapping[str, FindingDraft]) -> tuple[list[FindingRevisionDraft], list[str]]:
+    """The revisions among ``items`` (drafts or their JSON) that parse, name a known finding and are
+    the first for it, with why each other item was dropped."""
     dropped: list[str] = []
     parsed: list[FindingRevisionDraft] = []
     for item in items:
-        try:
-            r = FindingRevisionDraft.model_validate(item)
-        except ValidationError:
-            dropped.append("a revision that does not match the schema")
-            continue
+        if isinstance(item, FindingRevisionDraft):
+            r = item
+        else:
+            try:
+                r = FindingRevisionDraft.model_validate(item)
+            except ValidationError:
+                dropped.append("a revision that does not match the schema")
+                continue
         if r.finding_id not in by_id:
             dropped.append(f"a revision for unknown finding {r.finding_id}")
         elif any(p.finding_id == r.finding_id for p in parsed):
             dropped.append(f"a second revision for {r.finding_id}")
         else:
             parsed.append(r)
+    return parsed, dropped
+
+
+def independent_revisions(fixed: Sequence[FindingRevisionDraft],
+                          by_id: Mapping[str, FindingDraft]) -> tuple[list[FindingRevisionDraft], list[str]]:
+    """The revisions of ``fixed`` (BEH-10 already reverted, one per finding) that hold on their own:
+    each keep and withdrawal that passes ``revision_problems`` alone, and each merge into one of those
+    keeps that passes with it; in ``fixed`` order, ranks as given. The second list says why each other
+    revision was dropped."""
+    dropped: list[str] = []
+    chosen: list[FindingRevisionDraft] = []
+    for r in fixed:
+        if r.action is RevisionAction.MERGE:
+            continue
+        problems = revision_problems(RefineRevisionsOutput(revisions=[_one(r)]), [r.finding_id], drafts=by_id)
+        if problems:
+            dropped.append(f"{r.finding_id} ({'; '.join(problems)})")
+        else:
+            chosen.append(r)
+    keeps = {r.finding_id: r for r in chosen if r.action is RevisionAction.KEEP}
+    for r in fixed:
+        if r.action is not RevisionAction.MERGE:
+            continue
+        into = r.merge_into
+        if into is None or into not in keeps:
+            dropped.append(f"{r.finding_id} (a merge into {into}, whose revision did not finish or was dropped)")
+            continue
+        problems = revision_problems(RefineRevisionsOutput(revisions=[_one(keeps[into]), r]),
+                                     [into, r.finding_id], drafts=by_id)
+        if problems:
+            dropped.append(f"{r.finding_id} ({'; '.join(problems)})")
+        else:
+            chosen.append(r)
+    return [r for r in fixed if r in chosen], dropped
+
+
+def _reranked(chosen: Sequence[FindingRevisionDraft],
+              fixed: Sequence[FindingRevisionDraft]) -> list[FindingRevisionDraft]:
+    """``chosen`` with its kept ranks re-derived (1..k) from the given ranks, then ``fixed`` order."""
+    keeps = [r for r in chosen if r.action is RevisionAction.KEEP]
+    order = sorted(keeps, key=lambda r: (r.rank if r.rank is not None else len(fixed) + 1, fixed.index(r)))
+    rank = {r.finding_id: i + 1 for i, r in enumerate(order)}
+    return [r.model_copy(update={"rank": rank[r.finding_id]}) if r.finding_id in rank else r for r in chosen]
+
+
+def salvage_revisions(partial: Mapping[str, Any] | None, drafts: Sequence[FindingDraft]) -> Salvage | None:
+    """The revision set a cut refine call's finished revisions (``partial["revisions"]``) give over
+    ``drafts`` (module docstring, "Cut with finished revisions"); ``None`` when nothing had finished.
+    The items may be drafts as well as their JSON (the merge of kept and repaired revisions)."""
+    items = list((partial or {}).get("revisions") or [])
+    if not items:
+        return None
+    by_id = {d.id: d for d in drafts}
+    parsed, dropped = _parse_items(items, by_id)
     raw = {r.finding_id: r for r in parsed}
     fixed = without_unexplained_changes(RefineRevisionsOutput(revisions=parsed), by_id).revisions
     set_problems = revision_problems(RefineRevisionsOutput(revisions=fixed), [r.finding_id for r in fixed],
                                      drafts=by_id)
     if set_problems:                                   # degrade to the independent revisions
-        chosen: list[FindingRevisionDraft] = []
-        for r in fixed:
-            if r.action is RevisionAction.MERGE:
-                continue
-            problems = revision_problems(RefineRevisionsOutput(revisions=[_one(r)]), [r.finding_id], drafts=by_id)
-            if problems:
-                dropped.append(f"{r.finding_id} ({'; '.join(problems)})")
-            else:
-                chosen.append(r)
-        keeps = {r.finding_id: r for r in chosen if r.action is RevisionAction.KEEP}
-        for r in fixed:
-            if r.action is not RevisionAction.MERGE:
-                continue
-            into = r.merge_into
-            if into is None or into not in keeps:
-                dropped.append(f"{r.finding_id} (a merge into {into}, whose revision did not finish or was dropped)")
-                continue
-            problems = revision_problems(RefineRevisionsOutput(revisions=[_one(keeps[into]), r]),
-                                         [into, r.finding_id], drafts=by_id)
-            if problems:
-                dropped.append(f"{r.finding_id} ({'; '.join(problems)})")
-            else:
-                chosen.append(r)
-        order = sorted(keeps.values(), key=lambda r: (r.rank if r.rank is not None else len(fixed) + 1,
-                                                      fixed.index(r)))
-        rank = {r.finding_id: i + 1 for i, r in enumerate(order)}
-        chosen = [r.model_copy(update={"rank": rank[r.finding_id]}) if r.finding_id in rank else r
-                  for r in fixed if r in chosen]
+        chosen, more = independent_revisions(fixed, by_id)
+        dropped += more
+        chosen = _reranked(chosen, fixed)
     else:
         chosen = list(fixed)
     applied = {r.finding_id for r in chosen}
@@ -262,14 +309,121 @@ def salvage_impact(s: Salvage, findings: int) -> str:
             "merged severity and confidence order")
 
 
-def _disclose_salvage(ctx: RunContext, since: int, impact: str) -> None:
-    """Replace the impact of the refine-cut degradation ``call_model`` recorded (after index ``since``)."""
+def split_revisions(out: RefineRevisionsOutput, drafts: Sequence[FindingDraft]) -> KeptItems | None:
+    """What a complete refine answer that broke the rules keeps (module docstring, "Repair for the
+    failing revisions only"): every revision that holds on its own (:func:`independent_revisions`
+    after the BEH-10 revert), as the model gave it; the findings without one are asked again. ``None``
+    when nothing holds or nothing is missing (then the whole answer is asked again, as before)."""
+    by_id = {d.id: d for d in drafts}
+    parsed, _ = _parse_items(out.revisions, by_id)
+    fixed = without_unexplained_changes(RefineRevisionsOutput(revisions=parsed), by_id).revisions
+    chosen, _ = independent_revisions(fixed, by_id)
+    kept_ids = {r.finding_id for r in chosen}
+    retry = [d.id for d in drafts if d.id not in kept_ids]
+    if not kept_ids or not retry:
+        return None
+    kept = tuple(r for r in parsed if r.finding_id in kept_ids)
+    taken = {r.rank for r in chosen if r.action is RevisionAction.KEEP and r.rank is not None}
+    free = [i for i in range(1, len(taken) + len(retry) + 1) if i not in taken]
+    instruction = (
+        f"Your revisions for {len(kept)} of the {len(drafts)} findings were accepted and are kept exactly as you "
+        f"gave them; do not send them again. The complete answer this time is one revision for each of these "
+        f"{len(retry)} finding(s) only: {', '.join(retry)}. A finding you keep among them takes one of the free "
+        f"ranks {', '.join(str(i) for i in free[:20])}{', ...' if len(free) > 20 else ''} (lowest first), so the "
+        "kept ranks still run 1..n without gaps once a merged or withdrawn finding frees its rank. In a re-review "
+        "also give prior_statuses in full, as the rules say.")
+    return KeptItems(kept=kept, retry=tuple(retry), instruction=instruction)
+
+
+@dataclass(frozen=True)
+class Repair:
+    """The merge of the kept revisions of a first answer with what the repair call gave for the rest
+    (module docstring, "Repair for the failing revisions only")."""
+
+    #: How the repair call ended: "returned in full", "was cut by the stage limit", ...
+    how: str
+    #: The findings the repair call was asked for.
+    retry: tuple[str, ...]
+    #: Revisions the repair call gave for them (a revision for a kept finding is ignored, not counted).
+    returned: int
+    #: Revisions the repair call gave for kept findings, ignored.
+    extra: int
+    #: Kept revisions from the first answer that the merged set applied.
+    kept_applied: int
+    #: Repaired revisions that the merged set applied.
+    repaired_applied: int
+    #: The merged set over the drafts (``salvage_revisions`` of kept plus repaired).
+    salvage: Salvage
+
+    @property
+    def unrefined(self) -> list[str]:
+        return [r.finding_id for r in self.salvage.out.revisions if r.finding_id not in self.salvage.raw]
+
+
+def repair_outcome(call: PhaseCall, drafts: Sequence[FindingDraft]) -> Repair | None:
+    """The kept revisions of ``call.first`` merged with the repair answer (``call.result``, or the cut
+    call's ``partial``) through :func:`salvage_revisions`; ``None`` when the merged set applies nothing."""
+    split = call.split
+    assert split is not None
+    kept_ids = {r.finding_id for r in split.kept}
+    result = call.result
+    if result is not None and isinstance(result.parsed, RefineRevisionsOutput):
+        given: list[Any] = list(result.parsed.revisions)
+        how = "returned in full"
+    elif call.cut:
+        given = list((call.partial or {}).get("revisions") or [])
+        how = "was cut by the stage limit" + (f" after {len(given)} finished revision(s)" if given else
+                                              " with nothing finished")
+    elif call.truncated:
+        given, how = [], "was truncated twice at the output cap"
+    else:
+        given, how = [], "was declined"
+
+    def fid(item: Any) -> str | None:
+        return item.finding_id if isinstance(item, FindingRevisionDraft) else (
+            item.get("finding_id") if isinstance(item, Mapping) else None)
+
+    repaired = [g for g in given if fid(g) not in kept_ids]
+    s = salvage_revisions({"revisions": [*split.kept, *repaired]}, drafts)
+    if s is None or s.applied == 0:
+        return None
+    return Repair(how=how, retry=split.retry, returned=len(repaired), extra=len(given) - len(repaired),
+                  kept_applied=sum(1 for f in s.raw if f in kept_ids),
+                  repaired_applied=sum(1 for f in s.raw if f not in kept_ids), salvage=s)
+
+
+def repair_impact(r: Repair, findings: int) -> str:
+    """The degradation impact when the first answer's kept revisions were applied with the repaired ones."""
+    at_limit = " at the limit" if r.how.startswith("was cut") else ""
+    text = (f"{r.salvage.applied} of {findings} refine revisions (one per merged finding) were applied: "
+            f"{r.kept_applied} kept from the first answer, which broke the revision rules for {len(r.retry)} "
+            f"finding(s) ({_listed(list(r.retry), 5)}), and {r.repaired_applied} repaired{at_limit} by the one "
+            f"repair call, which {r.how} with {r.returned} revision(s) for them")
+    if r.salvage.set_problems:
+        text += (". The merged set did not hold together (" + _listed(r.salvage.set_problems, 2) + "), so only its "
+                 "independent revisions were applied (keeps, withdrawals, merges into a kept finding; ranks "
+                 "re-derived from the given order)")
+    if r.salvage.dropped:
+        text += f"; {len(r.salvage.dropped)} dropped: " + _listed(r.salvage.dropped)
+    rest = r.unrefined
+    if not rest:
+        return text + "; 0 unrefined"
+    return (text + f"; {len(rest)} unrefined ({_listed(rest, 5)}): not refined (no duplicates merged, no registry "
+            "decisions linked, no research evidence attached) and following the refined findings in merged "
+            "severity and confidence order")
+
+
+def _disclose(ctx: RunContext, since: int, impact: str, event: str, dtype: DegradationType) -> None:
+    """Give the degradations ``call_model`` recorded for this call (after index ``since``; never a
+    model fallback) the impact of what was applied, or record one with ``event`` when it recorded none."""
     degs = ctx.state.degradations
+    replaced = False
     for i in range(since, len(degs)):
-        if degs[i].type is DegradationType.BUDGET_OR_DEADLINE_HIT and degs[i].impact == REFINE_FALLBACK_IMPACT:
+        if degs[i].type is not DegradationType.MODEL_FALLBACK:
             degs[i] = degs[i].model_copy(update={"impact": impact})
-            return
-    ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT, "the refine call was cut", impact)
+            replaced = True
+    if not replaced:
+        ctx.state.add_degradation(dtype, event, impact)
 
 
 class RefinePhase:
@@ -310,35 +464,78 @@ class RefinePhase:
         def ask(out: RefineRevisionsOutput) -> list[str]:
             return prior_status_problems(out, prior_ids, kept_carry(out)) if prior_ids else []
 
-        since = len(ctx.state.degradations)             # call_model's refine-cut degradation lands after this
-        call = await call_model(ctx, phase, render, RefineRevisionsOutput, iteration=iteration, purpose="refine",
-                                check=check, ask=ask)
-        result = call.result
-        if result is not None and isinstance(result.parsed, RefineRevisionsOutput) and prior_ids:
-            carried, seen = kept_carry(result.parsed), set()
+        def split(out: RefineRevisionsOutput, problems: list[str]) -> KeptItems | None:
+            return split_revisions(out, drafts)
+
+        def prior_statuses(answers: Sequence[RefineRevisionsOutput], kept_ids: set[str]) -> None:
+            """The usable prior statuses of ``answers`` (the first that gives one for a prior ID counts),
+            given the findings kept; what is still missing: the report, "not re-examined"."""
+            if not prior_ids:
+                return
+            carried, seen = carried_prior_ids(d for d in drafts if d.id in kept_ids), set()
             usable = []
-            for p in result.parsed.prior_statuses:
-                if p.prior_finding_id in prior_ids and p.prior_finding_id not in carried | seen and (
-                        p.note.strip() or p.status is not PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT):
-                    usable.append(p)
-                    seen.add(p.prior_finding_id)
-            ctx.state.prior_statuses = usable          # what is still missing: the report, "not re-examined"
-        salvage = salvage_revisions(call.partial, drafts) if call.cut else None
+            for a in answers:
+                for p in a.prior_statuses:
+                    if p.prior_finding_id in prior_ids and p.prior_finding_id not in carried | seen and (
+                            p.note.strip() or p.status is not PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT):
+                        usable.append(p)
+                        seen.add(p.prior_finding_id)
+            ctx.state.prior_statuses = usable
+
+        since = len(ctx.state.degradations)             # call_model's degradations for this call land after this
+        call = await call_model(ctx, phase, render, RefineRevisionsOutput, iteration=iteration, purpose="refine",
+                                check=check, ask=ask, split=split)
+        result = call.result
+        # The repair answer first, then the first answer (whose kept revisions stand): a complete answer
+        # that is not applied as a whole still gives its prior statuses.
+        answers = [r.parsed for r in (result, call.first)
+                   if r is not None and isinstance(r.parsed, RefineRevisionsOutput)]
+        repair = repair_outcome(call, drafts) if call.split is not None else None
+        salvage = repair.salvage if repair is not None else (
+            salvage_revisions(call.partial, drafts) if call.cut else None)
         if salvage is not None and (salvage.applied == 0
                                     or revision_problems(salvage.out, ids, drafts=by_id)):
-            salvage = None                             # nothing applicable: the old fallback, disclosed by call_model
+            salvage = repair = None                    # nothing applicable: the old fallback, disclosed by call_model
+        # Each refined finding's call and model: the repair call's for a repaired revision, the first
+        # call's for a kept one, the one call's otherwise.
+        call_of: dict[str, str | None] = {}
+        model_of: dict[str, str | None] = {}
         if salvage is not None:
             raw = RefineRevisionsOutput(revisions=[salvage.raw.get(r.finding_id, r) for r in salvage.out.revisions])
             out = salvage.out
             refined_ids = set(salvage.raw)
-            call_id, model = call.cut_id, ctx.config.agent.model
-            _disclose_salvage(ctx, since, salvage_impact(salvage, len(drafts)))
-        elif result is None or not isinstance(result.parsed, RefineRevisionsOutput):
+            if repair is not None:
+                assert call.first is not None and call.split is not None
+                kept_ids = {r.finding_id for r in call.split.kept}
+                later = result.call_id if result is not None else call.cut_id
+                for fid in refined_ids:
+                    call_of[fid] = call.first.call_id if fid in kept_ids else later
+                    model_of[fid] = call.first.model if fid in kept_ids else (
+                        result.model if result is not None else ctx.config.agent.model)
+                if repair.unrefined or salvage.set_problems or salvage.dropped or not result:
+                    _disclose(ctx, since, repair_impact(repair, len(drafts)),
+                              f"the refine answer broke the revision rules for {len(repair.retry)} finding(s); the one "
+                              f"repair call, asked for those only, {repair.how}", DegradationType.OTHER)
+                call_id = later
+            else:
+                call_id = call.cut_id
+                _disclose(ctx, since, salvage_impact(salvage, len(drafts)), "the refine call was cut",
+                          DegradationType.BUDGET_OR_DEADLINE_HIT)
+            for fid in refined_ids:
+                call_of.setdefault(fid, call_id)
+                model_of.setdefault(fid, ctx.config.agent.model)
+        elif call.split is not None or result is None or not isinstance(result.parsed, RefineRevisionsOutput):
             if call.invalid:
                 ctx.state.add_degradation(
                     DegradationType.OTHER,
                     "the refine revisions could not be applied after one repair call: "
                     + "; ".join(call.invalid)[:1500], REFINE_FALLBACK_IMPACT)
+            elif call.split is not None and not call.cut and not call.truncated and result is not None:
+                ctx.state.add_degradation(
+                    DegradationType.OTHER,
+                    "the refine revisions could not be applied after one repair call for the failing ones",
+                    REFINE_FALLBACK_IMPACT)
+            prior_statuses(answers, set(ids))
             ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order", "warn",
                       event="refine_fallback", cut=call.cut, truncated=call.truncated, invalid=bool(call.invalid),
                       declined=not (call.cut or call.truncated or call.invalid))
@@ -347,7 +544,10 @@ class RefinePhase:
             raw = result.parsed
             out = without_unexplained_changes(raw, by_id)
             refined_ids = set(ids)
-            call_id, model = result.call_id, result.model
+            call_id = result.call_id
+            call_of = dict.fromkeys(ids, call_id)
+            model_of = dict.fromkeys(ids, result.model)
+        prior_statuses(answers, {r.finding_id for r in out.revisions if r.action is RevisionAction.KEEP})
         revised = apply_revisions(drafts, out)
         revised, _, stats = resolve_evidence(ctx, revised)
         revs = {r.finding_id: r for r in out.revisions}
@@ -373,7 +573,7 @@ class RefinePhase:
                 what = ", ".join(flips)
                 ctx_event(ctx, f"{f.id}: {what} rejected (no revision reason, no new evidence)", "warn",
                           event="revision_rejected", finding_id=f.id, fields_rejected=list(flips))
-                add_history(f.id, FindingRevision(phase=phase, call_id=call_id,
+                add_history(f.id, FindingRevision(phase=phase, call_id=call_of[f.id],
                                                   note=f"rejected: {what} without a revision reason or new evidence "
                                                        "(BEH-10); the draft's value kept"))
             diff = changed_fields(old, f)
@@ -381,10 +581,10 @@ class RefinePhase:
                 counts["unchanged"] += 1
                 continue
             counts["revised"] += 1
-            add_history(f.id, FindingRevision(phase=phase, call_id=call_id, changed_fields=diff,
+            add_history(f.id, FindingRevision(phase=phase, call_id=call_of[f.id], changed_fields=diff,
                                               note=f"revised: {r.reason.strip()}" if r.reason.strip() else "revised"),
-                        criterion_ids=list(f.criterion_ids), last_phase=phase, last_call_id=call_id,
-                        model=model, prompt_hash=call.brief.sha256, iteration=iteration)
+                        criterion_ids=list(f.criterion_ids), last_phase=phase, last_call_id=call_of[f.id],
+                        model=model_of[f.id], prompt_hash=call.brief.sha256, iteration=iteration)
         target: dict[str, str] = {}
         for fid in ids:
             r = revs[fid]
@@ -397,7 +597,7 @@ class RefinePhase:
             else:
                 counts["withdrawn"] += 1
                 note = f"withdrawn: {r.reason.strip()}".rstrip(": ")
-            add_history(fid, FindingRevision(phase=phase, call_id=call_id, note=note))
+            add_history(fid, FindingRevision(phase=phase, call_id=call_of[fid], note=note))
 
         kept = {f.id for f in revised}
         ctx.state.finding_ids = ctx.state.finding_ids.model_copy(update={
@@ -414,12 +614,16 @@ class RefinePhase:
             for a in ctx.state.sound_area_drafts]
         ctx_event(ctx, f"refined: {counts['revised']} revised, {counts['unchanged']} unchanged, {counts['merged']} "
                   f"merged, {counts['withdrawn']} withdrawn; {len(revised)} findings"
-                  + (f" ({salvage.applied} of {len(drafts)} revisions salvaged from the cut call)" if salvage else ""),
+                  + (f" ({repair.kept_applied} kept from the first answer, {repair.repaired_applied} of "
+                     f"{len(repair.retry)} repaired, {len(repair.unrefined)} unrefined)" if repair else
+                     f" ({salvage.applied} of {len(drafts)} revisions salvaged from the cut call)" if salvage else ""),
                   "done", event="refined", call_id=call_id, revised=counts["revised"], unchanged=counts["unchanged"],
                   merged=counts["merged"], withdrawn=counts["withdrawn"], findings=len(revised),
                   salvaged=salvage is not None,
                   **({"salvaged_items": salvage.finished, "applied": salvage.applied, "dropped": len(salvage.dropped)}
-                     if salvage else {}))
+                     if salvage else {}),
+                  **({"kept": repair.kept_applied, "repaired": repair.repaired_applied, "retry": len(repair.retry),
+                      "unrefined": len(repair.unrefined)} if repair else {}))
         if stats.dropped:
             ctx_event(ctx, f"{stats.dropped} evidence citations dropped (not in the evidence register)", "warn",
                       event="citations_dropped", count=stats.dropped)
