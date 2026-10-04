@@ -178,7 +178,8 @@ class RunDeadline:
                                 f"{where}", call_id=call_id, phase=p)
 
     def cut(self, phase: PhaseName | str, timeout_s: float, *, call_id: str | None = None,
-            partial: dict[str, Any] | None = None, estimated_usage: Any = None) -> LLMDeadlineError:
+            partial: dict[str, Any] | None = None, partial_complete: bool = False,
+            estimated_usage: Any = None) -> LLMDeadlineError:
         """The error of an attempt cut at ``timeout_s`` by the deadline or its stage limit, with what
         the gateway salvaged from the stream (``partial``) and its usage estimate."""
         p = _phase(phase).value
@@ -189,7 +190,8 @@ class RunDeadline:
         else:
             by = f"the run deadline ({self.deadline_s:.0f} s"
         return LLMDeadlineError(f"the {p} model call was cut after {timeout_s:.0f} s by {by}; not retried past it)",
-                                call_id=call_id, phase=p, partial=partial, estimated_usage=estimated_usage)
+                                call_id=call_id, phase=p, partial=partial, partial_complete=partial_complete,
+                                estimated_usage=estimated_usage)
 
 
 # ------------------------------------------------------------------------------ context size

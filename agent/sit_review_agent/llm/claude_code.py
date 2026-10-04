@@ -896,6 +896,7 @@ class ClaudeCodeGateway:
                 # estimate of what the killed attempt used (the CLI reports nothing for it).
                 raise _AttemptFailed(self.runtime.deadline.cut(request.phase, t, call_id=call_id,
                                                                partial=stream.partial(),
+                                                               partial_complete=stream.partial_complete(),
                                                                estimated_usage=stream.estimated_usage()),
                                      retry=False, unrecorded="deadline_cut", stream=stream) from None
             raise _AttemptFailed(LLMTimeoutError(f"claude -p exceeded {t:g} s", call_id=call_id,
@@ -1120,7 +1121,9 @@ def _estimate_fields(stream: StreamParser | None) -> dict[str, Any]:
     if stream.rejections:
         fields["cli_answer_rejections"] = stream.rejections
     partial = stream.partial()
-    fields["salvaged_items"] = stream.item_count()
+    fields["salvaged_items"] = stream.salvaged_count()
     if partial is not None:
         fields["partial"] = partial
+        if stream.partial_complete():
+            fields["partial_complete"] = True
     return fields

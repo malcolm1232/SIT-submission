@@ -602,6 +602,33 @@ async def test_a_cut_shard_keeps_its_finished_findings(tmp_path: Path, cfg: Effe
     assert not d.event.startswith("out of time before assessment")           # the design was assessed
 
 
+async def test_a_shard_cut_while_repeating_keeps_its_complete_answer(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """Shard 3 of ``sit_sample_ui_2``: a complete answer (13 findings, 2 sound areas, 2 coverage rows),
+    then the model wrote it again and the stage 1 limit came during the repeat. The gateway keeps the
+    complete answer (``partial_complete``), not the half-written repeat, and the disclosure says so."""
+    crit = ["claims_and_external_constraints", "verifiability"]
+    c2 = shard_cfg(cfg, {"a": crit})
+    findings = [finding(f"FND-{i:03d}", i, title=f"Finding {i}", criterion_ids=[crit[i % 2]]) for i in range(1, 14)]
+    area = assess_output()["sound_areas"][0]
+    answer = {"findings": findings, "sound_areas": [area, {**area, "section_refs": ["11.2"]}],
+              "coverage": [{"criterion_id": c, "outcome": "findings", "finding_ids": ["FND-001"], "note": "n"}
+                           for c in crit]}
+    cut = LLMDeadlineError("cut at the stage 1 limit", call_id="llm-0005", partial=answer, partial_complete=True)
+    assert cut.salvaged_items == 17
+    ctx = make_ctx(tmp_path, c2, {PhaseName.ASSESS: [FakeResponse(raises=cut)]})
+    await AssessPhase().run(ctx)
+    s = ctx.state
+    assert len(s.finding_drafts) == 13 and len(s.sound_area_drafts) == 2
+    cov = {c.criterion_id: c for c in s.coverage}
+    assert set(cov) == set(crit) and all(c.outcome == "findings" for c in cov.values())
+    [d] = s.degradations
+    assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT
+    assert d.event.startswith("assess shard 1/1 (a) ended at the stage 1 limit at ")
+    assert "after a complete answer" in d.event
+    assert "the complete answer was kept: 13 finding(s), 2 sound area(s), 2 coverage row(s)" in d.event
+    assert d.event.endswith("(cut call llm-0005)") and "only its unfinished repeat was lost" in d.impact
+
+
 def _failing(reason: str) -> list[FakeResponse]:
     """The answers that leave one shard without an assessment for ``reason``."""
     if reason == "deadline":

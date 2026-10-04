@@ -113,6 +113,8 @@ class PhaseCall:
     truncated_ids: tuple[str | None, ...] = ()
     #: What a cut stream had finished (``LLMDeadlineError.partial``; latency redesign), else ``None``.
     partial: dict[str, Any] | None = None
+    #: ``partial`` is a complete answer the model was writing again when the limit came.
+    partial_complete: bool = False
     #: The call ID of the attempt the deadline cut, when ``cut`` (``None`` if no attempt had started).
     cut_id: str | None = None
     #: Problems ``check`` still found after the one repair call (the answer is not used).
@@ -256,7 +258,7 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
     partial = getattr(exc, "partial", None)
     ctx_event(ctx, f"{phase.value}: model call cut by the run deadline; {impact}", "warn", event="call_cut",
               stage=phase.value, call_id=getattr(exc, "call_id", None), at_s=ctx.elapsed_s(),
-              kept_items=getattr(exc, "salvaged_items", 0),
+              kept_items=getattr(exc, "salvaged_items", 0), complete=bool(getattr(exc, "partial_complete", False)),
               kept={str(k): len(v) for k, v in partial.items() if isinstance(v, list)} if isinstance(partial, dict)
               else {})
 
@@ -374,7 +376,7 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
             if disclose:
                 deadline_cut(ctx, phase, exc)
             return PhaseCall(result=None, brief=brief, cut=True, partial=getattr(exc, "partial", None),
-                             cut_id=exc.call_id)
+                             partial_complete=bool(getattr(exc, "partial_complete", False)), cut_id=exc.call_id)
         except LLMTruncatedError as exc:
             _note_call(ctx, phase, exc.call_id)
             add_usage(ctx.state.budget, exc.usage)

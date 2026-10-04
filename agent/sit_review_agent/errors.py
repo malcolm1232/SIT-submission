@@ -124,13 +124,18 @@ class LLMDeadlineError(LLMTimeoutError):
     The phase validates the items against its output type. ``estimated_usage`` is the gateway's
     estimate for the cut attempt (the CLI reports no usage for a killed call). It is kept apart from
     ``usage`` on purpose: ``usage`` stays measured (billed) usage only, so an estimate is never added
-    or shown as measured; whoever records it marks it estimated."""
+    or shown as measured; whoever records it marks it estimated.
+
+    ``partial_complete`` is true when ``partial`` is a complete answer: the cut came while the model
+    was writing its answer a second time (the CLI had rejected the first), and the complete first
+    answer is kept instead of the half-written repeat."""
 
     def __init__(self, message: str, *, call_id: str | None = None, phase: str | None = None,
                  usage: Usage | None = None, partial: dict[str, Any] | None = None,
-                 estimated_usage: Usage | None = None) -> None:
+                 partial_complete: bool = False, estimated_usage: Usage | None = None) -> None:
         super().__init__(message, call_id=call_id, phase=phase, usage=usage)
         self.partial = partial
+        self.partial_complete = bool(partial_complete) and partial is not None
         self.estimated_usage = estimated_usage
 
     @property

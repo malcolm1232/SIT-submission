@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from sit_review_agent.clock import FakeClock
 from sit_review_agent.config import EffectiveConfig, load_config
@@ -568,3 +568,62 @@ async def test_the_subprocess_runner_is_killed_at_the_repeat(tmp_path: Path, cfg
     res = await gw.call(assess_req())
     assert loop.time() - t0 < 10                        # the child sleeps 30 s after its lines: it was killed
     assert res.parsed == Findings.model_validate(ans) and log(rd)[-1]["num_turns"] == 2
+
+
+# ------------------------------------------------------------------------------ a cut during a repeat
+
+
+class ShardAnswer(BaseModel):
+    """An assess shard's answer shape, closed to extra keys like the real ``AssessOutput``."""
+
+    model_config = ConfigDict(extra="forbid")
+    findings: list[dict[str, Any]]
+    sound_areas: list[dict[str, Any]]
+    coverage: list[dict[str, Any]]
+
+
+def shard_answer(n: int) -> dict[str, Any]:
+    return {"findings": [finding(i) for i in range(1, n + 1)],
+            "sound_areas": [{"section_refs": ["4.1"], "why_sound": "w"}, {"section_refs": ["5.2"], "why_sound": "w"}],
+            "coverage": [{"criterion_id": "requirement_completeness", "outcome": "findings"},
+                         {"criterion_id": "internal_consistency", "outcome": "findings"}]}
+
+
+async def test_a_cut_during_a_repeat_keeps_the_complete_answer(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """Shard 3 of ``sit_sample_ui_2``: a complete answer of 13 findings, 2 sound areas and 2 coverage
+    rows that the CLI rejected (and so did the gateway: an extra key), then a second copy cut at the
+    stage 1 limit after 5 findings. The complete answer is kept, never the half-written repeat."""
+    first = {**shard_answer(13), "extra": "the CLI and the gateway reject this answer"}
+    second = shard_answer(13)
+    cut_at = json.dumps(second).index('"FND-006"') + 5
+    lines = repeat_stream(first, second, second_cut_at=cut_at)
+    gw, rd = gateway(tmp_path, cfg, StreamRunner(("cut", lines)), elapsed=100.0)
+    req = LLMRequest(phase=PhaseName.ASSESS, conversation_id="assess-0-s3", system="s",
+                     messages=[{"role": "user", "content": "doc"}], effort="medium", max_tokens=32000,
+                     output_schema=ShardAnswer)
+    with pytest.raises(LLMDeadlineError, match="by the stage 1 limit") as ei:
+        await gw.call(req)
+    err = ei.value
+    assert err.partial is not None and err.partial_complete is True
+    assert [len(err.partial[k]) for k in ("findings", "sound_areas", "coverage")] == [13, 2, 2]
+    assert err.partial["findings"] == first["findings"] and err.salvaged_items == 17
+    entry = log(rd)[-1]
+    assert entry["partial_complete"] is True and entry["salvaged_items"] == 17 and entry["partial"] == err.partial
+    assert entry["cli_answer_rejections"] == [{"is_error": True, "text": "rejected"}]
+    # the manifest counts what was kept from the logged answer, and replay rebuilds the same error
+    from sit_review_agent.manifest import logged_salvage
+
+    assert logged_salvage(entry) == 17
+    rebuilt = recorded_error(entry, req, entry["call_id"])
+    assert isinstance(rebuilt, LLMDeadlineError) and rebuilt.partial_complete is True
+    assert rebuilt.salvaged_items == 17
+
+
+async def test_a_cut_in_the_first_answer_is_not_complete(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ans = shard_answer(13)
+    cut_at = json.dumps(ans).index('"FND-006"') + 5
+    gw, rd = gateway(tmp_path, cfg, StreamRunner(("cut", stream(ans, cut_at=cut_at))), elapsed=100.0)
+    with pytest.raises(LLMDeadlineError) as ei:
+        await gw.call(assess_req())
+    assert ei.value.partial_complete is False and ei.value.salvaged_items == 5
+    assert "partial_complete" not in log(rd)[-1] and log(rd)[-1]["salvaged_items"] == 5

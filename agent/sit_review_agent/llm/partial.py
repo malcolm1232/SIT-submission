@@ -411,9 +411,32 @@ class StreamParser:
         return self.scanner.item_count()
 
     def partial(self) -> dict[str, Any] | None:
-        """What a cut attempt salvages (``LLMDeadlineError.partial``): finished root fields and the
-        finished items of root-level arrays, or ``None``."""
-        return self.scanner.snapshot()
+        """What a cut attempt salvages (``LLMDeadlineError.partial``): the last complete answer when
+        the cut came while the model was writing its answer again (the CLI had rejected it), else the
+        finished root fields and the finished items of root-level arrays of the answer being
+        written, or ``None``. A complete answer is never traded for a half-written repeat."""
+        whole = self._last_complete()
+        return whole if whole is not None else self.scanner.snapshot()
+
+    def partial_complete(self) -> bool:
+        """Whether :meth:`partial` is a complete answer, not the finished items of an unfinished one."""
+        return self._last_complete() is not None
+
+    def _last_complete(self) -> dict[str, Any] | None:
+        """The answer object (at ``root``) of the last answer block that closed, whether or not a
+        later block (a repeat) is still being written; ``None`` when none closed."""
+        if not self.answers:
+            return None
+        node: Any = self.answers[-1]
+        for key in self.root:
+            node = node.get(key) if isinstance(node, dict) else None
+        return node if isinstance(node, dict) and node else None
+
+    def salvaged_count(self) -> int:
+        """Items of the root-level arrays in :meth:`partial` (what ``LLMDeadlineError.salvaged_items``
+        counts), as opposed to :meth:`item_count`, the items of the block being written."""
+        p = self.partial() or {}
+        return sum(len(v) for v in p.values() if isinstance(v, list))
 
     def estimated_usage(self) -> Usage | None:
         """Estimated usage of an attempt that ended without a ``result`` event: input tokens (and
