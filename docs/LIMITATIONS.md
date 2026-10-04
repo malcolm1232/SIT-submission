@@ -1,6 +1,6 @@
 # Limitations, assumptions and known constraints
 
-Date: 3 October 2026.
+Date: 3 October 2026, brought in line with the code on 4 October 2026.
 This file answers lab §5.3 "any assumptions, limitations or known constraints".
 Each item says what the agent or its evaluation cannot claim, and names the file where it is recorded or measured.
 
@@ -11,7 +11,8 @@ Each item says what the agent or its evaluation cannot claim, and names the file
 When the SIT MCP servers are down, unreachable or revoked mid-run, the review is document-only, and the report discloses it as a degradation (`docs/ARCHITECTURE.md` §5, `docs/USER_DECISIONS.md` #13).
 On the first with-tools run on the lab's document every web search failed on a closed MCP session, so that review rests on the document and one scholarly search (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Tools").
 The agent does not see images in a PDF: the default Claude Code backend accepts text only, so figures, diagrams and tables drawn as images are invisible to the model, and the report says so as `DEG-001` (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Disclosed limitations").
-The four assess shards start at about 2 s and research at about 126 s, so no shard sees external evidence; only refine and the verdict call can apply it, a trade accepted for the time slot (`docs/USER_DECISIONS.md` #37).
+The six assess shards start at about 2 s, before research, so no shard sees external evidence, a trade accepted for the time slot (`docs/USER_DECISIONS.md` #37 and #40).
+External evidence reaches a finding only through refine, whose `keep` revisions append ledger entries as `added_evidence`; the verdict call sees the verified findings and how research ended, not the ledger, so a finding refine did not reach carries no external evidence (`agent/sit_review_agent/llm/outputs.py` `FindingRevisionDraft`, `prompts/report.md`).
 The search tool's `fetch_top_n` and the research server's content retrieval fetch pages on the server side, where the agent's URL policy cannot see them, and this is still an open decision (`research/robustness/mcp_probe_findings.md` "For a follow-up worker").
 
 ### Tools that are off
@@ -24,11 +25,11 @@ The browser-automation server is disabled because it keeps one browser session s
 The 540 s deadline of the demo profile is a project assumption, because the lab brief states no time limit for the live run; it is a configurable safety net, not a product limit (`docs/USER_DECISIONS.md` #34, `config/profiles/demo.yaml`).
 Every cost in this repository is the Claude Code CLI's estimate, not a billed amount (`docs/BUDGET.md` basis note, `docs/live_runs/QUALITY_COMPARISON.md` "Caveats").
 A model call cut by a limit is logged with unknown usage, so the cost of such a run is a lower bound and is labelled as one (`docs/USER_DECISIONS.md` #28, `docs/ARCHITECTURE.md` §6).
-The cost with research on was measured once, on a run whose web searches all failed, so the cost of a run with working search is not measured (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md`, `docs/BUDGET.md` §1.1).
+The cost with working search was measured once, on the rehearsal of 4 October 2026: $7.37 recorded, a lower bound because two calls ended early, about $8.86 with an estimate for them (`docs/live_runs/sit_sample_ui_2/MEASUREMENT.md`, `docs/EXPLAIN_AS_IT_RUNS.md`).
 
-### Robustness fixes not yet seen live
+### Robustness seen live and not
 
-The MCP session fix (reopen a closed session, retry once, reopen a session idle over 60 s) passes offline tests but has not been run against the live servers (`docs/HANDOFF.md` "State on 2026-10-03 (final hub of session 4)", `docs/USER_DECISIONS.md` #38).
+The MCP session fix (reopen a closed session, retry once, reopen a session idle over 60 s) held on the live servers on 4 October 2026: 8 calls met a closed session, were retried after 3 reopens and all succeeded (`docs/live_runs/sit_sample_ui_2/MEASUREMENT.md` "Tools", `docs/USER_DECISIONS.md` #38).
 The real idle timeout of the SIT servers is not known, so the 60 s reopen threshold is a guess from one run (`config/tools.yaml` `session_idle_reopen_s`).
 32 of the 88 robustness scenarios are blocked offline as laptop-only or static and have not been run (`tests/robustness/results/robustness_summary.txt`).
 
@@ -36,7 +37,8 @@ The real idle timeout of the SIT servers is not known, so the 60 s reopen thresh
 
 The re-assessment path (`--previous`) has been run live once, document-only, on the synthetic payments v1 and v2 pair, and never on the lab's document or with tools (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md`).
 That run was not graded against the answer key, so its resolved and still-open classification is unscored (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Not verified").
-Nothing requires every prior finding to be classified, so a reader cannot tell a fixed prior finding from one that was not re-examined; three were left out in that run (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Prior findings not accounted for").
+In that run three prior findings were left out of the classification (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Prior findings not accounted for"); since then every prior finding gets exactly one status with `--previous`: refine is asked once for any it left out, the rest are recorded as still open and "not re-examined" and disclosed, and INV-13 fails a report that misses one (`agent/sit_review_agent/delta.py`, `agent/sit_review_agent/invariants.py` `check_INV_13`).
+That rule has not been run live yet.
 Three of its assess calls were cut by the stage limit, so its cost of $4.50 is a lower bound (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md` "Result").
 
 ### Scope of the build

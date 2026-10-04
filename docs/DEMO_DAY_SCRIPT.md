@@ -56,8 +56,8 @@ Does: start the stopwatch; say the plan: eight minutes of design, a ten-minute l
 |---|---|---|
 | 01:00 | `README.md` | It reviews against the design's own objectives and says "no change" when the design is fine. |
 | 01:32 | `agent/sit_review_agent/states.py`, then `dra states` | Five stages, and the same graph printed from the code. |
-| 02:04 | `agent/sit_review_agent/orchestrator.py` `_stage_1` | Understand, plan and four assess shards start together; research waits for the first two. |
-| 02:36 | `config/agent.yaml` `assess.shards` | Four criterion groups, and a criterion added live becomes its own shard, a parallel call, not wall time. |
+| 02:04 | `agent/sit_review_agent/orchestrator.py` `_stage_1` | Understand, plan and six assess shards start together; research waits for the first two. |
+| 02:36 | `config/agent.yaml` `assess.shards` | Six criterion groups, and a criterion added live becomes its own shard, a parallel call, not wall time. |
 | 03:08 | `config/profiles/demo.yaml` | 540 s, three stage limits and two reserves, enforced inside each model call in `llm/runtime.py`. |
 | 03:40 | `docs/live_runs/QUALITY_COMPARISON.md` | 3,372 s down to 382 s, 11 of 14 to 13 of 14 planted flaws, one document and one run per arm. |
 | 04:12 | `agent/sit_review_agent/llm/gateway.py`, `llm/backend.py` | One gateway protocol, two backends, and the CLI backend needs no API key. |
@@ -67,7 +67,7 @@ Does: start the stopwatch; say the plan: eight minutes of design, a ten-minute l
 | 06:20 | `dra explain <finding-id> --run docs/live_runs/rehearsal_concurrent_1` | Anchors, evidence with its tool call, and the history across stages, in under 5 s. |
 | 06:52 | `agent/sit_review_agent/phases/report.py` `not_assessed_verdict` | Only code can declare a design not assessed, and it says why. |
 | 07:24 | `agent/sit_review_agent/state/checkpoint.py`, `replay.py` | A run resumes from its last checkpoint and replays exactly, stamped "replayed evidence". |
-| 07:56 | `tests/robustness/results/robustness_summary.txt` | 87 scenarios, 55 passing offline, and the `--faults` flag that applies a schedule to a live run. |
+| 07:56 | `tests/robustness/results/robustness_summary.txt` | 88 scenarios, 56 passing offline, and the `--faults` flag that applies a schedule to a live run. |
 | 08:28 | `harness/README.md`, `eval/prereg.yaml` | Planted flaws, a bounded matcher, a key-blind grader, a pre-registration, and unsigned-key scores marked exploratory. |
 
 If it fails: a file will not open, read its row from the printed sheet and move on; never spend more than 32 s on one point.
@@ -81,7 +81,9 @@ Does: look at the title page and revision history; if it is an updated SIT desig
 Does: choose profile `demo`, leave tools on, press Start review at about S+09:30 (run 0:00); the page shows the equivalent command.
 Window 2: type `dra replay runs/demo_backup_sit_v1` and leave it unstarted (runbook §5).
 Says: "The agent never saw this file; the page is the same `dra review` subprocess, so nothing here is outside the evaluated agent."
-S+09:30 to S+13:55 (run 0:00 to 4:25, stage 1), points at the shard tracks: "Design content and research are kept apart; the four assessors read only the document and their own criteria, so they do not wait for the plan."
+S+09:30 to S+13:55 (run 0:00 to 4:25, stage 1), points at the shard tracks: "Design content and research are kept apart; the six assessors read only the document and their own criteria, so they do not wait for the plan."
+Point at the head clock: it ticks each second from the recorded run clock, with the stage limits drawn on one axis; a stage row clicked open shows its model calls and the titles drafted so far, and the rail's Logs panel shows the same lines as the terminal (`docs/USER_DECISIONS.md` #44).
+If the run must be stopped, Stop asks for a second click and says what it does: SIGINT, exit 130, `state.json` kept, no report, `dra resume <run_id>` continues it.
 S+10:41 to S+11:35 (run 71 s to about 125 s): the first draft finding arrives in the right column under the amber "draft, unverified" pill, and the rail's Runs entry shows the stage and the run clock; say "IDs, ranks and severities can still change in refine."
 While research runs, name its stop reason when it shows; on the lab sample it stopped after one of four iterations (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Tools").
 S+13:55 to S+17:15 (run 265 to 465 s, merge and refine): "The deadline is enforced inside each model call, so one slow call cannot take the report with it."
@@ -116,7 +118,7 @@ Then show it: the new value is in the next run's `effective_config.json` and man
 
 | Request | Where (file, line) | Change | Under a minute? |
 |---|---|---|---|
-| A new criterion | `config/criteria.yaml`, append at the end | Six lines: `id`, `question`, `lab_ref`, `kinds`, `applies_to`, `research_hints`; it forms its own fifth shard (checked by loading the config, 2026-10-03) | Yes; a fifth shard's run time is not measured |
+| A new criterion | `config/criteria.yaml`, append at the end | Six lines: `id`, `question`, `lab_ref`, `kinds`, `applies_to`, `research_hints`; it forms its own seventh shard (`config/agent.yaml` `assess.shards`) | Yes; a seventh shard's run time is not measured |
 | A severity weight | none exists in the agent: severity is a closed enum the model assigns | Nearest knob: `config/agent.yaml` line 91 `report.min_severity: medium` moves low findings to the appendix | Yes; say plainly that there is no weight to change |
 | The effort level | `config/profiles/demo.yaml` lines 19-24 (the profile overrides `config/agent.yaml` lines 4-9) | e.g. line 21 `assess: high` | Yes; `high` measured 780.3 s, past the 540 s deadline (`docs/live_runs/QUALITY_COMPARISON.md`) |
 | A disabled tool | `config/tools.yaml` line 6 (search) or 9 (research), or no edit: `--disable-tool mcp-internet-search` | `enabled: false` | Yes; the report header lists the disabled tool |
@@ -135,7 +137,7 @@ If it fails: `make smoke` red and the fix not obvious in a minute, `git checkout
 
 The modification rerun's review lands here; open it and point at the changed value in the manifest.
 Says: "The outputs of today's runs go into the repository with their evidence, as the brief asks."
-Does: offer the Download button for their copy; Email only if `config/ui.yaml` names a server.
+Does: offer the Download button for their copy, a zip of the review as one sidebar page, its eight parts as separate files, `report.md` and `report.json` (`docs/USER_DECISIONS.md` #43); Email only if `config/ui.yaml` names a server.
 
 ## The fallback, any time
 
