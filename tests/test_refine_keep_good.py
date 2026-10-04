@@ -6,7 +6,10 @@ Now ``call_model(split=...)`` keeps every revision that holds on its own and ask
 only for the failing findings (by ID, in the correction). Repair returned in full: repaired plus kept
 are applied. Repair cut at the limit: the kept revisions plus whatever repaired revisions it had
 finished. A revision that fails the check is never applied. The degradation states the counts. An
-answer where nothing holds is asked again whole, as before. Fake gateway only.
+answer where nothing holds is asked again whole, as before. A repair call that fails on the schema
+or with a transport error keeps the 54 (the run used to end at refine with no report), a persistent
+refusal of it keeps them without counting refine as declined, and a failed first call still raises.
+Fake gateway only.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ import pytest
 
 from sit_review_agent.config import EffectiveConfig, load_config
 from sit_review_agent.context import RunContext
-from sit_review_agent.errors import LLMDeadlineError
+from sit_review_agent.errors import LLMDeadlineError, LLMSchemaError, LLMUnavailableError
 from sit_review_agent.llm.gateway import FakeResponse
 from sit_review_agent.models import DegradationType
 from sit_review_agent.phases._model_calls import REFINE_FALLBACK_IMPACT
@@ -241,3 +244,57 @@ async def test_an_answer_where_nothing_holds_is_asked_again_whole(tmp_path: Path
     assert [f.rank for f in ctx.state.finding_drafts] == list(range(1, N + 1))
     assert refine_degradations(ctx) == []
     assert refined_event(ctx).fields["salvaged"] is False
+
+
+def schema_error() -> LLMSchemaError:
+    return LLMSchemaError("output did not validate against RefineRevisionsOutput", call_id="llm-0003", phase="refine")
+
+
+@pytest.mark.parametrize(("error", "how"), [
+    (schema_error, "did not match the output schema"),
+    (lambda: LLMUnavailableError("model unreachable after retries", call_id="llm-0003", phase="refine"),
+     "failed (LLMUnavailableError)"),
+])
+async def test_a_failed_repair_call_keeps_the_54(tmp_path: Path, cfg: EffectiveConfig, error: Any, how: str) -> None:
+    """A repair call that fails on the schema or in transport used to raise: the run ended at refine
+    with no report and the 54 valid revisions only in the raw model log."""
+    ctx = await many(tmp_path, cfg, [FakeResponse(parsed=first_answer()), FakeResponse(raises=error())])
+    await RefinePhase().run(ctx)                                    # does not raise
+    s = ctx.state
+    got = {f.id: f for f in s.finding_drafts}
+    assert all(got[fid(i)].severity.value == "medium" for i in range(1, 11))
+    assert len(s.finding_ids.refine_fields) == N - 1 and fid(BAD) not in s.finding_ids.refine_fields
+    assert s.finding_meta[fid(1)].last_call_id == "llm-0002" and got[fid(BAD)].rank == N
+    [d] = refine_degradations(ctx)
+    assert d.type is DegradationType.OTHER
+    assert d.event == ("the refine answer broke the revision rules for 1 finding(s); the one repair call, asked for "
+                       f"those only, {how}")
+    assert "54 of 55 refine revisions" in d.impact and f"which {how} with 0 revision(s)" in d.impact
+    assert f"1 unrefined ({fid(BAD)})" in d.impact
+    assert "refine" not in s.declined_sections
+    e = refined_event(ctx)
+    assert (e.fields["kept"], e.fields["repaired"], e.fields["unrefined"]) == (54, 0, 1)
+    [u] = [r for r in ctx.progress.records if r.event == "answer_unusable"]
+    assert u.fields["error"] == type(error()).__name__ and u.fields["kept"] == 54
+
+
+async def test_a_failed_first_call_still_raises(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """Only a repair call with kept items falls back; a first answer off the schema gets its one repair
+    call and a second schema failure propagates as before."""
+    ctx = await many(tmp_path, cfg, [FakeResponse(raises=schema_error()), FakeResponse(raises=schema_error())])
+    with pytest.raises(LLMSchemaError):
+        await RefinePhase().run(ctx)
+
+
+async def test_a_declined_repair_keeps_the_54_and_refine_is_not_declined(tmp_path: Path,
+                                                                        cfg: EffectiveConfig) -> None:
+    """A persistent refusal of the repair call: the kept revisions are applied, so refine is not a
+    declined section (declined_sections drives the report's "the model declined" text)."""
+    refusal = FakeResponse(stop_reason="refusal")
+    ctx = await many(tmp_path, cfg, [FakeResponse(parsed=first_answer()), refusal, refusal])
+    await RefinePhase().run(ctx)
+    s = ctx.state
+    assert len(s.finding_ids.refine_fields) == N - 1
+    assert "refine" not in s.declined_sections
+    [d] = refine_degradations(ctx)
+    assert "54 of 55 refine revisions" in d.impact and "which was declined with 0 revision(s)" in d.impact
