@@ -359,3 +359,23 @@ already happened (none had for entries made before the freeze).
   the two sealed S-heldout items.
 - **Decided by:** the owner, 2026-10-03 (`docs/USER_DECISIONS.md` #35, which supersedes #32).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`; no SIT run was ever scored).
+
+## 13. 2026-10-05: plan D, more documents and fewer runs per document; five new synthetic items
+
+- **Fields:** `splits.S-dev.items` (five items added: `eval/synthetic/iot_fleet`, `consent_service`,
+  `hospital_scheduling`, `ledger_migration` and `exam_platform`, each with its `item_id` and
+  `documents: [design_v1.pdf, design_v2.pdf]`). No other field of `eval/prereg.yaml` is edited: the run counts of
+  `conditions`, `stop_rule` and the S-dev `counts` line keep their old text in the file and are superseded by this
+  entry until the file is next revised.
+- **Old text:** the run counts of plans A to C: three S-dev synthetic items and two S-heldout items, and every Tier A
+  scored cell with `k = 3` launched runs.
+- **New text (plan D):** ten keyed documents, the three S-dev synthetic items, the two S-heldout items and the five
+  new synthetic items; one full-agent run and one single-call baseline run per document, all at effort `medium`;
+  five v2 re-assessments; two extra full-agent runs on each of two documents to estimate run-to-run variance; one
+  `low` and one `high` effort run on one document.
+- **Reason:** the document is the unit of analysis and between-document variance dominates run-to-run variance, so
+  more documents with fewer repeats buys a tighter estimate for the same number of runs. The owner, 2026-10-04,
+  verbatim: "less runs, but more variants document wise".
+- **Decided by:** the owner, 2026-10-04 22:40, with the planner's shaping (`docs/USER_DECISIONS.md` #46).
+- **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). Every score stays
+  exploratory until the owner signs the keys (ruling #26).
