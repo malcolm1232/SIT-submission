@@ -56,7 +56,7 @@ A run writes everything under `runs/`, which git ignores; a run worth keeping is
 
 | File or variable | What it sets |
 |---|---|
-| `config/agent.yaml` | Model, effort per stage, output cap, LLM backend, the four assess shards, phases on or off, transport, run root |
+| `config/agent.yaml` | Model, effort per stage, output cap, LLM backend, the six assess shards, phases on or off, transport, run root |
 | `config/profiles/` | Named overlays chosen with `--profile`; `demo.yaml` sets the 540 s deadline, the three stage limits and `medium` effort |
 | `config/stop_rules.yaml` | The active stop rules, deadline, stage limits, tool-call and research-iteration budgets, reserves |
 | `config/tools.yaml` | The four SIT MCP servers (two enabled), the auth header, timeouts and the idle-session rule |

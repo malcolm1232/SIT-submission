@@ -120,7 +120,7 @@ DEG-005: FND-001's recommendation appears to reverse approved decision AD-008 wi
 | External evidence | 30 entries, 0 cited | 41 entries, 0 cited |
 | Anchors | 169, 0 repaired | 193, 0 repaired, 1 not found |
 
-Six shards did not bring stage 1 forward: the four single-pass shards finished by 177.9 s, but three shards wrote their answer twice, and the last of them met the limit.
+Six shards did not bring stage 1 forward: the three single-pass shards (1, 2 and 5) finished by 177.9 s, but three shards wrote their answer twice, and the last of them met the limit.
 The cost nearly doubled: two more shards, the doubled answers (shards 4 and 6 wrote 30,271 and 33,576 tokens) and a refine plus repair that both wrote their full cache.
 No answer key exists for this document (decision #35), so nothing was scored.
 
