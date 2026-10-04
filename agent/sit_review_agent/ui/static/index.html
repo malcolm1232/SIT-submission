@@ -107,13 +107,20 @@
   <div class="finished-bar" id="finished-bar" hidden></div>
   <!-- the whole run on one axis: the recorded stage limits and the deadline as markers, the cursor at the live clock -->
   <div class="axis" id="run-axis" hidden>
-    <div class="axis-head"><h2>The run against its limits</h2><span class="limit num" id="axis-note"></span></div>
+    <div class="axis-head"><h2>The run against its limits</h2><span class="limit num" id="axis-note"></span><button class="why-btn" type="button" id="axis-why" data-why="limits" aria-expanded="false">Why</button></div>
     <div class="axis-line" id="axis-line"></div>
     <div class="axis-labels" id="axis-labels"></div>
+    <div id="axis-why-text"></div>
   </div>
   <div id="limit-notes"></div>
   <div class="run-wrap">
     <div class="stages">
+      <!-- explanation, never the record: the entry of the current stage from #explain-map, numbers from the stream -->
+      <section class="explain" id="explain" aria-labelledby="explain-title">
+        <div class="explain-head"><h2 id="explain-title">What is happening</h2><span class="pill explain-pill" id="explain-label">explanation, not the record</span></div>
+        <div id="explain-body"></div>
+        <div class="explain-rule">Written in advance for each stage from the architecture and the code; only the numbers are this run's, read from its event stream. Each row's Why opens the same text for that stage.</div>
+      </section>
       <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num" id="stage1-limit"></span></div>
       <div class="tracks" id="stage1-tracks"></div>
       <div id="stage1-disclosures"></div>
@@ -174,6 +181,124 @@
   </section>
 </template>
 
+<!-- The "What is happening" panel's text (USER_DECISIONS #45): one entry per stage, written in advance from
+     docs/ARCHITECTURE.md sections 2, 3, 5 and 6 and the code each "src" names. It is explanation, never the record:
+     a {name} is filled by app.js FACTS from the run's own event stream, and a sentence whose names are not all in
+     the stream yet is replaced by its "else" or left out, so no empty number is ever shown.
+     tests/test_ui_explain.py checks every name against FACTS, every decision number against
+     docs/USER_DECISIONS.md and every file against the repository. -->
+<script type="application/json" id="explain-map">
+{
+  "ingest": {
+    "title": "Ingest: reading the PDF",
+    "says": [
+      {"text": "Ingest is code, not a model: the PDF is read into page-marked text of {pages} pages and {sections} sections, and every later quote is checked against these same bytes.",
+       "else": "Ingest is code, not a model: the PDF is read into page-marked text, and every later quote is checked against these same bytes."}
+    ],
+    "src": "agent/sit_review_agent/phases/ingest.py; agent/sit_review_agent/ingest/text.py"
+  },
+  "understand": {
+    "title": "Understand: what the design says it is",
+    "says": [
+      "Understand is one model call that reads the whole document once and writes the intent summary (the design's objectives and constraints) and a registry of the decisions the document says it has approved.",
+      "Each entry carries a verbatim quote as its anchor, and the registry is then frozen and hashed, so no later call can rewrite what the document decided: later findings link to these entries and quote the same page text, which is what makes every claim traceable.",
+      {"text": "This run: {objectives} objectives, {constraints} constraints and {registry_entries} registry entries from {pages} pages.",
+       "else": {"text": "The document is {pages} pages and {sections} sections; the counts appear here when the call returns."}}
+    ],
+    "src": "agent/sit_review_agent/phases/understand.py; agent/sit_review_agent/state/decision_registry.py; docs/ARCHITECTURE.md sections 2 and 6"
+  },
+  "plan": {
+    "title": "Plan: what to check and what to look up",
+    "says": [
+      {"text": "Plan is one model call that turns the {criteria} review criteria into the questions to check, and marks the ones that need an outside source as research questions for the SIT MCP servers.",
+       "else": "Plan is one model call that turns the review criteria into the questions to check, and marks the ones that need an outside source as research questions for the SIT MCP servers."},
+      "Code adds a document-only question for any criterion the model neither asked about nor skipped with a reason, so every criterion is checked; research starts once understand and plan have both ended, while the assess shards never wait for the plan.",
+      {"text": "This run: {questions} questions, {external} of them for an outside source."}
+    ],
+    "src": "agent/sit_review_agent/phases/plan.py build_plan; agent/sit_review_agent/states.py STAGE_1_DEPENDS"
+  },
+  "assess": {
+    "title": "Assess: the shards, side by side",
+    "says": [
+      {"text": "Assess is {shards} model calls running at the same time, one per group of criteria, each reading only the document and its own criteria: one pass over every criterion did not fit the slot, so the stage now takes as long as its slowest shard, not the sum of them.",
+       "else": "Assess is one model call per group of criteria, all running at the same time, each reading only the document and its own criteria: one pass over every criterion did not fit the slot, so the stage takes as long as its slowest shard, not the sum of them."},
+      {"text": "Each shard drafts findings anchored to verbatim quotes with a page; a shard that reaches the stage 1 limit at {stage_1_end} keeps every finding it had finished, and only its criteria with no finished finding are marked not assessed.",
+       "else": "Each shard drafts findings anchored to verbatim quotes with a page; a shard that reaches the stage 1 limit keeps every finding it had finished, and only its criteria with no finished finding are marked not assessed."},
+      {"text": "So far {shards_drafted} of {shards} shards have answered, {shards_cut} ended at the limit, and {drafts} draft findings have streamed."},
+      {"text": "The merge, which is code, then numbered {merged_findings} findings in shard order, so no ID depends on which shard finished first."}
+    ],
+    "src": "agent/sit_review_agent/phases/assess.py; config/agent.yaml assess.shards; decisions #31 and #40"
+  },
+  "research": {
+    "title": "Research: asking the SIT MCP servers",
+    "says": [
+      {"text": "Research asks the SIT MCP servers the plan's {research_questions} outside questions in rounds: the model asks for tool calls, the gateway runs them, and each result becomes a ledger entry (EV-nnn) before the model reads it, so it can cite only what it has read.",
+       "else": "Research asks the SIT MCP servers the plan's outside questions in rounds: the model asks for tool calls, the gateway runs them, and each result becomes a ledger entry (EV-nnn) before the model reads it, so it can cite only what it has read."},
+      {"text": "It has asked {servers} with {tool_calls} tool calls; after each round the stop rules decide whether another round is worth it.",
+       "else": {"text": "{tools_offered} tools are offered from the enabled servers; after each round the stop rules decide whether another round is worth it.",
+                "else": "After each round the stop rules decide whether another round is worth it."}},
+      "The assess shards never see this evidence: they start at once, and waiting for research would not fit the slot, so refine applies it to the merged findings instead and the evidence is attached by the one call that has read it, never by a shard that did not (decision #37).",
+      {"text": "Research stopped ({research_stop}) with {answered} of {research_questions} questions answered and {ledger_entries} entries in the ledger."}
+    ],
+    "src": "agent/sit_review_agent/phases/research.py; agent/sit_review_agent/stop_rules.py; agent/sit_review_agent/state/evidence_ledger.py; decision #37"
+  },
+  "refine": {
+    "title": "Refine: one call over every finding",
+    "says": [
+      {"text": "Refine is one model call over all {merged_findings} merged findings that sees the research evidence, the frozen registry and every shard's findings together, so it can merge duplicates across shards, withdraw the unsupported ones, rank them and attach the outside evidence.",
+       "else": "Refine is one model call over all the merged findings that sees the research evidence, the frozen registry and every shard's findings together, so it can merge duplicates across shards, withdraw the unsupported ones, rank them and attach the outside evidence."},
+      {"text": "It returns one revision per finding, not the findings again, and code checks each revision by rule: the ones that pass are kept as given and only the failing ones go to one repair call, so a repair ended by the limit at {refine_end} cannot cost the good revisions.",
+       "else": "It returns one revision per finding, not the findings again, and code checks each revision by rule: the ones that pass are kept as given and only the failing ones go to one repair call, so a repair ended by the limit cannot cost the good revisions."},
+      {"text": "This run: {refine_kept} revisions passed and were kept, {refine_retry} went to the repair call."},
+      {"text": "Result: {revised} revised, {merged} merged into another, {withdrawn} withdrawn and {unchanged} kept as drafted, leaving {refined_findings} findings."}
+    ],
+    "src": "agent/sit_review_agent/phases/refine.py split_revisions, repair_outcome; agent/sit_review_agent/llm/outputs.py revision_problems"
+  },
+  "verify": {
+    "title": "Verify: every quote against the page",
+    "says": [
+      {"text": "Verify is code, not a model: each of the {anchors} anchors is searched for in the canonical page text, an exact match first, then a close match on the cited page or a page next to it.",
+       "else": "Verify is code, not a model: each anchor is searched for in the canonical page text, an exact match first, then a close match on the cited page or a page next to it."},
+      "Evidence is filled in from the ledger, so the model never writes a URL; a finding left with no anchor that resolves moves to the unresolved list as Unverified and is disclosed, never dropped silently.",
+      {"text": "This run: {resolved} of {anchors} anchors resolved, {unresolved_anchors} unresolved; {findings_verified} findings verified, {findings_unverified} unverified."}
+    ],
+    "src": "agent/sit_review_agent/phases/verify.py; agent/sit_review_agent/ingest/anchor.py verify_anchor; agent/sit_review_agent/state/evidence_ledger.py hydrate"
+  },
+  "report": {
+    "title": "Report: the verdict and the record",
+    "says": [
+      {"text": "Report is one model call that writes only the verdict, by {verdict_end} at the latest, and code then assembles report.json and report.md from the findings and the evidence ledger: every claim cites its finding and evidence IDs, and an ID that does not exist fails the run.",
+       "else": "Report is one model call that writes only the verdict, and code then assembles report.json and report.md from the findings and the evidence ledger: every claim cites its finding and evidence IDs, and an ID that does not exist fails the run."},
+      "The limitations section is written by code, one line per degradation (DEG-nnn): every limit reached, call ended early, failed tool or unverified finding is stated in the report rather than hidden, and only code can set the verdict to not assessed.",
+      {"text": "Verdict: {verdict} at confidence {confidence}, {final_findings} findings, {unresolved} unresolved items, {limitations} limitations."}
+    ],
+    "src": "agent/sit_review_agent/phases/report.py assemble_review; agent/sit_review_agent/invariants.py check_INV_05, check_INV_07, check_INV_12"
+  },
+  "limits": {
+    "title": "Why the run has stage limits",
+    "says": [
+      {"text": "Every stage has a fixed end on the run clock, not a share of the deadline: stage 1 by {stage_1_end}, refine by {refine_end}, the verdict by {verdict_end}, inside a {deadline} deadline, and each model call is bounded by the time left before its stage ends.",
+       "else": "Every stage has a fixed end on the run clock, not a share of the deadline, and each model call is bounded by the time left before its stage ends."},
+      "The limits exist because the run is live in front of the panel and must end with a report; the figures are a configurable assumption, since the lab brief sets no time limit (decision #34).",
+      {"text": "A call that reaches its limit keeps every item it had finished and the run goes on to verify and the report, so only unfinished work is lost, and each stop is disclosed as a degradation; stops at a stage limit in this run: {limits_reached}.",
+       "else": "A call that reaches its limit keeps every item it had finished and the run goes on to verify and the report, so only unfinished work is lost, and each stop is disclosed as a degradation."}
+    ],
+    "src": "config/profiles/demo.yaml stage_limits_s; agent/sit_review_agent/llm/runtime.py RunDeadline; agent/sit_review_agent/orchestrator.py _cap; decision #34"
+  },
+  "finished": {
+    "title": "The run, in one paragraph",
+    "says": [
+      {"text": "The run finished ({outcome}) at {wall} on the run clock with the verdict {verdict} at confidence {confidence}: {final_findings} findings, {unresolved} unresolved items and {limitations} limitations, each limitation one disclosed degradation.",
+       "else": {"text": "The run stopped before its report: {run_error}.",
+                "else": {"text": "The run finished ({outcome}) at {wall} on the run clock."}}},
+      {"text": "Research gathered {ledger_entries} outside entries into the ledger with {tool_calls} tool calls; stops at a stage limit in this run: {limits_reached}."},
+      {"text": "The model cost is at least {cost_lower_bound}: a call ended by a limit logs its usage as unknown, never as zero.",
+       "else": {"text": "The model cost was {cost}."}}
+    ],
+    "src": "agent/sit_review_agent/manifest.py; agent/sit_review_agent/llm/gateway.py unrecorded_usage; docs/ARCHITECTURE.md section 6"
+  }
+}
+</script>
 <script src="/static/app.js"></script>
 </body>
 </html>

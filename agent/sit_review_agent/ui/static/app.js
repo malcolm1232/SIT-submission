@@ -462,7 +462,12 @@ function newRunModel() {
     // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
     limitNotes: [], draftedByCall: new Map(),
     // The track rows the reader expanded to their calls; kept across repaints.
-    open: new Set() };
+    open: new Set(),
+    // The counts the "What is happening" panel fills in (recordFacts), each the fields of one record type; and the rows
+    // (track keys, or "limits" for the axis) whose Why is open.
+    x: { ended: false, criteria: null, intent: null, plan: null, research: null, servers: [], toolCalls: null, researchStop: null, merged: null,
+      refineFindings: null, retry: null, refined: null, anchors: null },
+    why: new Set() };
 }
 
 // One model call of a track (call_opened), with the latest call_status fields and the draft items streamed from it.
@@ -512,6 +517,7 @@ function applyEvent(m, ev) {
   const now = at(ev);
   m.lastT = Math.max(m.lastT, now);
   if (ev.console) m.events.push(ev);
+  recordFacts(m, ev, f);
   switch (ev.type) {
     case "run_started":
       m.runId = f.run_id; m.mode = f.mode ?? null; m.replay = f.mode === "replay"; m.resumed = m.resumed || !!f.resumed;
@@ -647,6 +653,185 @@ function applyEvent(m, ev) {
   }
 }
 
+// ------------------------------------------------------------------ "What is happening": explanation, never the record
+// The text is the #explain-map JSON in index.html (one entry per stage, written in advance from docs/ARCHITECTURE.md and
+// the code each entry's "src" names). A {name} in it is filled by FACTS from the model this reducer built from the
+// run's own records; a sentence whose names are not all known yet gives way to its "else" or is left out, so the panel
+// never shows an empty or made-up number. tests/test_ui_explain.py pins every name to FACTS.
+
+const EXPLAIN = (() => { const el = $("explain-map"); try { return el ? JSON.parse(el.textContent) : {}; } catch (e) { return {}; } })();
+// The qualified tool name is <server>__<tool> (tools/gateway.py QUALIFIER, qualify).
+const QUALIFIER = "__";
+
+// The fields of the records the explanation reads, kept as the record has them (spec/progress_event.schema.json).
+function recordFacts(m, ev, f) {
+  const x = m.x;
+  switch (ev.type) {
+    // A run that ended and was resumed (dra resume appends to the same file) is running again until its next end.
+    case "run_started": x.ended = false; if (Array.isArray(f.criteria)) x.criteria = f.criteria.length; break;
+    case "run_resuming": x.ended = false; break;
+    case "run_finished": case "run_error": x.ended = true; break;
+    case "assess_started": if (typeof f.criteria === "number") x.criteria = f.criteria; break;
+    case "intent_ready": x.intent = f; break;
+    case "plan_ready": x.plan = f; break;
+    case "research_started": x.research = f; break;
+    case "tool_round":
+      x.toolCalls = (x.toolCalls || 0) + (typeof f.calls === "number" ? f.calls : 0);
+      for (const name of f.tools || []) { const server = String(name).split(QUALIFIER)[0]; if (server && !x.servers.includes(server)) x.servers.push(server); }
+      break;
+    case "research_stopped": x.researchStop = f; break;
+    case "shards_merged": x.merged = f; break;
+    case "refine_started": x.refineFindings = f.findings ?? null; break;
+    case "call_retry": if (ev.phase === "refine" && f.reason === "rule_repair") x.retry = f; break;
+    case "refined": x.refined = f; break;
+    case "anchors_verified": x.anchors = f; break;
+    default: break;
+  }
+}
+
+function clk(s) { return typeof s === "number" ? clock(s) : null; }
+function listWords(xs) { return xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1] : xs.join(""); }
+function shardTracks(m) { return [...m.tracks.values()].filter((t) => t.key.startsWith("assess ")); }
+function field(o, k) { return o ? o[k] : null; }
+
+// Every name the explanation may use, and where its value comes from. A value of null or undefined is "not known yet".
+const FACTS = {
+  pages: (m) => field(m.doc, "pages"),
+  sections: (m) => field(m.doc, "sections"),
+  criteria: (m) => m.x.criteria,
+  objectives: (m) => field(m.x.intent, "objectives"),
+  constraints: (m) => field(m.x.intent, "constraints"),
+  registry_entries: (m) => field(m.x.intent, "registry_entries"),
+  questions: (m) => field(m.x.plan, "questions"),
+  external: (m) => field(m.x.plan, "external"),
+  shards: (m) => m.shardCount,
+  shards_drafted: (m) => shardTracks(m).filter((t) => t.status === "done").length,
+  shards_cut: (m) => shardTracks(m).filter((t) => t.status === "cut").length,
+  drafts: (m) => m.drafts.length,
+  merged_findings: (m) => field(m.x.merged, "findings") ?? m.x.refineFindings,
+  stage_1_end: (m) => clk(field(m.limits, "stage_1_end")),
+  refine_end: (m) => clk(field(m.limits, "refine_end")),
+  verdict_end: (m) => clk(field(m.limits, "verdict_end")),
+  deadline: (m) => clk(m.deadline),
+  research_questions: (m) => field(m.x.research, "questions") ?? field(m.x.researchStop, "questions"),
+  tools_offered: (m) => field(m.x.research, "tools"),
+  servers: (m) => (m.x.servers.length ? listWords(m.x.servers) : null),
+  tool_calls: (m) => field(m.x.researchStop, "tool_calls") ?? m.x.toolCalls,
+  research_stop: (m) => (m.x.researchStop ? words(m.x.researchStop.code) : null),
+  answered: (m) => field(m.x.researchStop, "answered"),
+  ledger_entries: (m) => field(m.x.researchStop, "ledger_entries"),
+  refine_kept: (m) => field(m.x.retry, "kept"),
+  refine_retry: (m) => field(m.x.retry, "retry"),
+  revised: (m) => field(m.x.refined, "revised"),
+  merged: (m) => field(m.x.refined, "merged"),
+  withdrawn: (m) => field(m.x.refined, "withdrawn"),
+  unchanged: (m) => field(m.x.refined, "unchanged"),
+  refined_findings: (m) => field(m.x.refined, "findings"),
+  anchors: (m) => field(m.x.anchors, "anchors"),
+  resolved: (m) => field(m.x.anchors, "resolved"),
+  unresolved_anchors: (m) => field(m.x.anchors, "unresolved"),
+  findings_verified: (m) => field(m.x.anchors, "findings_verified"),
+  findings_unverified: (m) => field(m.x.anchors, "findings_unverified"),
+  verdict: (m) => (m.verdict ? words(m.verdict.label) : null),
+  confidence: (m) => (m.verdict && typeof m.verdict.confidence === "number" ? conf(m.verdict.confidence) : null),
+  final_findings: (m) => field(m.verdict, "findings"),
+  unresolved: (m) => field(m.verdict, "unresolved"),
+  limitations: (m) => field(m.verdict, "limitations"),
+  limits_reached: (m) => m.limitNotes.length,
+  outcome: (m) => (m.finished ? words(m.finished.outcome) : null),
+  wall: (m) => (m.finished && typeof m.finished.wall_s === "number" ? dur(m.finished.wall_s) : null),
+  cost: (m) => (m.finished && typeof m.finished.cost_usd === "number" && !m.finished.cost_is_lower_bound ? money(m.finished.cost_usd, false) : null),
+  cost_lower_bound: (m) => (m.finished && typeof m.finished.cost_usd === "number" && m.finished.cost_is_lower_bound ? money(m.finished.cost_usd, false) : null),
+  run_error: (m) => field(m.error, "error"),
+};
+
+function factText(m, name) {
+  const get = FACTS[name];
+  const v = get ? get(m) : null;
+  if (typeof v === "number") return Number.isFinite(v) ? intl(v) : null;
+  return typeof v === "string" && v !== "" ? v : null;
+}
+
+// One sentence with its names filled (strings and <b> values), or null when a name is not known yet.
+function fillSentence(m, text) {
+  const parts = String(text).split(/\{(\w+)\}/);
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) { if (parts[i]) out.push(parts[i]); continue; }
+    const v = factText(m, parts[i]);
+    if (v === null) return null;
+    out.push(h("b", { class: "num", text: v }));
+  }
+  return out;
+}
+function saySentence(m, item) {
+  if (typeof item === "string") return fillSentence(m, item);
+  if (!item || typeof item !== "object") return null;
+  return fillSentence(m, item.text) || (item.else !== undefined ? saySentence(m, item.else) : null);
+}
+
+// Which entry a track row stands for: every assess shard and the merge are "assess", the verdict call is "report".
+function entryOf(key) {
+  if (key.startsWith("assess") || key === "merge") return "assess";
+  if (key === "verdict") return "report";
+  return EXPLAIN[key] ? key : null;
+}
+
+// The entries for now: the finished run's summary; else the stage in flight, latest first for the stages in order and
+// every member in flight for stage 1 (they run side by side); between two records, the stage that started last. A
+// stop at a limit since the stage began adds the limits entry.
+function explainKeys(m) {
+  if (m.x.ended) return ["finished"];
+  const live = [...m.tracks.values()].filter((t) => t.status === "running" || t.status === "replayed");
+  const keys = live.map((t) => entryOf(t.key)).filter(Boolean);
+  let now = ["report", "verify", "refine"].filter((k) => keys.includes(k)).slice(0, 1);
+  if (!now.length) now = ["understand", "plan", "research", "assess", "ingest"].filter((k) => keys.includes(k));
+  if (!now.length) {
+    let last = null;
+    for (const t of m.tracks.values()) if (t.start !== null && entryOf(t.key) && (last === null || t.start >= last.start)) last = t;
+    if (last) now = [entryOf(last.key)];
+  }
+  const begun = [...m.tracks.values()].filter((t) => t.start !== null && now.includes(entryOf(t.key))).map((t) => t.start);
+  if (begun.length && m.limitNotes.some((n) => n.t >= Math.min(...begun))) now.push("limits");
+  return now;
+}
+
+function explainEntry(m, key, cls) {
+  const e = EXPLAIN[key];
+  if (!e) return null;
+  const said = (e.says || []).map((item) => saySentence(m, item)).filter(Boolean);
+  const p = h("p", { class: "xtext" });
+  said.forEach((s, i) => { if (i) p.append(" "); p.append(...s); });
+  return h("div", { class: "xentry" + (cls ? " " + cls : ""), "data-stage": key },
+    h("div", { class: "xtitle", text: e.title || key }), p, e.src ? h("div", { class: "xsrc" }, "From ", h("span", { class: "mono", text: e.src })) : null);
+}
+// The text of one entry as the panel shows it (the tests read every entry through this).
+function explainText(m, key) { const el = explainEntry(m, key); return el ? el.querySelector(".xtext").textContent : null; }
+
+function renderExplain(m) {
+  const body = $("explain-body");
+  if (!body) return;
+  clear(body);
+  const keys = explainKeys(m);
+  body.dataset.stages = keys.join(" ");
+  if (!keys.length) { body.append(h("p", { class: "xtext muted", text: "No stage has started yet; the run's first records fill this in." })); return; }
+  const stage1 = keys.filter((k) => ["understand", "plan", "research", "assess"].includes(k));
+  if (stage1.length > 1) body.append(h("div", { class: "xnote", text: "Stage 1 runs these side by side, so each is explained here:" }));
+  for (const k of keys) body.append(explainEntry(m, k, k === "limits" ? "limits" : null));
+}
+
+// The Why control of a row (or of the axis, for the limits): opens the entry of that stage under the row, in place.
+function whyButton(m, rowKey, entry) {
+  if (!entry || !EXPLAIN[entry]) return h("span", {});
+  const open = m.why.has(rowKey);
+  return h("button", { class: "why-btn", type: "button", "data-why": rowKey, "aria-expanded": String(open), title: (open ? "Hide" : "Show") + " why this stage works this way",
+    onclick: () => { if (open) m.why.delete(rowKey); else m.why.add(rowKey); renderRun(m); }, text: "Why" });
+}
+function whyBlock(m, rowKey, entry) {
+  if (!m.why.has(rowKey) || !entry) return null;
+  return h("div", { class: "why", "data-why": rowKey }, explainEntry(m, entry));
+}
+
 function trackRow(m, t, limit) {
   const pillText = t.status === "cut" ? "cut at " + clock(t.cutAt) : t.status;
   const pos = t.status === "waiting" ? null : (t.end ?? m.lastT);
@@ -669,7 +854,7 @@ function trackRow(m, t, limit) {
     h("span", { class: "chev", text: open ? "▾" : "▸" }), t.label) : t.label;
   return h("div", { class: "track" + (open ? " open" : ""), "data-track": t.key, "data-status": t.status },
     h("div", { class: "name" }, name, t.call ? h("span", { class: "call mono", text: t.call }) : null),
-    h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status);
+    h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status, whyButton(m, t.key, entryOf(t.key)));
 }
 
 // The latest call_status fields of a call, as the record has them: label, reasoning tokens, items, chars.
@@ -734,7 +919,12 @@ function renderRun(m) {
   const keys = [...m.tracks.keys()];
   const shards = keys.filter((k) => k.startsWith("assess ")).sort((a, b) => parseInt(a.slice(7), 10) - parseInt(b.slice(7), 10));
   const order = [...STAGE1, ...(shards.length ? shards : ["assess"])];
-  for (const k of order) { const t = track(m, k); s1.append(trackRow(m, t, lim.stage_1_end ?? null)); if (m.open.has(k) && t.calls.size) s1.append(callsBlock(m, t)); }
+  for (const k of order) {
+    const t = track(m, k);
+    s1.append(trackRow(m, t, lim.stage_1_end ?? null));
+    const why = whyBlock(m, k, entryOf(k)); if (why) s1.append(why);
+    if (m.open.has(k) && t.calls.size) s1.append(callsBlock(m, t));
+  }
   const summary = stage1Summary(m, shards);
   $("stage1-limit").textContent = (lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "") + (summary ? " · " + summary : "");
   const dis = clear($("stage1-disclosures"));
@@ -748,14 +938,24 @@ function renderRun(m) {
     const limit = row.limit === "deadline" ? m.deadline : (row.limit ? lim[row.limit] : null);
     if (t.status === "waiting" && row.when) {
       seq.append(h("div", { class: "track", "data-track": row.phase, "data-status": "waiting" }, h("div", { class: "name", text: row.phase }), h("div", {}, h("span", { class: "pill waiting", text: "waiting" })),
-        h("div", { class: "time num muted", text: row.when }), h("div", { class: "status", text: row.about })));
+        h("div", { class: "time num muted", text: row.when }), h("div", { class: "status", text: row.about }), whyButton(m, row.phase, entryOf(row.phase))));
     } else {
       const r = trackRow(m, t, limit ?? null);
       if (t.status === "waiting") r.querySelector(".status").textContent = row.about;
       seq.append(r);
-      if (m.open.has(row.phase) && t.calls.size) seq.append(callsBlock(m, t));
     }
+    const why = whyBlock(m, row.phase, entryOf(row.phase)); if (why) seq.append(why);
+    if (t.status !== "waiting" || !row.when) { if (m.open.has(row.phase) && t.calls.size) seq.append(callsBlock(m, t)); }
   }
+  const axisWhy = $("axis-why");
+  if (axisWhy) {
+    const open = m.why.has("limits");
+    axisWhy.setAttribute("aria-expanded", String(open));
+    axisWhy.onclick = () => { if (m.why.has("limits")) m.why.delete("limits"); else m.why.add("limits"); renderRun(m); };
+    const box = clear($("axis-why-text"));
+    if (open) box.append(h("div", { class: "why", "data-why": "limits" }, explainEntry(m, "limits")));
+  }
+  renderExplain(m);
   const stop = $("stop-rule");
   if (stop) { stop.hidden = !m.stopRule; stop.textContent = m.stopRule ? "Stop rule " + m.stopRule.code + " fired in " + words(m.stopRule.stage) + ": " + m.stopRule.detail + "; skipped to " + words(m.stopRule.to) + "." : ""; }
   renderAxis(m);
@@ -1404,6 +1604,6 @@ async function route() {
 }
 
 // The run model and its reducer, reachable by tests that feed a recorded stream through the page.
-window.SIT = { applyEvent, newRunModel, state: S };
+window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN };
 window.addEventListener("popstate", route);
 route();

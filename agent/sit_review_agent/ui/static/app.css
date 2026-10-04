@@ -260,7 +260,7 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .stage-head { display: flex; align-items: baseline; gap: 12px; margin: 18px 0 6px; }
 .stage-head:first-child { margin-top: 0; }
 .stage-head .limit { color: var(--fg-muted); font-size: 12.5px; }
-.track { display: grid; grid-template-columns: 168px 96px 170px minmax(0, 1fr); gap: 12px; align-items: center; min-height: 38px; padding: 0 10px;
+.track { display: grid; grid-template-columns: 168px 96px 170px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 38px; padding: 0 10px;
   border-top: 1px solid var(--border-subtle); font-size: 13px; }
 .tracks > .track:last-child { border-bottom: 1px solid var(--border-subtle); }
 .track .name { font-weight: 500; white-space: nowrap; }
@@ -293,6 +293,28 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .disclose .k { color: var(--fg-muted); white-space: nowrap; }
 .disclose .k b { color: var(--fg); font-weight: 500; }
 .legend { font-size: 12px; color: var(--fg-muted); margin-top: 12px; line-height: 1.5; }
+/* "What is happening": explanation of the current stage, never the record (USER_DECISIONS #45). Paper card, ink text,
+   the numbers of the run in medium weight; the label pill says it is explanation. */
+.explain { margin: 0 0 22px; padding: 14px 16px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); box-shadow: var(--shadow-sm); }
+.explain-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.explain-pill { background: var(--bg-subtle); color: var(--fg-muted); border: 1px solid var(--border-subtle); font-size: 11.5px; }
+.explain-rule { font-size: 11.5px; line-height: 1.45; color: var(--fg-muted); margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-subtle); }
+.xnote { font-size: 12.5px; color: var(--fg-muted); margin-bottom: 6px; }
+.xentry + .xentry { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-subtle); }
+.xentry.limits .xtitle { color: var(--amber); }
+.xtitle { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 3px; }
+.xtext { margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--fg-2); max-width: 92ch; }
+.xtext b { color: var(--fg); font-weight: 600; }
+.xsrc { margin-top: 5px; font-size: 11px; line-height: 1.4; color: var(--fg-disabled); }
+.xsrc .mono { font-size: 10.5px; color: var(--fg-muted); }
+/* the Why control at the end of each stage row and on the axis, and the entry it opens under the row */
+.why-btn { all: unset; cursor: pointer; font-size: 11.5px; line-height: 18px; padding: 0 8px; border-radius: var(--r-pill); color: var(--fg-muted); border: 1px solid var(--border-subtle); background: var(--bg-surface); }
+.why-btn:hover { color: var(--fg); border-color: var(--border-hover); }
+.why-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.why-btn[aria-expanded="true"] { color: var(--fg); background: var(--bg-active); border-color: var(--border-control); }
+.axis-head .why-btn { margin-left: auto; }
+.why { padding: 10px 14px 12px 34px; background: var(--bg-subtle); border-top: 1px solid var(--border-subtle); }
+#axis-why-text .why { margin-top: 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding-left: 14px; }
 .feed h2 { display: flex; align-items: center; gap: 8px; }
 .feed .rule { font-size: 12px; color: var(--fg-muted); margin: 4px 0 10px; line-height: 1.5; }
 #drafts > .draft { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px solid var(--border-subtle); font-size: 13px; }
