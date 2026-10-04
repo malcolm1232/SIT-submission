@@ -29,3 +29,8 @@ Each item was checked against the named code before the edit.
 9. `docs/live_runs/sit_sample_ui_2/MEASUREMENT.md`: one `sed -i ''` on the single line matching "four single-pass shards", now "three single-pass shards (1, 2 and 5)"; the rest of that file was not read.
 
 No em dash was added; every edited file had none before and has none after.
+
+## Verifier fixes
+
+1. Resume replay: `SelfReplayGateway` reads `tools.jsonl` up to `upto_offset`, which `orchestrator.py` sets to the log's size when the run is resumed (`tools_offset = rd.tools_log.stat().st_size`), not to the checkpoint offset; ARCHITECTURE §8 now says "when the run is resumed", each logged call served once.
+2. Download: `ui/export.py` adds the reading-aid chat transcript, when `ui/chat.jsonl` exists, as its own section headed "not part of the review"; ARCHITECTURE §10 now says the review in the export says nothing the report does not, and names that section.
