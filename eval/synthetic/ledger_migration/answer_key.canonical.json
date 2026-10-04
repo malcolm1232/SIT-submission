@@ -7,11 +7,11 @@
     "documents": {
       "v1": {
         "path": "design_v1.md",
-        "sha256": "c29572367ba161bf16195050c9f1826b4814bb442960c990b679699a71bfc002"
+        "sha256": "2968cb9b4271696530bf69f2c42061025eb961e0864b8ec4ef89a7b4ff780a87"
       },
       "v2": {
         "path": "design_v2.md",
-        "sha256": "9393a38957c2713e393adc808ab1de649e0f48375dcd32a79997cd5e057dee3c"
+        "sha256": "296f3bce7248c9a5694a529b8ec9c3f95bd87b28b70ecc6ce75c4cf0e3f4dfee"
       }
     },
     "document_id": null,
@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/ledger_migration/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "f283e85b76af03f5a79cb38e763809272dc2c9748d44815e189cf7ae819bd6d6"
+      "sha256": "a45618c0fcaf00f5b807d13422015514a74783d6ffef4d602ff72206af49933c"
     }
   },
   "scoring": {
@@ -62,7 +62,7 @@
       "introduced_by_fix_of": null,
       "v2_status": "fixed",
       "caused_regression_flaw_id": null,
-      "v2_note": "The Posting Service checks account rules for every leg in the journal transaction, locking account_limit rows for debits to non-overdraft accounts, and refuses the whole journal with 422; Account Processors never reject a leg; rejected_leg removed.",
+      "v2_note": "The Posting Service checks account rules for every leg in the journal transaction, locking each touched customer account's account_limit row in account order and checking funds for debits to non-overdraft accounts, and refuses the whole journal with 422; Account Processors never reject a leg; rejected_leg removed.",
       "location": {
         "sections": [
           "9.1",
@@ -134,7 +134,7 @@
       "introduced_by_fix_of": null,
       "v2_status": "fixed",
       "caused_regression_flaw_id": null,
-      "v2_note": "Reconciliation compares every mapped account's closing balance per currency and matches each CORAL posting to its Lumbung journal by transaction ID.",
+      "v2_note": "Reconciliation compares every mapped account's closing balance per currency and matches each CORAL posting to its Selasih journal by transaction ID.",
       "location": {
         "sections": [
           "22.2",
@@ -149,8 +149,8 @@
         "anchor_quote": "The daily reconciliation compares, for each currency, the total debits and the total",
         "page": 11
       },
-      "description": "The dual-run reconciliation compares only the total debits and total credits per currency posted by CORAL and Lumbung for the day, and a day with both totals equal is a matched day. The go/no-go gate (criterion 1) and the FR-10 acceptance test require twenty consecutive matched days.",
-      "rationale": "Every balanced journal adds the same amount to both totals, so the totals agree whenever both ledgers post the same volume of money, whatever accounts it reaches. A posting to the wrong customer or GL account (a mapping defect), swapped debit and credit accounts, or two errors that offset each other all leave the totals equal. Since Lumbung enforces balance, the two totals in each ledger are equal by construction, so the comparison reduces to one number per currency. Twenty matched days can therefore pass with wrong account balances, which the go/no-go gate then accepts as proof that Lumbung produces the same books (Principle P7). Section 22.4's posting count adds no account-level check.",
+      "description": "The dual-run reconciliation compares only the total debits and total credits per currency posted by CORAL and Selasih for the day, and a day with both totals equal is a matched day. The go/no-go gate (criterion 1) and the FR-10 acceptance test require twenty consecutive matched days.",
+      "rationale": "Every balanced journal adds the same amount to both totals, so the totals agree whenever both ledgers post the same volume of money, whatever accounts it reaches. A posting to the wrong customer or GL account (a mapping defect), swapped debit and credit accounts, or two errors that offset each other all leave the totals equal. Since Selasih enforces balance, the two totals in each ledger are equal by construction, so the comparison reduces to one number per currency. Twenty matched days can therefore pass with wrong account balances, which the go/no-go gate then accepts as proof that Selasih produces the same books (Principle P7). Section 22.4's posting count adds no account-level check.",
       "core_insight": "The dual-run reconciliation compares only total debits and total credits per currency, which agree whenever both ledgers post the same money to any accounts, so wrong-account or offsetting postings pass, and the go/no-go gate built on twenty matched days cannot show the books agree.",
       "credit": {
         "mode": "substance",
@@ -219,15 +219,15 @@
         "anchor_quote": "memo-post queue for the following business day's batch, and CORAL's batch schedule is disabled at 00:00",
         "page": 12
       },
-      "description": "The opening balances for Lumbung are taken from CORAL's master files at 22:00 Friday, when CORAL's batch starts, but product systems keep posting to CORAL's online interface until the T-0 switch at 00:00. Postings in that window are held in CORAL's memo-post queue for the next day's batch, and CORAL's batch schedule is disabled at 00:00.",
-      "rationale": "Two hours of Friday-night postings (card settlements, FAST transfers, salary credits) are in neither ledger: not in the 22:00 extract, and not processed by CORAL either, because the batch that would process them is disabled. Customer balances in Lumbung are short or long by those postings from the first minute, and the losses surface only as customer complaints or later reconciliation differences. Section 4 says the memo-post layer is exactly where intraday postings wait for the batch.",
-      "core_insight": "The opening balances are extracted from CORAL at 22:00 but channels keep posting to CORAL until the 00:00 switch, and those postings wait in the memo-post queue for a batch that is disabled at 00:00, so in-flight postings are lost from both ledgers at cut-over.",
+      "description": "The opening balances for Selasih are extracted from CORAL's master files at 22:40 Friday, once the batch that starts at 22:00 has applied the day's memo posts, and the dual-feed adapter is disabled at 22:00; but product systems keep posting to CORAL's online interface until the T-0 switch at 00:00. Postings from 22:00 to 00:00 are held in CORAL's memo-post queue for the next day's batch, and CORAL's batch schedule is disabled at 00:00.",
+      "rationale": "Two hours of Friday-night postings (card settlements, FAST transfers, salary credits) are in neither ledger: not in the extract (which holds only the memo posts made before the batch started at 22:00), not copied to Selasih (the dual-feed adapter is off from 22:00), and not processed by CORAL either, because the batch that would process them is disabled. Customer balances in Selasih are short or long by those postings from the first minute, and the losses surface only as customer complaints or later reconciliation differences. Section 4 says the memo-post layer is exactly where intraday postings wait for the batch.",
+      "core_insight": "The opening balances cover CORAL's postings only up to the batch start at 22:00 but channels keep posting to CORAL until the 00:00 switch, and those postings wait in the memo-post queue for a batch that is disabled at 00:00, so in-flight postings are lost from both ledgers at cut-over.",
       "credit": {
         "mode": "substance",
         "items": [
           {
             "id": "c1",
-            "text": "postings accepted by CORAL between the 22:00 extract and the 00:00 switch are not in the opening balances",
+            "text": "postings accepted by CORAL between the start of the batch at 22:00 (the extract's cut-off) and the 00:00 switch are not in the opening balances",
             "role": "required"
           },
           {
@@ -237,7 +237,7 @@
           },
           {
             "id": "c3",
-            "text": "consequence: in-flight postings lost at cut-over; balances in Lumbung differ from what customers transacted",
+            "text": "consequence: in-flight postings lost at cut-over; balances in Selasih differ from what customers transacted",
             "role": "required"
           }
         ],
@@ -251,7 +251,7 @@
         "needs_testing"
       ],
       "affected_decisions": [],
-      "acceptable_fix": "Stop intake to CORAL before the extract (freeze channels or queue in the MQ bridge), drain the memo-post queue and run the final batch, take the extract after it, then reconcile the extract with CORAL's final trial balance before T-0. Or carry the window's postings across explicitly: extract the memo-post queue and post it to Lumbung with the CORAL transaction IDs as idempotency keys, reconciled count-for-count before go-live.",
+      "acceptable_fix": "Stop intake to CORAL before the extract (freeze channels or queue in the MQ bridge), drain the memo-post queue and run the final batch, take the extract after it, then reconcile the extract with CORAL's final trial balance before T-0. Or carry the window's postings across explicitly: extract the memo-post queue and post it to Selasih with the CORAL transaction IDs as idempotency keys, reconciled count-for-count before go-live.",
       "distractor_notes": "Keeping CORAL read-only for enquiries after cut-over and the Sunday rollback deadline are reasonable. The flaw is the gap between the extract and the switch, not the choice of a weekend cut-over.",
       "overlapping_sound_section_ids": [],
       "disambiguation": null
@@ -442,7 +442,7 @@
         ],
         "decision_ids": [],
         "anchor_quote": "The ledger clusters replicate to the secondary at the storage layer asynchronously, with lag typically under",
-        "page": 12
+        "page": 13
       },
       "description": "NFR-3 requires a recovery point objective of zero for every journal acknowledged to a caller, including on loss of the primary region. Section 24.2 replicates the Journal Store and Balance Store to Jakarta with Aurora Global Database, asynchronously at the storage layer with lag typically under one second, and promotes the secondary on region loss.",
       "rationale": "Asynchronous replication means journals committed and acknowledged (201) in Singapore in the last moments before the region is lost may not have reached Jakarta; after promotion they are gone, so the RPO on region loss is the replication lag (typically under a second, unbounded under stress), not zero. The requirement and the confirmed design contradict each other, and the NFR-3 acceptance test (a planned exercise, where a managed switchover loses nothing) would not reveal it. For a ledger, lost acknowledged postings mean customers' transfers that the bank confirmed but no longer has.",
@@ -655,7 +655,7 @@
           "FR-4"
         ],
         "decision_ids": [],
-        "anchor_quote": "business day's value date, whatever value date the source system sent.",
+        "anchor_quote": "a posting that arrives after the close carries the next business day's value date, whatever",
         "page": 7
       },
       "description": "Section 14.1 rebooks any posting that arrives after the close with the next business day's value date, whatever value date the source system sent. Section 4 says CORAL accepts back-valued postings up to 30 days old (interbank returns, card refunds) and recomputes accrued interest for each affected day. No requirement in Section 2 covers back-valued postings.",
@@ -671,7 +671,7 @@
           },
           {
             "id": "c2",
-            "text": "CORAL supports back-valuation with interest recomputation (Section 4), and no requirement covers back-valued postings in Lumbung",
+            "text": "CORAL supports back-valuation with interest recomputation (Section 4), and no requirement covers back-valued postings in Selasih",
             "role": "required"
           },
           {
@@ -728,10 +728,10 @@
         ],
         "decision_ids": [],
         "anchor_quote": "History migration reads CORAL's VSAM history through the Pelita Extract utility",
-        "page": 13
+        "page": 14
       },
       "description": "DEC-07 confirms that history migration reads CORAL's history through the Pelita Extract utility in Phase 3 (January and February 2027), as the only supported reader for CORAL's packed-decimal files. PB-02 records that the Pelita Extract licence ends on 31 December 2026 and that renewal has been requested with no reply.",
-      "rationale": "The confirmed decision depends on a licence that is due to expire before the work it supports starts, with no fallback. If Seroja Systems does not renew, or renews late, FR-9 cannot be met, the history validation that is go/no-go criterion 3 cannot run, and the cut-over date (DEC-08, set before the mainframe contract's notice date) slips. Sections 29 and 30 mark history migration ready without mentioning the dependency.",
+      "rationale": "The confirmed decision depends on a licence that is due to expire before the work it supports starts, with no fallback. If Rambai Software does not renew, or renews late, FR-9 cannot be met, the history validation that is go/no-go criterion 3 cannot run, and the cut-over date (DEC-08, set before the mainframe contract's notice date) slips. Sections 29 and 30 mark history migration ready without mentioning the dependency.",
       "core_insight": "DEC-07 confirms history migration through the Pelita Extract utility in January and February 2027 while PB-02 shows its licence ends on 31 December 2026 with renewal unconfirmed.",
       "credit": {
         "mode": "substance",
@@ -803,7 +803,7 @@
         "page": 15
       },
       "description": "Section 22.1 says the dual-run covers two full month-end closes, at least eight weeks, so that month-end capitalisation and FX revaluation are exercised twice. Section 30 schedules Phase 4 dual-run from 8 March to 2 April 2027 (4 weeks).",
-      "rationale": "The plan's dates give four weeks with only one month-end close inside the dual-run (31 March; February's falls before it), contradicting the stated coverage of two. Twenty consecutive matched business days (gate criterion 1) need about four weeks of business days, so the gate can pass with month-end capitalisation and revaluation compared only once.",
+      "rationale": "The plan's dates give four weeks with only one month-end close inside the dual-run (31 March; February's falls before it), contradicting the stated coverage of two. The four weeks also cannot meet gate criterion 1: 8 to 31 March 2027 holds 17 business days (Good Friday is 26 March 2027), and the reconciliation of 1 April runs at 03:00 on 2 April, after the go/no-go on 1 April, so twenty consecutive matched business days cannot be reached; the gate must slip or be waived, and month-end capitalisation and revaluation are compared at most once.",
       "core_insight": "Section 22.1 requires a dual-run of at least eight weeks over two month ends, but Section 30 schedules four weeks (8 March to 2 April 2027).",
       "credit": {
         "mode": "substance",
@@ -957,8 +957,8 @@
         "refinement_now"
       ],
       "affected_decisions": [],
-      "acceptable_fix": "State a target such as 3x the current peak (1,800 journals per second) and 6 million accounts by 2030, with a load test at that level and a capacity review trigger.",
-      "distractor_notes": "NFR-1 (600 journals per second, p99 150 ms, with a one-hour load test) is a measurable requirement and is not this finding.",
+      "acceptable_fix": "State a target such as 4x the payday peak (1,800 journals per second) and 6 million accounts by 2030, with a load test at that level and a capacity review trigger.",
+      "distractor_notes": "NFR-1 (1,000 journals per second, p99 150 ms, with a one-hour load test) is a measurable requirement and is not this finding.",
       "overlapping_sound_section_ids": [],
       "disambiguation": null
     },
@@ -1112,7 +1112,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Every journal balances per currency, checked on request, by a deferred constraint trigger at commit, and again at close from the legs. Cross-currency journals use four legs through an FX position account so each currency balances on its own. Corrections are reversing journals, never updates. The worked examples balance (12050 = 12050; 200000 + 1500 = 201500).",
+      "why_sound": "Every journal balances per currency, checked on request, by a deferred constraint trigger at commit, and again at close from the legs (the day's totals plus the cumulative totals carried in the close run). Cross-currency journals use four legs through an FX position account so each currency balances on its own. Corrections are reversing journals, never updates. The worked examples balance (12050 = 12050; 200000 + 1500 = 201500).",
       "trap": "Asking for one cross-currency balance check (a multi-currency journal must balance per currency, not in SGD equivalent), claiming the deferred trigger can be bypassed by the application, or recommending update-in-place corrections. Partial application of journals across Account Processors is F01 (Section 9), not a weakness of this section.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1134,7 +1134,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "The idempotency key is unique per source system, enforced by a unique constraint on the journal table in the same transaction as the insert, and kept for the life of the journal, so there is no TTL window and no race between pods. The source system comes from the caller's IAM identity. A repeat with the same body returns the original response; a reused key with a different body returns 409.",
+      "why_sound": "The idempotency key is unique per source system, enforced by a unique constraint on the journal table (which is not partitioned, so the constraint is global; only the leg table is partitioned) in the same transaction as the insert, and kept for the life of the journal, so there is no TTL window and no race between pods. The source system comes from the caller's IAM identity. A repeat with the same body returns the original response; a reused key with a different body returns 409.",
       "trap": "Recommending a Redis or DynamoDB lock, a TTL on keys, or a check-then-insert step (the constraint is atomic), or calling the 409 response a problem. The accrual job's key choice (F07, and F15 in v2) is the caller's error, not this section's.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1156,7 +1156,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Journals and outbox rows commit in one transaction, so there is no dual write; the relay republishes on restart and every consumer deduplicates by event ID; legs are keyed by account, so per-account order holds, and no consumer depends on cross-account order. Topics use acks=all with min.insync.replicas 2, and the Journal Store, not the 14-day topic, is the system of record, with a backfill relay for rebuilds.",
+      "why_sound": "Journals and outbox rows commit in one transaction, so there is no dual write; the relay republishes on restart and every consumer deduplicates by event ID; legs are keyed by account, so one processor applies every leg of an account, a balance is a sum and does not depend on arrival order, and no consumer depends on cross-account order (9.4 and 14.2 use applied-leg status and published outbox rows, not sequence numbers, as watermarks). Topics use acks=all with min.insync.replicas 2, and the Journal Store, not the 14-day topic, is the system of record, with a backfill relay for rebuilds.",
       "trap": "Flagging the 14-day topic retention as data loss, asking for exactly-once transactions across the database and Kafka, or demanding global ordering. Who may write to the topics is F08 (Section 17.2), not a weakness of the outbox design.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1200,8 +1200,8 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Audit records are written in the same transaction as the change, the table is append-only for the application role, records are hash-chained, and a daily digest is written to S3 Object Lock in compliance mode in a separate account owned by Technology Risk, so alteration, deletion or insertion is detectable by Internal Audit's recomputation and the digests cannot be removed even by the root user.",
-      "trap": "Asking for a blockchain or a third-party notary, claiming a database administrator could rewrite the chain undetected (the external digests catch it), or flagging compliance-mode Object Lock as risky. Close adjustments without a checker (F04) is a gap in what is approved, not in how it is recorded.",
+      "why_sound": "Audit records are written in the same transaction as the change, a journal's audit record carries the hash of the journal and its legs, the table is append-only for the application role, a separate insert-only chaining job hash-chains the records outside the posting transaction (so no lock serialises journal commits), and the latest chain hash is written every five minutes to S3 Object Lock in compliance mode in a separate account owned by Technology Risk, so alteration, deletion or insertion is detectable by Internal Audit's recomputation and the digests cannot be removed even by the root user.",
+      "trap": "Asking for a blockchain or a third-party notary, claiming a database administrator could rewrite the chain undetected (the chain hashes stored every five minutes catch it), or flagging compliance-mode Object Lock as risky. Close adjustments without a checker (F04) is a gap in what is approved, not in how it is recorded.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
       "applies_to_versions": [

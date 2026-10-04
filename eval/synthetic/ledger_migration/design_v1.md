@@ -1,4 +1,4 @@
-# Merbah Bank: Lumbung Core Ledger Migration
+# Merbah Bank: Selasih Core Ledger Migration
 
 ## Detailed Design
 
@@ -10,8 +10,8 @@
 | **Status** | Design phase, build not started |
 | **Last updated** | 2026-09-21 (architecture), consolidated 2026-09-28 |
 | **Prepared by** | Merbah Bank Core Banking Engineering, Ledger Programme |
-| **Accountable executive** | Rosalind Teo, Chief Financial Officer |
-| **Companion documents** | Lumbung Conceptual Design v1.3; Chart of Accounts Mapping Workbook; CORAL Interface Catalogue; Records Retention Standard RRS-3 |
+| **Accountable executive** | Marguerite Liew, Chief Financial Officer |
+| **Companion documents** | Selasih Conceptual Design v1.3; Chart of Accounts Mapping Workbook; CORAL Interface Catalogue; Records Retention Standard RRS-3 |
 
 ---
 
@@ -52,19 +52,19 @@
 
 ## 1. Purpose and Scope
 
-This document describes the architecture of Lumbung, the event-sourced general ledger service that will replace CORAL, the mainframe batch ledger that has held Merbah Bank's books since 1998. It is written to a level of technical detail sufficient for an engineering team to begin implementation. Section 29 gives an explicit assessment of where that is and is not yet true.
+This document describes the architecture of Selasih, the event-sourced general ledger service that will replace CORAL, the mainframe batch ledger that has held Merbah Bank's books since 1998. It is written to a level of technical detail sufficient for an engineering team to begin implementation. Section 29 gives an explicit assessment of where that is and is not yet true.
 
 Merbah Bank is a Singapore-incorporated retail bank that has operated as a digital bank since 2023. It serves about 1.3 million customers holding about 2.8 million accounts: Merbah Save savings accounts, Merbah Flex current accounts, Merbah Term fixed deposits, Merbah Kredit personal loans and Merbah Global multi-currency wallets in SGD, USD, MYR, IDR, EUR and AUD. Today every one of these products posts to CORAL, which updates balances in a nightly batch and serves intraday balances from a memo-post layer.
 
-Lumbung provides one posting API for every product system and channel; real-time, authoritative account balances; double-entry journals that are immutable once accepted; daily interest accrual and month-end FX revaluation; an end-of-day close that produces the trial balance and the data for regulatory returns; maker-checker control over manual journals; and a tamper-evident audit trail.
+Selasih provides one posting API for every product system and channel; real-time, authoritative account balances; double-entry journals that are immutable once accepted; daily interest accrual and month-end FX revaluation; an end-of-day close that produces the trial balance and the data for regulatory returns; maker-checker control over manual journals; and a tamper-evident audit trail.
 
 ### In scope
 
-The Lumbung ledger service, the migration of seven years of posting history from CORAL, a dual-run period in which both ledgers process the same business, the cut-over from CORAL to Lumbung, the end-of-day close, the regulatory reporting extracts, and disaster recovery across two cloud regions. Volumes: an average of 1.6 million posting legs a day, about 700,000 journals, with a payday peak of 450 journals per second.
+The Selasih ledger service, the migration of seven years of posting history from CORAL, a dual-run period in which both ledgers process the same business, the cut-over from CORAL to Selasih, the end-of-day close, the regulatory reporting extracts, and disaster recovery across two cloud regions. Volumes: an average of 1.6 million posting legs a day, about 700,000 journals, with a payday peak of 450 journals per second.
 
 ### Out of scope
 
-The product systems themselves (deposits, lending, cards and the payments hub), which keep their own customer-facing state and call Lumbung to post. The general ledger consolidation package used by Group Finance, which receives a daily trial balance file. Customer statements, which are produced by the Statements Service from Lumbung's event stream and specified separately.
+The product systems themselves (deposits, lending, cards and the payments hub), which keep their own customer-facing state and call Selasih to post. The general ledger consolidation package used by Group Finance, which receives a daily trial balance file. Customer statements, which are produced by the Statements Service from Selasih's event stream and specified separately.
 
 ### Readers
 
@@ -78,16 +78,16 @@ Core Banking Engineering, Finance (Financial Control, Financial Reporting, Treas
 
 | ID | Requirement |
 |---|---|
-| FR-1 | Every journal accepted by Lumbung balances: in each currency, the sum of its debit legs equals the sum of its credit legs. |
+| FR-1 | Every journal accepted by Selasih balances: in each currency, the sum of its debit legs equals the sum of its credit legs. |
 | FR-2 | Every posting request carries an idempotency key; a repeated request with the same key never creates a second journal. |
 | FR-3 | Each account's balance is available to product systems in real time, reflecting every accepted journal. |
 | FR-4 | Interest is accrued daily for every interest-bearing account and capitalised or paid on the product's schedule. |
 | FR-5 | Non-SGD monetary positions are revalued to SGD at the closing rate at each month end, with the difference posted to unrealised FX gain or loss. |
 | FR-6 | The end-of-day close produces a trial balance and the regulatory reporting extracts for the business day. |
-| FR-7 | Lumbung produces the data for the capital adequacy return, the liquidity coverage ratio return and the monthly statistical returns. |
+| FR-7 | Selasih produces the data for the capital adequacy return, the liquidity coverage ratio return and the monthly statistical returns. |
 | FR-8 | Every manual journal is entered by one authorised user (maker) and approved by a different authorised user (checker) before it posts. |
-| FR-9 | Seven years of CORAL posting history are migrated into Lumbung and are queryable by account and date. |
-| FR-10 | During the dual-run, CORAL and Lumbung are reconciled every business day. |
+| FR-9 | Seven years of CORAL posting history are migrated into Selasih and are queryable by account and date. |
+| FR-10 | During the dual-run, CORAL and Selasih are reconciled every business day. |
 | FR-11 | The cut-over has a go/no-go gate and a rehearsed rollback to CORAL. |
 | FR-12 | Every journal, approval and change to reference data is recorded in a tamper-evident audit trail. |
 | FR-13 | Ledger and audit records are retained for the period set by RRS-3 and can be produced on request. |
@@ -96,7 +96,7 @@ Core Banking Engineering, Finance (Financial Control, Financial Reporting, Treas
 
 | ID | Requirement |
 |---|---|
-| NFR-1 | Posting API latency of 150 ms or less at the 99th percentile, measured at the API, at a sustained 600 journals per second. |
+| NFR-1 | Posting API latency of 150 ms or less at the 99th percentile, measured at the API, at a sustained 1,000 journals per second. |
 | NFR-2 | Posting API availability of 99.95 percent per calendar month, excluding the published maintenance window. |
 | NFR-3 | Recovery point objective of zero for every journal acknowledged to a caller, for any failure up to and including the loss of the primary region; recovery time objective of one hour. |
 | NFR-4 | Any ledger or audit record within the retention period can be produced for a regulator or auditor request within four hours. |
@@ -121,7 +121,7 @@ Core Banking Engineering, Finance (Financial Control, Financial Reporting, Treas
 
 **P6. Segregation of duties.** The people who build and operate the ledger cannot post to it, and the people who post manual entries cannot approve their own.
 
-**P7. Prove before switch.** Lumbung takes over from CORAL only after it has produced the same books as CORAL over a sustained dual-run.
+**P7. Prove before switch.** Selasih takes over from CORAL only after it has produced the same books as CORAL over a sustained dual-run.
 
 ---
 
@@ -139,15 +139,15 @@ The reasons for replacement are set out in the conceptual design: the mainframe 
 
 ## 5. Target Architecture
 
-Lumbung runs on AWS in ap-southeast-1 (Singapore), across three Availability Zones, with a disaster recovery footprint in ap-southeast-3 (Jakarta). It has five components:
+Selasih runs on AWS in ap-southeast-1 (Singapore), across three Availability Zones, with a disaster recovery footprint in ap-southeast-3 (Jakarta). It has five components:
 
 - **Posting Service.** Receives posting requests over HTTPS from product systems, validates them, enforces idempotency and writes accepted journals to the Journal Store. Runs on Amazon EKS.
-- **Journal Store.** Aurora PostgreSQL 16 cluster holding journals, legs, the idempotency registry and the outbox. Writer plus two readers.
+- **Journal Store.** Aurora PostgreSQL 16 cluster holding journals with their idempotency keys, legs and the outbox. Writer plus two readers.
 - **Account Processors.** Consumers of the `ledger.legs` topic that maintain authoritative account balances in the Balance Store (a second Aurora PostgreSQL cluster) and enforce account rules.
 - **Close and Reporting Service.** Runs the accrual, revaluation and end-of-day close jobs and builds the regulatory reporting extracts.
 - **Consoles.** The Journal Console (manual journals with maker-checker), the Close Console (close monitoring and adjustments) and the Reference Data Console (chart of accounts, products, rates).
 
-The event bus is Amazon MSK (Apache Kafka). Users sign in to the consoles through the bank's identity provider (OIDC), with group membership mapped to Lumbung roles. Services authenticate to each other and to MSK with IAM.
+The event bus is Amazon MSK (Apache Kafka). Users sign in to the consoles through the bank's identity provider (OIDC), with group membership mapped to Selasih roles. Services authenticate to each other and to MSK with IAM.
 
 *Figure 1. Product systems call the Posting Service; journals are written to the Journal Store with an outbox; the outbox relay publishes legs and journal events to MSK; Account Processors apply legs to the Balance Store; the Close and Reporting Service reads both stores; the consoles sit behind the identity provider.*
 
@@ -155,9 +155,9 @@ The event bus is Amazon MSK (Apache Kafka). Users sign in to the consoles throug
 
 ## 6. Chart of Accounts and Ledger Structure
 
-Lumbung keeps two levels of account. **General ledger (GL) accounts** follow the bank's chart of accounts, restructured during the programme from CORAL's 4,100 accounts to 1,240 accounts in a five-segment code: entity, natural account, product, currency and cost centre. **Customer accounts** are sub-ledger accounts, each attached to exactly one GL control account (for example, all Merbah Save balances in SGD roll up to GL 2101-SAV-SGD).
+Selasih keeps two levels of account. **General ledger (GL) accounts** follow the bank's chart of accounts, restructured during the programme from CORAL's 4,100 accounts to 1,240 accounts in a five-segment code: entity, natural account, product, currency and cost centre. **Customer accounts** are sub-ledger accounts, each attached to exactly one GL control account (for example, all Merbah Save balances in SGD roll up to GL 2101-SAV-SGD).
 
-The rule that the sum of customer account balances equals the balance of their control account holds by construction: a leg posted to a customer account carries its control account and is counted in both. The Chart of Accounts Mapping Workbook maps every CORAL account to one Lumbung account; it is signed off by Financial Control before data migration begins.
+The rule that the sum of customer account balances equals the balance of their control account holds by construction: a leg posted to a customer account carries its control account and is counted in both. The Chart of Accounts Mapping Workbook maps every CORAL account to one Selasih account; it is signed off by Financial Control before data migration begins.
 
 ### 6.1 Suspense and clearing accounts
 
@@ -165,7 +165,7 @@ Every product system has its own suspense account per currency. The Posting Serv
 
 ### 6.2 Account lifecycle
 
-Customer accounts are opened in Lumbung by the product system with a `POST /v1/accounts` call that names the product, the currency and the control account; Lumbung assigns no account numbers itself. Closing an account requires a zero balance and no active holds. Reference data changes to GL accounts (new account, change of mapping, deactivation) go through the Reference Data Console with maker-checker approval and take effect from a stated business date, never retroactively.
+Customer accounts are opened in Selasih by the product system with a `POST /v1/accounts` call that names the product, the currency and the control account; Selasih assigns no account numbers itself. Closing an account requires a zero balance and no active holds. Reference data changes to GL accounts (new account, change of mapping, deactivation) go through the Reference Data Console with maker-checker approval and take effect from a stated business date, never retroactively.
 
 ---
 
@@ -173,11 +173,11 @@ Customer accounts are opened in Lumbung by the product system with a `POST /v1/a
 
 A **journal** is one business event: a transfer, a card settlement, an accrual, a revaluation or a manual entry. It has a journal ID, a source system, the source system's reference, a business date, a value date, a description and two or more **legs**. Each leg names one account, one currency, a direction (debit or credit) and an amount in minor units.
 
-Lumbung enforces double entry at three points:
+Selasih enforces double entry at three points:
 
 1. **On request.** The Posting Service rejects a request whose legs do not balance in each currency. A cross-currency journal, such as a customer converting SGD to USD, has four legs: the SGD debit to the customer and credit to the FX position account in SGD, and the USD debit to the FX position account and credit to the customer in USD. Each currency balances on its own.
 2. **On commit.** The `leg` table has a deferred constraint trigger that, at commit, sums each journal's legs by currency and aborts the transaction if any currency is out of balance. A defect in the Posting Service therefore cannot commit an unbalanced journal.
-3. **At close.** The end-of-day close recomputes, from the legs, the sum of debits and credits per currency for the day and for all time, and refuses to publish the trial balance if either differs from zero.
+3. **At close.** The end-of-day close recomputes, from the legs, the sum of debits and credits per currency for the day, adds it to the cumulative totals recorded by the previous close run, and refuses to publish the trial balance if the day's or the cumulative difference is not zero.
 
 Example: a customer pays SGD 120.50 from Merbah Save to an external account through FAST. Journal J1 debits the customer's savings account 12050 and credits the FAST settlement account 12050. If the payment is returned, journal J2 reverses J1 with the same two legs in the opposite directions; J1 is never altered.
 
@@ -194,7 +194,7 @@ The Posting Service inserts the journal, its legs and its outbox rows in one tra
 - same hash: the request is a retry, and the service returns the original response (201 with the original journal ID);
 - different hash: the key has been reused for a different journal, and the service returns 409 Conflict without posting.
 
-Because the constraint is enforced by the database at commit, two concurrent requests with the same key cannot both succeed, whichever Posting Service pod receives them. Callers are told to generate keys from their own business reference (for example the payment ID), so that a caller restart regenerates the same key.
+Because the constraint is enforced by the database, two concurrent requests with the same key cannot both succeed, whichever Posting Service pod receives them. Callers are told to generate keys from their own business reference (for example the payment ID), so that a caller restart regenerates the same key.
 
 ---
 
@@ -204,7 +204,7 @@ The Journal Store guarantees that each journal balances; the Account Processors 
 
 ### 9.1 Flow
 
-1. The Posting Service validates the request (shape, balance, accounts exist, reference data), inserts the journal and returns 201 Accepted with the journal ID.
+1. The Posting Service validates the request (shape, balance, accounts exist, reference data), inserts the journal and returns 201 Created with the journal ID.
 2. The outbox relay publishes each leg to the `ledger.legs` topic, keyed by account number, and a journal event to `ledger.journals`.
 3. The Account Processor that owns the leg's partition applies it to the account's row in the Balance Store and records the leg ID in the row's applied-leg set, so a redelivered leg is not applied twice.
 
@@ -214,11 +214,11 @@ The Account Processors apply the account rules that depend on the account's curr
 
 ### 9.3 Throughput
 
-`ledger.legs` has 96 partitions. At the NFR-1 rate of 600 journals per second, with an average of 2.3 legs per journal, the processors apply about 1,380 legs per second, or about 14 per partition per second; each processor batches its Balance Store updates every 50 ms. Measured end-to-end lag from journal commit to balance update in the prototype was 180 ms at the 99th percentile.
+`ledger.legs` has 96 partitions. At the NFR-1 rate of 1,000 journals per second, with an average of 2.3 legs per journal, the processors apply about 2,300 legs per second, or about 24 per partition per second; each processor batches its Balance Store updates every 50 ms. Measured end-to-end lag from journal commit to balance update in the prototype was 180 ms at the 99th percentile.
 
 ### 9.4 Available balance for product systems
 
-Product systems read balances from `GET /v1/accounts/{id}/balance`, served from the Balance Store readers. The response carries the ledger balance, the available balance (ledger balance minus active holds placed by the cards system) and the sequence number of the last applied leg, so a caller that has just posted can wait until its own leg is reflected.
+Product systems read balances from `GET /v1/accounts/{id}/balance`, served from the Balance Store readers. The response carries the ledger balance and the available balance (ledger balance minus active holds placed by the cards system), and `GET /v1/journals/{id}` reports whether each leg of a journal has been applied, so a caller that has just posted can wait until its own legs are reflected.
 
 ### 9.5 Holds
 
@@ -228,9 +228,9 @@ The cards system places holds when a card authorisation is approved and releases
 
 ## 10. Event Bus and Transactional Outbox
 
-Lumbung never writes to the database and to MSK as two separate steps. Each journal transaction inserts outbox rows (one per leg for `ledger.legs`, one per journal for `ledger.journals`) in the same transaction as the journal. The outbox relay reads committed rows in order of their sequence number, publishes them with the idempotent producer enabled, and marks them published; a relay that stops between publishing and marking republishes, and every consumer deduplicates by the event ID carried in the message.
+Selasih never writes to the database and to MSK as two separate steps. Each journal transaction inserts outbox rows (one per leg for `ledger.legs`, one per journal for `ledger.journals`) in the same transaction as the journal. The outbox relay reads committed rows in order of their sequence number, publishes them with the idempotent producer enabled, and marks them published; a relay that stops between publishing and marking republishes, and every consumer deduplicates by the event ID carried in the message.
 
-Ordering: legs are keyed by account number, so all legs for one account arrive at one partition in commit order. Journal events are keyed by journal ID. No consumer depends on ordering across accounts.
+Ordering: legs are keyed by account number, so all legs for one account go to one partition and are applied by one Account Processor. An account's balance is the sum of its legs, so it does not depend on the order in which they arrive. Journal events are keyed by journal ID. No consumer depends on ordering across accounts.
 
 Topics are replicated three times across the three Availability Zones with `min.insync.replicas` of 2 and producer `acks=all`. Retention on `ledger.legs` and `ledger.journals` is 14 days; the Journal Store, not the topic, is the system of record, and any consumer can be rebuilt by replaying from the Journal Store through a backfill relay.
 
@@ -264,17 +264,17 @@ A run that fails part-way is restarted from the first account under a new run_id
 
 On the product's capitalisation date (month end for Merbah Save, maturity for Merbah Term), the accrued interest payable for the account is moved to the customer account in one journal.
 
+### 12.4 Back-dated rate changes
+
+When Treasury enters a rate change with an effective date in the past, it starts a re-accrual for the affected product and dates: for each affected account and date, the run posts a reversal of the original accrual journal and then a new accrual journal at the corrected rate.
+
 ### 12.5 Loans in arrears
 
-A Merbah Kredit loan that is 90 days past due is placed in non-accrual status by the lending system, which sends a status change to Lumbung. From the next business day the accrual run skips the account, and the lending system tracks contractual interest in memo form. Interest already accrued but unpaid when the loan enters non-accrual is reversed by a journal raised by the lending system, so that income is not recognised on interest the bank does not expect to collect.
+A Merbah Kredit loan that is 90 days past due is placed in non-accrual status by the lending system, which sends a status change to Selasih. From the next business day the accrual run skips the account, and the lending system tracks contractual interest in memo form. Interest already accrued but unpaid when the loan enters non-accrual is reversed by a journal raised by the lending system, so that income is not recognised on interest the bank does not expect to collect.
 
 ### 12.6 Timing
 
 At 1.9 million accounts and 64 workers, the run posts about 900 journals per second for its 35 minutes. It runs through the same Posting API as every other caller and is subject to the same validation; the accrual worker's IAM role may post only to the interest GL accounts and accrued interest accounts listed for it in reference data.
-
-### 12.4 Back-dated rate changes
-
-When Treasury enters a rate change with an effective date in the past, it starts a re-accrual for the affected product and dates: for each affected account and date, the run posts a reversal of the original accrual journal and then a new accrual journal at the corrected rate.
 
 ---
 
@@ -292,12 +292,12 @@ Non-monetary items (fixed assets, prepaid expenses in foreign currency) are not 
 
 ### 14.1 Business day
 
-The Lumbung business day runs from 00:00:00 to 23:29:59 SGT. At 23:30 the Close and Reporting Service rolls the business date: postings arriving from then on carry the next business date, and the close for the day that has just ended begins. Once a business day is closed, its balances are final: a posting that arrives after the close carries the next business day's value date, whatever value date the source system sent.
+The Selasih business day runs from 00:00:00 to 23:29:59 SGT. At 23:30 the Close and Reporting Service rolls the business date: postings arriving from then on carry the next business date, and the close for the day that has just ended begins. The close's own accrual and revaluation journals carry the business date being closed. Once a business day is closed, its balances are final: a posting that arrives after the close carries the next business day's value date, whatever value date the source system sent.
 
 ### 14.2 Close steps
 
 1. Roll the business date (23:30).
-2. Wait for the Account Processors to apply every leg committed before the roll (the close watches the processors' applied sequence numbers against the last committed sequence).
+2. Wait for the Account Processors to apply every leg committed before the roll (the close waits until every outbox row committed before the roll is published and each processor has consumed its partition past the last of those rows).
 3. Run interest accrual (Section 12), typically 35 minutes.
 4. On the last business day of the month, run FX revaluation (Section 13).
 5. Recompute the double-entry checks (Section 7, point 3).
@@ -320,7 +320,7 @@ The Close and Reporting Service produces three groups of extracts from the close
 - **Liquidity.** Balances by liquidity category and maturity bucket for the liquidity coverage ratio return under MAS Notice 649, produced daily for internal monitoring and monthly for submission.
 - **Statistical returns.** Monthly balance sheet and income data for the MAS 610 returns.
 
-The extracts are loaded into the Regulatory Reporting team's reporting tool, which applies the regulatory mappings and produces the returns; the mappings themselves are outside Lumbung. Each extract carries the business date, the trial balance checksum and the close run ID, and the reporting tool refuses an extract whose checksum does not match the published trial balance.
+The extracts are loaded into the Regulatory Reporting team's reporting tool, which applies the regulatory mappings and produces the returns; the mappings themselves are outside Selasih. Each extract carries the business date, the trial balance checksum and the close run ID, and the reporting tool refuses an extract whose checksum does not match the published trial balance.
 
 ### 15.1 Restatement
 
@@ -346,7 +346,7 @@ Recurring manual journals, such as monthly accruals for rent and service contrac
 
 A manual journal can be reversed only through the Journal Console, by a new manual journal that references it; the reversal goes through the same maker-checker flow as the original.
 
-Bulk manual journals (up to 5,000 lines) are uploaded as CSV files by a maker, validated in full before submission for approval, and approved or rejected as a whole.
+Bulk manual journals (up to 5,000 lines) are uploaded as CSV files by a maker, validated in full before submission for approval, and approved or rejected as a whole; a file whose debits total more than SGD 1,000,000 needs the second checker as well.
 
 ---
 
@@ -376,9 +376,9 @@ Each product system calls the Posting Service under its own IAM role, and the Po
 
 ## 18. Audit Trail
 
-Every journal, every manual journal approval or rejection, every reference data change, every role-relevant console action and every close run writes an audit record to the `audit_event` table in the same transaction as the change it records. The table is append-only: the application's database role has INSERT and SELECT on it and nothing else, and the table owner role is not used by any service.
+Every journal, every manual journal approval or rejection, every reference data change, every role-relevant console action and every close run writes an audit record to the `audit_event` table in the same transaction as the change it records; a journal's audit record carries the SHA-256 hash of the journal and its legs, so a journal altered afterwards no longer matches its record. The table is append-only: the application's database role has INSERT and SELECT on it and nothing else, and the table owner role is not used by any service.
 
-Each record carries the SHA-256 hash of the previous record, forming a hash chain. At 00:05 SGT each day, a job computes the digest of the day's chain and writes it to an S3 bucket with Object Lock in compliance mode and a ten-year retention, in a separate AWS account owned by Technology Risk. Internal Audit's verification tool recomputes the chain from the table and compares it with the stored digests; any altered, deleted or inserted record breaks the chain from that point. The digests themselves cannot be overwritten or deleted by anyone, including the account root user, until their retention ends.
+A chaining job, running continuously, takes each audit record not yet chained and appends to the `audit_chain` table the SHA-256 hash of that record combined with the hash of the previous chain entry, forming a hash chain; only the chaining job's role can insert into `audit_chain`, and no role can update or delete its rows. Every five minutes, a job writes the latest chain hash to an S3 bucket with Object Lock in compliance mode and a ten-year retention, in a separate AWS account owned by Technology Risk. Internal Audit's verification tool recomputes the chain from the tables and compares it with the stored hashes; any altered, deleted or inserted record breaks the chain from that point. The stored hashes themselves cannot be overwritten or deleted by anyone, including the account root user, until their retention ends.
 
 Audit records are exported monthly to the archive (Section 19).
 
@@ -388,7 +388,7 @@ Audit records are exported monthly to the archive (Section 19).
 
 RRS-3 requires ledger records (journals, legs and the trial balance) and audit records to be kept for ten years from the end of the financial year to which they relate.
 
-The Journal Store keeps 13 months of journals online. Each month the archive job writes the month that has passed out of the online window to Parquet files in S3, partitioned by business date and account, with a manifest and SHA-256 checksums, and moves them to S3 Glacier Deep Archive after 30 days. The archive bucket has Object Lock in compliance mode with a retention of ten years.
+The Journal Store keeps 13 months of journals online. Each month the archive job writes the month that has passed out of the online window to Parquet files in S3, partitioned by business date and account, with a manifest and SHA-256 checksums, and moves them to S3 Glacier Deep Archive after 30 days. The archive bucket has Object Lock in compliance mode, and each file's retention ends ten years after the end of the financial year of the newest record it holds.
 
 Archived records are retrieved through the Archive Service, which takes an account and a date range. For a record older than 13 months, the Archive Service requests an Expedited retrieval from S3 Glacier Deep Archive, which returns the object within 5 minutes, so the four-hour limit of NFR-4 is met with a wide margin. Retrieved files are restored for seven days, and every retrieval is recorded in the audit trail.
 
@@ -400,12 +400,13 @@ Journal Store (Aurora PostgreSQL 16):
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `journal` | `journal_id` (uuid, PK), `source_system`, `idempotency_key`, `request_hash`, `business_date`, `value_date`, `source_ref`, `kind`, `created_at` | Unique (`source_system`, `idempotency_key`); partitioned by month on `business_date` |
-| `leg` | `leg_id` (bigint, PK), `journal_id`, `account_id`, `control_account_id`, `currency`, `direction`, `amount_minor` | Deferred balance trigger per journal and currency |
+| `journal` | `journal_id` (uuid, PK), `source_system`, `idempotency_key`, `request_hash`, `business_date`, `value_date`, `source_ref`, `kind`, `created_at` | Unique (`source_system`, `idempotency_key`); not partitioned |
+| `leg` | `leg_id` (bigint, PK), `journal_id`, `business_date`, `account_id`, `control_account_id`, `currency`, `direction`, `amount_minor` | Deferred balance trigger per journal and currency; partitioned by month on `business_date` |
 | `outbox` | `seq` (bigint, PK), `topic`, `key`, `payload`, `published_at` | Relay reads by `seq` |
 | `rejected_leg` | `leg_id`, `journal_id`, `reason`, `rejected_at` | Written by Account Processors through the Posting Service API |
-| `audit_event` | `audit_id`, `prev_hash`, `hash`, `actor`, `action`, `subject`, `at` | Append-only |
-| `close_run` | `business_date`, `run_id`, `status`, `tb_checksum` | One per business day |
+| `audit_event` | `audit_id`, `actor`, `action`, `subject`, `subject_hash`, `at` | Append-only |
+| `audit_chain` | `chain_seq` (bigint, PK), `audit_id`, `prev_hash`, `hash` | Insert-only, written by the chaining job |
+| `close_run` | `business_date`, `run_id`, `status`, `tb_checksum`, `cumulative_totals` | One per business day |
 
 Balance Store (Aurora PostgreSQL 16):
 
@@ -427,7 +428,7 @@ Seven years of posting history (business dates from 1 April 2020 to cut-over), t
 
 ### 21.2 Method
 
-The Pelita Extract utility from Seroja Systems reads CORAL's VSAM history files and writes fixed-width files, which the history migration loader converts to Lumbung journals. Historical journals are loaded with `kind = 'migrated'`, their CORAL reference as `source_ref`, and their original business and value dates; they pass the same balance checks as live journals (Section 7) and bypass the Account Processors, because historical balances are not replayed.
+The Pelita Extract utility from Rambai Software reads CORAL's VSAM history files and writes fixed-width files, which the history migration loader converts to Selasih journals. Historical journals are loaded with `kind = 'migrated'`, their CORAL reference as `source_ref`, and their original business and value dates; they pass the same balance checks as live journals (Section 7) and bypass the Account Processors, because historical balances are not replayed.
 
 The seven-year history holds about 2.9 billion posting legs; the loader writes 150,000 legs per second into the partitioned `leg` table, so a full load completes in about 90 minutes, and each migration rehearsal loads the full history in the Saturday 02:00 to 06:00 window.
 
@@ -441,25 +442,25 @@ For every account and every month end in the history, the loader computes the cl
 
 ### 22.1 Dual-run
 
-During the dual-run, CORAL remains the system of record. Product systems keep posting to CORAL; a dual-feed adapter on the MQ bridge copies every posting to Lumbung's Posting Service with the CORAL transaction ID as idempotency key. Both ledgers run their full close every night. The dual-run covers two full month-end closes, at least eight weeks, so that month-end accrual capitalisation and FX revaluation are exercised twice.
+During the dual-run, CORAL remains the system of record. Product systems keep posting to CORAL; a dual-feed adapter on the MQ bridge copies every posting to Selasih's Posting Service with the CORAL transaction ID as idempotency key. Both ledgers run their full close every night. The dual-run covers two full month-end closes, at least eight weeks, so that month-end accrual capitalisation and FX revaluation are exercised twice.
 
 ### 22.2 Daily reconciliation
 
-The reconciliation engine runs at 03:00 SGT, after both closes. It reads CORAL's trial balance extract and Lumbung's trial balance for the business day. The daily reconciliation compares, for each currency, the total debits and the total credits posted by CORAL and by Lumbung for the business day, and a day on which both totals agree to the cent is a matched day.
+The reconciliation engine runs at 03:00 SGT, after both closes. It reads CORAL's trial balance extract and Selasih's trial balance for the business day. The daily reconciliation compares, for each currency, the total debits and the total credits posted by CORAL and by Selasih for the business day, and a day on which both totals agree to the cent is a matched day.
 
-A day that does not match is a break. The engine writes a break report, and the Ledger Programme's reconciliation team investigates before 10:00 SGT; the cause is fixed in Lumbung or in the mapping, and the day is rerun.
+A day that does not match is a break. The engine writes a break report, and the Ledger Programme's reconciliation team investigates before 10:00 SGT; the cause is fixed in Selasih or in the mapping, and the day is rerun.
 
 ### 22.3 Reporting
 
 The reconciliation dashboard shows matched and broken days, open breaks and their age. The go/no-go gate in Section 23 depends on it.
 
-### 22.4 Postings that do not reach Lumbung
+### 22.4 Postings that do not reach Selasih
 
-The dual-feed adapter records every posting it receives from the MQ bridge and the Posting Service's response. A posting that Lumbung rejects (for example, because its CORAL account has no mapping) is written to the adapter's exception queue, investigated by the reconciliation team, and resubmitted with the same idempotency key once the cause is fixed. The adapter's daily count of postings received is compared with CORAL's daily posting count; a difference opens an investigation even if the totals match.
+The dual-feed adapter records every posting it receives from the MQ bridge and the Posting Service's response. A posting that Selasih rejects (for example, because its CORAL account has no mapping) is written to the adapter's exception queue, investigated by the reconciliation team, and resubmitted with the same idempotency key once the cause is fixed. The adapter's daily count of postings received is compared with CORAL's daily posting count; a difference opens an investigation even if the totals match.
 
 ### 22.5 Product system changes
 
-Product systems need no change for the dual-run: they keep sending postings to CORAL's MQ interface. For the cut-over, each product system has a configuration switch that points its posting client at Lumbung's Posting Service. The client library, written by the Ledger Programme, maps the CORAL message format to the Lumbung request and generates the idempotency key from the product system's own transaction reference.
+Product systems need no change for the dual-run: they keep sending postings to CORAL's MQ interface. For the cut-over, each product system has a configuration switch that points its posting client at Selasih's Posting Service. The client library, written by the Ledger Programme, maps the CORAL message format to the Selasih request and generates the idempotency key from the product system's own transaction reference.
 
 ---
 
@@ -481,23 +482,24 @@ The cut-over runs over the weekend of Saturday 3 April 2027.
 
 | Time (SGT) | Step |
 |---|---|
-| Fri 22:00 | CORAL's nightly batch starts; the final balance extract is taken from CORAL's master files at the start of the batch |
-| Fri 22:30 | Opening balances loaded into Lumbung from the extract and checked against CORAL's trial balance |
-| Sat 00:00 | T-0: product systems switched from CORAL's MQ interface to Lumbung's Posting Service |
-| Sat 00:15 | Smoke tests on live traffic; dual-feed adapter disabled |
+| Fri 22:00 | CORAL's nightly batch starts; the dual-feed adapter is disabled |
+| Fri 22:40 | The batch has applied the day's memo posts; the final balance extract is taken from CORAL's master files |
+| Fri 23:00 | Opening balances loaded into Selasih from the extract and checked against the extract's control totals |
+| Sat 00:00 | T-0: product systems switched from CORAL's MQ interface to Selasih's Posting Service |
+| Sat 00:15 | Smoke tests on live traffic |
 | Sat 06:00 | Go-live confirmation call |
 
-Postings that reach CORAL's online interface between the 22:00 extract and the 00:00 switch are held in CORAL's memo-post queue for the following business day's batch, and CORAL's batch schedule is disabled at 00:00. After the switch CORAL is set to read-only and kept available for enquiries for twelve months.
+Postings that reach CORAL's online interface between the start of the batch at 22:00 and the 00:00 switch are held in CORAL's memo-post queue for the following business day's batch, and CORAL's batch schedule is disabled at 00:00. After the switch CORAL is set to read-only and kept available for enquiries for twelve months.
+
+### 23.3 Rollback
+
+Rollback is possible until 18:00 on the Sunday. If the Steering Committee calls rollback, product systems are switched back to CORAL's MQ interface, CORAL's batch schedule is re-enabled, and the journals that product systems and the Journal Console posted to Selasih after T-0 are extracted and replayed into CORAL through the MQ bridge with their Selasih journal IDs as references; Selasih's own accrual and close journals are not replayed, because CORAL's batch computes its own. The rollback has been designed so that CORAL's state after replay equals the state it would have had if every posting had gone to it directly.
 
 ### 23.4 Rehearsals and communication
 
 Each of the three rehearsals runs the full timeline against a production-sized copy of CORAL's data in the pre-production environment, with product system simulators replaying a recorded Friday evening of traffic. Each rehearsal produces a timing report, and any step that overruns by more than 15 minutes is redesigned before the next rehearsal.
 
 Customers are told two weeks ahead that card, transfer and app services may be slower between 22:00 Friday and 06:00 Saturday. The branches and the contact centre receive a script. The regulator is informed of the cut-over date as part of the programme's regular updates.
-
-### 23.3 Rollback
-
-Rollback is possible until 18:00 on the Sunday. If the Steering Committee calls rollback, product systems are switched back to CORAL's MQ interface, CORAL's batch schedule is re-enabled, and the journals Lumbung accepted after T-0 are extracted and replayed into CORAL through the MQ bridge with their Lumbung journal IDs as references. The rollback has been designed so that CORAL's state after replay equals the state it would have had if every posting had gone to it directly.
 
 ---
 
@@ -558,8 +560,8 @@ Each alert links to a runbook. The runbooks cover a stuck outbox relay, a laggin
 | ID | Item | Owner | Due |
 |---|---|---|---|
 | PB-01 | Confirm the regulatory mapping changes for the new chart of accounts with the reporting tool's configuration team | Regulatory Reporting | 2026-11-30 |
-| PB-02 | Renew the Pelita Extract licence, which ends on 31 December 2026; renewal for 2027 requested from Seroja Systems, no reply yet | Procurement | Open |
-| PB-03 | Decide whether loan arrears ageing moves from the lending system to Lumbung | Lending | 2027-01-31 |
+| PB-02 | Renew the Pelita Extract licence, which ends on 31 December 2026; renewal for 2027 requested from Rambai Software, no reply yet | Procurement | Open |
+| PB-03 | Decide whether loan arrears ageing moves from the lending system to Selasih | Lending | 2027-01-31 |
 | PB-04 | Agree the format of the daily trial balance file with Group Finance | Financial Reporting | 2026-12-15 |
 | PB-05 | Load test the Balance Store at the payday peak with production-shaped data | Core Banking Engineering | 2027-01-15 |
 
@@ -578,14 +580,14 @@ Each alert links to a runbook. The runbooks cover a stuck outbox relay, a laggin
 | FR-8 | A maker cannot approve their own journal; a journal above SGD 1,000,000 cannot post with one approval. |
 | FR-9 | Section 21.3 validation passes with zero differences. |
 | FR-10 | Twenty consecutive matched days (Section 22.2). |
-| FR-11 | Rollback rehearsal completed with CORAL's post-replay trial balance equal to Lumbung's. |
+| FR-11 | Rollback rehearsal completed with CORAL's post-replay trial balance equal to Selasih's. |
 | FR-12 | Internal Audit's tool verifies the hash chain for the test period; an altered record is detected. |
 
 ### 28.2 Non-functional
 
 | Requirement | Acceptance test |
 |---|---|
-| NFR-1 | A one-hour load test at 600 journals per second with production-shaped journals shows a p99 of 150 ms or less. |
+| NFR-1 | A one-hour load test at 1,000 journals per second with production-shaped journals shows a p99 of 150 ms or less. |
 | NFR-2 | Measured over the first three months of production. |
 | NFR-3 | The production failover exercise restores posting within one hour, and every journal acknowledged before the failure is present after it. |
 | NFR-4 | A sample of 20 archived records older than 13 months is retrieved in a test within four hours. |

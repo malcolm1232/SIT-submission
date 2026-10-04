@@ -1,13 +1,13 @@
 # Synthetic eval item: Core Ledger Migration
 
-`design_v1.md` is the detailed design for the migration of the core general ledger of a fictional Singapore digital bank, "Merbah Bank", from its mainframe batch ledger CORAL to Lumbung, an event-sourced ledger service in the cloud (v1.0, about 7,950 words, 30 numbered sections, FR and NFR IDs).
+`design_v1.md` is the detailed design for the migration of the core general ledger of a fictional Singapore digital bank, "Merbah Bank", from its mainframe batch ledger CORAL to Selasih, an event-sourced ledger service in the cloud (v1.0, about 8,150 words, 30 numbered sections, FR and NFR IDs).
 Its structure follows the other synthetic items: requirements, principles, architecture, flows, data model, confirmed decisions, pending backlog, acceptance criteria, readiness assessment and build phases.
 The design covers about 2.8 million accounts and 700,000 journals a day: double-entry invariants and idempotent postings, account processing over Amazon MSK, interest accrual and FX revaluation, the end-of-day close and regulatory reporting extracts, maker-checker for manual journals, access control and segregation of duties, a hash-chained audit trail, retention and archive, migration of seven years of history, a dual-run with daily reconciliation, a cut-over with a go/no-go gate and rollback, and disaster recovery across ap-southeast-1 and ap-southeast-3 on Aurora PostgreSQL.
-The bank, its products, its people, its systems (CORAL, Lumbung) and its extract supplier (Pelita Extract from Seroja Systems) are invented; only public technologies, public standards and public vendor limits are named.
+The bank, its products, its people, its systems (CORAL, Selasih) and its extract supplier (Pelita Extract from Rambai Software) are invented; only public technologies, public standards and public vendor limits are named.
 
 The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across all eight taxonomy categories, including one quantitative claim you can check against public Amazon S3 documentation (F05, retrieval times for S3 Glacier Deep Archive).
 It also has five deliberately sound sections that a good reviewer should leave alone.
-`design_v2.md` (v1.1, about 8,450 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F02, F04, F05, F07, F11, F14), the F07 fix introduces one new major regression (F15, a back-dated re-accrual reuses the original accrual's idempotency key and the run treats the 409 as already posted, so interest is reversed and not reposted), and the other 7 flaws are unchanged.
+`design_v2.md` (v1.1, about 8,700 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F02, F04, F05, F07, F11, F14), the F07 fix introduces one new major regression (F15, a back-dated re-accrual reuses the original accrual's idempotency key and the run treats the 409 as already posted, so interest is reversed and not reposted), and the other 7 flaws are unchanged.
 In `v2_changes`, the seven fixed flaws all have status `fixed`; the one whose fix introduced the regression also carries `introduced_new_flaw_id: "F15"`.
 F15 is listed in `flaws[]` with `introduced_in: "v2"` and `introduced_by_fix_of`.
 
@@ -54,7 +54,7 @@ Sound sections: 7 Journal Model and Double-Entry Invariants, 8 Posting API and I
 `eval/build_pdfs.py` and `spec/convert_answer_keys.py` list their items in code, and this item is not yet registered in them (nor in `eval/prereg.yaml`; one later change registers all new items).
 Until then, both were run unchanged on disk with this item added to their lists in memory only, from the repository root:
 
-- PDFs: `eval/build_pdfs.py` with `ITEMS = ["ledger_migration"]`. Last rebuilt 2026-10-04: `design_v1.pdf` 15 pages, `design_v2.pdf` 16 pages, all probe checks passed.
+- PDFs: `eval/build_pdfs.py` with `ITEMS = ["ledger_migration"]`. Last rebuilt 2026-10-05 (after the cold read): `design_v1.pdf` 15 pages, `design_v2.pdf` 16 pages, all probe checks passed.
 - Canonical key: `spec/convert_answer_keys.py --tier synthetic --verify-anchors` with `("synthetic", "ledger_migration", "synthetic_json_v0")` in `ITEMS` and `"ledger_migration": {"F05"}` in `NEEDS_EXTERNAL`. Result: 0 keys failed validation, all 15 anchor quotes exact and unique on their recorded pages, `scored_run_ready` false (owner sign-off pending).
 
 When the item is registered, add those two entries to the scripts and `ledger_migration` to `ITEMS` in `eval/build_pdfs.py`.
@@ -67,7 +67,7 @@ The one term from this item that the script flagged (`never applied`, from the k
 - [x] No flaw sits in a callout, warning box, footnote, strikethrough or comment; every flawed statement is written in the same confident register as the sound text.
 - [x] The readiness assessment (Section 29) and build phases (Section 30) do not flag any flawed area as risky; they mark them "Ready", consistent with how the authors present them.
 - [x] The v2 revision-history row and the "Changes since version 1.0" section list the changed sections neutrally. They do not say which changes were fixes, and they do not mention F15 or the unchanged flaws.
-- [x] Every flaw needs domain reasoning, arithmetic or cross-referencing to detect (for example the Deep Archive retrieval tiers in F05, P2 against the per-leg rejection in F01, the 22:00 extract against the 00:00 switch in F03, the 2.9 billion over 150,000 division in F12, and Section 12.4's re-accrual against the v2 key and 409 handling in F15).
+- [x] Every flaw needs domain reasoning, arithmetic or cross-referencing to detect (for example the Deep Archive retrieval tiers in F05, P2 against the per-leg rejection in F01, the 22:00 batch start (the extract's cut-off) against the 00:00 switch in F03, the 2.9 billion over 150,000 division in F12, and Section 12.4's re-accrual against the v2 key and 409 handling in F15).
 - [x] No two flaws share a sentence; each flaw has one carrying sentence in v1.
 - [x] Severity counts (4 critical / 6 major / 4 minor) and category counts (3 / 2 / 2 / 2 / 2 / 1 / 1 / 1) in `answer_key.json` match `flaw_counts`, as the converter confirms.
 - [x] Neither document, the key nor this README contains an em dash.

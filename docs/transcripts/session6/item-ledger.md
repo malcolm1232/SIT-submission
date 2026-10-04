@@ -122,3 +122,40 @@ Each sentence below was asserted by `author_ledger/selfcheck.py` to occur exactl
 - v1: (absent; v1 12.4 re-accrual is unaffected because each run has its own run_id)
 - v2: The Posting API's 409 response for a key that already holds a journal is treated as confirmation that the account's accrual for that date is posted, and the run moves on to the next account. (together with the unchanged 12.4: 'the run posts a reversal of the original accrual journal and then a new accrual journal at the corrected rate.')
 
+
+## Cold read
+
+Date: 2026-10-05 00:08, by a fresh-context cold reader under the same brief (plan D, his "yes" of 4 Oct 22:40).
+`design_v1.md` was read in full before the key and the README; `design_v2.md` next; then the key, the README and this note.
+Scripts in the scratchpad folder `coldread_ledger/` (copies of the `author_ledger/` wrappers plus `edit_v1.py` and `edit_key.py`).
+
+### Flaws found cold
+
+Found cold, by substance: F01, F02, F03, F04, F05, F06, F07, F08, F09, F10, F11, F12, F13, and F15 in v2.
+Missed cold: F14 ("the closing rate" read as the standard accounting term; the missing source, side and time are findable from FR-5 and Section 13, so the flaw stands as written).
+
+### Defects of the item, fixed
+
+1. F03 was not cleanly findable: the dual-feed adapter stayed on until 00:15, so the 22:00 to 00:00 postings did reach Selasih through it, against the key's "reach neither ledger"; and an extract "from the master files at the start of the batch" missed the whole day's memo posts, a second gap the key did not describe. Section 23.2 now disables the adapter at 22:00 and takes the extract at 22:40 once the batch has applied the day's memo posts; the carrying sentence keeps its anchor. Key F03 description, why, first credit item and core insight updated.
+2. Sound Section 8: its unique constraint on `journal` could not exist, because Section 20 partitioned `journal` by month on `business_date` (a PostgreSQL unique constraint on a partitioned table must include the partition key). `journal` is now unpartitioned, `leg` carries `business_date` and is the partitioned table, Section 5 no longer names a separate idempotency registry, and "enforced by the database at commit" reads "enforced by the database".
+3. Sound Section 7: "for all time" from the legs could not hold once journals older than 13 months leave the Journal Store. The close now adds the day's totals to cumulative totals carried in `close_run`.
+4. Sound Section 10: "arrive at one partition in commit order" is not what a relay reading by insert-time sequence gives, and Sections 9.4 and 14.2 used sequence numbers as watermarks. Section 10 now claims only one partition and one processor per account (a balance being a sum is order-independent); 9.4 uses per-leg applied status and 14.2 waits on published outbox rows.
+5. Sound Section 18: one hash chain written inside each posting transaction serialises every journal commit, the daily digest left a day-long window, and nothing tied an audit record to the journal's content (NFR-8). Records now carry the journal's hash, a separate insert-only chaining job builds the chain in `audit_chain`, and the chain head goes to the Object Lock bucket every five minutes. Data model updated.
+6. v2's F01 fix updated the committed balance only on debits, so credits never reached it. v2 9.2 now locks each touched customer account's `account_limit` row in account order and applies every leg; its lead sentence no longer says the Account Processors apply the rules.
+7. The v2 changelog bullet for 12.2 and 12.4 said "the run's handling of the Posting API's responses is stated", which pointed at the 409 handling that carries F15. Reworded to "a failed accrual run resumes where it stopped, and accrual and reversal journals have new idempotency keys".
+8. Unkeyed contradictions removed from non-sound sections: the accrual run's 900 journals per second exceeded NFR-1's 600 (NFR-1, 9.3 and 28.2 now 1,000); accrual journals posted after the 23:30 roll would have carried the next business date (14.1 now exempts the close's own journals, ahead of the F09 sentence); a rollback replaying Selasih's own accrual into CORAL would accrue twice (23.3); the bulk-journal file had no rule for the SGD 1,000,000 second checker (16); archive retention of ten years from writing fell short of ten years from the financial year end for monthly-exported audit records (19); "201 Accepted" now "201 Created"; Sections 12 and 23 subsections put in numeric order.
+9. Key F11: the four-week dual-run cannot reach twenty consecutive matched days at all (17 business days from 8 to 31 March 2027, Good Friday 26 March; the 1 April reconciliation runs after the go/no-go); the why now says so. Key F13 updated for NFR-1 at 1,000. Sound-section `why_sound` and `trap` text for 7, 8, 10 and 18 updated to the new wording.
+10. Names: "Lumbung" matches Lumbung Dana, an OJK-licensed Indonesian lending fintech; "Seroja Systems" is close to Serojatech Sdn Bhd, a Malaysian enterprise IT supplier; "Rosalind Teo" is the name of real bank treasury staff. Renamed to "Selasih", "Rambai Software" and "Marguerite Liew" (web searches for each returned no matching organisation, product or banker). "Merbah Bank", its product names, "CORAL" and "Pelita Extract" returned no real match.
+
+### Checks
+
+- F05 external fact re-fetched 2026-10-05 from https://docs.aws.amazon.com/AmazonS3/latest/userguide/restoring-objects-retrieval-options.html: table row "S3 Glacier Deep Archive ... | Not available | 9-12 hours | Within 12 hours | Within 48 hours"; text "Standard retrievals typically finish within 12 hours for the S3 Glacier Deep Archive storage class". The key's wording holds.
+- F09 anchor moved inside its sentence to stay on one PDF line: "a posting that arrives after the close carries the next business day's value date, whatever".
+- Rebuild: `design_v1.pdf` 15 pages, `design_v2.pdf` 16 pages, ALL CHECKS PASSED; converter `0 key(s) failed validation`, `flaws 15 (v1 14, v2 1)`, `v2_status {'fixed': 7, 'unchanged': 7, 'introduced': 1}`, flaw_counts equal; the other canonical keys unchanged. Canary unchanged.
+- Anchor pages now: F01 5, F02 11, F03 12, F04 8, F05 10, F06 13, F07 7, F08 9, F09 7, F10 14, F11 15, F12 11, F13 3, F14 2, F15 7 (design_v2).
+- Label scan on both designs: 0 and 0. Em dash count: 0 in both designs, both keys, the README and this note. `scripts/leakage_grep.py`: only the pre-existing `never leave` hit.
+- Word counts: design_v1 8,161, design_v2 8,685.
+
+### Left as they are (true but unkeyed, for the human labeller as VALID_UNPLANTED)
+
+Section 28.1 has no acceptance test for FR-3, FR-6, FR-7 or FR-13; Section 9.3 assumes legs spread evenly over 96 partitions although every FAST payment also posts to the one FAST settlement account; Section 24.4's rebuild of the Balance Store by replaying legs cannot restore holds (not journals) or months already archived; pre-April 2020 history read "through the existing tape retrieval process" outlives the mainframe (CORAL read-only for twelve months, contract ends 2028); Section 29 marks account processing "Ready" while PB-05's load test is open.
