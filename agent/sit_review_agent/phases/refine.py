@@ -372,8 +372,7 @@ def repair_outcome(call: PhaseCall, drafts: Sequence[FindingDraft]) -> Repair | 
         how = "returned in full"
     elif call.cut:
         given = list((call.partial or {}).get("revisions") or [])
-        how = "was cut by the stage limit" + (f" after {len(given)} finished revision(s)" if given else
-                                              " with nothing finished")
+        how = "was cut by the stage limit"
     elif call.truncated:
         given, how = [], "was truncated twice at the output cap"
     else:

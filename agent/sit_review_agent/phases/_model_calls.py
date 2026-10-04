@@ -447,9 +447,15 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                           stage=phase.value, call_id=result.call_id, problems=len(problems),
                           public=f"{head} ({len(problems)} problem(s))")
                 return PhaseCall(result=None, brief=brief, invalid=tuple(problems))
-            # Rule repair: an answer that is a list of independently applicable items keeps its valid
-            # items through ``split`` and the repair call asks only for the rest; otherwise the whole
-            # answer is asked again.
+            # Rule repair. Of the four callers (understand, plan, the assess shards, refine) only refine
+            # passes ``check``/``ask``, so only refine reaches this retry; the others come through the
+            # schema and transport retries above, where a failed answer has no parsed items to keep.
+            # An answer that is a list of independently applicable items keeps its valid items through
+            # ``split`` and the repair call asks only for the rest; a single-object answer (understand,
+            # plan: one intent, one question list applied as a whole) would be asked again whole. A
+            # phase that later adds a ``check`` over a list answer (the assess shards' findings) must
+            # also pass ``split``, or a complete answer loses its valid items to one bad one
+            # (docs/transcripts/session6/refine-keep-good.md).
             repaired, k, reason = True, k + 1, "schema_repair"
             schema_error = ("The answer had the required structure but broke these rules:\n"
                             + "\n".join(f"- {p}" for p in problems))[:4000]

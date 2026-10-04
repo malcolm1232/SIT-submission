@@ -146,7 +146,7 @@ async def test_repair_cut_with_nothing_applies_the_54_kept(tmp_path: Path, cfg: 
     assert d.type is DegradationType.BUDGET_OR_DEADLINE_HIT and d.event.startswith("the refine call was cut")
     assert "54 of 55 refine revisions" in d.impact and "54 kept from the first answer" in d.impact
     assert "0 repaired at the limit" in d.impact and f"1 unrefined ({fid(BAD)})" in d.impact
-    assert "was cut by the stage limit with nothing finished" in d.impact
+    assert "which was cut by the stage limit with 0 revision(s) for them" in d.impact
     assert d.impact != REFINE_FALLBACK_IMPACT
     e = refined_event(ctx)
     assert (e.fields["kept"], e.fields["repaired"], e.fields["unrefined"]) == (54, 0, 1)
