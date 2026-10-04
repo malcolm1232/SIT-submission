@@ -6,11 +6,30 @@
 
 | | |
 |---|---|
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Status** | Design phase, build not started |
-| **Last updated** | 2026-09-16 (architecture) · consolidated 2026-09-24 |
+| **Last updated** | 2026-10-02 (review revisions) · previous 1.0 of 2026-09-24 |
 | **Prepared by** | Merbau Digital, Customer Data Platforms Team |
 | **Companion documents** | Izin Conceptual Design v0.8; Group Purpose Register GPR-3; Data Protection Impact Assessment DPIA-2026-11 (draft); Partner Programme Commercial Terms 2026 |
+
+### Revision history
+
+| Version | Date | Changes |
+|---|---|---|
+| 1.0 | 2026-09-24 | First consolidated detailed design. |
+| 1.1 | 2026-10-02 | Post-review revisions: FR-9; topic key (14.2, DEC-02); DNC result validity and refresh cycle (16, DEC-06); receipt links and receipt page (17); Eligibility API capacity (24.2, NFR-8); receipt storage (24.3); migration of customers with no recorded preference (25, DEC-11); acceptance criteria for FR-9, NFR-2 and NFR-8 (28). |
+
+## Changes since version 1.0
+
+This version updates the sections listed below after the design review of 2026-09-29. Sections not listed are unchanged from version 1.0.
+
+- FR-9 and Section 17: when receipts are sent, the receipt link and what the receipt page shows.
+- Section 14.2 and DEC-02: the key of the `consent.changes` topic.
+- Section 16 and DEC-06: validity of DNC Registry results, the refresh cycle and the handling of results awaiting refresh.
+- Section 24.2 and NFR-8: campaign load on the Eligibility API and its provisioned rate.
+- Section 24.3: storage for receipts.
+- Section 25 and DEC-11: migration of customers with no recorded preference in the legacy systems.
+- Section 28: acceptance criteria for FR-9, NFR-2 and NFR-8.
 
 ---
 
@@ -93,7 +112,7 @@ Every requirement below has a validation method and acceptance criterion in Sect
 | FR-6 | Provide an Eligibility API that answers whether a customer or contact point may be contacted for a purpose through a channel, combining consent state and DNC status. |
 | FR-7 | Check every Singapore telephone number against the DNC Registry before a marketing SMS or call is sent to it, unless the holder's clear and unambiguous consent is held in evidential form. |
 | FR-8 | Provide a preference centre in web and app that shows every purpose, its current state and the notice text, and lets the customer change any of them. |
-| FR-9 | Send the customer a consent receipt for all significant preference changes. |
+| FR-9 | Send the customer a consent receipt for every consent change, within five minutes of the change, by SMS to the mobile number on the profile or by email where the customer has no mobile number. |
 | FR-10 | Let approved partners capture consent for Merbau purposes in their own channels through the Partner Consent API, and supply partners with the consent state for the partner-sharing purposes. |
 | FR-11 | Produce, on request of the ODPO, an evidence export for a customer, a purpose or a time range (Section 20). |
 | FR-12 | Treat an SMS reply of STOP to a Merbau marketing short code, and the opt-out option of the marketing IVR, as a withdrawal of the matching purpose. |
@@ -111,7 +130,7 @@ Every requirement below has a validation method and acceptance criterion in Sect
 | NFR-5 | For every consent in force, Izin can produce the evidence of how, when, through which channel and under which notice version it was given, with the full history of changes to it, within five business days of a request. |
 | NFR-6 | Personal data encrypted in transit and at rest; access on least privilege; every staff read of a customer record logged. |
 | NFR-7 | All Izin data stores reside in Singapore (AWS ap-southeast-1). |
-| NFR-8 | The Eligibility API sustains the design-target campaign peak with p99 latency of 50 ms or less. |
+| NFR-8 | The Eligibility API sustains the design-target campaign peak of 1,000 requests per second with p99 latency of 50 ms or less. |
 | NFR-9 | No marketing SMS or call is made to a Singapore telephone number without either a valid DNC Registry result showing it is not registered, or clear and unambiguous consent held in evidential form. |
 
 ---
@@ -322,7 +341,7 @@ Every consent change inserts an outbox row in the same transaction as the event 
 
 ### 14.2 Topic
 
-Consent changes are published to the topic `consent.changes` on the group's Merbau Data Hub MSK cluster (three brokers across three availability zones, replication factor 3, `min.insync.replicas` 2). The topic has 24 partitions and is keyed by `mid`, with `cleanup.policy=compact`, `segment.ms` of one hour and `min.compaction.lag.ms` of one hour, so the topic keeps the latest event for every customer indefinitely and a new consumer can bootstrap from it without a database extract. Events for contact points that have no `mid` are keyed by the contact point ID.
+Consent changes are published to the topic `consent.changes` on the group's Merbau Data Hub MSK cluster (three brokers across three availability zones, replication factor 3, `min.insync.replicas` 2). The topic has 24 partitions and is keyed by subject and purpose (`subject_id:purpose_code`), with `cleanup.policy=compact`, `segment.ms` of one hour and `min.compaction.lag.ms` of one hour, so the topic keeps the latest event for every subject and purpose indefinitely and a new consumer can bootstrap from it without a database extract. For a contact point, the subject is the contact point ID.
 
 The Merbau Data Hub cluster is shared by the group's data products. Any service holding a client certificate issued by the Data Hub certificate authority can consume any topic on it, which keeps onboarding of new consumers to a single certificate request.
 
@@ -358,15 +377,15 @@ Each partner file contains, per customer whose partner-sharing state changed sin
 
 The DNC Service keeps, for every Singapore telephone number in the marketing base, the most recent DNC Registry result for the voice, text message and fax registers. It submits numbers to the PDPC's DNC Registry through the bulk-check interface and stores each result with the date it was received.
 
-Under the PDPA, the result of a DNC Registry check remains valid for 30 days from receipt, so the DNC Service re-checks every number in the marketing base once every 28 days and serves campaign checks from its cache. The base of about 7.4 million numbers is split into 28 daily cohorts by a hash of the number, so each night's bulk submission is about 265,000 numbers and completes within the overnight window. New numbers added to the marketing base are checked within the same day through the single-number interface before they are eligible for any marketing SMS or call.
+Under the PDPA, the result of a DNC Registry check remains valid for 21 days from receipt, so the DNC Service re-checks every number in the marketing base once every 14 days and serves campaign checks from its cache. The base of about 7.4 million numbers is split into 14 daily cohorts by a hash of the number, so each night's bulk submission is about 530,000 numbers and completes within the overnight window. A number whose result is older than 21 days because its cohort's refresh has not succeeded keeps its last result and is served from it until the next successful refresh, so a registry outage or a rejected bulk file never blocks a campaign. New numbers added to the marketing base are checked within the same day through the single-number interface before they are eligible for any marketing SMS or call.
 
 The Eligibility API combines consent and DNC status for SMS and voice as follows:
 
 | Consent state for MKT-SMS / MKT-VOICE on the number | DNC result | Decision |
 |---|---|---|
 | GRANTED, with an `evidence_ref` | Any | Allowed (clear and unambiguous consent in evidential form) |
-| GRANTED, without an `evidence_ref` (migrated records, Section 25) | Not registered on the relevant register, result valid | Allowed |
-| GRANTED, without an `evidence_ref` | Registered, or no valid result | Not allowed |
+| GRANTED, without an `evidence_ref` (migrated records, Section 25) | Not registered on the relevant register in the result held | Allowed |
+| GRANTED, without an `evidence_ref` | Registered, or no result held | Not allowed |
 | WITHDRAWN or no state | Any | Not allowed |
 
 A GRANTED state captured through Izin always carries an evidence reference (Sections 10 to 12) and is clear and unambiguous consent in evidential form, so marketing to the number is allowed even if it is listed on the DNC Register. For GRANTED states without one, which come only from the migration, the DNC result decides. Izin never allows marketing on DNC status alone. Email and app push are not covered by the DNC provisions and depend on consent only.
@@ -375,9 +394,9 @@ A GRANTED state captured through Izin always carries an evidence reference (Sect
 
 ## 17. Consent Receipts
 
-A consent receipt is a record, given to the customer, of a consent change: what changed, when, through which channel, and the notice version that applied. The Receipt Service creates a receipt for each change request that FR-9 requires one for (a request that changes several purposes at once gets one receipt listing all of them).
+A consent receipt is a record, given to the customer, of a consent change: what changed, when, through which channel, and the notice version that applied. The Receipt Service creates a receipt for each change request (a request that changes several purposes at once gets one receipt listing all of them).
 
-Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence. A receipt is viewable at `https://izin.merbau.sg/r/{receipt_number}` without signing in, so that customers who changed their preferences through the contact centre or in a store can open it from the SMS link. The receipt page shows the customer's name, mobile number, email address, the purposes changed with their new states, and the current state of every other purpose.
+Each receipt has a receipt number of the form R followed by a ten-digit sequence (for example R0004417302), allocated from a Postgres sequence, for reference in calls and letters. The receipt link carries a separate random 128-bit token (`https://izin.merbau.sg/r/{token}`), stored only as its SHA-256 hash, and the link expires 30 days after issue. Without signing in, the receipt page shows the customer's first name, the masked mobile number or email address the receipt was sent to, the receipt number, and the purposes changed with their new states and the time of the change. The current state of every other purpose, and the full contact details, are shown only after the customer signs in with Merbau ID.
 
 Receipts are sent by SMS to the mobile number on the profile, or by email where the customer has no mobile number. Receipts are not themselves marketing and are sent under SVC-NOTICE.
 
@@ -550,7 +569,7 @@ While the Consent API is unavailable, channels show the customer that preference
 
 ### 24.2 Eligibility API capacity
 
-The heaviest load on Izin comes from campaign sends, because Kempen checks every recipient with the Eligibility API at send time. The largest campaign, the monthly Rewards newsletter, goes to 3.0 million recipients in a one-hour send window, which is about 83 requests per second. The Eligibility API is provisioned for 300 requests per second at p99 50 ms (NFR-8), giving more than three times the headroom of the largest campaign; requests above that rate are rejected with 429 by the API gateway's rate limit to protect the Consent Store writer.
+The heaviest load on Izin comes from campaign sends, because Kempen checks every recipient with the Eligibility API at send time. The largest campaign, the monthly Rewards newsletter, goes to 3.0 million recipients in a one-hour send window, which is about 833 requests per second. The Eligibility API is provisioned for 1,000 requests per second at p99 50 ms (NFR-8), and Kempen paces each campaign to at most 800 requests per second, so a newsletter of 3.0 million recipients completes in about 63 minutes; requests above the provisioned rate are rejected with 429 by the API gateway's rate limit to protect the Consent Store writer.
 
 ### 24.3 Storage
 
@@ -559,7 +578,7 @@ The heaviest load on Izin comes from campaign sends, because Kempen checks every
 | `consent_state` | 5.2 million customers × 7 consent purposes × 180 bytes | about 6.6 GB |
 | `consent_event` | 140,000 events a day × 24 months × 600 bytes | about 61 GB |
 | `contact_point` | 12 million contact points × 300 bytes | about 3.6 GB |
-| `receipt` | 120,000 receipts a day × 24 months × 400 bytes | about 35 GB |
+| `receipt` | 140,000 receipts a day × 24 months × 450 bytes | about 46 GB |
 
 The Aurora cluster uses `db.r7g.2xlarge` instances; the working set of `consent_state` and the indexes fits in memory.
 
@@ -578,7 +597,7 @@ The legacy sources are the telco CRM (Arus), the Rewards platform (Mata) and the
 | Mata | `newsletter = Y` with sign-up date and channel | MKT-EMAIL GRANTED, evidence_ref to the Mata sign-up record |
 | Store forms | Ticked marketing box, signed | Purposes ticked GRANTED, evidence_ref to the form scan |
 
-Merbau Mobile's 2019 privacy notice told all subscribers that Merbau would market its products by SMS, call, email and push unless they opted out. Customers with no recorded preference in the legacy systems who were sent the 2019 privacy notice and did not opt out are migrated with all four marketing purposes in state GRANTED, source MIGRATION and notice version N-2019-03. This keeps the existing marketing base of about 3.4 million customers reachable from the first day.
+Merbau Mobile's 2019 privacy notice told all subscribers that Merbau would market its products by SMS, call, email and push unless they opted out. Customers with no recorded preference in the legacy systems are migrated with no event for the marketing purposes, so the Eligibility API treats those purposes as not granted (Section 10). They are invited to set their preferences through a card in the Merbau app and a notice with their monthly bill, both of which link to the preference centre. The marketing base reachable on the first day is therefore about 1.9 million customers, not the 3.4 million reachable from the legacy flags; Group Marketing has accepted this.
 
 Every migrated event has `channel = MIGRATION`, `actor_type = SYSTEM` and the `captured_at` of the legacy record where one exists, else the migration time. The migration is idempotent: it uses the legacy record key as the idempotency key, so it can be re-run after a partial failure.
 
@@ -589,16 +608,16 @@ Every migrated event has `channel = MIGRATION`, `actor_type = SYSTEM` and the `c
 | ID | Decision | Rationale |
 |---|---|---|
 | DEC-01 | Aurora PostgreSQL 16, `db.r7g.2xlarge`, writer and two readers, three AZs | Transactional writes of event, state and outbox; familiar to the team |
-| DEC-02 | Amazon MSK (Merbau Data Hub cluster), topic `consent.changes`, 24 partitions, compacted, keyed by `mid` | Shared platform, bootstrap from the topic |
+| DEC-02 | Amazon MSK (Merbau Data Hub cluster), topic `consent.changes`, 24 partitions, compacted, keyed by subject and purpose | Shared platform, bootstrap from the topic |
 | DEC-03 | Transactional outbox with a single active relay | No dual write |
 | DEC-04 | Single region ap-southeast-1; snapshot copies to a separate account; region-loss RTO 24 h, RPO 4 h accepted (RR-118) | NFR-7; only one AWS region in Singapore |
 | DEC-05 | MKT-SMS and MKT-VOICE held per contact point; other purposes per customer | DNC provisions apply per number |
-| DEC-06 | DNC results cached and refreshed in 28 daily cohorts | Cost and registry load |
+| DEC-06 | DNC results cached and refreshed in 14 daily cohorts; a result awaiting refresh is served until the next successful refresh | 21-day validity; registry load |
 | DEC-07 | Eligibility API reads consent state from the writer endpoint | Read-your-writes for withdrawals |
 | DEC-08 | Receipts by SMS, or email where no mobile number exists | Every customer has at least one |
 | DEC-09 | Seri Assurance captures Merbau consent (PTN-INS and MKT-EMAIL) in its own app through the Partner Consent API from Phase 4 | Partner programme launch in Q2 2027 |
 | DEC-10 | Partner files nightly by SFTP with PGP encryption | Partner capabilities |
-| DEC-11 | Legacy preferences migrated per Section 25 | Continuity of the marketing base |
+| DEC-11 | Legacy preferences migrated per Section 25; no consent is created for customers with no recorded preference | Only recorded choices carry over |
 | DEC-12 | Consent events retained 24 months | Storage and vacuum load |
 
 ---
@@ -634,7 +653,7 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | FR-6 | Eligibility decision table test | For every combination in Section 16, the API returns the documented decision. |
 | FR-7 | DNC test with the registry test environment | Numbers registered in the test registry are refused without evidential consent and allowed with it. |
 | FR-8 | Preference centre end-to-end test | Every purpose is listed with its state and notice text; a change made in the app is shown on the web after reload. |
-| FR-9 | Receipt test | A change produces a receipt with the purposes changed and their new states. |
+| FR-9 | Receipt test | For 500 changes across every channel, each produces exactly one receipt within five minutes, sent to the mobile number or, for profiles with no mobile number, the email address; the receipt link opens the receipt without sign-in, shows only the fields listed in Section 17, and stops working after 30 days. |
 | FR-10 | Partner API conformance test | A registered partner can submit only its listed purposes; an unregistered certificate is refused. |
 | FR-11 | Evidence export test | For 50 seeded customers, the export contains every event, the notice texts and the DNC results, and the signature verifies. |
 | FR-12 | Keyword and IVR test | A STOP reply and the IVR opt-out each produce a withdrawal on the number within one minute. |
@@ -646,13 +665,13 @@ Each requirement from Section 2 is validated by a specific method with a concret
 | ID | Validation method | Acceptance criteria |
 |---|---|---|
 | NFR-1 | Load test at 120 changes per second | p99 Consent API latency of 300 ms or less over 30 minutes. |
-| NFR-2 | UAT withdrawal check | In UAT, withdraw marketing consent for 20 test customers in the app and confirm that each shows as withdrawn in Kempen within 24 hours. |
+| NFR-2 | Propagation test in pre-production at design-target load | Over 24 hours, record 1,000 withdrawals spread across every channel (app, web, contact centre, store, partner API, STOP reply and IVR), a third of them followed within an hour by another change for the same customer; restart the relay and each consumer once during the run. Every withdrawal is applied in Kempen, the Group Analytics Platform, the contact centre CRM and the Rewards platform within 24 hours of being recorded, and every partner-purpose withdrawal appears in the next nightly partner file. |
 | NFR-3 | Synthetic probes | Monthly availability of 99.95% or more measured by probes every 30 seconds. |
 | NFR-4 | AZ failure game day | After a forced writer failover under load, every change acknowledged to the load generator is present in `consent_event`. |
 | NFR-5 | Evidence drill | The ODPO produces a full evidence export for 10 named customers within five business days. |
 | NFR-6 | Security review and penetration test | No high or critical findings open at go-live; access log entries present for every console view in the test. |
 | NFR-7 | Infrastructure review | Every Izin resource in the IaC is in ap-southeast-1. |
-| NFR-8 | Load test of the Eligibility API at 300 requests per second | p99 latency of 50 ms or less over 30 minutes. |
+| NFR-8 | Load test of the Eligibility API at 1,000 requests per second, with a concurrent consent-change load of 120 per second | p99 latency of 50 ms or less over 30 minutes, with no 429 responses below 1,000 requests per second. |
 | NFR-9 | DNC compliance audit | For a sample of 1,000 marketing SMS from the pilot, each number had evidential consent or a valid DNC result at send time. |
 
 ---
