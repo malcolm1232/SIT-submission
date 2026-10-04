@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the six synthetic-item PDFs from their Markdown sources.
+"""Rebuild the sixteen synthetic-item PDFs (eight items, v1 and v2) from their Markdown sources.
 
 Pipeline (one pipeline for every PDF):
   1. python-markdown (extensions: tables, fenced_code, sane_lists) -> HTML
@@ -17,7 +17,7 @@ Requirements: python3, `pip install markdown`, LibreOffice Writer
 (pdftotext, pdfinfo).
 
 Usage (from anywhere):
-  python3 eval/build_pdfs.py            # rebuild all six and verify
+  python3 eval/build_pdfs.py            # rebuild all sixteen and verify
   python3 eval/build_pdfs.py --check    # verify the existing PDFs only
 
 A fresh LibreOffice user profile is created in a temporary directory for each
@@ -37,7 +37,16 @@ from pathlib import Path
 import markdown
 
 EVAL = Path(__file__).resolve().parent
-ITEMS = ["clinical_rpm", "payments_orchestration", "research_lakehouse"]
+ITEMS = [
+    "clinical_rpm",
+    "payments_orchestration",
+    "research_lakehouse",
+    "iot_fleet",
+    "consent_service",
+    "hospital_scheduling",
+    "ledger_migration",
+    "exam_platform",
+]
 VERSIONS = ["design_v1", "design_v2"]
 
 # Phrases that must appear in specific PDFs (edits made after the original

@@ -102,6 +102,11 @@ ITEMS = [
     ("synthetic", "payments_orchestration", "synthetic_json_v0"),
     ("synthetic", "clinical_rpm", "synthetic_json_v0"),
     ("synthetic", "research_lakehouse", "synthetic_json_v0"),
+    ("synthetic", "iot_fleet", "synthetic_json_v0"),
+    ("synthetic", "consent_service", "synthetic_json_v0"),
+    ("synthetic", "hospital_scheduling", "synthetic_json_v0"),
+    ("synthetic", "ledger_migration", "synthetic_json_v0"),
+    ("synthetic", "exam_platform", "synthetic_json_v0"),
     ("blind", "item_a", "blind_a_json_v0"),
     ("blind", "item_b", "blind_b_json_v0"),
 ]
@@ -111,6 +116,11 @@ NEEDS_EXTERNAL = {
     "payments_orchestration": {"F01", "F04", "F06", "F07", "F11", "F15"},
     "clinical_rpm": {"F01", "F03", "F04", "F06", "F07", "F08", "F09", "F11", "F15"},
     "research_lakehouse": {"F04", "F05", "F06", "F10", "F15"},
+    "iot_fleet": {"F03", "F15"},
+    "consent_service": {"F05", "F15"},
+    "hospital_scheduling": {"F06", "F15"},
+    "ledger_migration": {"F05"},
+    "exam_platform": {"F05", "F06"},
 }
 
 # README §2.7 (eval_data_audit Task 6 / P1 #9): (legacy sound-section string prefix, flaw ids).

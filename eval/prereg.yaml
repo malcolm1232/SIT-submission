@@ -326,6 +326,21 @@ eval_tiers:
       - path: eval/synthetic/research_lakehouse
         item_id: synth-research-lakehouse-001
         documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/iot_fleet
+        item_id: synthetic-iot-fleet-001
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/consent_service
+        item_id: synthetic-consent-service-001
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/hospital_scheduling
+        item_id: synthetic-hospital-scheduling-001
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/ledger_migration
+        item_id: synthetic-ledger-migration-001
+        documents: [design_v1.pdf, design_v2.pdf]
+      - path: eval/synthetic/exam_platform
+        item_id: synthetic-exam-platform-001
+        documents: [design_v1.pdf, design_v2.pdf]
     counts: 3 v1 documents x 14 flaws = 42; 3 v2 documents, each 6 fixed, 8 persisted, 1 introduced (3 introduced flaws in total)
     input_format: PDF only (agent never sees the .md, the README or any key)
     keys: answer_key.canonical.json; scored_run_ready must be true (core_insight signed off by the owner, human_labelling_protocol.md task T3)
