@@ -1,3 +1,5 @@
+SUPERSEDED by `docs/HANDOVER_261004_PLANNER.md` on 04 Oct 2026; sections 0 and 0a below keep the detail of the night of 3 Oct.
+
 # SIT planner - handover, written 03 Oct 2026 18:15 +08 by the "SIT FABLE on the Mac" session, sections 0 and 0a added 22:50 and 00:35
 
 START HERE. This file is self-contained: a new session needs nothing else to continue; section 0a is the newest state and overrides the sections below where they differ.
