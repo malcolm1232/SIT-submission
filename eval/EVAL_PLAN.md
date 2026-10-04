@@ -19,7 +19,7 @@ The evaluated agent is now the demo profile (`medium` on every stage, research `
 Measured FULL run, document-only (`docs/live_runs/rehearsal_concurrent_1/MEASUREMENT.md`): 382.3 s, $5.74, 148,957 output tokens, 344,584 input tokens, all written to the cache and none read.
 The same agent at `high` on every stage (`docs/live_runs/rehearsal_concurrent_high_1/MEASUREMENT.md`): 780.3 s, $8.21, 258,222 output tokens.
 With research: NOT measured; predicted 389.3 to 438.3 s and $6.14 (the measured run plus the design note's predicted research increment of 7 to 56 s and $0.40).
-Single-call conditions: not measured; B0 is derived at $2.45 and 859.8 s, B0-$ at $5.74 and 1,719.6 s (`docs/BUDGET.md` §1.1).
+Single-call conditions: not measured; B0 is derived at $2.45 and 859.8 s, B0-$ at $5.74 and 1,719.6 s (`docs/BUDGET.md` §1.1); B0 became runnable on 5 Oct 2026.
 Run time of the 132 runs: 84 × 382.3 s + 9 × 382.3 s + 24 × 859.8 s + 15 × 1,719.6 s = 81,983.1 s = 22.8 h at one run at a time, 11.4 h at 2 and 7.6 h at 3 in parallel.
 Agent cost: 84 × $5.74 + 9 × $5.74 + 24 × $2.45 + 15 × $5.74 = $678.72 before margin, against the $240.12 planned; Tier A with scoring, grading and the 30 % margin is $3,281.19 (`docs/BUDGET.md` §6).
 Scheduling: one FULL run at a time until 12 concurrent CLI sessions are measured, because a FULL run holds up to 6 (prereg `runs_per_item.scheduling`).

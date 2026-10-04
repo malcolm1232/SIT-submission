@@ -147,6 +147,8 @@ A guard refuses a scored run on a key that the owner has not signed off unless `
 Cost metrics of a run with any call of unknown usage are null with a reason, and the recorded figure is reported beside them as a lower bound, so a cut call can fail a budget check but never pass it (`harness/sit_eval/usage.py`, `docs/USER_DECISIONS.md` #28).
 The caveats are the ones the quality comparison states: one document and one run per arm so far, unsigned keys and an unfrozen pre-registration, and the agent, the scoring judge and the grader all in the same model family, disclosed as such (`docs/live_runs/QUALITY_COMPARISON.md` "Caveats", `eval/EVAL_PLAN.md` §1).
 Tier A, the minimum research-grade study, is 132 runs across the baselines and ablations; it is costed, scheduled around the subscription's concurrency, and not yet run (`eval/EVAL_PLAN.md` §1.2, `docs/BUDGET.md`, `docs/BUDGET_OPTIONS.md`).
+The single-call baseline of the pre-registration, condition `B0`, is runnable since 5 Oct 2026 with `--condition B0`: the orchestrator skips understand, plan, research and refine and makes one assess call over every criterion of `config/agent.yaml` from the document alone, briefed by `prompts/assess_single.md`, bounded by the run deadline and not by a stage limit, with no tools, no verdict call and no anchor-repair call (`agent/sit_review_agent/orchestrator.py` `_b0_stage`, `eval/prereg.yaml` `conditions.tier_A`).
+A B0 run then takes FULL's merge, verify, report and manifest path, its manifest says `condition: "B0"` (a FULL run's now says `"FULL"`), and the harness compares the two with `sit-eval aggregate --compare FULL --compare B0` (`tests/test_b0_condition.py`, `docs/transcripts/session6/b0-baseline.md`).
 
 ## 10. The UI
 
