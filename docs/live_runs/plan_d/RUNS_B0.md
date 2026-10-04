@@ -10,4 +10,11 @@ Hallucination flags count G1 failures plus adjudicated HALLUCINATED findings (th
 | d_b0_payments_v1_1 | payments_orchestration | B0 | medium | 363 | completed_degraded | 18 | 1 | 1.08 | 7.32, 45 | 6.38, 40 | 13 of 14 | 0.929 | 1.000 | 0.933 | 1.000 | 0 | 3.89 |
 | d_b0_clinical_v1_1 | clinical_rpm | B0 | medium | 290 | completed_degraded | 16 | 1 | 0.91 | 6.84, 42 | 5.56, 40 | 8 of 14 | 0.929 | 1.000 | 0.567 | 0.500 | 0 | 2.84 |
 | d_b0_lakehouse_v1_1 | research_lakehouse | B0 | medium | 256 | completed_degraded | 16 | 1 | 0.83 | 6.37, 43 | 6.07, 38 | 10 of 14 | 0.857 | 1.000 | 0.883 | 1.000 | 0 | 3.05 |
-| d_b0_iot_v1_1 | iot_fleet | B0 | medium | 333 | completed_degraded | 19 | 1 | 0.96 | 7.12, 42 | 6.05, 40 | 0 of 14 | 0.000 | - | 0.000 | 0.000 | 0 | 0.00 |
+| d_b0_iot_v1_1 | iot_fleet | B0 | medium | 333 | completed_degraded | 19 | 1 | 0.96 | 7.12, 42 | 6.05, 40 | - | - | - | - | - | - | 0.00 |
+| d_b0_consent_v1_1 | consent_service | B0 | medium | 30 | aborted_graceful | - | 5 | 0.00 | 6.72, 47 | 6.54, 48 | - | - | - | - | - | - | - |
+
+Notes
+
+- d_b0_iot_v1_1: the run completed; its scoring failed, all 31 judge calls (124 attempts) refused by the subscription's session limit (LLMUnavailableError, resets 07:10 SGT 5 Oct 2026), so it has no score yet.
+- d_b0_consent_v1_1: crashed in assess after 30 s on the same session limit (exit 3, 5 attempts, resumable); not rerun, the planner decides.
+- d_b0_hospital_v1_1: started at the limit and stopped by the worker before it ran; its folder was set aside, the run-id is still unused.
