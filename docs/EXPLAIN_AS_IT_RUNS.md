@@ -19,8 +19,8 @@ Each design choice serves one of those words:
 - Complete: in a re-assessment every prior finding gets exactly one status, and INV-13 fails the run if one is missing (`agent/sit_review_agent/delta.py`, `invariants.py` `check_INV_13`).
 - Consistent: the decisions the document approved are frozen and hashed in understand, and a finding that would reverse one must say so as a challenge with at least two evidence items (`state/decision_registry.py`, `invariants.py` `check_INV_10`).
 - Consistent: the page, the Markdown and the download are all rendered from the same `report.json` and `report.md`, so they cannot disagree (`report/render.py`, `ui/export.py`).
-- Accurate: every anchor is searched for in the canonical text by code, exact first, then a fuzzy match of 0.90 or better within the cited page plus or minus one (`ingest/anchor.py` `verify_anchor`).
-- Traceable: the model never writes a URL; it cites ledger IDs (`EV-nnn`) and code fills in the URL, title and retrieval time from the ledger (`state/evidence_ledger.py` `hydrate`).
+- Accurate: every anchor is searched for in the canonical text by code, exact first, then a fuzzy match of 0.90 or better within the cited page plus or minus one, narrowed to the cited section plus or minus one when that section resolves (`ingest/anchor.py` module docstring, `verify_anchor`).
+- Traceable: the model never writes a URL; it cites ledger IDs (`EV-nnn`) and code fills in the URL and retrieval time from the ledger (`state/evidence_ledger.py` `hydrate`, `models.py` `EvidenceItem`).
 - Traceable: `dra explain <finding-id>` shows a finding's anchors, its evidence with the tool call behind each item, and its history across phases (`report/explain.py`).
 - Evidence-based: research results become ledger entries before the model sees them, so the model can only cite what it has read (`phases/research.py`, `tools/sources.py`).
 - Recommendations justified: the schema requires issue, rationale, evidence and expected benefit on a recommendation, matching brief p.5 section 2.3 (`spec/finding.schema.json`).
@@ -34,7 +34,7 @@ The times below are rehearsal 1 on the lab's 30-page sample with tools (`docs/li
 What is on the page while it runs, and what each thing means (`agent/sit_review_agent/ui/static/app.js`, decision #44):
 - The head clock is the run clock of the last recorded event plus the wall seconds since that event arrived, ticking once a second, and it says so in its label; it never estimates completion and shows no percentage (`ui/static/app.js` header comment and `clock-label`, decision #44 (B)).
 - The axis under it runs from 0 to the deadline, with the recorded limits as markers: stage 1 by 265 s, refine by 465 s, verdict by 530 s, deadline 540 s (`config/profiles/demo.yaml` `stage_limits_s`); the markers come from the `run_started` record, not from the page (`ui/static/app.js` `limitMarks`).
-- Each stage row expands to its model calls; each shard row shows its drafted finding titles as they arrive, titles only, labelled draft (decision #44 (C), `ui/events.py` `shard_drafted`, `draft_item`).
+- Each stage row expands to its model calls; each shard row shows its drafted finding titles as they arrive, with severity and kind but no other model text, labelled draft (decision #44 (C), `ui/events.py` `shard_drafted`, `draft_item`).
 - A limit that fires is written under the axis in plain words with the counts kept (`ui/static/app.js` `noteLimit`).
 - The Logs panel in the rail tails `progress.log` through a read-only route (decision #44 (D), `ui/static/app.js` "The Logs panel").
 - Stop asks for confirmation and says what it does: SIGINT, exit 130, `state.json` kept, no report, resume with `dra resume <run_id>` (decision #44 (A)).
@@ -65,10 +65,10 @@ Say:
 What happens: one model call returns research questions per criterion; code drops questions with URLs, renumbers them `RQ-001` onwards and adds a document-only question for any criterion the model left out (`phases/plan.py`).
 Rehearsal 1: 71.4 s, 21 plan questions (`sit_sample_ui_2/MEASUREMENT.md` "Stages").
 Why this way: plan sees the document and the criteria only, not the intent, so it does not have to wait for understand (`phases/plan.py` docstring; decision #31 ruling 1).
-Point at: plan and understand both started at about 3 s; the first draft item on the page, a plan question, arrived at 28.6 s (`sit_sample_ui_2/MEASUREMENT.md` "Shards").
+Point at: plan and understand both started at about 3 s; the first draft item in the event stream, a plan question, arrived at 28.6 s (`sit_sample_ui_2/MEASUREMENT.md` "Shards").
 Say:
 > Plan and understand start together.
-> Plan decides what needs outside evidence, and code makes sure every criterion has at least one question, so nothing is silently skipped.
+> Plan decides what needs outside evidence, and code makes sure every criterion has at least one question or a stated reason for skipping it, so nothing is silently skipped.
 
 ### Assess, six shards (run about 3 s to 265 s)
 
@@ -86,11 +86,11 @@ Say:
 
 ### Research with the MCP servers (starts when understand and plan have both ended; run about 109 s to 207 s)
 
-What happens: a hand-written tool loop; the model asks for tool calls, the gateway runs them on the MCP servers, each result becomes ledger entries `EV-nnn` before the model sees it, and the stop rules decide after each round whether to continue (`phases/research.py`, `stop_rules.py`).
+What happens: a hand-written tool loop; the model asks for tool calls, the gateway runs them on the MCP servers, each result becomes ledger entries `EV-nnn` before the model sees it, and the stop rules decide whether to continue: the cap rules after every tool round, every active rule after every iteration (`phases/research.py` module docstring, `stop_rules.py`).
 Two servers are on, internet search and research information; browser automation is off because it shares one browser between callers with no domain allowlist, and document intelligence is off because its only probed call rejected the sample (`config/tools.yaml`, `docs/ARCHITECTURE.md` section 5).
 The budget is 30 tool calls and 4 iterations (`config/stop_rules.yaml` lines 3 and 4).
 A session the server closed is reopened once and the call retried once; a session idle over 60 s is reopened before the next call; a tool is disabled only after two genuine failures in a row (decision #38, `tools/gateway.py`, `config/tools.yaml` `session_idle_reopen_s`).
-The policy layer refuses a URL that did not appear in an earlier result or in the document, and refuses any argument carrying a secret, a key-shaped token or bulk document text (`tools/policy.py` `check_urls`, `sanitise_args`).
+The policy layer refuses a URL to fetch that did not appear in an earlier result or in the document, and refuses any argument carrying a secret, a key-shaped token or bulk document text (`tools/policy.py` `check_urls`, `sanitise_args`).
 Rehearsal 1: 97.2 s, one iteration, 9 web searches and 1 fetch, all succeeded; 8 met a closed session first and succeeded on the retry after 3 reopens; 41 external ledger entries (`sit_sample_ui_2/MEASUREMENT.md` "Tools").
 Why research runs beside the shards: it starts at about 110 s while the shards started at about 3 s, so the shards never see external evidence; refine applies it instead, a trade accepted for the time slot (decision #37).
 Point at: the research row, its stop reason when it shows, and the Logs panel lines for the tool calls.
@@ -159,7 +159,7 @@ Say:
 
 ## 4. This morning's rehearsal and what it taught
 
-The story in one line: we measured, found three defects, fixed them the same day, and re-measure in the second rehearsal.
+The story in one line: we measured, found three defects that cost time or evidence (of the eight the measurement lists), fixed them the same day, and re-measure in the second rehearsal.
 
 The numbers of rehearsal 1 (`sit_sample_ui_2/MEASUREMENT.md` unless noted):
 - Wall time 508.5 s, 31.5 s of slack against 540 s.
@@ -191,7 +191,7 @@ What the second rehearsal should show (to be filled in):
 
 Say:
 > The first rehearsal on your sample told me three things I could not have guessed from offline tests.
-> I measured them from the run's own logs, fixed each with a test that fails without the fix, and ran it again.
+> I measured them from the run's own logs, fixed each with a test that fails without the fix, and ran it again. [UNVERIFIED: true only once rehearsal 2 has run; at `8c3a291` it has not]
 > That loop, measure, find, fix, re-measure, is how I worked the whole way.
 
 ## 5. The honesty rules
@@ -212,7 +212,7 @@ The manifest is written as `crashed` before the first model call and finalised a
 Why the export says nothing `report.md` does not: there is no second renderer; the HTML is the run's own `report.md` converted to HTML, cut at its own headings into eight parts, with raw HTML escaped and images off, so model text cannot add markup (decision #43, `ui/export.py` module docstring, `tests/test_ui_outputs.py`).
 The one addition is the chat log, which when it exists follows in its own headed section, labelled as the reading aid it is (`ui/export.py` `CHAT_HEADING`).
 
-The leakage rules for the public snapshot `malcolm1232/SIT-public`: it never carries `eval/blind/`, the answer keys, transcripts, raw model logs, the lab's documents or the probe results; it is refreshed only with `scripts/export_public_snapshot.py` and its allow-list `.public-allow` (`docs/HANDOVER_261004_PLANNER.md` section 6).
+The leakage rules for the public snapshot `malcolm1232/SIT-public`: it never carries `eval/blind/`, the answer keys, transcripts, raw model logs, the lab's documents or the probe results; it is refreshed only with `scripts/export_public_snapshot.py`, whose reviewed list of accepted scan findings is `.public-allow` (`docs/HANDOVER_261004_PLANNER.md` section 6, `scripts/export_public_snapshot.py` `RULES`).
 `scripts/leakage_grep.py` gates the agent's code, prompts and config against answer-key text and document-specific strings (`scripts/leakage_grep.py` docstring).
 Recorded runs commit summaries, not raw model logs: rehearsal 1 commits `llm_calls.json` (ids, timings, usage, counts) instead of `llm.jsonl`, and its `text/` folder is the lab's material, kept out of any public snapshot (`sit_sample_ui_2/MEASUREMENT.md` "What is and is not in this directory").
 
@@ -254,10 +254,10 @@ A missing key fails the run before any model call, unless `--no-tools` asks for 
 Four shards ended stage 1 at 265.2 s and 255 s on the lab document, over the 230 s threshold that decision #31 set, so the planned next step was six; each group has at most two criteria (decision #40, `config/agent.yaml`).
 
 5. Six shards did not bring stage 1 under 230 s this morning; was it the wrong call?
-Not on the evidence: the four single-pass shards finished by 177.9 s, and the overrun came from three shards writing their answer twice, which is fixed (`sit_sample_ui_2/MEASUREMENT.md` "Comparison", commit `af12daf`); the second rehearsal checks it.
+Not on the evidence: the three single-pass shards (1, 2 and 5) finished by 177.9 s, and the overrun came from three shards writing their answer twice, which is fixed (`sit_sample_ui_2/MEASUREMENT.md` "Comparison", commit `af12daf`); the second rehearsal checks it.
 
 6. What does resume do?
-`dra resume` loads the latest checkpoint, refuses on hash drift of config, prompts or text unless `--accept-drift` is given and recorded, restores the run clock, re-runs only the members and shards that had not finished, and serves tool calls already made from `tools.jsonl`, so no paid tool call repeats (`orchestrator.py` `resume_run`, `tools/gateway.py` `SelfReplayGateway`).
+`dra resume` loads the latest checkpoint, refuses on hash drift of config, prompts or text unless `--accept-drift` is given and recorded, restores the run clock, re-runs only the members and shards that had not finished, and serves tool calls that already succeeded from `tools.jsonl`, so none of them is made again (`orchestrator.py` `resume_run`, `tools/gateway.py` `SelfReplayGateway`).
 
 7. And replay?
 `dra replay` re-runs the real phases with model and tool calls served from the recorded logs and a virtual clock; a request that does not match stops with exit 4, and it reproduces exactly only at the recorded commit (`replay.py`).
@@ -272,7 +272,7 @@ Rehearsal 1 recorded $7.37 and about $8.86 with the estimate for the two calls t
 On the payments design both found the same 13 of 14 flaws with precision 0.944 and 0.947, at 382 s and $5.74 against 780 s and $8.21; one document, one run per arm, exploratory (decision #33).
 
 11. How would you re-assess an updated artefact?
-Give the updated PDF and the previous version (`--v1 <pdf>`) or the frozen previous run (`--previous <run_dir>`); every prior finding gets exactly one status (resolved, partially addressed, still open, withdrawn with a reason), a missing status is recorded as "not re-examined" and disclosed, and a new finding in a changed section is marked a regression by code (`cli.py`, `delta.py`, INV-13).
+Give the updated PDF and the previous version (`--v1 <pdf>`) or the frozen previous run (`--previous <run_dir>`); with `--previous` every prior finding gets exactly one status (resolved, partially addressed, still open, withdrawn with a reason), a missing status is recorded as "not re-examined" and disclosed, and a new finding in a changed section is marked a regression by code (`cli.py`, `delta.py`, INV-13).
 
 12. Has the re-assessment run live?
 Once, document-only, on the synthetic payments v1 and v2 pair, not graded against the key (`docs/LIMITATIONS.md` "Re-assessment").
@@ -299,7 +299,7 @@ The run gets SIGINT, exits 130, keeps `state.json`, writes no report, and `dra r
 Every time is the record's run clock; the head clock adds only the seconds since the last event, says so, and stops with the stream; there is no progress percentage (decision #44, `ui/static/app.js` header comment).
 
 20. How do you handle a model that refuses or a rate limit?
-A refusal is retried once with professional-review framing, then recorded as declined and the phase falls back to code; a rate limit honours `retry-after` with jittered backoff; no model switch happens unless `--allow-fallback` is set and recorded (`phases/_model_calls.py`, `config/agent.yaml` `llm.refusal_retries`, `allow_fallback: false`).
+A refusal is retried once with professional-review framing, then recorded as declined and the phase falls back to code; a rate limit is retried with jittered exponential backoff, honouring `retry-after` on the API backend (the CLI backend gets none); no model switch happens unless `--allow-fallback` is set and recorded (`phases/_model_calls.py`, `llm/claude_code.py` `_classify` and `_backoff`, `config/agent.yaml` `llm.refusal_retries`, `allow_fallback: false`).
 
 ## 8. A two-minute closing
 
