@@ -8,7 +8,8 @@ Writes ``built_1_drop.png``, ``built_2_running.png``, ``built_3_review.png`` and
 Data, all offline: a scratch runs directory holding the recorded fixture stream
 ``tests/fixtures/ui/progress.jsonl`` (a fixture run on the fake gateway, ``tests/fixtures/ui/record_fixtures.py``)
 cut at the run clock 01:06 (frame 2, served over SSE as a run still in progress) and the report files
-of ``docs/live_runs/rehearsal_concurrent_1`` (frames 1 and 3). No model call is made and no run is started. Before each picture the script checks the page
+of ``docs/live_runs/rehearsal_concurrent_1`` (frames 1 and 3). No model call is made and no run is started.
+Before each picture the script checks the page
 against the run directory and prints counts only: the findings' titles and statements in the DOM
 equal ``report.json``, and the draft rows equal the fixture's draft events.
 """
@@ -142,7 +143,8 @@ def main() -> int:
                 frames = "".join(
                     f'<p class="cap"><b>{i}</b> {cap}</p><img src="{path.as_uri()}">'
                     for i, (cap, path) in enumerate([
-                        ("Drop screen, built (dra ui), with the recent runs read from the run directories.", out["drop"]),
+                        ("Drop screen, built (dra ui), with the recent runs read"
+                         " from the run directories.", out["drop"]),
                         ("A run in progress: the fixture stream replayed over SSE, cut at the run clock 02:38.",
                          out["running"]),
                         (f"The finished review of {REHEARSAL.name} with {EXPAND} expanded, and the chat panel.",
