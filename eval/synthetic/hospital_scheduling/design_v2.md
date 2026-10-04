@@ -103,7 +103,7 @@ On an average clinic day the group therefore handles about 8,600 outpatient appo
 
 ## 2. Requirements
 
-Requirements carry stable IDs. Each is traced to its acceptance criterion in Section 28.
+Requirements carry stable IDs. Each is traced to its acceptance test in Section 28.
 
 ### 2.1 Functional Requirements
 
@@ -210,7 +210,7 @@ Temujanji runs in the AWS Asia Pacific (Malaysia) Region, ap-southeast-5, across
           |                                    |
           |              +---------------------+------------------+
           |              |                     |                  |
-          |        FHIR Bridge          Reminder Scheduler   Analytics Loader
+          |        FHIR Bridge          Reminder Scheduler   Analytics Extract
           |        (Ombak EMR,          (SMS aggregator,      (group analytics
           |         Kirana Billing)      WhatsApp)              bucket)
           |
@@ -229,7 +229,7 @@ Temujanji runs in the AWS Asia Pacific (Malaysia) Region, ap-southeast-5, across
 | Aurora PostgreSQL 16 | System of record for all scheduling data (P1) |
 | Outbox Relay | Publishes committed outbox rows to Amazon MSK (Section 16) |
 | FHIR Bridge | Applies schedule events to the Ombak EMR and Kirana Billing (Section 17) |
-| Analytics Loader | Nightly extract to the group analytics bucket (Section 22) |
+| Analytics Extract | Nightly extract to the group analytics bucket (Section 22) |
 | ElastiCache (Redis OSS) | Theatre calendar cache and patient web sessions |
 
 All services are containers on Amazon ECS with AWS Fargate, three tasks or more per service spread across the three Availability Zones.
@@ -409,7 +409,7 @@ The FHIR Bridge is a consumer group on the three `schedule.*` topics. For each e
 
 ### 17.3 Errors and offsets
 
-The bridge commits offsets manually, and only after every FHIR call for an event has succeeded or the event has been handed to the retry path, so that a bridge task that stops mid-event resumes from that event. When a call still fails after three retries, the bridge publishes the event unchanged, with its original key, to the retry topic `schedule.retry`, commits the offset and continues with the next event in the partition, so that one unreachable record never delays the records behind it. A separate retry consumer replays `schedule.retry` with waits of 1, 5 and 30 minutes between attempts, applying each event exactly as the main consumer would have from the resources built from the event payload, so a replayed event needs no special handling; an event that still fails is parked in the `bridge_parked_event` table with its error, and the integration support team replays parked events from the bridge console once the cause is resolved. Every event is therefore applied or parked; none is dropped.
+The bridge commits offsets manually, and only after every FHIR call for an event has succeeded or the event has been handed to the retry path, so that a bridge task that stops mid-event resumes from that event. When a call has failed three times, the bridge publishes the event unchanged, with its original key, to the retry topic `schedule.retry`, commits the offset and continues with the next event in the partition, so that one unreachable record never delays the records behind it. A separate retry consumer replays `schedule.retry` with waits of 1, 5 and 30 minutes between attempts, applying each event exactly as the main consumer would have from the resources built from the event payload, so a replayed event needs no special handling; an event whose replays all fail is parked in the `bridge_parked_event` table with its error, and the integration support team replays parked events from the bridge console once the cause is resolved. Every event is therefore applied or parked; none is dropped.
 
 ### 17.4 Volumes
 
@@ -491,7 +491,7 @@ Clinic managers and theatre managers see live dashboards for their hospital: tod
 
 ### 22.2 Group analytics
 
-The Analytics Loader runs nightly at 02:00. It copies the previous day's appointment, theatre_case and admission rows, each with the patient's name, MyKad number, phone number, referral reason code and procedure code, into the group analytics bucket in Amazon S3, where every user with the Group Analyst role (about 140 staff across finance, marketing, operations and the clinical quality unit) can query them with Amazon Athena. Keeping the patient identifiers in the extract lets analysts join appointments to the EMR's diagnosis data and to campaign responses without a separate request to Medical Records.
+The Analytics Extract runs nightly at 02:00. It copies the previous day's appointment, theatre_case and admission rows, each with the patient's name, MyKad number, phone number, referral reason code and procedure code, into the group analytics bucket in Amazon S3, where every user with the Group Analyst role (about 140 staff across finance, marketing, operations and the clinical quality unit) can query them with Amazon Athena. Keeping the patient identifiers in the extract lets analysts join appointments to the EMR's diagnosis data and to campaign responses without a separate request to Medical Records.
 
 Standard group reports (waiting time to first appointment by specialty, theatre utilisation, no-show rate, cancellation reasons) are built on the analytics bucket and published weekly to the group executive committee.
 
@@ -592,7 +592,7 @@ The platform team runs a weekly on-call rotation of six engineers. The integrati
 
 ### 28.1 Functional requirements
 
-| Req | Acceptance criterion |
+| Req | Acceptance test |
 |---|---|
 | FR-1 | In UAT, scripted users book, confirm, cancel and reschedule through all three channels for all six hospitals; every change is visible in the other channels within 2 seconds. |
 | FR-3 | Every appointment in UAT carries an MRN that exists in the EMR test MPI. |
@@ -607,7 +607,7 @@ The platform team runs a weekly on-call rotation of six engineers. The integrati
 
 ### 28.2 Non-functional requirements
 
-| Req | Acceptance criterion |
+| Req | Acceptance test |
 |---|---|
 | NFR-1 | Availability measured over the first three months in production. |
 | NFR-2 | A load test at 1.5 times the 2028 peak for one hour meets both percentiles. |
