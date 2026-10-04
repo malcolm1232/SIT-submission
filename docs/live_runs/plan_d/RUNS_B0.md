@@ -13,6 +13,8 @@ Hallucination flags count G1 failures plus adjudicated HALLUCINATED findings (th
 | d_b0_iot_v1_1 | iot_fleet | B0 | medium | 333 | completed_degraded | 19 | 1 | 0.96 | 7.12, 42 | 6.05, 40 | 10 of 14 | 1.000 | 0.941 | 0.767 | 0.750 | 0 | 3.75 |
 | d_b0_consent_v1_1 | consent_service | B0 | medium | 30 | aborted_graceful | - | 5 | 0.00 | 6.72, 47 | 6.54, 48 | - | - | - | - | - | - | - |
 | d_b0_consent_v1_2 | consent_service | B0 | medium | 249 | completed_degraded | 14 | 1 | 0.77 | 5.41, 49 | 4.48, 53 | 11 of 14 | 0.786 | 0.917 | 0.900 | 1.000 | 0 | 2.82 |
+| d_b0_hospital_v1_2 | hospital_scheduling | B0 | medium | 217 | completed_degraded | 15 | 1 | 0.69 | 4.50, 53 | 8.01, 49 | 12 of 14 | 0.857 | 1.000 | 0.967 | 1.000 | 0 | 2.42 |
+| d_b0_ledger_v1_1 | ledger_migration | B0 | medium | 281 | completed_degraded | 19 | 1 | 0.83 | 7.86, 49 | 6.75, 47 | 12 of 14 | 0.929 | 1.000 | 0.917 | 1.000 | 0 | 3.84 |
 
 Notes
 
