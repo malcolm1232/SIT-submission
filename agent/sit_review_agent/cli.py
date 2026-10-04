@@ -6,7 +6,7 @@ Commands::
                          [--replay <fixtures>] [--record] [--transport T] [--faults|--fault-schedule <yaml>]
                          [--deadline S] [--max-tool-calls N] [--disable-tool NAME]... [--no-tools]
                          [--plan-only] [--plan-approval] [--allow-fallback] [--mode dev|eval|rehearsal|demo]
-                         [--run-id ID] [--k N] [--orchestrator custom|langgraph]
+                         [--run-id ID] [--k N] [--orchestrator custom|langgraph] [--condition FULL|B0]
     sit-review run --resume <run_dir> [--accept-drift]
     sit-review review ...                      (alias of run; the runbook's name)
     sit-review explain <run_dir> <finding_id>  (or: explain <finding_id> [--run <run_dir>], default latest run)
@@ -158,6 +158,11 @@ def run_cmd(
     k: Annotated[int | None, typer.Option("--k", help="run the review K times as independent runs (stability; "
                                                       "run IDs <group>-k1..kK, --run-id names the group)")] = None,
     orchestrator: OrchestratorOpt = "custom",
+    condition: Annotated[str, typer.Option("--condition", help="FULL (the agent, default) | B0 (the single-call "
+                                                                "baseline of eval/prereg.yaml: one assess call over "
+                                                                "every criterion, no tools, no understand, plan, "
+                                                                "research or refine; recorded in the manifest)")]
+    = "FULL",
 ) -> None:
     """Review a design artefact and write runs/<run_id>/report.{json,md}."""
     from sit_review_agent.orchestrator import RunRequest
@@ -184,6 +189,12 @@ def run_cmd(
         usage("--k repeats complete reviews; it cannot be combined with --plan-only")
     if k is not None and orchestrator != "custom":
         usage("--k runs the product's orchestrator; it cannot be combined with --orchestrator")
+    if condition not in ("FULL", "B0"):
+        usage(f"--condition {condition!r}: expected FULL | B0")
+    if condition == "B0" and plan_only:
+        usage("--condition B0 makes no plan; it cannot be combined with --plan-only")
+    if condition == "B0" and orchestrator != "custom":
+        usage("--condition B0 runs the product's orchestrator; it cannot be combined with --orchestrator")
     if transport is None:
         transport = Transport.REPLAY if replay is not None else (Transport.RECORD if record else None)
     fault_file = _resolve_faults(faults) if faults is not None else None
@@ -194,7 +205,7 @@ def run_cmd(
                          allow_fallback=True if allow_fallback else None, transport=transport,
                          replay_fixtures=str(replay) if replay is not None else None,
                          fault_schedule=str(fault_file) if fault_file is not None else None,
-                         plan_approval=plan_approval, profile=profile)
+                         plan_approval=plan_approval, profile=profile, condition=condition)  # type: ignore[arg-type]
     if resume is not None:
         if pdf is not None:
             usage("give a PDF or --resume <run_dir>, not both")
@@ -212,7 +223,7 @@ def run_cmd(
 
     def request() -> Any:
         return RunRequest(pdf=doc, config=load_config(config, ov), v1_pdf=v1, previous_run=previous,  # type: ignore[arg-type]
-                          mode=mode, plan_only=plan_only, run_id=run_id)  # type: ignore[arg-type]
+                          mode=mode, plan_only=plan_only, run_id=run_id, condition=condition)  # type: ignore[arg-type]
 
     if k is not None:
         from sit_review_agent.kruns import format_group, group_exit_code, run_group

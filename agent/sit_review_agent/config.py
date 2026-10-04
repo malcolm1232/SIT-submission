@@ -437,6 +437,7 @@ class ConfigOverrides(_Cfg):
     fault_schedule: str | None = None
     plan_approval: bool | None = None
     profile: str | None = None      # overlay config/profiles/<name>.yaml (e.g. "demo"); recorded in the manifest
+    condition: Literal["FULL", "B0"] = "FULL"   # --condition; B0 (eval/prereg.yaml tier_A) implies --no-tools
 
 
 # ============================================================================ effective config
@@ -541,11 +542,12 @@ def apply_overrides(agent: AgentConfig, stop: StopRulesConfig, tools: ToolsConfi
     if ov.max_tool_calls is not None:
         s["max_tool_calls"] = ov.max_tool_calls
     servers = list(tools.servers)
-    if ov.no_tools or ov.disable_tools:
+    no_tools = ov.no_tools or ov.condition == "B0"            # the single-call baseline is a doc-only review
+    if no_tools or ov.disable_tools:
         unknown = sorted(set(ov.disable_tools) - {x.name for x in servers})
         if unknown:
             raise ConfigError(f"--disable-tool names unknown servers: {unknown}")
-        servers = [x.model_copy(update={"enabled": False}) if (ov.no_tools or x.name in ov.disable_tools) else x
+        servers = [x.model_copy(update={"enabled": False}) if (no_tools or x.name in ov.disable_tools) else x
                    for x in servers]
     return (agent.model_copy(update=a), stop.model_copy(update=s), tools.model_copy(update={"servers": servers}))
 

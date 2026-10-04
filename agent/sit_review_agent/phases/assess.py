@@ -135,6 +135,24 @@ class ShardResult(BaseModel):
         return f"assess shard {self.index}/{count} ({self.name})"
 
 
+#: Condition B0 (``eval/prereg.yaml`` ``conditions.tier_A``; ``orchestrator.Orchestrator._b0_stage``): every
+#: criterion of the run in ONE shard, briefed by ``prompts/assess_single.md`` (the assess brief without the
+#: shard wording), bounded by the run deadline and not by the stage 1 limit. :meth:`AssessPhase.shards`
+#: returns that shard when the run state says so, so storage, resume and the merge are the ones FULL uses.
+B0_SHARD_NAME = "all_criteria"
+B0_PROMPT = "assess_single.md"
+B0_LABEL = "the single assess call (B0)"
+B0_LIMIT = "run deadline"
+STAGE_1_LIMIT = "stage 1 limit"
+
+
+def not_assessed_note(outcome: str, limit: str = STAGE_1_LIMIT) -> str:
+    """The coverage note of a criterion a shard did not assess; a cut shard names what cut it."""
+    if outcome == "cut":
+        return f"not assessed: out of time before assessment ({limit})"
+    return NOT_ASSESSED_NOTE[outcome]
+
+
 #: The research iteration of every shard (conversation ``assess-0-s<k>``, provenance iteration 0): a
 #: shard runs beside research and sees none of it, also when resume re-runs it after research ended.
 SHARD_ITERATION = 0
@@ -196,7 +214,9 @@ class AssessPhase:
 
     @staticmethod
     def shards(ctx: RunContext) -> list[AssessShard]:
-        """The run's shards in launch order."""
+        """The run's shards in launch order; under condition B0 the one shard of every criterion."""
+        if ctx.state.condition == "B0":
+            return [AssessShard(name=B0_SHARD_NAME, criteria=known_criteria(ctx))]
         return ctx.config.agent.assess.shards_for(known_criteria(ctx))
 
     async def run(self, ctx: RunContext) -> RunContext:
@@ -205,10 +225,12 @@ class AssessPhase:
         return ctx
 
     async def run_shards(self, ctx: RunContext, *, done: Mapping[int, ShardResult] | None = None,
-                         on_end: Callable[[ShardResult], None] | None = None) -> list[ShardResult]:
+                         on_end: Callable[[ShardResult], None] | None = None,
+                         **shard_kw: Any) -> list[ShardResult]:
         """Run every shard not in ``done`` concurrently, each on its own copy of the run state;
         ``on_end`` is called as each one ends (the orchestrator stores it). Returns the results in
-        shard order. ``ctx.state`` is not changed: :meth:`merge` applies the results."""
+        shard order. ``ctx.state`` is not changed: :meth:`merge` applies the results. ``shard_kw``
+        reaches :meth:`run_shard` (condition B0 names its prompt, label and limit)."""
         shards = self.shards(ctx)
         done = dict(done or {})
         count = len(shards)
@@ -221,7 +243,7 @@ class AssessPhase:
         for i, shard in enumerate(shards, start=1):
             if i in done:
                 continue
-            tasks[i] = asyncio.create_task(guarded(self._shard(ctx, shard, i, count, on_end)),
+            tasks[i] = asyncio.create_task(guarded(self._shard(ctx, shard, i, count, on_end, **shard_kw)),
                                            name=f"assess-shard-{i}")
         try:
             if tasks:
@@ -250,9 +272,9 @@ class AssessPhase:
         return ordered
 
     async def _shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int,
-                     on_end: Callable[[ShardResult], None] | None) -> ShardResult:
+                     on_end: Callable[[ShardResult], None] | None, **shard_kw: Any) -> ShardResult:
         try:
-            result = await self.run_shard(ctx, shard, index, count)
+            result = await self.run_shard(ctx, shard, index, count, **shard_kw)
         except (LLMError, asyncio.CancelledError, KeyboardInterrupt, MemberInterrupted):
             raise                           # a defect in the request or the harness, or an interruption
         except Exception as exc:  # noqa: BLE001 - a crash inside one shard (robustness BEH-29)
@@ -278,19 +300,22 @@ class AssessPhase:
                            outcome="error", detail=f"{type(exc).__name__}: {str(exc)[:500]}",
                            delta=state_delta(iso.base, iso.ctx.state))
 
-    async def run_shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int) -> ShardResult:
-        """One shard on an isolated copy of the run state."""
+    async def run_shard(self, ctx: RunContext, shard: AssessShard, index: int, count: int, *,
+                        prompt: str = "assess.md", label: str | None = None,
+                        limit: str = STAGE_1_LIMIT) -> ShardResult:
+        """One shard on an isolated copy of the run state. ``prompt`` is its brief, ``label`` names it
+        in disclosures and ``limit`` names what cuts it (condition B0: the run deadline)."""
         iso = isolate(ctx, PhaseName.ASSESS)
         sctx = iso.ctx
         phase = self.name
         iteration = SHARD_ITERATION
         criteria = [c for c in criteria_vars(sctx) if c["id"] in set(shard.criteria)]
         others = [c for c in known_criteria(sctx) if c not in set(shard.criteria)]
-        label = f"assess shard {index}/{count} ({shard.name})"
+        label = label or f"assess shard {index}/{count} ({shard.name})"
 
         def render(*, reframed: bool, schema_error: str) -> RenderedPrompt:
             return sctx.prompts.render(
-                "assess.md", criteria=criteria, other_criteria=others, shard_name=shard.name, shard_index=index,
+                prompt, criteria=criteria, other_criteria=others, shard_name=shard.name, shard_index=index,
                 shard_count=count, documents=document_vars(sctx), review_mode=sctx.state.review_mode.value,
                 prior_findings=prior_finding_vars(sctx), reframed=reframed, schema_error=schema_error)
 
@@ -331,20 +356,20 @@ class AssessPhase:
             complete = call.partial_complete and kept is not None
             if complete:
                 assert kept is not None
-                what = (f"{label} ended at the stage 1 limit at {sctx.elapsed_s():.0f} s after a complete answer, "
+                what = (f"{label} ended at the {limit} at {sctx.elapsed_s():.0f} s after a complete answer, "
                         f"while the model was writing it a second time; the complete answer was kept: {n} finding(s), "
                         f"{len(kept.sound_areas)} sound area(s), {len(kept.coverage)} coverage row(s) "
                         f"(cut call {call.cut_id or 'none started'})")
                 impact = (_not_assessed_impact(missing) if missing else
                           "the shard's complete answer is in the report; only its unfinished repeat was lost")
             else:
-                what = (f"{label} was cut by the stage 1 limit at {sctx.elapsed_s():.0f} s; {n} finished finding(s) "
+                what = (f"{label} was cut by the {limit} at {sctx.elapsed_s():.0f} s; {n} finished finding(s) "
                         f"kept (cut call {call.cut_id or 'none started'})")
                 impact = (_not_assessed_impact(missing) if missing else "every criterion of the shard has a finding; "
                           "the shard's lower-ranked findings, if any, are missing")
             degradation = sctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT, what, impact)
             how = "ended at" if complete else "cut by"
-            ctx_event(sctx, f"{label} {how} the stage 1 limit; {n} finished finding(s) "
+            ctx_event(sctx, f"{label} {how} the {limit}; {n} finished finding(s) "
                       f"kept{' from a complete answer' if complete else ''}", "warn",
                       event="shard_cut", shard=index, shard_name=shard.name, shards=count, call_id=call.cut_id,
                       cut_at_s=sctx.elapsed_s(), complete=complete,
@@ -376,9 +401,9 @@ class AssessPhase:
 
     # ------------------------------------------------------------------ merge (code)
 
-    def merge(self, ctx: RunContext, results: Sequence[ShardResult]) -> None:
+    def merge(self, ctx: RunContext, results: Sequence[ShardResult], *, limit: str = STAGE_1_LIMIT) -> None:
         """Merge the shards in shard order (see the module docstring). Replaces the four assess
-        fields, so a re-run from the checkpoint is safe."""
+        fields, so a re-run from the checkpoint is safe. ``limit`` names what cut a cut shard."""
         ordered = sorted(results, key=lambda r: r.index)
         count = len(ordered)
         for r in ordered:
@@ -397,7 +422,7 @@ class AssessPhase:
             if out is None:
                 for c in r.criteria:
                     coverage[c] = CriterionCoverage(criterion_id=c, outcome="not_applicable", finding_ids=[],
-                                                    note=NOT_ASSESSED_NOTE[r.outcome])
+                                                    note=not_assessed_note(r.outcome, limit))
                 continue
             order = sorted(range(len(out.findings)), key=lambda i: (out.findings[i].rank, i))
             renamed: list[FindingDraft] = []
@@ -428,7 +453,7 @@ class AssessPhase:
             rows = reconcile_coverage(ctx, out.coverage, shard_findings, id_map, criteria=r.criteria)
             if r.outcome != "done":                     # a cut shard: criteria without a finding were not assessed
                 rows = [row if row.finding_ids else row.model_copy(update={
-                    "outcome": "not_applicable", "note": NOT_ASSESSED_NOTE["cut"]}) for row in rows]
+                    "outcome": "not_applicable", "note": not_assessed_note("cut", limit)}) for row in rows]
             for row in rows:
                 coverage[row.criterion_id] = row.model_copy(update={"note": rewrite_tree(row.note, to_draft)})
             for f in shard_findings:
@@ -447,7 +472,7 @@ class AssessPhase:
         # group is credited there too.
         ctx.state.coverage = reconcile_coverage(ctx, list(coverage.values()), findings)
         if ordered and not any(r.assessed for r in ordered):
-            self._not_assessed(ctx, ordered)
+            self._not_assessed(ctx, ordered, limit)
         failed = [r for r in ordered if r.outcome != "done"]
         by_kind = summarise(findings, lambda f: f.kind.value)
         ctx_event(ctx, f"merged {count} shard(s): {len(findings)} findings ({by_kind}); "
@@ -463,7 +488,7 @@ class AssessPhase:
                       event="citations_dropped", count=dropped)
 
     @staticmethod
-    def _not_assessed(ctx: RunContext, ordered: Sequence[ShardResult]) -> None:
+    def _not_assessed(ctx: RunContext, ordered: Sequence[ShardResult], limit: str = STAGE_1_LIMIT) -> None:
         """No shard produced an assessment: the stage-level disclosure ``report`` turns into the
         ``not_assessed`` verdict, by priority deadline, truncation, refusal (the three reasons)."""
         outcomes = {r.outcome for r in ordered}
@@ -472,7 +497,7 @@ class AssessPhase:
         if "cut" in outcomes:
             ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT,
                                       f"{OUT_OF_TIME_BEFORE_ASSESSMENT}: no assess shard finished a single finding by "
-                                      "the stage 1 limit", impact + "; rerun with a longer deadline")
+                                      f"the {limit}", impact + "; rerun with a longer deadline")
         elif "truncated" in outcomes:
             ctx.state.add_degradation(DegradationType.OTHER,
                                       f"{truncated_twice_event(PhaseName.ASSESS)} in every assess shard that did not "

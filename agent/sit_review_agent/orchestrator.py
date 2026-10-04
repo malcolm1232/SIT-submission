@@ -49,7 +49,7 @@ from sit_review_agent.phases.base import Phase
 from sit_review_agent.progress import bind_run_clock, ctx_event, emit_event, milestone, record_event
 from sit_review_agent.rundir import RunDir, write_json_atomic
 from sit_review_agent.state.checkpoint import Checkpoint, PinnedHashes, journal_offsets, write_checkpoint
-from sit_review_agent.state.run_state import RunMode
+from sit_review_agent.state.run_state import Condition, RunMode
 from sit_review_agent.states import (
     PHASE_ORDER,
     STAGE_MEMBERS,
@@ -136,9 +136,12 @@ class Orchestrator:
             ctx.state.budget.started_monotonic = ctx.clock.monotonic()
         bind_run_clock(ctx.progress, ctx.elapsed_s)     # run_s of every progress.jsonl record from here
         stage: Stage | None = stage_of(start_at)
+        b0 = ctx.state.condition == "B0"
         while stage is not None:
             if stage is Stage.STAGE_1:
-                stage = await self._stage_1(ctx)
+                stage = await (self._b0_stage(ctx) if b0 else self._stage_1(ctx))
+            elif b0 and stage is Stage.REFINE:
+                stage = self._b0_skip(ctx, PhaseName.REFINE)
             else:
                 stage = await self._single(ctx, STAGE_MEMBERS[stage][0])
         ctx.state.current_phase = None
@@ -240,6 +243,73 @@ class Orchestrator:
             milestone(ctx.progress, "plan", phase.value, questions=len(ctx.state.plan.questions))
         elif phase is PhaseName.REPORT and ctx.run_dir.report_json.is_file():
             milestone(ctx.progress, "verified", phase.value, findings=len(ctx.state.findings))
+
+    # ------------------------------------------------------------------ condition B0: one assess call
+
+    def _b0_skip(self, ctx: RunContext, phase: PhaseName) -> Stage | None:
+        """A phase condition B0 never runs (understand, plan, research, refine): announced, not counted."""
+        stage = stage_of(phase)
+        emit_event(ctx.progress, phase.value, "skipped (condition B0: one assess call over every criterion, "
+                   "no tools)", event="phase_skipped", reason="condition B0", stage=stage.value)
+        return STAGE_TRANSITIONS[stage]
+
+    async def _b0_stage(self, ctx: RunContext) -> Stage | None:
+        """Condition B0 (``eval/prereg.yaml`` ``conditions.tier_A``; ``docs/transcripts/session6/b0-baseline.md``)
+        in place of stage 1: ONE assess call over every criterion of the run, from the document alone
+        (``prompts/assess_single.md``; ``AssessPhase.shards`` gives the single shard). Understand, plan and
+        research do not run: no intent summary, no plan, an empty registry frozen here so the report has
+        its iteration-0 hash. The call is bounded by the run deadline less the report reserve and by no
+        stage limit (``_run_attach_runtime``); a call the deadline cuts keeps the findings it had
+        finished, as FULL's shards do. A finished call is stored like a shard, so a resume keeps it. The
+        merge, checkpoint, verify and report are FULL's; refine is skipped by :meth:`run`."""
+        from sit_review_agent.phases._isolation import MemberInterrupted
+        from sit_review_agent.phases.assess import B0_LABEL, B0_LIMIT, B0_PROMPT
+
+        p = PhaseName.ASSESS
+        assess = self.phases[p]
+        if not self._sharded():
+            raise StageCrash(p.value, TypeError("condition B0 needs the sharded assess phase (run_shards and merge)"))
+        for q in (PhaseName.UNDERSTAND, PhaseName.PLAN, PhaseName.RESEARCH):
+            if q not in ctx.state.completed_phases:
+                self._b0_skip(ctx, q)
+        if not ctx.registry.frozen:
+            ctx.registry.freeze()
+        if not ctx.registry.hashes():
+            ctx.registry.record_iteration(0)
+        cap = check_caps(ctx.state, ctx.config.stop_rules, ctx.elapsed_s())   # the deadline itself, no stage limit
+        if cap is not None:
+            return self._skip_on_cap(ctx, Stage.STAGE_1, cap)
+        stored = self._load_shards(ctx)
+        ctx.state.current_phase = p
+        emit_event(ctx.progress, p.value, "started (condition B0: one assess call over every criterion)",
+                   event="phase_started", stage=Stage.STAGE_1.value)
+        t0 = ctx.clock.monotonic()
+        try:
+            results = await assess.run_shards(ctx, done=stored, on_end=lambda r: self._store_shard(ctx, r),  # type: ignore[attr-defined]
+                                              prompt=B0_PROMPT, label=B0_LABEL, limit=B0_LIMIT)
+        except (KeyboardInterrupt, asyncio.CancelledError, MemberInterrupted) as exc:
+            self._flush_state(ctx)
+            emit_event(ctx.progress, p.value, "interrupted; state flushed (resume re-runs the call unless it "
+                       "finished)", "warn", event="interrupted", where=p.value)
+            raise RunInterrupted(f"interrupted during {p.value}") from exc
+        except AgentError:
+            self._flush_state(ctx)
+            raise
+        except Exception as exc:  # noqa: BLE001 - every unexpected error becomes a typed stage crash
+            self._flush_state(ctx)
+            raise StageCrash(p.value, exc) from exc
+        seconds = round(ctx.clock.monotonic() - t0, 3)
+        ctx.state.budget.phase_seconds[p.value] = seconds
+        assess.merge(ctx, results, limit=B0_LIMIT)  # type: ignore[attr-defined]
+        if p not in ctx.state.completed_phases:
+            ctx.state.completed_phases.append(p)
+        self.checkpoint(ctx, p)
+        emit_event(ctx.progress, p.value, f"done in {seconds:.1f}s; the single assess call merged (condition B0)",
+                   "done", event="phase_done", stage=Stage.STAGE_1.value, seconds=seconds, stopped_at_limit=False,
+                   stage_closed=True, shards=len(results), outcomes={str(r.index): r.outcome for r in results})
+        milestone(ctx.progress, "merged", PhaseName.REFINE.value, findings=len(ctx.state.finding_drafts),
+                  shards=len(results))
+        return STAGE_TRANSITIONS[Stage.STAGE_1]
 
     # ------------------------------------------------------------------ stage 1
 
@@ -541,6 +611,7 @@ class RunRequest:
     mode: RunMode = "dev"
     plan_only: bool = False
     run_id: str | None = None
+    condition: Condition = "FULL"         # eval/prereg.yaml tier_A: B0 = the single-call baseline (--condition B0)
     k_index: int | None = None            # 1..k within a k-run group; recorded as manifest extra.k_index
 
 
@@ -603,7 +674,7 @@ async def run_review(request: RunRequest, *, phases: Mapping[PhaseName, Phase] |
         raise ConfigError(f"{rd.root} already holds a run; use `sit-review resume {rd.root}`")
     write_json_atomic(rd.effective_config, cfg.model_dump(mode="json"))
     prog = progress or _run_console_progress(clk, rd)
-    state = RunState(run_id=run_id, mode=request.mode, created_utc=created,
+    state = RunState(run_id=run_id, mode=request.mode, condition=request.condition, created_utc=created,
                      review_mode=ReviewMode.DELTA if len(refs) > 1 else ReviewMode.FULL,
                      prior_review_id=prior_review_id,
                      previous_run_dir=str(request.previous_run) if request.previous_run is not None else None,
@@ -686,7 +757,8 @@ async def resume_run(run_dir: Path, config: EffectiveConfig, *, accept_drift: bo
         if not rd.state.is_file():
             raise InputError(f"{rd.root} has neither a checkpoint nor state.json; start a new run")
         old = RunState.model_validate(_json.loads(rd.state.read_text(encoding="utf-8")))
-        state = RunState(run_id=old.run_id, mode=old.mode, review_mode=old.review_mode, created_utc=old.created_utc,
+        state = RunState(run_id=old.run_id, mode=old.mode, condition=old.condition, review_mode=old.review_mode,
+                         created_utc=old.created_utc,
                          prior_review_id=old.prior_review_id, previous_run_dir=old.previous_run_dir,
                          k_index=old.k_index, documents=old.documents)
         truncate_journal(rd.ledger_journal, 0)
@@ -815,8 +887,13 @@ def _run_started(progress: object, cfg: EffectiveConfig, rd: RunDir, state: obje
              "file": Path(str(getattr(d, "pdf_path", "") or "")).name or None,
              "pages": getattr(d, "page_count", None)}
             for d in getattr(state, "documents", [])]
-    shards = [{"index": i, "name": s.name, "criteria": list(s.criteria)}
-              for i, s in enumerate(cfg.agent.assess.shards_for(cfg.criteria.ids()), start=1)]
+    if getattr(state, "condition", "FULL") == "B0":
+        from sit_review_agent.phases.assess import B0_SHARD_NAME
+
+        shards = [{"index": 1, "name": B0_SHARD_NAME, "criteria": cfg.criteria.ids()}]
+    else:
+        shards = [{"index": i, "name": s.name, "criteria": list(s.criteria)}
+                  for i, s in enumerate(cfg.agent.assess.shards_for(cfg.criteria.ids()), start=1)]
     run_id = getattr(state, "run_id", rd.root.name)
     record_event(progress, "run", "run_started", f"run {run_id} started" + (" (resumed)" if resumed else ""),  # type: ignore[arg-type]
                  run_id=run_id, run_dir=str(rd.root), mode=getattr(state, "mode", None),
@@ -933,7 +1010,10 @@ def _run_attach_runtime(ctx: RunContext, retrieved: Mapping[str, object] | None)
         return sum(d.page_count or 0 for d in state.documents)
 
     window = (retrieved or {}).get("max_input_tokens")
-    attach_runtime(ctx.llm, build_runtime(ctx.config, elapsed, retrieved_window=window, pages=pages))
+    # condition B0: its single assess call is bounded by the run deadline (less the report reserve), by no stage limit
+    bound = frozenset({PhaseName.ASSESS}) if state.condition == "B0" else frozenset()
+    attach_runtime(ctx.llm, build_runtime(ctx.config, elapsed, retrieved_window=window, pages=pages,
+                                          deadline_bound=bound))
 
 
 class _run_ProcessFault:  # private helper: `_run_` prefix by workstream rule

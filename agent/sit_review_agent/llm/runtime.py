@@ -109,6 +109,9 @@ class RunDeadline:
     elapsed: Callable[[], float]
     min_attempt_s: float = MIN_ATTEMPT_S
     stage_limits: dict[str, float] | None = None
+    #: Phases whose calls no stage limit bounds: the run deadline less the verify and report reserve
+    #: (condition B0: its single assess call, ``orchestrator._run_attach_runtime``).
+    deadline_bound: frozenset[PhaseName] = frozenset()
 
     def remaining(self) -> float | None:
         if self.deadline_s is None:
@@ -117,7 +120,7 @@ class RunDeadline:
 
     def _limit(self, phase: PhaseName | str) -> tuple[str, float] | None:
         """``(key, run-clock second)`` of the stage limit that bounds ``phase``, if any."""
-        if self.stage_limits is None:
+        if self.stage_limits is None or _phase(phase) in self.deadline_bound:
             return None
         key = STAGE_LIMIT_OF_PHASE.get(_phase(phase))
         if key is None or key not in self.stage_limits:
@@ -130,6 +133,8 @@ class RunDeadline:
         if rem is None:
             return None
         p = _phase(phase)
+        if p in self.deadline_bound:
+            return rem - self.reserve_s
         if self.stage_limits is not None:
             limit = self._limit(p)
             return rem if limit is None else min(rem, limit[1] - self.elapsed())
@@ -373,15 +378,17 @@ def attach_runtime(gw: Any, limits: RuntimeLimits) -> None:
 
 
 def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window: Any = None,
-                  pages: Callable[[], int] | None = None) -> RuntimeLimits:
-    """Limits for a run with ``config`` (an ``EffectiveConfig``) and the run clock ``elapsed``."""
+                  pages: Callable[[], int] | None = None,
+                  deadline_bound: frozenset[PhaseName] = frozenset()) -> RuntimeLimits:
+    """Limits for a run with ``config`` (an ``EffectiveConfig``) and the run clock ``elapsed``;
+    ``deadline_bound`` names the phases no stage limit bounds (:attr:`RunDeadline.deadline_bound`)."""
     sr = config.stop_rules
     active = "deadline" in sr.active
     limits = effective_stage_limits(sr)[0] if active else None
     deadline = RunDeadline(deadline_s=float(sr.deadline_seconds) if active else None,
                            reserve_s=float(sr.report_reserve_seconds),
                            research_reserve_s=float(sr.refine_reserve_seconds), elapsed=elapsed,
-                           stage_limits=limits)
+                           stage_limits=limits, deadline_bound=deadline_bound)
     window = context_window_for(config.agent.model, config.agent.llm.context_window_tokens, retrieved_window)
     return RuntimeLimits(deadline=deadline, context=ContextGuard(window_tokens=window, pages=pages))
 

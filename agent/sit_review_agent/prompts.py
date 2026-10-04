@@ -23,7 +23,8 @@ from sit_review_agent.paths import prompts_dir
 LOCK_NAME = "PROMPTS.lock"
 #: Prompt files every build must have (one per LLM phase plus the shared system prompt).
 REQUIRED_PROMPTS = ("system.md", "understand.md", "plan.md", "research.md", "assess.md", "refine.md",
-                    "verify.md", "report.md")
+                    "verify.md", "report.md",
+                    "assess_single.md")      # condition B0: the assess brief over every criterion in one call
 #: Files in prompts/ that are documentation, not prompts (not hashed into the bundle).
 NON_PROMPT_FILES = frozenset({"README.md"})
 

@@ -423,7 +423,9 @@ def _intent(ctx: RunContext) -> IntentSummary:
     anchor = intent_fallback_anchor(ctx.doc_under_review())
     if anchor is None:
         raise InvariantViolation("no intent summary and no verifiable passage to anchor one")
-    ctx.state.add_degradation(DegradationType.OTHER, "no design-intent summary was produced",
+    event = ("condition B0: no design-intent summary (the single-call baseline runs no understand phase)"
+             if ctx.state.condition == "B0" else "no design-intent summary was produced")
+    ctx.state.add_degradation(DegradationType.OTHER, event,
                               "the review states no design intent; objectives were not checked one by one")
     return IntentSummary(statement="The design intent could not be summarised in this run; see the document's "
                                    "opening section.", objectives=[], constraints=[], key_assumptions=[],
@@ -557,6 +559,15 @@ class ReportPhase:
             ctx_event(ctx, f"{why}: no verdict call; the report says the design was not assessed", "warn",
                       event="not_assessed", reason=missing)
             st.verdict = not_assessed_verdict(missing)
+            st.limitations = []
+        elif st.condition == "B0":
+            # The single-call baseline (eval/prereg.yaml tier_A): its one model call is the assess call, so the
+            # verdict is the rule of fallback_verdict over the verified findings. By design, not a fault: no
+            # degradation; the verdict's rationale says how it was derived.
+            reason = "condition B0: the single-call baseline makes no verdict call"
+            ctx_event(ctx, f"{reason}; the verdict is derived by rule from the verified findings",
+                      event="verdict_by_rule", condition="B0")
+            st.verdict = fallback_verdict(st.findings, reason)
             st.limitations = []
         else:
             out, reason = await _verdict_call(ctx)

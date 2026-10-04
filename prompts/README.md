@@ -11,6 +11,7 @@ prompt strings in Python code.
 | `plan.md` | plan | `PlanOutput` | A |
 | `research.md` | research (tool loop) | `ResearchOutput` | B |
 | `assess.md` | assess (one call per shard) | `AssessOutput` | A |
+| `assess_single.md` | assess under condition B0 (one call over every criterion; `--condition B0`) | `AssessOutput` | eval |
 | `refine.md` | refine (revisions only) | `RefineRevisionsOutput` | A |
 | `verify.md` | verify (anchor repair) | `AnchorRepairOutput` | C |
 | `report.md` | report (verdict only) | `VerdictOutput` | C |

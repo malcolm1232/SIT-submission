@@ -41,6 +41,10 @@ from sit_review_agent.models import (
 from sit_review_agent.states import PhaseName
 
 RunMode = Literal["eval", "dev", "rehearsal", "demo", "replay"]
+#: The evaluation condition a run is made under (``eval/prereg.yaml`` ``conditions.tier_A``): ``FULL`` is the
+#: agent; ``B0`` is the single-call baseline (one assess call over every criterion, no tools, no understand,
+#: plan, research or refine; ``orchestrator.Orchestrator._b0_stage``).
+Condition = Literal["FULL", "B0"]
 
 
 class _State(BaseModel):
@@ -148,6 +152,7 @@ class FindingIdMap(_State):
 class RunState(_State):
     run_id: str
     mode: RunMode = "dev"
+    condition: Condition = "FULL"       # eval/prereg.yaml tier_A condition (set by RunRequest; manifest.condition)
     review_mode: ReviewMode = ReviewMode.FULL
     created_utc: str
     prior_review_id: str | None = None

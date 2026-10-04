@@ -588,6 +588,10 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                "estimated_usage_of_unrecorded_calls": usage["estimated_usage_of_unrecorded_calls"],
                "estimated_usage_totals": usage["estimated_totals"],
                "assess_shards": usage["assess_shards"],
+               # condition B0 only (eval/prereg.yaml tier_A): the assess stage was one call over every criterion
+               **({"assess_mode": "single_call: condition B0, one assess call over every criterion "
+                                  "(prompts/assess_single.md), no understand, plan, research or refine"}
+                  if st.condition == "B0" else {}),
                "salvaged_calls": usage["salvaged_calls"], "salvaged_items": usage["salvaged_items"],
                "sdk_client": {"max_retries": 0, "timeout_s": cfg.agent.llm.timeout_s,
                               "gateway_max_retries": cfg.agent.llm.max_retries},
@@ -636,7 +640,7 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
         outcome=outcome,
         prereg_sha256=_file_sha(root / "eval" / "prereg.yaml") if st.mode == "eval" else None,
         split=None,
-        condition=None,
+        condition=st.condition,
         review_config=ReviewConfigEcho(criteria=cfg.criteria.ids(), stop_rule=cfg.stop_rules.model_dump(mode="json"),
                                        persona=cfg.agent.persona),
         fault_schedule_id=sched_id,

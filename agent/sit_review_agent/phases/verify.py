@@ -619,6 +619,13 @@ class VerifyPhase:
         if not failures:
             return None
         failures = failures[:MAX_REPAIRS_PER_CALL]
+        if ctx.state.condition == "B0":        # the single-call baseline makes no second model call
+            _degrade(ctx, "anchor repair call not made: condition B0 is a single-call baseline (one assess call, no "
+                          "repair turn)", "unresolved anchors were not re-quoted; affected findings may be listed "
+                          "as unverified")
+            ctx_event(ctx, f"{len(failures)} anchor(s) unresolved; no repair turn (condition B0)", "warn",
+                      event="anchor_repair", unresolved=len(failures), repair=False, condition="B0")
+            return None
         slack = repair_slack_s(ctx)
         if slack <= REPAIR_MIN_SLACK_S:
             _degrade(ctx, f"anchor repair call skipped: {slack:.0f} s of slack left before the verify and verdict "
