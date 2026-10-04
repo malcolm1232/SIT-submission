@@ -38,8 +38,18 @@ STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
 #: characters per token: the estimate leans high. The CLI's ``thinking_tokens`` events leaned high
 #: too (320 and 417 estimated against 208 and 293 billed). UNVERIFIED on Opus.
 JSON_CHARS_PER_TOKEN = 3.3
+#: Characters kept of each CLI tool result that rejected an answer (its schema check's message).
+REJECTION_TEXT_CHARS = 500
 
 ItemCallback = Callable[[str, int, Any], None]
+
+
+class RepeatedAnswer(Exception):  # noqa: N818 - a signal, not an error
+    """Raised from :meth:`StreamParser.feed_line` when, after a complete answer the caller accepted,
+    the CLI starts another API message: ``claude -p --json-schema`` checks each ``StructuredOutput``
+    call against the schema and, when its own check rejects it, sends the rejection back as the tool
+    result and the model writes the whole answer again in a new turn. The caller ends the call and
+    uses the accepted answer (``StreamParser.accepted``)."""
 
 
 # ------------------------------------------------------------------------------ the JSON scanner
@@ -78,6 +88,11 @@ class JsonItemScanner:
     @property
     def chars(self) -> int:
         return len(self._text)
+
+    @property
+    def text(self) -> str:
+        """The JSON text read so far."""
+        return self._text
 
     def feed(self, chunk: str) -> None:
         base = len(self._text)
@@ -206,7 +221,13 @@ class StreamParser:
 
     ``root`` is passed to the :class:`JsonItemScanner` of the structured answer. ``on_item`` is
     called for each finished root-level array item; ``on_event`` after every parsed line (the
-    progress tracker reads the counters)."""
+    progress tracker reads the counters).
+
+    Every complete answer block is kept in ``answers`` (parsed). ``accept`` decides whether a
+    complete answer is usable (the gateway's own schema check); the first one it accepts is
+    ``accepted``. With ``stop_on_repeat`` a new API message after the accepted answer raises
+    :class:`RepeatedAnswer` (the CLI's schema check rejected an answer the gateway accepts, and the
+    model is writing it again); ``accepted_usage`` is then the measured usage of the messages so far."""
 
     root: tuple[Any, ...] = ()
     on_item: ItemCallback | None = None
@@ -218,8 +239,19 @@ class StreamParser:
     lines: int = 0
     non_json_lines: int = 0
     messages: int = 0
+    accept: Callable[[dict[str, Any]], bool] | None = None
+    stop_on_repeat: bool = False
+    answers: list[dict[str, Any]] = field(default_factory=list)   # every complete answer block, in order
+    accepted: dict[str, Any] | None = None               # the first complete answer ``accept`` took
+    accepted_message: int = 0                            # the API message (1-based) that wrote it
     scanner: JsonItemScanner = field(init=False)
     _answer_block: int | None = field(default=None, init=False)
+    _answer_open: bool = field(default=False, init=False)
+    _message_usage: list[dict[str, Any]] = field(default_factory=list, init=False)   # usage of each API message
+    #: The CLI's tool results for answers it did not take (``is_error``, or followed by another API
+    #: message): the start of each text, so a rejection by the CLI's own schema check can be named.
+    rejections: list[dict[str, Any]] = field(default_factory=list)
+    _tool_result: dict[str, Any] | None = field(default=None, init=False)
     _pending: str = field(default="", init=False)
 
     def __post_init__(self) -> None:
@@ -262,6 +294,9 @@ class StreamParser:
         if kind == "result":
             self.result = ev
             return
+        if kind == "user":
+            self._user_event(ev)
+            return
         if kind == "system" and ev.get("subtype") == "thinking_tokens":
             n = ev.get("estimated_tokens")
             if isinstance(n, int | float) and not isinstance(n, bool):
@@ -279,13 +314,29 @@ class StreamParser:
             usage = msg.get("usage") if isinstance(msg, dict) else None
             if isinstance(usage, dict):
                 self.message_usage = usage
+            self._message_usage.append(dict(usage) if isinstance(usage, dict) else {})
+            if self._tool_result is not None:           # the CLI asked again after this tool result
+                self.rejections.append(self._tool_result)
+                self._tool_result = None
+            if self.stop_on_repeat and self.accepted is not None and self.messages > self.accepted_message:
+                raise RepeatedAnswer(f"API message {self.messages} started after the answer of message "
+                                     f"{self.accepted_message} was accepted")
+        elif etype == "message_delta":
+            usage = inner.get("usage")
+            if isinstance(usage, dict) and self._message_usage:
+                self._message_usage[-1].update(usage)       # the message's final counts
         elif etype == "content_block_start":
             block = inner.get("content_block")
             if isinstance(block, dict) and block.get("type") == "tool_use" \
                     and block.get("name") == STRUCTURED_OUTPUT_TOOL:
                 # A new answer block (the CLI may re-ask for schema-valid output): read it afresh.
                 self._answer_block = inner.get("index")
+                self._answer_open = True
                 self.scanner = JsonItemScanner(self.root, self.on_item)
+        elif etype == "content_block_stop":
+            if self._answer_open and inner.get("index") == self._answer_block:
+                self._answer_open = False
+                self._answer_closed()
         elif etype == "content_block_delta":
             delta = inner.get("delta")
             if not isinstance(delta, dict):
@@ -300,7 +351,52 @@ class StreamParser:
                 if isinstance(text, str):
                     self.text_chars += len(text)
 
+    def _user_event(self, ev: dict[str, Any]) -> None:
+        """A tool result the CLI wrote for an answer block."""
+        msg = ev.get("message")
+        content = msg.get("content") if isinstance(msg, dict) else None
+        for block in content if isinstance(content, list) else []:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            body = block.get("content")
+            if isinstance(body, list):
+                body = " ".join(str(b.get("text", "")) for b in body if isinstance(b, dict))
+            entry = {"is_error": block.get("is_error"), "text": str(body or "")[:REJECTION_TEXT_CHARS]}
+            if block.get("is_error") is True:
+                self.rejections.append(entry)
+                self._tool_result = None
+            else:
+                self._tool_result = entry
+
+    def _answer_closed(self) -> None:
+        """The answer block's JSON is complete: keep it, and accept it if it is the first usable one."""
+        try:
+            data = json.loads(self.scanner.text)
+        except ValueError:
+            return
+        if not isinstance(data, dict):
+            return
+        self.answers.append(data)
+        if self.accepted is None and self.accept is not None and self.accept(data):
+            self.accepted = data
+            self.accepted_message = self.messages
+
     # ---------------------------------------------------------------- output
+
+    def accepted_usage(self) -> Usage:
+        """Measured usage of the API messages streamed so far: each message's ``message_delta``
+        counts (or its ``message_start`` counts when it ended before its delta). For a call ended at
+        :class:`RepeatedAnswer` this is the answering message in full plus the input of the message
+        the CLI had just started; nothing is estimated."""
+        total = Usage()
+        for u in self._message_usage:
+            def n(key: str, u: dict[str, Any] = u) -> int:
+                v = u.get(key)
+                return int(v) if isinstance(v, int | float) and not isinstance(v, bool) else 0
+
+            total = total + Usage(n("input_tokens"), n("output_tokens"), n("cache_creation_input_tokens"),
+                                  n("cache_read_input_tokens"))
+        return total
 
     @property
     def answer_chars(self) -> int:
@@ -315,9 +411,32 @@ class StreamParser:
         return self.scanner.item_count()
 
     def partial(self) -> dict[str, Any] | None:
-        """What a cut attempt salvages (``LLMDeadlineError.partial``): finished root fields and the
-        finished items of root-level arrays, or ``None``."""
-        return self.scanner.snapshot()
+        """What a cut attempt salvages (``LLMDeadlineError.partial``): the last complete answer when
+        the cut came while the model was writing its answer again (the CLI had rejected it), else the
+        finished root fields and the finished items of root-level arrays of the answer being
+        written, or ``None``. A complete answer is never traded for a half-written repeat."""
+        whole = self._last_complete()
+        return whole if whole is not None else self.scanner.snapshot()
+
+    def partial_complete(self) -> bool:
+        """Whether :meth:`partial` is a complete answer, not the finished items of an unfinished one."""
+        return self._last_complete() is not None
+
+    def _last_complete(self) -> dict[str, Any] | None:
+        """The answer object (at ``root``) of the last answer block that closed, whether or not a
+        later block (a repeat) is still being written; ``None`` when none closed."""
+        if not self.answers:
+            return None
+        node: Any = self.answers[-1]
+        for key in self.root:
+            node = node.get(key) if isinstance(node, dict) else None
+        return node if isinstance(node, dict) and node else None
+
+    def salvaged_count(self) -> int:
+        """Items of the root-level arrays in :meth:`partial` (what ``LLMDeadlineError.salvaged_items``
+        counts), as opposed to :meth:`item_count`, the items of the block being written."""
+        p = self.partial() or {}
+        return sum(len(v) for v in p.values() if isinstance(v, list))
 
     def estimated_usage(self) -> Usage | None:
         """Estimated usage of an attempt that ended without a ``result`` event: input tokens (and
