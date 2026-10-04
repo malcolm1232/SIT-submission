@@ -42,8 +42,9 @@ ul { padding-left: 18px; margin: 0; }
 .navrail-item.active { background: var(--navrail-active-bg); color: var(--navrail-active-fg); font-weight: 600; }
 .navrail-ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 /* the surface slot (rail.css .navrail-slot): here it carries the runs and the tool servers */
-.navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-#rail-runs { flex: 0 1 auto; min-height: 0; overflow-y: auto; }   /* the runs list gives way so every tool server stays in view */
+/* a rail too short for the tool servers and the Logs panel's minimum scrolls instead of cutting them off */
+.navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow-x: hidden; overflow-y: auto; }
+#rail-runs { flex: 0 1000 auto; min-height: 0; overflow-y: auto; }   /* the runs list gives way first so every tool server stays in view */
 #rail-tools { flex: none; }
 .rail-head { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--navrail-muted);
   padding: 14px 10px 6px; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
@@ -58,9 +59,15 @@ ul { padding-left: 18px; margin: 0; }
 .rail-run .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-run .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-run.active .meta { color: var(--navrail-fg); }
-/* the Logs panel: progress.log of the open run, newest at the bottom, scrolled to it on each read */
-.rail-log { flex: 1 1 auto; min-height: 60px; overflow-y: auto; overflow-x: hidden; font-size: 10.5px; line-height: 1.5; color: var(--navrail-fg); padding: 2px 8px 6px; }
-.rail-log .rail-logline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the Logs panel: progress.log of the open run, newest at the bottom, scrolled to it on each read.
+   The frame takes the rail's free height; the scroller inside is a whole number of 16 px lines tall
+   (round() over the frame's container height, three at the least) and has no vertical padding, so
+   scrollTop = scrollHeight lands on a line edge: the newest line ends at the bottom and the first
+   visible line starts at the top, neither cut. Snapping keeps a hand scroll on a line edge too. */
+.rail-log-frame { --log-line: 16px; flex: 1 1 100%; min-height: calc(3 * var(--log-line) + 8px); container-type: size; padding: 2px 0 6px; }
+.rail-log { max-height: 100%; max-height: max(3 * var(--log-line), round(down, 100cqh, var(--log-line))); overflow-y: auto; overflow-x: hidden;
+  scroll-snap-type: y mandatory; font-size: 10.5px; line-height: var(--log-line); color: var(--navrail-fg); padding: 0 8px; }
+.rail-log .rail-logline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; scroll-snap-align: start; }
 .rail-log .rail-logline.warn { color: var(--amber); }
 .rail-log .rail-empty { padding: 4px 0; }
 .rail-run .meta .live { color: var(--accent-bright); }
