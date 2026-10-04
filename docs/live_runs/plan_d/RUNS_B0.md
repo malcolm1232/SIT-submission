@@ -1,0 +1,11 @@
+# Plan D, condition B0 (single-call baseline)
+
+Every run: `dra review <doc>/design_v1.pdf --profile demo --condition B0 --no-tools`, on the Claude Code CLI backend.
+Scoring: `sit-eval score` with judge claude_code, claude-opus-5-5, effort high, 3 samples, seed 20261002, `--no-grounding-judges --exploratory`.
+Attempts are the entries of `llm.jsonl`, counted by script.
+Hallucination flags count G1 failures plus adjudicated HALLUCINATED findings (the G3 premise judge is off).
+
+| run-id | document | condition | effort | wall s | outcome | findings | attempts | cost lower bound USD | load before (5-min, free %) | load after | strict recall | lenient recall | precision (adjudicated) | severity-weighted recall | critical recall | hallucination flags (G1 + adjudicated, no G3) | scoring cost USD |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| d_b0_payments_v1_1 | payments_orchestration | B0 | medium | 363 | completed_degraded | 18 | 1 | 1.08 | 7.32, 45 | 6.38, 40 | 13 of 14 | 0.929 | 1.000 | 0.933 | 1.000 | 0 | 3.89 |
+| d_b0_clinical_v1_1 | clinical_rpm | B0 | medium | 290 | completed_degraded | 16 | 1 | 0.91 | 6.84, 42 | 5.56, 40 | 8 of 14 | 0.929 | 1.000 | 0.567 | 0.500 | 0 | 2.84 |
