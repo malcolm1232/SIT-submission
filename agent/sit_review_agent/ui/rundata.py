@@ -53,6 +53,31 @@ def run_path(runs_dir: Path, run_id: str) -> Path | None:
     return p
 
 
+#: Lines of ``progress.log`` the log route returns at most on a first read (the page keeps as many).
+LOG_TAIL = 200
+
+
+def tail_log(path: Path, *, after: int = 0, tail: int = LOG_TAIL) -> dict[str, Any]:
+    """The complete lines of ``path`` (``progress.log``) from byte ``after``: at most the last ``tail`` of them,
+    and the byte offset after the last complete line, so the next call with ``after=offset`` follows the file.
+    A last line without its newline is left for the next read (the writer is mid-line); an ``after`` past the
+    end of the file (the file was replaced) starts over. Read-only, text only, nothing interpreted."""
+    if not path.is_file():
+        return {"exists": False, "lines": [], "offset": 0, "skipped": 0, "tail": tail}
+    size = path.stat().st_size
+    if after > size:
+        after = 0
+    with path.open("rb") as fh:
+        fh.seek(after)
+        data = fh.read()
+    end = data.rfind(b"\n")
+    if end < 0:
+        return {"exists": True, "lines": [], "offset": after, "skipped": 0, "tail": tail}
+    lines = data[:end].decode("utf-8", "replace").split("\n")
+    return {"exists": True, "lines": lines[-tail:], "offset": after + end + 1, "skipped": max(0, len(lines) - tail),
+            "tail": tail}
+
+
 def is_run_dir(p: Path) -> bool:
     return p.is_dir() and any((p / n).is_file() for n in ("report.json", "progress.jsonl", "manifest.json")) \
         or (p / UI_DIR / "launch.json").is_file()

@@ -318,6 +318,18 @@ def test_the_shipped_config_leaves_email_off_with_the_reason(tmp_path: Path, mon
                                   sender="me@example.org") and detail == ""
 
 
+def test_outputs_reports_the_bundle_the_download_saves(flow_runs: Path) -> None:
+    """GET /outputs names the zip that export.html?download=1 saves, its file count and its size."""
+    client = TestClient(build_app(make_state(flow_runs)))
+    out = client.get("/runs/ui_flow_1/outputs").json()["export"]
+    res = client.get("/runs/ui_flow_1/export.html?download=1")
+    assert res.status_code == 200 and f'filename="{out["name"]}"' in res.headers["content-disposition"]
+    assert out["name"] == "ui_flow_1_review.zip"
+    assert out["files"] == len(export.bundle_names(flow_runs / "ui_flow_1")) == 11
+    kb = int(out["size"].removesuffix(" KB"))
+    assert abs(kb * 1024 - len(res.content)) <= 1024   # the zip, not the single page (only the export stamp differs)
+
+
 def test_email_is_shown_disabled_with_the_reason_without_config_or_password(flow_runs: Path, smtp: FakeSMTP,
                                                                            monkeypatch) -> None:
     from sit_review_agent.ui import mail
@@ -696,8 +708,13 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     heads = pg.locator("#outputs h3").all_inner_texts()
     assert heads == ["Download", "Email", "Share"]
-    # 1. Download: the HTML file saves under its name; "Open it in a new tab" shows the same review.
-    assert pg.locator("#out-download").inner_text().startswith("Download review (HTML, ")
+    # 1. Download: the bundle saves under its name, its size on the label; "Open it in a new tab" shows the same review.
+    out = json.loads(pg.evaluate("fetch('/runs/ui_flow_1/outputs').then(r => r.text())"))["export"]
+    assert out["name"] == "ui_flow_1_review.zip" and out["files"] == len(export.bundle_names(runs / "ui_flow_1"))
+    assert pg.locator("#out-download").inner_text() == f"Download review (zip, {out['size']})"
+    help_text = pg.locator("#out-download-help").inner_text()
+    assert help_text.startswith("A zip of one review page with a sidebar, whose one script only shows and hides")
+    assert "the eight parts as separate files, report.md and report.json" in help_text
     with pg.expect_download() as dl:
         pg.click("#out-download")
     assert dl.value.suggested_filename == "ui_flow_1_review.zip"     # the bundle (decision #43)

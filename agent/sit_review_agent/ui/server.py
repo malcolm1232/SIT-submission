@@ -15,6 +15,7 @@ Routes (design note section 9, W2)::
                                     https link to a PDF in ``document_url``, fetched by ``ui.fetch``)
     GET  /runs/<id>                 one run's summary and status
     GET  /runs/<id>/events          progress.jsonl as server-sent events (Last-Event-ID or ?after=N)
+    GET  /runs/<id>/log             the last lines of progress.log as JSON (?after=<byte offset> follows it)
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
@@ -25,7 +26,8 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/export/<part>   one part as a standalone file (``01_summary.html`` ... ``08_traceability.html``)
     GET  /runs/<id>/report.md       the run's report.md, as a download
     GET  /runs/<id>/report.json     the run's report.json, as a download
-    GET  /runs/<id>/outputs         whether Email is configured, and the share link (or how to get one)
+    GET  /runs/<id>/outputs         the bundle the Download saves (name, file count, size), whether Email is
+                                    configured, and the share link (or how to get one)
     POST /runs/<id>/email           the export and report.md to one address (``ui.mail``)
     POST /runs/<id>/stop            SIGINT to a run this server started
     GET  /runs/<id>/chat            chat history and budget
@@ -53,6 +55,7 @@ from starlette.staticfiles import StaticFiles
 
 from sit_review_agent import __version__
 from sit_review_agent.config import UrlPolicy
+from sit_review_agent.errors import ExitCode
 from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
@@ -150,6 +153,8 @@ def build_app(state: UIState) -> Starlette:
                       "ui_args": list(state.ui_args),
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
                       "link_max_mb": fetch.MAX_BYTES // (1024 * 1024),
+                      # What Stop does, stated from the code: SIGINT is the CLI's Ctrl-C path (errors.ExitCode.SIGINT).
+                      "stop_exit_code": int(ExitCode.SIGINT),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
                                "max_cost_usd": chat.MAX_COST_USD, "label": chat.LABEL}})
 
@@ -290,6 +295,19 @@ def build_app(state: UIState) -> Starlette:
         return StreamingResponse(gen(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+    async def run_log(request: Request) -> Response:
+        """The tail of the run's ``progress.log`` (the same lines as the terminal), read-only: the last
+        ``rundata.LOG_TAIL`` complete lines, or with ``?after=<offset>`` the lines written since that byte."""
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        raw = request.query_params.get("after") or "0"
+        try:
+            after = max(0, int(raw))
+        except ValueError:
+            return _err(400, "after must be a byte offset.")
+        return _json(rundata.tail_log(rd / "progress.log", after=after))
+
     async def run_report(request: Request) -> Response:
         rd = run_dir_of(request)
         if rd is None:
@@ -366,9 +384,10 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, "No such run.")
         exp = None
         if (rd / "report.md").is_file():
-            size = len(export.export_html(rd, replayed=rundata.summary(rd)["replayed"]).encode("utf-8"))
+            # The size of the bundle the Download control saves (export.html?download=1), built as run_export builds it.
+            size = len(export.export_zip(rd, replayed=rundata.summary(rd)["replayed"]))
             exp = {"size": f"{max(1, round(size / 1024))} KB", "has_chat": chat.log_path(rd).is_file(),
-                   "name": export.export_name(rd.name)}
+                   "name": export.bundle_name(rd.name), "files": len(export.bundle_names(rd))}
         return _json({"export": exp, "email": mail.status(state.smtp, state.smtp_detail),
                       "share": share.share_info(bind_host=state.bind_host, port=state.port, run_id=rd.name,
                                                 ui_args=state.ui_args, lan_ip=state.lan_ip)})
@@ -440,6 +459,7 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs", start_run, methods=["POST"]),
         Route("/runs/{run_id}", run_info),
         Route("/runs/{run_id}/events", run_events),
+        Route("/runs/{run_id}/log", run_log),
         Route("/runs/{run_id}/report", run_report),
         Route("/runs/{run_id}/coverage", run_coverage),
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),

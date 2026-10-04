@@ -26,6 +26,9 @@
       <div id="rail-runs"></div>
       <div class="rail-head"><span>Tools</span><span id="rail-tools-note"></span></div>
       <div id="rail-tools"></div>
+      <!-- the open run's progress.log, tailed read-only through GET /runs/<id>/log; the same lines as the terminal -->
+      <div class="rail-head"><span>Logs</span><span id="rail-log-note"></span></div>
+      <div class="rail-log mono" id="rail-log" aria-live="off"></div>
     </div>
     <div class="navrail-foot">
       <div class="navrail-note">Every number on this page comes from the run directory. Nothing is estimated.</div>
@@ -98,10 +101,17 @@
 <template id="tpl-run">
   <div class="surface-head" id="run-head">
     <div><div class="surface-title" id="top-doc"></div><div class="surface-sub num" id="top-sub"></div></div>
-    <div class="head-right"><div class="clock num" id="top-meta"></div><span id="top-action"></span></div>
+    <div class="head-right"><div class="clock num" id="top-meta"></div><div class="stop" id="top-action"></div></div>
   </div>
   <div class="tabrow" id="run-tabrow" hidden><span class="tabs" id="top-tabs"></span></div>
   <div class="finished-bar" id="finished-bar" hidden></div>
+  <!-- the whole run on one axis: the recorded stage limits and the deadline as markers, the cursor at the live clock -->
+  <div class="axis" id="run-axis" hidden>
+    <div class="axis-head"><h2>The run against its limits</h2><span class="limit num" id="axis-note"></span></div>
+    <div class="axis-line" id="axis-line"></div>
+    <div class="axis-labels" id="axis-labels"></div>
+  </div>
+  <div id="limit-notes"></div>
   <div class="run-wrap">
     <div class="stages">
       <div class="stage-head"><h2>Stage 1, concurrent</h2><span class="limit num" id="stage1-limit"></span></div>
@@ -110,7 +120,7 @@
       <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
       <div class="tracks" id="seq-tracks"></div>
       <div class="notice" id="stop-rule" hidden></div>
-      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Times are as of the last event received. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
+      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Event times are the record's own run clock; the head clock and the axis cursor add only the seconds since the last event arrived, counted on this browser's clock, and the limit markers are the run's recorded limits. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
     </div>
     <div class="feed">
       <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <span class="pill draft">draft, unverified</span></h2>
@@ -130,7 +140,7 @@
   <div class="surface-head">
     <div><div class="surface-title" id="top-doc"></div><div class="surface-sub num" id="top-sub"></div></div>
     <section class="head-actions" id="outputs" aria-label="Take the review with you" hidden>
-      <div class="out"><h3 class="sr-only">Download</h3><a class="btn quiet" id="out-download" download><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg><span id="out-download-label">Download review (HTML)</span></a></div>
+      <div class="out"><h3 class="sr-only">Download</h3><a class="btn quiet" id="out-download" download><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg><span id="out-download-label">Download review (zip)</span></a></div>
       <div class="out"><h3 class="sr-only">Email</h3><button class="btn quiet" type="button" id="email-btn" aria-expanded="false" aria-controls="email-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11v8h-11z"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg>Email the review</button></div>
       <div class="out"><h3 class="sr-only">Share</h3><button class="btn quiet" type="button" id="share-btn" aria-expanded="false" aria-controls="share-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5"/><path d="M7 4.5 8.5 3a2.5 2.5 0 0 1 3.5 3.5L10.5 8"/><path d="M9 11.5 7.5 13A2.5 2.5 0 0 1 4 9.5L5.5 8"/></svg>Share link</button></div>
     </section>

@@ -4,7 +4,9 @@
 // - every number shown comes from the run directory (via the server's JSON) or the event stream;
 // - the run view draws from each event's `event` and `fields` only and never parses `message`;
 // - review text is inserted as textContent, exactly as report.json has it (no rewording);
-// - no animation; times are as of the last event, never ticked by the browser clock;
+// - no animation; event times are the record's own run clock; the head clock and the axis cursor add only the wall
+//   seconds since the last event arrived (one tick a second, Date.now, nowhere else), never an estimate of completion;
+//   the stage limits and the deadline are the run_started record's;
 // - the rail's running entry is the open run's stream state; the tools dots are GET /tools; no probe on load.
 "use strict";
 
@@ -47,7 +49,13 @@ async function api(url, opts) {
   return body;
 }
 
-const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null };
+const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null,
+  // The Stop control's state across repaints (every event repaints the head): armed by a first click, sent by the second.
+  stop: null,
+  // The browser's clock when the last event arrived, and the one-second tick that adds the seconds since to the head clock.
+  lastAt: null, tick: null,
+  // The open run's progress.log tail (GET /runs/<id>/log): the lines kept, the byte offset to read from next.
+  log: null };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -134,6 +142,40 @@ function setupRail() {
   const apply = () => { grid.classList.toggle("rail-collapsed", collapsed); toggle.setAttribute("aria-label", collapsed ? "Expand the rail" : "Collapse the rail"); toggle.querySelector(".label").textContent = collapsed ? "Expand" : "Collapse"; };
   toggle.addEventListener("click", () => { collapsed = !collapsed; try { localStorage.setItem(RAIL_KEY, collapsed ? "1" : "0"); } catch (e) { /* storage off: the rail still toggles */ } apply(); });
   apply();
+}
+
+// The Logs panel: the open run's progress.log, read from the server's route only (never a file the page guesses at),
+// first the last lines, then what was appended since the last read; the tick and the stream's end re-read it.
+function openLog(runId) {
+  S.log = runId ? { runId, lines: [], offset: 0, exists: null, skipped: 0, keep: null, busy: false, error: null } : null;
+  renderRailLog();
+  if (runId) pollLog();
+}
+
+async function pollLog() {
+  const L = S.log;
+  if (!L || L.busy) return;
+  L.busy = true;
+  try {
+    const r = await api("/runs/" + encodeURIComponent(L.runId) + "/log" + (L.offset ? "?after=" + L.offset : ""));
+    if (S.log !== L) return;
+    if (r.offset < L.offset) L.lines = [];                   // the file was replaced: the server started over
+    L.lines.push(...r.lines); L.offset = r.offset; L.exists = r.exists; L.keep = r.tail; L.skipped += r.skipped; L.error = null;
+    if (L.lines.length > L.keep) { L.skipped += L.lines.length - L.keep; L.lines.splice(0, L.lines.length - L.keep); }
+  } catch (e) { if (S.log === L) L.error = e.message; }
+  L.busy = false;
+  renderRailLog();
+}
+
+function renderRailLog() {
+  const box = clear($("rail-log")), note = $("rail-log-note");
+  const L = S.log;
+  if (!L) { note.textContent = ""; box.append(h("div", { class: "rail-empty", text: "open a run" })); return; }
+  if (L.error) { note.textContent = "not read"; box.append(h("div", { class: "rail-empty", text: L.error })); return; }
+  if (L.exists === false) { note.textContent = "no progress.log yet"; box.append(h("div", { class: "rail-empty", text: L.runId + "/progress.log is not written yet" })); return; }
+  note.textContent = L.exists === null ? "" : "last " + intl(L.lines.length) + (L.skipped ? " of " + intl(L.lines.length + L.skipped) : "") + " lines";
+  for (const line of L.lines) box.append(h("div", { class: "rail-logline" + (line.includes("| WARN ") ? " warn" : ""), text: line, title: line }));
+  box.scrollTop = box.scrollHeight;
 }
 
 async function refreshRuns() { const r = await api("/runs"); S.runs = r.runs; renderRailRuns(); }
@@ -389,7 +431,7 @@ function showDeveloper() {
     h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
     h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
     h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
-  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
 }
 
 // ------------------------------------------------------------------ the run, from the event stream
@@ -410,11 +452,39 @@ const CALL_FAILED = ["refusal", "truncated", "error", "cancelled", "interrupted"
 function newRunModel() {
   return { limits: null, deadline: null, profile: null, mode: null, replay: false, resumed: false, shardCount: null, lastT: 0,
     tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
-    stopRule: null, doc: null, runId: null };
+    stopRule: null, doc: null, runId: null,
+    // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
+    limitNotes: [], draftedByCall: new Map(),
+    // The track rows the reader expanded to their calls; kept across repaints.
+    open: new Set() };
 }
 
+// One model call of a track (call_opened), with the latest call_status fields and the draft items streamed from it.
+function callRecord(t, callId, ev, f, now) {
+  if (!t.calls.has(callId)) {
+    t.calls.set(callId, { id: callId, phase: ev.phase, purpose: f.purpose ?? null, attempt: f.attempt ?? null, iteration: f.iteration ?? null,
+      openedAt: now, closedAt: null, outcome: null, kept: null, status: null, statusAt: null, drafts: [], lists: {}, seen: new Set() });
+  }
+  return t.calls.get(callId);
+}
+function callDraft(cr, key, d) {
+  if (!cr || cr.seen.has(key) || !d) return;
+  cr.seen.add(key);
+  cr.drafts.push({ severity: d.severity, kind: d.kind, title: d.title });
+}
+
+// Which recorded limit a stage runs against: stage 1 and its members, refine, verdict; report runs to the deadline.
+function limitFor(m, stage) {
+  const lim = m.limits || {};
+  const s = { stage_1: lim.stage_1_end, ingest: lim.stage_1_end, understand: lim.stage_1_end, plan: lim.stage_1_end, research: lim.stage_1_end,
+    assess: lim.stage_1_end, merge: lim.stage_1_end, refine: lim.refine_end, verify: lim.refine_end, verdict: lim.verdict_end, report: m.deadline }[stage];
+  return typeof s === "number" ? s : null;
+}
+function limitName(stage) { return stage === "stage_1" || STAGE1.includes(stage) || stage === "assess" || stage === "merge" ? "stage 1" : words(stage); }
+function noteLimit(m, t, text) { m.limitNotes.push({ t, text }); }
+
 function track(m, key, label) {
-  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null });
+  if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null, calls: new Map() });
   return m.tracks.get(key);
 }
 
@@ -452,7 +522,16 @@ function applyEvent(m, ev) {
       const t = track(m, ev.phase);
       if (t.status !== "cut" && t.status !== "failed") t.status = "done";
       t.end = now; if (t.start === null) t.start = now - (f.seconds || 0);
-      if (f.stopped_at_limit) { t.strong = null; t.text = "stopped at the stage limit"; }
+      if (f.stopped_at_limit) {
+        t.strong = null; t.text = "stopped at the stage limit";
+        const lim = limitFor(m, f.stage);
+        noteLimit(m, now, sentence(limitName(f.stage)) + " limit" + (lim !== null ? " " + clock(lim) : "") + " reached; " + ev.phase + " stopped there at " + clock(now) + ".");
+      }
+      break;
+    }
+    case "stage_limit_passed": {
+      const lname = f.limit === "stage_1_end" ? "stage 1" : words(f.limit);
+      noteLimit(m, now, sentence(lname) + " limit" + (typeof f.limit_s === "number" ? " " + clock(f.limit_s) : "") + " passed" + (typeof f.grace_s === "number" ? " by the " + dur(f.grace_s) + " grace" : "") + "; stopping " + (f.stopped || []).map(words).join(", ") + ".");
       break;
     }
     case "research_started": { const t = track(m, "research"); t.strong = null; t.text = intl(f.questions) + " question(s) to research"; break; }
@@ -469,6 +548,7 @@ function applyEvent(m, ev) {
       const t = track(m, key);
       t.call = f.call_id; if (t.status !== "cut") t.status = inFlight(m); if (t.start === null) t.start = now; if (f.shard_name) t.shard = f.shard_name;
       m.byCall.set(f.call_id, t);
+      callRecord(t, f.call_id, ev, f, now);
       break;
     }
     case "call_status":
@@ -478,23 +558,35 @@ function applyEvent(m, ev) {
         else if (typeof c.chars === "number" && c.chars > 0) { t.strong = null; t.text = "answer streaming (" + intl(c.chars) + " chars)"; }
         else if (typeof c.thinking_tokens === "number" && c.thinking_tokens > 0) { t.strong = null; t.text = "thinking ~" + intl(c.thinking_tokens) + " tokens"; }
         else { t.strong = null; t.text = "starting"; }
+        const cr = t.calls.get(c.call_id);
+        if (cr) { cr.status = { phase: c.phase ?? null, label: c.label || null, thinking: c.thinking_tokens ?? null, items: c.items ?? null, chars: c.chars ?? null }; cr.statusAt = now; }
       }
       break;
     case "call_retry": { const t = track(m, ev.phase); t.strong = null; t.text = "retry: " + words(f.reason); break; }
     case "call_closed": {
       const t = m.byCall.get(f.call_id); if (!t) break;
+      const cr = t.calls.get(f.call_id);
+      if (cr) { cr.closedAt = now; cr.outcome = f.outcome; if (typeof f.kept_items === "number") cr.kept = f.kept_items; }
       if (f.outcome === "cut") { t.status = "cut"; t.cutAt = now; t.end = now; t.strong = null; t.text = typeof f.kept_items === "number" ? "kept " + intl(f.kept_items) + " finished item(s)" : t.text; }
       else if (CALL_FAILED.includes(f.outcome)) { t.status = "failed"; t.end = now; t.strong = null; t.text = words(f.outcome); }
       else if (t.key.startsWith("assess ")) { t.status = "done"; t.end = now; }
       break;
     }
-    case "draft_item":
-      if (f.list === "findings") addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
+    case "draft_item": {
+      const t = m.byCall.get(f.call_id), cr = t ? t.calls.get(f.call_id) : null;
+      if (cr && f.list) cr.lists[f.list] = (cr.lists[f.list] || 0) + 1;
+      if (f.list === "findings") {
+        // Distinct drafts only: a record repeated for the same call and index (a second stream of the same call) is one draft.
+        if (!m.seen.has(f.call_id + "#" + f.index)) m.draftedByCall.set(f.call_id, (m.draftedByCall.get(f.call_id) || 0) + 1);
+        addDraft(m, f.call_id + "#" + f.index, now, f, whoOf(m, f.shard, f.call_id));
+        callDraft(cr, f.call_id + "#" + f.index, f);
+      }
       break;
+    }
     case "shard_drafted": {
       const t = m.byCall.get(f.call_id) || track(m, shardKey(m, f.shard));
       t.strong = intl(f.findings); t.text = " draft finding(s), " + intl(f.sound_areas) + " sound area(s), unverified";
-      for (const d of f.drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      for (const d of f.drafts || []) { addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id)); callDraft(t.calls.get(f.call_id), f.call_id + "#" + d.index, d); }
       break;
     }
     case "shard_cut": {
@@ -504,7 +596,13 @@ function applyEvent(m, ev) {
       const kept = "kept " + intl(f.kept) + " finished finding(s)" + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "");
       t.text = (f.degradation_id ? " in the report · " : "") + kept;
       if (f.degradation_id) t.disclose = { id: f.degradation_id, text: t.key + " cut at " + clock(t.cutAt) + ": " + kept };
-      for (const d of f.kept_drafts || []) addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id));
+      for (const d of f.kept_drafts || []) { addDraft(m, f.call_id + "#" + d.index, now, d, whoOf(m, f.shard, f.call_id)); callDraft(t.calls.get(f.call_id), f.call_id + "#" + d.index, d); }
+      { const cr = t.calls.get(f.call_id); if (cr) { cr.outcome = cr.outcome || "cut"; cr.closedAt = cr.closedAt ?? t.cutAt; cr.kept = f.kept; } }
+      {
+        const lim = limitFor(m, "stage_1"), drafted = m.draftedByCall.get(f.call_id) || 0;
+        const keptText = drafted ? intl(f.kept) + " of " + intl(drafted) + " drafts kept" : intl(f.kept) + " draft(s) kept";
+        noteLimit(m, now, "Stage 1 limit" + (lim !== null ? " " + clock(lim) : "") + " reached; assess shard " + f.shard + (f.shard_name ? " (" + words(f.shard_name) + ")" : "") + " ended there at " + clock(t.cutAt) + ", " + keptText + ((f.criteria_not_assessed || []).length ? "; not assessed: " + f.criteria_not_assessed.join(", ") : "") + ".");
+      }
       break;
     }
     case "shard_failed": { const t = track(m, shardKey(m, f.shard)); t.status = "failed"; t.end = now; t.strong = null; t.text = f.error || "failed"; break; }
@@ -516,6 +614,11 @@ function applyEvent(m, ev) {
     case "call_cut": {
       const t = m.byCall.get(f.call_id); if (!t) break;
       t.status = "cut"; t.cutAt = f.at_s ?? now; t.end = t.cutAt; t.strong = null; t.text = "kept " + intl(f.kept_items) + " finished item(s)";
+      { const cr = t.calls.get(f.call_id); if (cr) { cr.outcome = "cut"; cr.closedAt = t.cutAt; cr.kept = f.kept_items; } }
+      {
+        const lim = limitFor(m, f.stage);
+        noteLimit(m, now, sentence(words(f.stage)) + ": the model call " + f.call_id + " was cut at " + clock(t.cutAt) + (lim !== null ? " (" + limitName(f.stage) + " ends by " + clock(lim) + ")" : "") + "; " + intl(f.kept_items) + " finished item(s) kept.");
+      }
       break;
     }
     case "stop_rule": m.stopRule = f; break;
@@ -553,9 +656,59 @@ function trackRow(m, t, limit) {
   const status = h("div", { class: "status" });
   { if (t.shard) status.append(t.shard + (t.strong || t.text ? " · " : "")); if (t.strong) status.append(h("b", { text: t.strong })); if (t.text) status.append(t.text); }
   status.title = status.textContent;
-  return h("div", { class: "track", "data-track": t.key, "data-status": t.status },
-    h("div", { class: "name" }, t.label, t.call ? h("span", { class: "call mono", text: t.call }) : null),
+  // A row with calls expands to them (keyed by call_id); the open set lives in the model so a repaint keeps it.
+  const n = t.calls.size, open = m.open.has(t.key);
+  const name = n ? h("button", { class: "name-btn", type: "button", "aria-expanded": String(open), "data-calls": String(n), title: (open ? "Hide" : "Show") + " the " + intl(n) + " model call" + (n === 1 ? "" : "s"),
+    onclick: () => { if (open) m.open.delete(t.key); else m.open.add(t.key); renderRun(m); } },
+    h("span", { class: "chev", text: open ? "▾" : "▸" }), t.label) : t.label;
+  return h("div", { class: "track" + (open ? " open" : ""), "data-track": t.key, "data-status": t.status },
+    h("div", { class: "name" }, name, t.call ? h("span", { class: "call mono", text: t.call }) : null),
     h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status);
+}
+
+// The latest call_status fields of a call, as the record has them: label, reasoning tokens, items, chars.
+function callStatusText(cr) {
+  const st = cr.status;
+  if (!st) return cr.closedAt === null ? "no status yet" : "";
+  const bits = [];
+  if (st.label) bits.push(st.label);
+  if (typeof st.thinking === "number" && st.thinking > 0) bits.push("thinking ~" + intl(st.thinking) + " tokens");
+  if (typeof st.items === "number" && st.items > 0) bits.push(intl(st.items) + (st.items === 1 ? " item" : " items"));
+  if (typeof st.chars === "number" && st.chars > 0) bits.push(intl(st.chars) + " chars");
+  return (bits.length ? bits.join(" · ") : "starting") + " · as of " + clock(cr.statusAt);
+}
+
+function callState(m, cr) {
+  if (cr.closedAt === null) return [inFlight(m), inFlight(m)];
+  if (cr.outcome === "cut") return ["cut", "cut at " + clock(cr.closedAt) + (typeof cr.kept === "number" ? ", " + intl(cr.kept) + " kept" : "")];
+  if (CALL_FAILED.includes(cr.outcome)) return ["failed", words(cr.outcome)];
+  return ["done", "closed at " + clock(cr.closedAt)];
+}
+
+// The calls of one track: one row per call_id with its purpose, state, latest status and the draft items it streamed.
+function callsBlock(m, t) {
+  const box = h("div", { class: "calls", "data-track": t.key });
+  for (const cr of t.calls.values()) {
+    const [st, stText] = callState(m, cr);
+    const about = [cr.purpose, typeof cr.attempt === "number" && cr.attempt > 0 ? "attempt " + intl(cr.attempt) : null].filter(Boolean).join(", ");
+    const lists = Object.entries(cr.lists).filter(([k]) => k !== "findings").map(([k, v]) => intl(v) + " " + words(k) + (v === 1 ? " item" : " items"));
+    const row = h("div", { class: "callrow", "data-call": cr.id, "data-status": st },
+      h("div", { class: "cid mono", text: cr.id }),
+      h("div", { class: "about" }, h("span", { class: "mono", text: about }), " · opened " + clock(cr.openedAt)),
+      h("div", {}, h("span", { class: "pill " + st, text: stText })),
+      h("div", { class: "cstatus", text: callStatusText(cr) }));
+    box.append(row);
+    if (cr.drafts.length || lists.length) {
+      const d = h("div", { class: "cdrafts" });
+      cr.drafts.forEach((x, i) => {
+        const sev = x.kind === "strength" ? "strength" : (x.severity || "");
+        d.append(h("div", { class: "cdraft" }, h("span", { class: "num mono", text: String(i + 1) }), sev ? h("span", { class: "pill " + sev, text: sev }) : null, x.kind && x.kind !== "strength" ? h("span", { class: "kind", text: words(x.kind) }) : null, h("span", { class: "text", text: x.title || "" })));
+      });
+      if (lists.length) d.append(h("div", { class: "clists", text: "also streamed: " + lists.join(", ") }));
+      box.append(d);
+    }
+  }
+  return box;
 }
 
 function stage1Summary(m, shards) {
@@ -575,7 +728,7 @@ function renderRun(m) {
   const keys = [...m.tracks.keys()];
   const shards = keys.filter((k) => k.startsWith("assess ")).sort((a, b) => parseInt(a.slice(7), 10) - parseInt(b.slice(7), 10));
   const order = [...STAGE1, ...(shards.length ? shards : ["assess"])];
-  for (const k of order) s1.append(trackRow(m, track(m, k), lim.stage_1_end ?? null));
+  for (const k of order) { const t = track(m, k); s1.append(trackRow(m, t, lim.stage_1_end ?? null)); if (m.open.has(k) && t.calls.size) s1.append(callsBlock(m, t)); }
   const summary = stage1Summary(m, shards);
   $("stage1-limit").textContent = (lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "") + (summary ? " · " + summary : "");
   const dis = clear($("stage1-disclosures"));
@@ -594,10 +747,14 @@ function renderRun(m) {
       const r = trackRow(m, t, limit ?? null);
       if (t.status === "waiting") r.querySelector(".status").textContent = row.about;
       seq.append(r);
+      if (m.open.has(row.phase) && t.calls.size) seq.append(callsBlock(m, t));
     }
   }
   const stop = $("stop-rule");
   if (stop) { stop.hidden = !m.stopRule; stop.textContent = m.stopRule ? "Stop rule " + m.stopRule.code + " fired in " + words(m.stopRule.stage) + ": " + m.stopRule.detail + "; skipped to " + words(m.stopRule.to) + "." : ""; }
+  renderAxis(m);
+  const notes = clear($("limit-notes"));
+  for (const n of m.limitNotes) notes.append(h("div", { class: "limit-note" }, h("span", { class: "num mono", text: clock(n.t) }), h("span", { text: n.text })));
   $("draft-count").textContent = String(m.drafts.length);
   const d = clear($("drafts"));
   for (const x of m.drafts) {
@@ -613,7 +770,78 @@ function renderRun(m) {
   }
 }
 
-function closeStream() { if (S.es) { S.es.close(); S.es = null; } }
+function closeStream() { stopTick(); if (S.es) { S.es.close(); S.es = null; } }
+
+// ------------------------------------------------------------------ the head clock, the axis and the tick
+// A run is live while its stream is open and it is neither a replay nor ended. Only then does the head clock add the
+// seconds since the last event arrived, counted on this browser's clock; every other time on the page is the record's.
+
+function isLive(m) { return S.es !== null && !m.replay && !m.finished && !m.error; }
+function liveT(m) {
+  const since = isLive(m) && S.lastAt !== null ? (Date.now() - S.lastAt) / 1000 : 0;
+  return m.lastT + since;
+}
+function startTick() { stopTick(); S.tick = setInterval(tick, 1000); }
+function stopTick() { if (S.tick !== null) { clearInterval(S.tick); S.tick = null; } }
+function tick() {
+  const m = S.model;
+  if (!m || !isLive(m)) { stopTick(); return; }
+  renderClock(m, S.info || {});
+  renderAxis(m);
+  pollLog();
+}
+
+function renderClock(m, info) {
+  const meta = clear($("top-meta"));
+  const live = isLive(m);
+  meta.append(h("div", { class: "t" }, h("b", { text: clock(liveT(m)) }), m.deadline ? h("span", { text: " / " + clock(m.deadline) }) : null));
+  const l = h("div", { class: "l" });
+  if (live) l.append(h("span", { id: "clock-label" }, "run clock: last event at ", h("b", { class: "num", id: "clock-last", text: clock(m.lastT) }), ", plus the seconds since it arrived (this browser's clock)"));
+  else l.append(h("span", { id: "clock-label", text: "run clock, as of the last event" }));
+  if (m.resumed || info.resumed) l.append(h("span", { class: "pill", text: "resumed" }));
+  if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
+  meta.append(l);
+}
+
+// The recorded limits as markers on one axis from the start to the deadline (run_started: stage_limits_s, deadline_s).
+function limitMarks(m) {
+  const lim = m.limits || {};
+  return [["stage 1 ends", lim.stage_1_end], ["refine ends", lim.refine_end], ["verdict ends", lim.verdict_end], ["deadline", m.deadline]].filter(([, s]) => typeof s === "number");
+}
+
+function renderAxis(m) {
+  const box = $("run-axis");
+  if (!box) return;
+  const marks = limitMarks(m);
+  const span = typeof m.deadline === "number" ? m.deadline : (marks.length ? marks[marks.length - 1][1] : null);
+  box.hidden = span === null;
+  if (span === null) return;
+  const pct = (s) => Math.min(100, (100 * s) / span).toFixed(1) + "%";
+  const now = liveT(m), live = isLive(m);
+  const line = clear($("axis-line")), labels = clear($("axis-labels"));
+  line.append(h("i", { class: "fill" + (live ? "" : " closed"), style: "width:" + pct(now) }));
+  for (const [name, s] of marks) {
+    const passed = now >= s;
+    line.append(h("i", { class: "mark" + (passed ? " passed" : ""), style: "left:" + pct(s), title: name + " " + clock(s) }));
+    labels.append(h("span", { class: "lbl num" + (passed ? " passed" : "") + (s === span ? " end" : ""), style: "left:" + pct(s) }, name + " ", h("b", { text: clock(s) })));
+  }
+  line.append(h("i", { class: "cursor" + (live ? " live" : ""), style: "left:" + pct(now), title: clock(now) }));
+  // Two limits close together (verdict and the deadline) would overlap: a label that would step on the one before
+  // it on its row goes down a row. Measured once per render from the laid-out boxes, no timer involved.
+  const rights = [], edge = labels.getBoundingClientRect().right;
+  for (const el of labels.children) {
+    let r = el.getBoundingClientRect();
+    if (r.right > edge) { el.classList.add("end"); r = el.getBoundingClientRect(); }   // anchored to its right at the axis's end
+    let row = rights.findIndex((right) => r.left > right);
+    if (row < 0) row = rights.length;
+    rights[row] = r.right;
+    el.dataset.row = String(row);
+  }
+  labels.dataset.rows = String(rights.length);
+  const next = marks.find(([, s]) => s > now);
+  $("axis-note").textContent = (live ? "elapsed " : (m.finished || m.error ? "ended at " : "last event at ")) + clock(live ? now : m.lastT) + " of " + clock(span) +
+    (live && next ? " · next limit: " + next[0] + " " + clock(next[1]) : "") + (live ? " · the cursor adds the seconds since the last event; the markers are the record's limits" : "");
+}
 
 function renderTabs(tabs, note) {
   const t = clear($("top-tabs"));
@@ -634,23 +862,39 @@ function runTop(info, m, tabs) {
   if (info.no_tools) bits.push(h("span", {}, "document only (", h("span", { class: "mono", text: "--no-tools" }), ")"));
   if (info.started_at) bits.push("started " + hhmm(info.started_at));
   bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
-  const meta = clear($("top-meta"));
-  meta.append(h("div", { class: "t" }, h("b", { text: clock(m.lastT) }), m.deadline ? h("span", { text: " / " + clock(m.deadline) }) : null));
-  const l = h("div", { class: "l" }, "run clock, as of the last event");
-  if (m.resumed || info.resumed) l.append(h("span", { class: "pill", text: "resumed" }));
-  if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
-  meta.append(l);
+  renderClock(m, info);
   const a = clear($("top-action"));
-  if (info.status === "running" && info.argv && !m.replay) {
-    a.append(h("button", { class: "btn quiet", type: "button", text: "Stop run", onclick: async (e) => {
-      e.target.disabled = true;
-      try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); e.target.textContent = "SIGINT sent"; }
-      catch (err) { e.target.textContent = err.message; }
-    } }));
-  }
+  if (info.status === "running" && info.argv && !m.replay) renderStop(a, info);
   $("run-tabrow").hidden = !tabs || !tabs.length;
   renderTabs(tabs);
   renderRailRuns();
+}
+
+// What Stop does, from the code (ui/launcher.py Launcher.stop, cli.py _guarded, orchestrator.py: the interrupt flushes
+// state.json and raises RunInterrupted; a report is written only by a completed run, a partial one only by a stage
+// crash; cli.py _resolve_run_dir takes a run ID under the run root). The exit code comes from GET /meta.
+function stopSentence(info) {
+  return ["Stop sends SIGINT to the dra review process, as Ctrl-C in its terminal does: the run ends with exit " + S.meta.stop_exit_code +
+    ", the state of the last completed phase is kept in state.json, no report is written, and ",
+    h("span", { class: "mono", text: "dra resume " + info.run_id }), " continues it from there."];
+}
+
+// Two clicks send the signal: the first arms the button (Confirm stop, with Keep running beside it), the second posts.
+function renderStop(box, info) {
+  const st = S.stop || (S.stop = { armed: false, text: null, busy: false });
+  const stop = h("button", { class: "btn quiet" + (st.armed ? " armed" : ""), type: "button", id: "stop-btn", disabled: st.busy || st.text !== null,
+    text: st.text || (st.armed ? "Confirm stop" : "Stop run") });
+  const keep = h("button", { class: "btn ghost", type: "button", id: "stop-keep", text: "Keep running", hidden: !st.armed || st.busy || st.text !== null });
+  const paint = () => renderStop(clear(box), info);
+  stop.addEventListener("click", async () => {
+    if (!st.armed) { st.armed = true; paint(); return; }
+    st.busy = true; paint();
+    try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); st.text = "SIGINT sent"; }
+    catch (err) { st.text = err.message; }
+    st.busy = false; paint();
+  });
+  keep.addEventListener("click", () => { st.armed = false; paint(); });
+  box.append(h("div", { class: "row" }, keep, stop), h("div", { class: "note", id: "stop-note" }, stopSentence(info)));
 }
 
 function finishedText(m, end) {
@@ -675,6 +919,8 @@ function showRun(info, tabs) {
   app.append(tpl("tpl-run"));
   const m = newRunModel();
   S.model = m;
+  S.stop = null;
+  S.lastAt = null;
   renderRun(m);
   runTop(info, m, tabs);
   renderRailTools();
@@ -687,10 +933,12 @@ function showRun(info, tabs) {
   }
   const es = new EventSource("/runs/" + encodeURIComponent(info.run_id) + "/events");
   S.es = es;
+  if (info.status === "running" && !info.replayed) startTick();
   let pending = false;
   const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); };
   es.addEventListener("progress", (e) => {
     const ev = JSON.parse(e.data);
+    S.lastAt = Date.now();
     applyEvent(m, ev);
     if (!pending) { pending = true; requestAnimationFrame(paint); }
     // The other rail rows are re-read at the open run's status cadence (one call_status record per tick),
@@ -698,7 +946,8 @@ function showRun(info, tabs) {
     if (ev.type === "call_status") refreshRuns().catch(() => {});
   });
   es.addEventListener("end", async (e) => {
-    es.close(); S.es = null;
+    stopTick(); es.close(); S.es = null;
+    pollLog();
     const end = JSON.parse(e.data || "{}");
     const fresh = await api("/runs/" + encodeURIComponent(info.run_id));
     info.status = fresh.status;
@@ -734,10 +983,11 @@ async function setupOutputs(info) {
   $("out-open").href = base + "/export.html";
   $("out-md").href = base + "/report.md";
   $("out-json").href = base + "/report.json";
-  $("out-download-label").textContent = "Download review (HTML" + (out.export ? ", " + out.export.size : "") + ")";
-  $("out-download-help").textContent = "One file, no script, nothing loaded from the network: this run's report.md shown as HTML" +
+  $("out-download-label").textContent = "Download review (zip" + (out.export ? ", " + out.export.size : "") + ")";
+  $("out-download-help").textContent = "A zip of one review page with a sidebar, whose one script only shows and hides sections, " +
+    "the eight parts as separate files, report.md and report.json, nothing loaded from the network" +
     (info.replayed ? ", stamped replayed evidence" : "") +
-    (out.export && out.export.has_chat ? ", then the chat transcript, marked as not part of the review." : ".");
+    (out.export && out.export.has_chat ? ", the chat transcript after the review, marked as not part of it." : ".");
   $("out-line").hidden = false;
   const to = $("email-to"), send = $("email-send"), help = $("email-help"), result = $("email-result");
   const e = out.email;
@@ -1122,6 +1372,7 @@ async function route() {
     if (runId) {
       const info = await api("/runs/" + encodeURIComponent(runId));
       S.info = info;
+      if (!S.log || S.log.runId !== runId) openLog(runId);
       if (info.status === "running" || !info.has_report) showRun(info, null);
       else await showReview(info, q.get("tab"));
       renderRailTools();
@@ -1130,6 +1381,7 @@ async function route() {
     S.info = null;
     closeStream();
     S.model = null;
+    openLog(null);
     if (page === "review") await showDrop();
     else if (page === "runs") showRuns();
     else if (page === "replay") showReplay();
