@@ -1,13 +1,13 @@
 # Synthetic eval item: National Examinations Registration and Results Platform
 
-`design_v1.md` is the detailed design for the registration and results-release platform of a fictional Thai national examinations board, the "Siam Examinations and Certification Board" (PHON v1.0, about 8,850 words, 30 numbered sections, FR and NFR IDs).
+`design_v1.md` is the detailed design for the registration and results-release platform of a fictional Thai national examinations board, the "Siam Examinations and Certification Board" (PHON v1.0, about 9,100 words, 30 numbered sections, FR and NFR IDs).
 Its structure follows the other synthetic items: requirements, principles, architecture, flows, data model, confirmed decisions, pending backlog, acceptance criteria, readiness assessment and build phases.
 The platform registers about 500,000 candidates a year through 3,900 schools and as private candidates, collects fees, allocates venues and seats with special-needs accommodations, tracks 3.5 million scripts from the hall to 42 marking centres, captures marks with double entry, moderates them, computes grades, handles appeals, releases results at 08:00 on one day over web, app and SMS (a spike two orders of magnitude above the daily average), issues and verifies certificates, retains data under the PDPA and reports to the Ministry, all in AWS ap-southeast-7 on Aurora PostgreSQL, RDS, Amazon MSK, API Gateway, CloudFront and Cognito.
 The board, the platform, its people, the SMS aggregators (Ratchaphruek Messaging, Dok Bua Telecom), the payment gateway (Chao Phraya Payment Gateway), the analytics provider (Lotus Insight Analytics) and the National Digital Identity Office are invented; only public technologies, public laws and public vendor limits are named.
 
 The document contains 14 planted flaws (4 critical, 6 major, 4 minor) across all eight taxonomy categories, including one quantitative claim you can check against the public AWS API Gateway quotas page (F05, the default account-level throttle in the Asia Pacific (Thailand) Region).
 It also has five deliberately sound sections that a good reviewer should leave alone.
-`design_v2.md` (v1.1, about 9,400 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F03, F04, F07, F08, F11, F12), the F04 fix introduces one new critical regression (F15, results rendered at 02:00 and immutable until 20:00 while clerical corrections are allowed until the 07:00 lock), and the other 7 flaws are unchanged.
+`design_v2.md` (v1.1, about 9,800 words) simulates an updated artefact for re-review: 7 flaws are fixed (F01, F03, F04, F07, F08, F11, F12), the F04 fix introduces one new critical regression (F15, results rendered at 02:00 and immutable until 20:00 while clerical corrections are allowed until the 07:00 lock), and the other 7 flaws are unchanged.
 In `v2_changes`, the seven fixed flaws all have status `fixed`; the one whose fix introduced the regression also carries `introduced_new_flaw_id: "F15"`.
 F15 is listed in `flaws[]` with `introduced_in: "v2"` and `introduced_by_fix_of`.
 
@@ -54,7 +54,7 @@ Sound sections: 8 Fee Collection and Reconciliation, 9.3 Allocation, 13 Marks Ca
 `eval/build_pdfs.py` and `spec/convert_answer_keys.py` list their items in code, and this item is not yet registered in them (nor in `eval/prereg.yaml`; one later change registers all new items).
 Until then, both were run unchanged on disk with this item added to their lists in memory only, from the repository root:
 
-- PDFs: `eval/build_pdfs.py` with `ITEMS = ["exam_platform"]`. Last rebuilt 2026-10-04: `design_v1.pdf` 16 pages, `design_v2.pdf` 16 pages, all probe checks passed.
+- PDFs: `eval/build_pdfs.py` with `ITEMS = ["exam_platform"]`. Last rebuilt 2026-10-05 after the cold read (docs/transcripts/session6/item-exam.md, "Cold read"): `design_v1.pdf` 16 pages, `design_v2.pdf` 17 pages, all probe checks passed.
 - Canonical key: `spec/convert_answer_keys.py --tier synthetic --verify-anchors` with `("synthetic", "exam_platform", "synthetic_json_v0")` in `ITEMS` and `"exam_platform": {"F05", "F06"}` in `NEEDS_EXTERNAL`. Result: 0 keys failed validation, all 15 anchor quotes exact and unique on their recorded pages, `scored_run_ready` false (owner sign-off pending).
 
 When the item is registered, add those two entries to the scripts and `exam_platform` to `ITEMS` in `eval/build_pdfs.py`.

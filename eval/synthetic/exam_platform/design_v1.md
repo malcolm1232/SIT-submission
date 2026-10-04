@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **Version** | 1.0 |
-| **Status** | Design phase; build not started |
+| **Status** | Detailed design; Phase 1 build in progress (Section 30.2) |
 | **Last updated** | 2026-09-18 (architecture); consolidated 2026-09-26 |
 | **Prepared by** | Siam Examinations and Certification Board (SECB), Digital Platforms Division |
 | **Companion documents** | PHON Conceptual Design v1.3; Examination Regulations 2027 (Chief Examiner's Office); Marking Centre Operations Manual; Data Protection Impact Assessment (draft) |
@@ -77,7 +77,7 @@ Question-paper setting and printing (a separate secure facility), on-screen mark
 | FR-6 | Every script shall be tracked from the examination hall, through transport, to the marking centre and back to archive, and a script whose location is unknown for more than 24 hours shall be raised as a missing script. |
 | FR-7 | Markers shall be allocated to components according to their accreditation, and no marker shall mark the scripts of a school they are employed by. |
 | FR-8 | Every mark shall be keyed independently by two operators, and any difference between the two entries shall be resolved by a third operator before the mark is accepted. |
-| FR-9 | Moderation shall adjust the marks of a component at a centre according to the formula approved by the Chief Examiner's Office, and the adjustment applied to every centre shall be recorded. |
+| FR-9 | Moderation shall adjust the marks of a component for each marker according to the formula approved by the Chief Examiner's Office for that marker, and the adjustment applied to every marker shall be recorded. |
 | FR-10 | Grades shall be computed from moderated marks using grade boundaries set by the Awarding Committee, and every grade shall be reproducible from the stored marks and boundaries. |
 | FR-11 | Results shall be released to all candidates at the published time, and no candidate shall be able to see a result before that time. |
 | FR-12 | Candidates shall receive results through the web portal and the mobile app, and candidates who opted in shall receive their grades by SMS. |
@@ -116,7 +116,7 @@ Question-paper setting and printing (a separate secure facility), on-screen mark
 
 ## 4. Examination Cycle and Volumes
 
-The NUSC main sitting runs for three weeks in March, with a supplementary sitting in October. Registration for the March 2027 sitting opens on 1 November 2026 and closes on 15 December 2026, with a late-registration window to 15 January 2027 at a surcharge. Results are released on a date announced in February, at 08:00 Indochina Time (UTC+7), in mid-May.
+The NSC main sitting runs for three weeks in March, with a supplementary sitting in October. Registration for the March 2027 sitting opens on 1 November 2026 and closes on 15 December 2026, with a late-registration window to 15 January 2027 at a surcharge. Results are released on a date announced in February, at 08:00 Indochina Time (UTC+7), in mid-May.
 
 | Measure | March 2026 (actual, previous systems) | March 2027 (planning) |
 |---|---|---|
@@ -163,7 +163,7 @@ A signed-in candidate holds a Cognito session with an ID token (one hour) and a 
 
 ### 6.2 Schools and SECB staff
 
-School users (a principal and up to five examination officers per school) authenticate with Cognito with mandatory TOTP multi-factor authentication. Their token carries the `school_id`, and every school-portal query is filtered by it in the Registration and Results Services. SECB staff use corporate SSO with hardware-key multi-factor authentication; roles are Registration Officer, Allocation Officer, Marking Centre Supervisor, Capture Operator, Moderation Officer, Awarding Secretary, Results Officer, Appeals Officer and Certificate Officer, each with a least-privilege policy. Elevated actions (changing a confirmed registration, entering a clerical correction, re-issuing a certificate) require a second staff member's approval recorded against the action.
+School users (a principal and up to five examination officers per school) authenticate with Cognito with mandatory TOTP multi-factor authentication. Their token carries the `school_id`, and every school-portal query is filtered by it in the Registration and Results Services. SECB staff use corporate SSO with hardware-key multi-factor authentication; roles are Registration Officer, Finance Officer, Allocation Officer, Accommodation Officer, Head of Accommodations, Marking Centre Supervisor, Capture Operator, Moderation Officer, Awarding Secretary, Results Officer, Appeals Officer and Certificate Officer, each with a least-privilege policy. Elevated actions (changing a confirmed registration, entering a clerical correction, re-issuing a certificate) require a second staff member's approval recorded against the action.
 
 ### 6.3 Verifiers
 
@@ -189,7 +189,7 @@ Until the close of registration, a school may change a candidate's subjects, and
 
 ### 8.1 School invoices
 
-When a school confirms its upload, the Fee Service computes the invoice from the fee schedule (350 baht per subject in 2027, with the reductions for scholarship holders that the Ministry funds) and posts it to the school portal with a payment reference. Schools pay by bank transfer quoting the reference. SECB's bank delivers a daily statement file (ISO 20022 camt.053) to an S3 bucket; the Fee Service matches each credit to an invoice by the payment reference, and where the reference is missing or malformed, by amount and payer name with a confidence score, leaving low-confidence matches for a Finance user to confirm. A matched invoice moves every registration on it to `CONFIRMED` in one transaction with the ledger posting.
+When a school confirms its upload, the Fee Service computes the invoice from the fee schedule (350 baht per subject in 2027, with the reductions for scholarship holders that the Ministry funds) and posts it to the school portal with a payment reference. Schools pay by bank transfer quoting the reference. SECB's bank delivers a daily statement file (ISO 20022 camt.053) to an S3 bucket; the Fee Service matches each credit to an invoice by the payment reference, and where the reference is missing or malformed, by amount and payer name with a confidence score, leaving low-confidence matches for a Finance Officer to confirm. A matched invoice moves every registration on it to `CONFIRMED` in one transaction with the ledger posting.
 
 ### 8.2 Private candidate payments
 
@@ -201,7 +201,7 @@ Every fee, payment, refund and surcharge is a double-entry posting in a `fee_jou
 
 ### 8.4 Refunds
 
-A candidate who withdraws before the close of registration is refunded the subject fee less an administration charge, through the original payment method; a school's refund is netted against its next invoice. Refunds require a Finance user's approval and are posted as reversing journals.
+A candidate who withdraws before the close of registration is refunded the subject fee less an administration charge, through the original payment method; a school's refund is netted against its next invoice. Refunds require a Finance Officer's approval and are posted as reversing journals.
 
 ## 9. Timetabling, Venues and Seat Allocation
 
@@ -215,7 +215,7 @@ Approved venues (2,200 for the 2027 sitting) are schools and public halls, each 
 
 ### 9.3 Allocation
 
-Allocation runs after late registration closes. For each paper and venue, the Allocation Service assigns candidates to rooms and seats with these rules: a candidate sits all papers in the same venue unless an accommodation requires another; candidates from the same school are distributed so that no two candidates from the same school and subject are adjacent; candidates with accommodations are placed first (Section 10); seat capacity is never exceeded; and no seat is allocated to two candidates for the same session. The last rule is enforced by a unique constraint on (`venue_id`, `room_id`, `seat_no`, `paper_id`), and the no-two-venues rule by a unique constraint on (`candidate_id`, `paper_id`); the allocation batch inserts into `seat_allocation` in transactions of one room at a time, so that a conflict fails one room and not the run. The batch is checkpointed per venue and resumes from the last completed venue on restart; a full run takes about 70 minutes.
+Allocation runs after late registration closes on 15 January and after the accommodation decisions for the sitting (Section 10.2) are complete, which the Head of Accommodations confirms in the allocation console; applications close on 31 January (Section 10.1), so the run is scheduled for the second week of February, well before the seat lists for the March papers. For each paper and venue, the Allocation Service assigns candidates to rooms and seats with these rules: a candidate sits all papers in the same venue unless an accommodation requires another; candidates from the same school are distributed so that no two candidates from the same school and subject are adjacent; candidates with accommodations are placed first (Section 10); seat capacity is never exceeded; and no seat is allocated to two candidates for the same session. Each `seat_allocation` row copies the paper's examination date and session (`exam_date`, `session`) from the `paper` row at insert, and both rules are keyed on them: the one-candidate-per-seat rule is enforced by a unique constraint on (`venue_id`, `room_id`, `seat_no`, `exam_date`, `session`), and the no-two-venues rule by a unique constraint on (`candidate_id`, `exam_date`, `session`), so that two papers sat in the same session can neither share a seat nor place one candidate in two venues, whatever the batch computed; a clash resolved under Section 9.1 is allocated under the holding arrangement's own `session` value. The allocation batch inserts into `seat_allocation` in transactions of one room at a time, so that a conflict fails one room and not the run. The batch is checkpointed per venue and resumes from the last completed venue on restart; a full run takes about 70 minutes.
 
 Allocation Officers can move a candidate or a room through the allocation console, under the same constraints. Seat lists and attendance registers are generated per room as PDFs five days before each paper.
 
@@ -253,7 +253,7 @@ A missing script raises an incident to the Marking Centre Supervisor and the ven
 
 ## 12. Marking Centres and Marker Allocation
 
-Markers are accredited per component by the Chief Examiner's Office and hold a `marker` record with their accreditations, their employer school and their marking centre. The Marker Allocation job assigns bundles to markers so that a marker never receives a bundle from their own school (FR-7), that each marker's load stays within the component's daily quota, and that each bundle is marked by a single marker with a sample of 10 percent second-marked by a team leader for standardisation. Allocation is recomputed daily as markers report absence.
+Markers are accredited per component by the Chief Examiner's Office and hold a `marker` record with their accreditations, their employer school and their marking centre. The Marker Allocation job assigns bundles to markers so that a marker never receives a bundle containing a script of a candidate registered by the marker's employer school (FR-7), the exclusion being evaluated against the school of every script in the bundle because a room, and so a bundle, seats candidates from several schools (Section 9.3), that each marker's load stays within the component's daily quota, and that each bundle is marked by a single marker with a sample of 10 percent second-marked by a team leader for standardisation. Allocation is recomputed daily as markers report absence.
 
 Marked scripts are returned to the centre's capture room in their bundles, with the marker's mark sheet (paper) inside the bundle: a pre-printed sheet of `script_id` barcodes and mark boxes per question.
 
@@ -265,7 +265,7 @@ Capture operators key marks from the mark sheets at workstations in the capture 
 
 ### 13.2 Independent second entry
 
-Each bundle is keyed twice, by two different operators, and the service enforces the independence: the second-entry queue for a bundle excludes the operator who keyed the first entry and anyone on the same shift team, and the second-entry screen shows no first-entry values. When both entries exist, the service compares them question by question. A bundle with no differences is accepted and its marks written to `script_mark`. A bundle with differences goes to a third operator's resolution queue, where the screen shows the two entries side by side with the differing questions highlighted and the operator keys the resolved value from the mark sheet; the resolution is a third `capture_entry` with `role = RESOLUTION` and the resolving operator's identity. Only resolved values reach `script_mark`.
+Each bundle is keyed twice, by two different operators, and the service enforces the independence: the second-entry queue for a bundle excludes the operator who keyed the first entry and anyone on the same shift team, and the second-entry screen shows no first-entry values. When both entries exist, the service compares them question by question. A bundle with no differences is accepted and its marks written to `script_mark`. A bundle with differences goes to a resolution queue from which the two operators who keyed the entries are excluded, where a third operator's screen shows the two entries side by side with the differing questions highlighted and the operator keys the resolved value from the mark sheet; the resolution is a third `capture_entry` with `role = RESOLUTION` and the resolving operator's identity. Only resolved values reach `script_mark`.
 
 ### 13.3 Performance and ergonomics
 
@@ -279,7 +279,7 @@ Per-operator discrepancy rates are computed daily and operators above twice the 
 
 ### 14.1 Purpose
 
-Moderation aligns marking standards across markers and centres. For each component, the Chief Examiner's Office compares the team leaders' second marks with the markers' marks, and approves an adjustment formula per marker or per centre (typically a linear adjustment of the form `adjusted = a + b * mark`, bounded to the mark range) where a marker's standard differs from the team leaders' by more than the tolerance for the component.
+Moderation aligns marking standards across markers and centres. For each component, the Chief Examiner's Office compares the team leaders' second marks with the markers' marks, and approves an adjustment formula per marker (typically a linear adjustment of the form `adjusted = a + b * mark`, bounded to the mark range) where a marker's standard differs from the team leaders' by more than the tolerance for the component.
 
 ### 14.2 Applying adjustments
 
@@ -301,7 +301,7 @@ The Grading Service computes each candidate's component grade from the moderated
 
 ### 15.3 Checks
 
-Before release, the Awarding Secretary runs the grade distribution report (grades per subject against the previous three years) and the anomaly report (candidates whose grade profile differs from their school's prediction by more than two grades in three subjects), and signs off the run.
+Before release, the Awarding Secretary runs the grade distribution report (grades per subject against the previous three years) and the anomaly report (candidates whose grade in three or more subjects differs by more than two grades from the median grade of their school's candidates in the same subject, and centres whose grade distribution for a component differs from the national distribution by more than the tolerance the Awarding Committee sets), both computed from the graded data itself, and signs off the run.
 
 ## 16. Appeals, Re-marks and Clerical Corrections
 
@@ -317,7 +317,7 @@ A candidate, or their school on their behalf, may request a clerical check or a 
 
 ### 17.1 Embargo
 
-The release time is 08:00 Indochina Time on the published release day. No result or statistic derived from the results leaves the platform before the embargo lifts, and this applies equally to candidates, schools and the Ministry. Inside SECB, only the Results Officer role can view results before release, and every such view is logged.
+The release time is 08:00 Indochina Time on the published release day. No result or statistic derived from the results leaves the platform before the embargo lifts, and this applies equally to candidates, schools and the Ministry. Inside SECB, only the Results Officer role (for clerical corrections and the release console) and the Awarding Secretary role (for the Section 15.3 reports and sign-off) can view results before release, and every such view is logged.
 
 ### 17.2 Release mechanism
 
@@ -339,7 +339,7 @@ The Results Service authorises a request by validating the Cognito session token
 
 ### 18.3 Statement of results
 
-The portal offers a PDF statement of results, rendered on request by the Results Service from the same data and signed with the SECB document-signing key; the PDF carries a QR code that resolves to the verification service (Section 20.3).
+The portal offers a PDF statement of results, rendered on request by the Results Service from the same data and signed with the SECB document-signing key; a statement rendered after the certificate is issued carries a QR code that resolves to the verification service (Section 20.3).
 
 ### 18.4 SMS results
 
@@ -375,7 +375,7 @@ A certificate is re-issued after a successful appeal or a name correction; the e
 
 ### 20.3 Verification
 
-Verifiers call `POST /verify` with their API key and the certificate number, the candidate's name as printed and the candidate's date of birth; the service returns `VALID`, `SUPERSEDED` or `NO_MATCH`, and for `VALID` the grades on the certificate. It never searches by name alone and never returns a record for a certificate number without a matching name and date of birth, so that a verifier learns nothing it was not given by the candidate beyond the grades the candidate chose to present. Requests are rate-limited per verifier (600 per minute) and all requests are logged with the verifier identity for the candidate to see in their portal ("who verified my certificate"). The QR code on the PDF statement and the certificate encodes a signed, time-unlimited verification token that opens a page with the same fields; the token is bound to the certificate number and reveals nothing more than the certificate itself.
+Verifiers call `POST /verify` with their API key and the certificate number, the candidate's name as printed and the candidate's date of birth; the service returns `VALID`, `SUPERSEDED` or `NO_MATCH`, and for `VALID` the grades on the certificate. It never searches by name alone and never returns a record for a certificate number without a matching name and date of birth, so that a verifier learns nothing it was not given by the candidate beyond the grades the candidate chose to present. Requests are rate-limited per verifier (600 per minute) and all requests are logged with the verifier identity for the candidate to see in their portal ("who verified my certificate"). The certificate, and any statement of results produced after the certificate is issued, carries a QR code encoding a signed, time-unlimited verification token that opens a page with the same fields; the token is bound to the certificate number and reveals nothing more than the certificate itself, and a statement produced before issue carries no QR code, since there is no certificate number to bind one to.
 
 ## 21. Data Model
 
@@ -385,7 +385,7 @@ Principal tables: `candidate` (national identity number, names, date of birth, s
 
 ### 21.2 Marks capture instance (RDS for PostgreSQL 16)
 
-Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted total, `question_marks` as a JSON list, `moderation_run_id`), `moderation_run` (component, marker or centre, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only replica endpoint.
+Tables: `capture_bundle`, `capture_entry` (one row per operator entry per script, `role` in `FIRST`, `SECOND`, `RESOLUTION`), `script_mark` (one row per script: `script_id`, component, `mark` as the accepted total, `question_marks` as a JSON list, `moderation_run_id`), `moderation_run` (component, marker, formula parameters, scripts affected, signed-by, time). Moderated marks are read by the Grading Service through a read-only database role on the instance.
 
 ### 21.3 Identifiers and audit
 
@@ -496,7 +496,7 @@ Every service emits structured logs, metrics and traces with the request identif
 | FR-4 | Allocation for a test cohort of 50,000 candidates produces no duplicate seat and no candidate in two venues, as checked by direct database queries. |
 | FR-5 | Twenty test candidates with each accommodation type are allocated, and the seat list shows the correct room type and adjusted end time for each. |
 | FR-6 | A script with no scan at the marking centre 24 hours after its bag's receipt appears on the missing-script report. |
-| FR-7 | Marker allocation for a test component places no bundle with a marker from the same school, as checked by a direct query. |
+| FR-7 | Marker allocation for a test component places no bundle containing a script from a marker's employer school with that marker, as checked by a direct query joining `marker_allocation`, `script`, `candidate` and `marker`. |
 | FR-8 | The tester keys a batch of 200 scripts in the first-entry screen, then keys the same batch again in the second-entry screen, and confirms that the comparison report shows zero differences and that the marks appear in `script_mark`. |
 | FR-9 | A moderation run on a test component applies the approved formula; the moderation report lists each marker's formula and count. |
 | FR-10, NFR-9 | A grade computation run is repeated on the same inputs and produces byte-identical `grade` rows. |

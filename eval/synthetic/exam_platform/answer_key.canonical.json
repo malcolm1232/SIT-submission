@@ -7,11 +7,11 @@
     "documents": {
       "v1": {
         "path": "design_v1.md",
-        "sha256": "30f1e4880b51dc7f6de476fa00ae23547f359cdd4c59ff0a553081d8953ec37b"
+        "sha256": "9cdafef76dbf883079bde74daac261d47950b1c310d09388f15df121caad2762"
       },
       "v2": {
         "path": "design_v2.md",
-        "sha256": "7e5b8c5a548cc4dc129f93efe6ca09aca10b0e64b2811b043eb625e4dbee55da"
+        "sha256": "6818d1aefc19fd3bb9c0e6c1174f85bda2749e484bbea79873762c9d03a2a1b7"
       }
     },
     "document_id": null,
@@ -26,7 +26,7 @@
     "source_key": {
       "path": "eval/synthetic/exam_platform/answer_key.json",
       "format": "synthetic_json_v0",
-      "sha256": "3cb7b3d17a69769e6fff338abf0672b11f772dc881fc42d2789b9bc3b5e64e09"
+      "sha256": "6735b24f5e748469191accf20f36e1ba4375a5886af60777840c9f1193451161"
     }
   },
   "scoring": {
@@ -220,7 +220,7 @@
         ],
         "decision_ids": [],
         "anchor_quote": "with automated daily snapshots at 02:00 retained for 35 days",
-        "page": 12
+        "page": 13
       },
       "description": "NFR-6 requires captured and moderated marks to be recoverable to within 5 minutes of any failure including the loss of a database instance or an Availability Zone. Section 24.2 puts the marks capture database on a single-Availability-Zone RDS instance with daily snapshots at 02:00, restored from the most recent snapshot on loss; the core cluster (24.1) has point-in-time recovery, the marks instance does not.",
       "rationale": "A daily snapshot gives a recovery point of up to 24 hours, not 5 minutes: an instance or zone loss at 17:00 loses a full day of keying by 2,400 operators (about 15 hours of double entry across 42 centres), which must be re-keyed from the paper mark sheets, if the bundles are still at the centres. The requirement and the confirmed deployment contradict each other, and the NFR-6 acceptance test exercises the marks instance only as a restore in the April rehearsal without measuring the loss.",
@@ -279,7 +279,7 @@
       "introduced_by_fix_of": null,
       "v2_status": "fixed",
       "caused_regression_flaw_id": "F15",
-      "v2_note": "Sized for 8,000 requests per second with 120 pre-warmed pods serving pre-rendered objects from S3 and no database on the release path; load test at that rate for 30 minutes. The same change renders the objects at 02:00 and keeps them immutable until 20:00 while 16.1 still allows corrections until 07:00, which introduces F15.",
+      "v2_note": "Sized for 8,000 requests per second with 120 pre-warmed pods serving pre-rendered objects from S3, with the embargo check made against a per-pod state refreshed from the writer every second and no other database access on the release path; load test at that rate for 30 minutes. The same change renders the objects at 02:00 and keeps them immutable until 20:00 while 16.1 still allows corrections until 07:00, which introduces F15.",
       "location": {
         "sections": [
           "25.2",
@@ -400,7 +400,7 @@
         "verified": true,
         "verified_source_url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html",
         "verified_at": "2026-10-04",
-        "verification_note": "Fetched on 2026-10-04 by the authoring worker for this item: 'Throttle quota per account, per Region across HTTP APIs, REST APIs, WebSocket APIs, and WebSocket callback APIs: 10,000 requests per second (RPS) with an additional burst capacity provided by the token bucket algorithm, using a maximum bucket capacity of 5,000 requests', 'Can be increased: Yes', and the footnote 'For the following Regions, the default throttle quota is 2500 RPS and the default burst quota is 1250 RPS: Africa (Cape Town), Europe (Milan), Asia Pacific (Jakarta), Middle East (UAE), Asia Pacific (Hyderabad), Asia Pacific (Melbourne), Europe (Spain), Europe (Zurich), Israel (Tel Aviv), Canada West (Calgary), Asia Pacific (Malaysia), Asia Pacific (Thailand), and Mexico (Central)'. The companion page https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html (fetched the same day) describes the per-Region account-level token bucket and 429 responses. Owner sign-off still required."
+        "verification_note": "Fetched on 2026-10-04 by the authoring worker for this item: 'Throttle quota per account, per Region across HTTP APIs, REST APIs, WebSocket APIs, and WebSocket callback APIs: 10,000 requests per second (RPS) with an additional burst capacity provided by the token bucket algorithm, using a maximum bucket capacity of 5,000 requests', 'Can be increased: Yes', and the footnote 'For the following Regions, the default throttle quota is 2500 RPS and the default burst quota is 1250 RPS: Africa (Cape Town), Europe (Milan), Asia Pacific (Jakarta), Middle East (UAE), Asia Pacific (Hyderabad), Asia Pacific (Melbourne), Europe (Spain), Europe (Zurich), Israel (Tel Aviv), Canada West (Calgary), Asia Pacific (Malaysia), Asia Pacific (Thailand), and Mexico (Central)'. The companion page https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-request-throttling.html (fetched the same day) describes the per-Region account-level token bucket and 429 responses. Re-fetched on 2026-10-05 by the cold reader: the 10,000 RPS and 5,000-request bucket, 'Can be increased: Yes', and the footnote listing Asia Pacific (Thailand) among the Regions with a 2500 RPS and 1250 burst default are unchanged. Owner sign-off still required."
       },
       "expected_disposition": "needs_investigation",
       "acceptable_dispositions": [
@@ -447,7 +447,7 @@
         ],
         "decision_ids": [],
         "anchor_quote": "hosted for the Ministry by Lotus Insight Analytics in ap-southeast-1 (Singapore)",
-        "page": 10
+        "page": 11
       },
       "description": "Section 19.3 exports the candidate-level dataset (national identity number, name, date of birth, sex, school, province, subjects and grades) nightly to the Ministry's analytics tenant, hosted by a third party in ap-southeast-1 (Singapore), from June until the next registration opens, and DEC-11 confirms it. No requirement addresses the transfer of personal data outside the country or to a processor; NFR-7 restates the PDPA in general terms, DEC-01 says 'data remains in the country', and 23.1 lists data classes and roles only.",
       "rationale": "The PDPA (Section 28) permits transfer of personal data to a foreign country only where the destination has adequate protection or one of the listed conditions applies (consent, contract, binding corporate rules and so on), and a processor needs a data-processing agreement (Section 40). A nightly export of 500,000 identified records of minors' examination results to a foreign-hosted third party, with no requirement covering lawful basis, transfer mechanism, processor agreement, minimisation or retention at the destination, cannot be checked for compliance, and it contradicts the Region rationale in DEC-01. Whether the export is lawful at all, and whether it must be pseudonymised or hosted domestically, has to be settled before the design is accepted.",
@@ -1091,8 +1091,8 @@
           "FR-14"
         ],
         "decision_ids": [],
-        "anchor_quote": "immutable from the 02:00 render until the scheduled re-render at 20:00 on release day",
-        "page": 13
+        "anchor_quote": "02:00 render until the scheduled re-render at 20:00 on release day",
+        "page": 14
       },
       "description": "v2's results tier renders every candidate's result at 02:00 on release day from a snapshot taken at that time into an S3 bucket, serves the rendered object on every read, and keeps the objects immutable until a re-render at 20:00 on release day. Section 16.1, unchanged, lets the Results Officer enter clerical corrections until 07:00 on release day, with the results dataset locked at 07:00 so that the result released at 08:00 reflects every correction entered before the lock.",
       "rationale": "Any clerical correction entered between 02:00 and 07:00 recomputes the grade in the database but not the object served to the candidate, so the candidate reads a superseded grade all day while the school file (19.1, generated from the database at 08:00) and the SMS show the corrected one; the two sections cannot both hold. The design's own statement that 'every candidate reads the same object throughout the release window' makes the inconsistency last until 20:00, and a candidate shown a lower grade than released may lodge a needless appeal. The property is of the cache design (render time before the lock, no invalidation on correction), not of load.",
@@ -1144,7 +1144,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Payment webhooks are recorded by gateway event identifier under a unique constraint, so redelivery is acknowledged and not reprocessed, and state moves forward only, so out-of-order webhooks cannot regress a settled payment; a polling job covers delayed webhooks. Bank statement matching is by reference, with low-confidence matches held for a Finance user. Fees are a balancing double-entry journal enforced by a deferred constraint, append-only with reversing refunds, and registrations are confirmed in the same transaction as the posting.",
+      "why_sound": "Payment webhooks are recorded by gateway event identifier under a unique constraint, so redelivery is acknowledged and not reprocessed, and state moves forward only, so out-of-order webhooks cannot regress a settled payment; a polling job covers delayed webhooks. Bank statement matching is by reference, with low-confidence matches held for a Finance Officer. Fees are a balancing double-entry journal enforced by a deferred constraint, append-only with reversing refunds, and registrations are confirmed in the same transaction as the posting.",
       "trap": "Flagging duplicate or out-of-order webhooks as a defect (both are handled), asking for an external payments ledger, or objecting to fuzzy statement matching (it is gated by a human).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1166,8 +1166,8 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "The no-two-candidates-in-one-seat and no-candidate-in-two-venues rules are database unique constraints, not application checks, so a conflict is refused whatever the batch computed; the batch commits one room at a time, is checkpointed per venue and resumes on restart; manual moves go through the same constraints. The run time (about 70 minutes) fits comfortably between late registration closing and the seat lists.",
-      "trap": "Claiming concurrent allocation or console moves can double-seat a candidate (the constraints prevent it), asking for a distributed lock, or treating the 70-minute run as a scaling problem.",
+      "why_sound": "The one-candidate-per-seat and no-candidate-in-two-venues rules are database unique constraints keyed on the examination date and session at which the paper is sat, not application checks, so a conflict is refused whatever the batch computed; the batch commits one room at a time, is checkpointed per venue and resumes on restart; manual moves go through the same constraints; the run starts only after the accommodation decisions are complete, so accommodated candidates are placed first from final data. The run time (about 70 minutes) fits comfortably between the close of accommodation decisions in February and the seat lists in March.",
+      "trap": "Claiming concurrent allocation or console moves can double-seat a candidate (the constraints prevent it), asking for a distributed lock, treating the 70-minute run as a scaling problem, or reading the 31 January accommodation deadline against the 15 January close of late registration as a sequencing defect (the run waits for the decisions).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
       "applies_to_versions": [
@@ -1188,7 +1188,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Two different operators key each bundle, the service enforces the exclusion (the first operator and their shift team cannot take the second entry) and hides first-entry values, differences go to a third operator who sees both entries and keys from the sheet, and only resolved values reach script_mark. Totals are computed, not keyed; screens refuse out-of-range marks; the tier is stateless and sized with margin against NFR-8; discrepancy rates drive retraining.",
+      "why_sound": "Two different operators key each bundle, the service enforces the exclusion (the first operator and their shift team cannot take the second entry) and hides first-entry values, differences go to a resolution queue that excludes both keying operators, where a third operator sees both entries and keys from the sheet, and only resolved values reach script_mark. Totals are computed, not keyed; screens refuse out-of-range marks; the tier is stateless and sized with margin against NFR-8; discrepancy rates drive retraining.",
       "trap": "Calling double entry wasteful and recommending OCR or single entry with spot checks (the Chief Examiner's Office requires double entry, DEC-06), or confusing this section with the FR-8 acceptance test, which is where the defect is.",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1210,7 +1210,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Boundary sets are versioned, signed and immutable; a computation run records every input's identifier and version and a hash of the moderated marks, is a pure function of those inputs, and writes grades in one transaction with the run record, which is exactly what NFR-9's reproducibility needs. Distribution and anomaly reports are signed off before release.",
+      "why_sound": "Boundary sets are versioned, signed and immutable; a computation run records every input's identifier and version and a hash of the moderated marks, is a pure function of those inputs, and writes grades in one transaction with the run record, which is exactly what NFR-9's reproducibility needs. Distribution and anomaly reports, computed from the graded data itself, are signed off before release.",
       "trap": "Asking for grade boundaries to be fixed before the sitting (the Awarding Committee sets them after moderation by design), or objecting to in-memory computation of 3.5 million marks (it is a batch of 25 minutes).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1232,7 +1232,7 @@
         "anchor_quote": null,
         "page": null
       },
-      "why_sound": "Certificate numbers are random with a check character, never sequential; verification requires the number plus the printed name and date of birth and returns only validity and the grades the candidate presented; superseded certificates verify as superseded; verifiers are approved, keyed, rate-limited and logged, and the candidate can see who verified. Certificates are signed with a KMS key and archived under Object Lock for 30 years.",
+      "why_sound": "Certificate numbers are random with a check character, never sequential; verification requires the number plus the printed name and date of birth and returns only validity and the grades the candidate presented; superseded certificates verify as superseded; verifiers are approved, keyed, rate-limited and logged, and the candidate can see who verified. Certificates are signed with a KMS key and archived under Object Lock for 30 years; the QR code appears only on the certificate and on statements produced after issue, so it is never bound to a number that does not yet exist.",
       "trap": "Claiming the verification API leaks data to anyone with a certificate number (name and date of birth are required and nothing beyond the certificate is returned), or asking for verifier accounts to be removed from self-service (approval is already manual).",
       "still_valid_observations": [],
       "overlapping_flaw_ids": [],
@@ -1252,14 +1252,16 @@
       "2.2 (NFR-3)",
       "14.2",
       "14.3",
+      "17.2",
       "18.2",
+      "18.3",
       "18.4",
       "19.1",
       "21.2",
       "24.2",
       "25.2",
       "27 (DEC-02, DEC-09)",
-      "29.1 (FR-8)",
+      "29.1 (FR-8, FR-11)",
       "29.2 (NFR-2, NFR-3, NFR-6)"
     ],
     "expected_open_flaw_ids": [
@@ -1272,7 +1274,7 @@
       "F14",
       "F15"
     ],
-    "notes": "v2 revision history (verbatim): 2.2 (NFR-3); 14.2; 14.3; 18.2; 18.4; 19.1; 21.2; 24.2; 25.2; 27 (DEC-02, DEC-09); 29.1 (FR-8); 29.2 (NFR-2, NFR-3, NFR-6)\n\nchanged_sections (agent draft): from the authoring change list (author_exam2/make_v2.py, 20 exact replacements), matching a section-level diff of design_v1.md against design_v2.md."
+    "notes": "v2 revision history (verbatim): 2.2 (NFR-3); 14.2; 14.3; 17.2; 18.2; 18.3; 18.4; 19.1; 21.2; 24.2; 25.2; 27 (DEC-02, DEC-09); 29.1 (FR-8, FR-11); 29.2 (NFR-2, NFR-3, NFR-6)\n\nchanged_sections (agent draft): from the authoring change list (author_exam2/make_v2.py, 20 exact replacements) plus the cold read of 2026-10-05 (coldread_exam2/apply_fixes.py: 17.2, 18.3 and the FR-11 test changed in v2 only), matching a section-level diff of design_v1.md against design_v2.md."
   },
   "authoring_status": {
     "pending": [
@@ -1298,7 +1300,7 @@
         "sound_overlap_annotations",
         "v2_changed_sections"
       ],
-      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Written by the worker that authored design_v1.md and design_v2.md from the planner's flaw brief; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest. canary_guid is key-only (not embedded in design_v*.md or the PDFs), as for the other S-dev items."
+      "note": "Agent draft awaiting owner sign-off (eval/KEY_SIGNOFF.md). Written by the worker that authored design_v1.md and design_v2.md from the planner's flaw brief; no agent review output was read. Anchor quotes were checked as exact, unique matches in the PDF text from sit_review_agent.ingest.pdf.ingest. Cold read applied 2026-10-05 (docs/transcripts/session6/item-exam.md, 'Cold read'): sound-section text and anchor pages regenerated from the fixed designs. canary_guid is key-only (not embedded in design_v*.md or the PDFs), as for the other S-dev items."
     }
   }
 }
