@@ -207,6 +207,13 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .clock .t b { font-weight: 400; }
 .clock .t span { color: var(--fg-disabled); }
 .clock .l { font-size: 12px; color: var(--fg-muted); margin-top: 4px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+/* Stop: the control, its confirm step and the one sentence from the code on what the signal does */
+.stop { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; max-width: 400px; text-align: right; }
+.stop:empty { display: none; }
+.stop .row { display: flex; gap: 8px; align-items: center; }
+.stop .btn.armed { color: var(--red); border-color: var(--red-border); background: var(--red-soft); }
+.stop .note { font-size: 11.5px; line-height: 1.45; color: var(--fg-muted); }
+.stop .note .mono { color: var(--fg); user-select: all; }
 .finished-bar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-top: 14px; border: 1px solid var(--border-subtle);
   border-radius: var(--r-md); background: var(--bg-surface); font-size: 13px; }
 .run-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 32px; margin-top: 18px; }

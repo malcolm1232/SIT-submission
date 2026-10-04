@@ -47,7 +47,9 @@ async function api(url, opts) {
   return body;
 }
 
-const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null };
+const S = { meta: null, runId: null, es: null, model: null, info: null, page: "review", runs: [], tools: null, profile: null, samples: null,
+  // The Stop control's state across repaints (every event repaints the head): armed by a first click, sent by the second.
+  stop: null };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -641,16 +643,37 @@ function runTop(info, m, tabs) {
   if (info.replayed || m.replay) l.append(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
   meta.append(l);
   const a = clear($("top-action"));
-  if (info.status === "running" && info.argv && !m.replay) {
-    a.append(h("button", { class: "btn quiet", type: "button", text: "Stop run", onclick: async (e) => {
-      e.target.disabled = true;
-      try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); e.target.textContent = "SIGINT sent"; }
-      catch (err) { e.target.textContent = err.message; }
-    } }));
-  }
+  if (info.status === "running" && info.argv && !m.replay) renderStop(a, info);
   $("run-tabrow").hidden = !tabs || !tabs.length;
   renderTabs(tabs);
   renderRailRuns();
+}
+
+// What Stop does, from the code (ui/launcher.py Launcher.stop, cli.py _guarded, orchestrator.py: the interrupt flushes
+// state.json and raises RunInterrupted; a report is written only by a completed run, a partial one only by a stage
+// crash; cli.py _resolve_run_dir takes a run ID under the run root). The exit code comes from GET /meta.
+function stopSentence(info) {
+  return ["Stop sends SIGINT to the dra review process, as Ctrl-C in its terminal does: the run ends with exit " + S.meta.stop_exit_code +
+    ", the state of the last completed phase is kept in state.json, no report is written, and ",
+    h("span", { class: "mono", text: "dra resume " + info.run_id }), " continues it from there."];
+}
+
+// Two clicks send the signal: the first arms the button (Confirm stop, with Keep running beside it), the second posts.
+function renderStop(box, info) {
+  const st = S.stop || (S.stop = { armed: false, text: null, busy: false });
+  const stop = h("button", { class: "btn quiet" + (st.armed ? " armed" : ""), type: "button", id: "stop-btn", disabled: st.busy || st.text !== null,
+    text: st.text || (st.armed ? "Confirm stop" : "Stop run") });
+  const keep = h("button", { class: "btn ghost", type: "button", id: "stop-keep", text: "Keep running", hidden: !st.armed || st.busy || st.text !== null });
+  const paint = () => renderStop(clear(box), info);
+  stop.addEventListener("click", async () => {
+    if (!st.armed) { st.armed = true; paint(); return; }
+    st.busy = true; paint();
+    try { await api("/runs/" + encodeURIComponent(info.run_id) + "/stop", { method: "POST" }); st.text = "SIGINT sent"; }
+    catch (err) { st.text = err.message; }
+    st.busy = false; paint();
+  });
+  keep.addEventListener("click", () => { st.armed = false; paint(); });
+  box.append(h("div", { class: "row" }, keep, stop), h("div", { class: "note", id: "stop-note" }, stopSentence(info)));
 }
 
 function finishedText(m, end) {
@@ -675,6 +698,7 @@ function showRun(info, tabs) {
   app.append(tpl("tpl-run"));
   const m = newRunModel();
   S.model = m;
+  S.stop = null;
   renderRun(m);
   runTop(info, m, tabs);
   renderRailTools();

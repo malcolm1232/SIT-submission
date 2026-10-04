@@ -396,6 +396,14 @@ def test_a_finished_row_carries_verdict_confidence_wall_and_the_recorded_command
     assert r["stage"] is None and r["run_s"] is None and r["open_calls"] == 0   # no progress.jsonl was recorded
 
 
+def test_meta_states_the_stop_exit_code_from_the_cli(tmp_path: Path) -> None:
+    """The page's Stop sentence takes the exit code from the server, which reads errors.ExitCode.SIGINT."""
+    from sit_review_agent.errors import ExitCode
+
+    client = TestClient(build_app(make_state(tmp_path)))
+    assert client.get("/meta").json()["stop_exit_code"] == int(ExitCode.SIGINT) == 130
+
+
 def test_meta_states_the_backend_version_and_config_files() -> None:
     from sit_review_agent import __version__
     from sit_review_agent.ui.server import build_state

@@ -50,6 +50,7 @@ from starlette.staticfiles import StaticFiles
 
 from sit_review_agent import __version__
 from sit_review_agent.config import UrlPolicy
+from sit_review_agent.errors import ExitCode
 from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
@@ -147,6 +148,8 @@ def build_app(state: UIState) -> Starlette:
                       "ui_args": list(state.ui_args),
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
                       "link_max_mb": fetch.MAX_BYTES // (1024 * 1024),
+                      # What Stop does, stated from the code: SIGINT is the CLI's Ctrl-C path (errors.ExitCode.SIGINT).
+                      "stop_exit_code": int(ExitCode.SIGINT),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
                                "max_cost_usd": chat.MAX_COST_USD, "label": chat.LABEL}})
 

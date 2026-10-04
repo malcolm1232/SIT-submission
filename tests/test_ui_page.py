@@ -187,6 +187,43 @@ def test_a_run_opened_before_its_first_event_follows_the_file_once_it_appears(pa
     assert pg.locator("#status-feed .row").count() == sum(1 for ln in lines if json.loads(ln)["console"])
 
 
+def test_stop_takes_two_clicks_and_states_what_the_signal_does(page) -> None:
+    """Next to Stop, one sentence from the code: the signal, exit 130, state.json kept, no report, the exact
+    resume command. The first click arms the button (Confirm stop, Keep running), only the second posts."""
+    from sit_review_agent.errors import ExitCode
+    from sit_review_agent.ui.launcher import Launched
+
+    pg, base, runs, state = page
+    rd = runs / "to_stop"
+    (rd / "ui").mkdir(parents=True)
+    display = "dra review x.pdf --run-id to_stop"
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "to_stop", "display": display, "args": [],
+                                                       "document_name": "x.pdf"}), encoding="utf-8")
+    proc = _AliveProc()
+    state.launcher.runs["to_stop"] = Launched("to_stop", proc, display, "now")
+    posts: list[str] = []
+    pg.on("request", lambda r: posts.append(r.url) if r.method == "POST" else None)
+    pg.goto(base + "/?run=to_stop")
+    pg.wait_for_selector("#stop-btn")
+    note = pg.locator("#stop-note").inner_text()
+    assert note == ("Stop sends SIGINT to the dra review process, as Ctrl-C in its terminal does: the run ends with "
+                    f"exit {int(ExitCode.SIGINT)}, the state of the last completed phase is kept in state.json, no "
+                    "report is written, and dra resume to_stop continues it from there.")
+    assert int(ExitCode.SIGINT) == 130
+    assert pg.locator("#stop-btn").inner_text() == "Stop run" and pg.locator("#stop-keep").is_hidden()
+    pg.click("#stop-btn")                                       # arms only
+    assert pg.locator("#stop-btn").inner_text() == "Confirm stop" and pg.locator("#stop-keep").is_visible()
+    assert posts == [] and proc.code is None
+    pg.click("#stop-keep")                                      # disarms
+    assert pg.locator("#stop-btn").inner_text() == "Stop run" and pg.locator("#stop-keep").is_hidden()
+    assert posts == []
+    pg.click("#stop-btn")
+    pg.click("#stop-btn")                                       # the second click sends the signal
+    pg.wait_for_function("document.querySelector('#stop-btn').textContent === 'SIGINT sent'")
+    assert posts == [base + "/runs/to_stop/stop"] and proc.code == 130
+    assert pg.locator("#stop-btn").is_disabled() and pg.locator("#stop-keep").is_hidden()
+
+
 # ------------------------------------------------------------------ a cut shard, a resumed run
 
 
