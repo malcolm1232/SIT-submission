@@ -21,6 +21,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_payments_v2_1 | payments_orchestration | FULL | medium | 496 | 265.2 | completed_degraded | 38 | 5.84 (lb) | 0 | 5.75/7.54/7.11 | 4.85/6.30/6.84 |
 | d_clinical_v2_1 | clinical_rpm | FULL | medium | 447 | 265.4 | completed_degraded | 35 | 7.34 (lb) | 0 | 4.85/6.30/6.84 | 4.38/6.15/6.68 |
 | d_lakehouse_v2_1 | research_lakehouse | FULL | medium | 505 | 265.5 | completed_degraded | 69 | 7.61 (lb) | 0 | 4.38/6.15/6.68 | 3.32/5.46/6.20 |
+| d_iot_v2_1 | iot_fleet | FULL | medium | 521 | 265.4 | completed_degraded | 70 | 6.98 (lb) | 0 | 3.32/5.46/6.20 | 4.18/5.74/6.24 |
 
 ## Scores
 
