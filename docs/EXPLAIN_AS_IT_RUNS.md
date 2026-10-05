@@ -210,7 +210,8 @@ A finding ID the review cites that is not one of its findings fails the run (INV
 The manifest is written as `crashed` before the first model call and finalised at exit, so a run that dies never reads as completed (`manifest.py` `start_manifest`).
 
 Why the export says nothing `report.md` does not: there is no second renderer; the HTML is the run's own `report.md` converted to HTML, cut at its own headings into eight parts, with raw HTML escaped and images off, so model text cannot add markup (decision #43, `ui/export.py` module docstring, `tests/test_ui_outputs.py`).
-The one addition is the chat log, which when it exists follows in its own headed section, labelled as the reading aid it is (`ui/export.py` `CHAT_HEADING`).
+The links in it only wrap text that is already there: a test strips the tags and compares the review's text with the plain rendering (`ui/xref.py`, `tests/test_ui_export_links.py`).
+Two additions follow the review, each in its own headed section and labelled as what it is: the chat log when it exists, as the reading aid it is (`ui/export.py` `CHAT_HEADING`), and the Reference part, marked added by the export, that holds the link targets the review itself does not (its vocabulary, the decision registry, the evidence ledger and the document's extracted text).
 
 The leakage rules for the public snapshot `malcolm1232/SIT-public`: it never carries `eval/blind/`, the answer keys, transcripts, raw model logs, the lab's documents or the probe results; it is refreshed only with `scripts/export_public_snapshot.py`, whose reviewed list of accepted scan findings is `.public-allow` (`docs/HANDOVER_261004_PLANNER.md` section 6, `scripts/export_public_snapshot.py` `RULES`).
 `scripts/leakage_grep.py` gates the agent's code, prompts and config against answer-key text and document-specific strings (`scripts/leakage_grep.py` docstring).

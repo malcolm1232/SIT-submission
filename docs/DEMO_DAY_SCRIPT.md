@@ -137,7 +137,7 @@ If it fails: `make smoke` red and the fix not obvious in a minute, `git checkout
 
 The modification rerun's review lands here; open it and point at the changed value in the manifest.
 Says: "The outputs of today's runs go into the repository with their evidence, as the brief asks."
-Does: offer the Download button for their copy, a zip of the review as one sidebar page, its eight parts as separate files, `report.md` and `report.json` (`docs/USER_DECISIONS.md` #43); Email only if `config/ui.yaml` names a server.
+Does: offer the Download button for their copy, a zip of the review as one cross-linked sidebar page, the reviewed PDF its page references open, `report.md` and `report.json` (`docs/USER_DECISIONS.md` #43); Email only if `config/ui.yaml` names a server.
 
 ## The fallback, any time
 
