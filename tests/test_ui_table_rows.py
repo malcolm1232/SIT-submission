@@ -78,6 +78,9 @@ def test_a_row_whose_pieces_straddle_another_key_or_split_a_word_is_not_placed()
     moved = PAGE.replace("of the alpha rule.\n", "").replace("learner record at the break.\n",
                                                              "learner record at the break.\nof the alpha rule.\n")
     assert placed(by["Q1"], moved) is None
+    # few enough lines, but another row's id line sits between Q1's pieces
+    crossed = PAGE.replace("Q1\nof the alpha rule.\n", "Q1\nQ2\nof the alpha rule.\n")
+    assert placed(by["Q1"], crossed) is None
     # a piece that starts inside a word (a cell cut mid-word) is not found
     cut = tablerows.Row(6, "Q3", ["amma rule fits on one line."], ["Q3", "amma rule fits on one line."])
     assert placed(cut) is None
