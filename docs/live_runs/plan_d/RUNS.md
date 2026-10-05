@@ -52,3 +52,4 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_iot_v1_3 | iot_fleet | 11/14 (0.786) | 0.857 | 0.524 strict / 0.857 adj | 0.783 | 0.750 | 0 of 21 | 5.35 | 214 | 3.73/4.59/5.30 | 5.23/5.11/5.38 |
 | d_payments_v1_low | payments_orchestration | 11/14 (0.786) | 0.786 | 0.733 strict / 0.933 adj | 0.783 | 0.750 | 0 of 15 | 3.51 | 170 | 5.15/5.10/5.36 | 5.93/5.91/5.69 |
 | d_payments_v1_high | payments_orchestration | 12/14 (0.857) | 0.857 | 0.545 strict / 0.818 adj | 0.867 | 1.000 | 0 of 22 | 5.34 | 197 | 4.36/5.01/5.33 | 6.82/6.34/5.85 |
+| d_hospital_v1_2 | hospital_scheduling | 12/14 (0.857) | 0.929 | 0.571 strict / 0.762 adj | 0.850 | 0.750 | 0 of 21 | 4.68 | 213 | 4.35/5.13/5.42 | 4.83/5.63/5.64 |
