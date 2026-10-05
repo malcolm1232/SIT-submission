@@ -768,7 +768,8 @@ const FACTS = {
   refine_end: (m) => clk(field(m.limits, "refine_end")),
   verdict_end: (m) => clk(field(m.limits, "verdict_end")),
   deadline: (m) => clk(m.deadline),
-  research_questions: (m) => field(m.x.research, "questions") ?? field(m.x.researchStop, "questions"),
+  // Null when research never ran (no tool gateway), so no sentence says the servers were asked these questions.
+  research_questions: (m) => (researchWasOff(m.x.researchStop) ? null : field(m.x.research, "questions") ?? field(m.x.researchStop, "questions")),
   tools_offered: (m) => field(m.x.research, "tools"),
   servers: (m) => (m.x.servers.length ? listWords(m.x.servers) : null),
   tool_calls: (m) => field(m.x.researchStop, "tool_calls") ?? m.x.toolCalls,

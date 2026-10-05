@@ -306,6 +306,7 @@ def test_research_with_no_tool_gateway_is_skipped_never_a_tool_failure(page, no_
     assert out[1] == f"document only ({flag}): 6 question(s) left to the document", out[1]
     assert "Research did not run" in out[2] and "6 outside questions are left to the document" in out[2]
     assert "tool failure" not in out[1] + out[2]
+    assert "outside questions in rounds" in out[2] and "the plan's 6 outside" not in out[2]   # never "were asked"
 
 
 def test_a_real_tool_failure_keeps_its_failure_wording_and_reason(page) -> None:
