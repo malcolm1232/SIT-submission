@@ -222,7 +222,7 @@
         "points": [
           "It runs inside stage 1: it starts once understand and plan have both ended, beside the assess shards.",
           "It works on the plan's external questions. The model chooses the tool calls; the platform runs them and records every result as evidence before the model sees it.",
-          "It has three parts: the LLMGateway when it needs to reason, the ToolGateway when it needs the outside world, and the run state.",
+          "It is built from the LLMGateway when it needs to reason, the ToolGateway when it needs the outside world, and the run state.",
           "Its evidence meets the findings in refine, after the shards are merged.",
           "With no tool server the run stays document-only, and the report says so."
         ],
@@ -368,7 +368,7 @@
       "simple": {
         "lead": "Verify is where the platform, not the model, decides what counts: code checks every quoted anchor against the canonical text.",
         "points": [
-          "Exact match first, then a fuzzy match at {fuzzy_threshold} or better, near the cited page and section.",
+          "The quote is searched for verbatim first, then fuzzily at {fuzzy_threshold} or better, near the cited page and section.",
           "A finding with no anchor that resolves is moved to the unresolved list as Unverified, with no recommendation, and the report says so.",
           "Evidence is hydrated from the ledger: the model never writes a URL, and a URL that is not in the ledger is removed.",
           "One repair call may re-quote the failing anchors, only when more than {repair_min_slack_s} s remain. It never sends the run back to research: the next stage is report."
