@@ -210,3 +210,35 @@ async def test_cut_with_nothing_finished_keeps_the_old_fallback(tmp_path: Path, 
     assert cut_degradation(ctx).impact == REFINE_FALLBACK_IMPACT
     assert [r.fields["cut"] for r in ctx.progress.records if r.event == "refine_fallback"] == [True]
     assert not [r for r in ctx.progress.records if r.event == "refined"]
+
+
+def line(ctx: RunContext, event: str) -> str:
+    [e] = [e for e in ctx.progress.records if e.event == event]
+    return e.message
+
+
+async def test_the_line_at_the_cut_does_not_announce_the_fallback_a_salvage_replaces(
+        tmp_path: Path, cfg: EffectiveConfig) -> None:
+    """The progress line written at the cut, before the salvage, says the call was cut and that its
+    finished revisions are being salvaged; no line of the run says the refine pass was skipped."""
+    revs = [keep(fid(i), i, "high", "refinement_now", reason="checked") for i in range(1, 11)]
+    ctx = await twenty(tmp_path, cfg, {"revisions": revs})
+    await RefinePhase().run(ctx)
+    assert line(ctx, "call_cut") == ("refine: model call cut by the run deadline; salvaging the 10 finished "
+                                     "revision(s) in the cut answer where they hold")
+    assert not [e for e in ctx.progress.records if REFINE_FALLBACK_IMPACT in e.message
+                or "severity and confidence order" in e.message]
+    assert "10 of 20 revisions salvaged from the cut call" in line(ctx, "refined")
+
+
+@pytest.mark.parametrize(("partial", "at_cut"), [
+    (None, "no finished revision in the cut answer to salvage"),
+    ({"revisions": [{"finding_id": "FND-004", "action": "keep"}]},      # finished, but not a revision
+     "salvaging the 1 finished revision(s) in the cut answer where they hold")])
+async def test_the_fallback_sentence_is_said_where_the_fallback_ordering_is_used(
+        tmp_path: Path, cfg: EffectiveConfig, partial: dict[str, Any] | None, at_cut: str) -> None:
+    ctx = await twenty(tmp_path, cfg, partial)
+    await RefinePhase().run(ctx)
+    assert line(ctx, "call_cut") == f"refine: model call cut by the run deadline; {at_cut}"
+    assert line(ctx, "refine_fallback") == f"refine fallback: {REFINE_FALLBACK_IMPACT}"
+    assert not [r for r in ctx.progress.records if r.event == "refined"]

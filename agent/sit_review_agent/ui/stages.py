@@ -28,6 +28,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from sit_review_agent.phases._model_calls import REFINE_FALLBACK_IMPACT
 from sit_review_agent.ui import events
 from sit_review_agent.ui.rundata import read_json
 
@@ -559,7 +560,10 @@ def view_refine(r: Reader) -> dict[str, Any]:
                           "changed": sorted((h or {}).get("changed_fields") or {}),
                           "call_id": (h or {}).get("call_id")})
     refined = _fields(r.last("refined"))
-    cut = _fields(r.last("call_cut")) if (r.last("call_cut") or {}).get("phase") == "refine" else {}
+    cut_ev = r.last("call_cut") if (r.last("call_cut") or {}).get("phase") == "refine" else None
+    cut = _fields(cut_ev)
+    # A run written before the cut line was corrected says the fallback sentence at the cut, before a salvage.
+    cut_said_fallback = REFINE_FALLBACK_IMPACT in str((cut_ev or {}).get("message") or "")
     fallback = r.last("refine_fallback")
     rejected = [_fields(e) for e in r.all("revision_rejected")]
     kept = [f for f in (after or {}).get("finding_drafts") or [] if isinstance(f, dict)]
@@ -585,9 +589,10 @@ def view_refine(r: Reader) -> dict[str, Any]:
     if refined.get("salvaged"):
         notes.append({"text": f"The cut call's finished revisions were applied: {refined.get('applied')} of them "
                       f"({refined.get('merged')} merges into kept findings among them); "
-                      f"{refined.get('dropped')} were dropped, and the findings they were for were not refined. The "
-                      "progress line written at the cut, before this salvage, says the merged findings are reported "
-                      "without the refine pass; that line is superseded by the refined record.",
+                      f"{refined.get('dropped')} were dropped, and the findings they were for were not refined."
+                      + (" The progress line written at the cut, before this salvage, says the merged findings are "
+                         "reported without the refine pass; that line is superseded by the refined record."
+                         if cut_said_fallback else ""),
                       "src": "progress.jsonl refined (salvaged true)", "tone": "warn"})
     if fallback:
         notes.append({"text": "Refine fell back: the merged findings stand as merged, in severity and confidence "

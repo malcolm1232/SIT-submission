@@ -303,7 +303,14 @@ def deadline_cut(ctx: RunContext, phase: PhaseName, exc: Exception) -> None:
         impact = f"the {phase.value} step was completed by code without model output"
     ctx.state.add_degradation(DegradationType.BUDGET_OR_DEADLINE_HIT, event, impact)
     partial = getattr(exc, "partial", None)
-    ctx_event(ctx, f"{phase.value}: model call cut by the run deadline; {impact}", "warn", event="call_cut",
+    said = impact
+    if phase is PhaseName.REFINE:
+        # Refine salvages the cut answer's finished revisions before it falls back, so the line at the cut
+        # says only that; the fallback ordering is announced by refine's own line when it is used.
+        n = int(getattr(exc, "salvaged_items", 0) or 0)
+        said = (f"salvaging the {n} finished revision(s) in the cut answer where they hold" if n else
+                "no finished revision in the cut answer to salvage")
+    ctx_event(ctx, f"{phase.value}: model call cut by the run deadline; {said}", "warn", event="call_cut",
               stage=phase.value, call_id=getattr(exc, "call_id", None), at_s=ctx.elapsed_s(),
               kept_items=getattr(exc, "salvaged_items", 0), complete=bool(getattr(exc, "partial_complete", False)),
               kept={str(k): len(v) for k, v in partial.items() if isinstance(v, list)} if isinstance(partial, dict)

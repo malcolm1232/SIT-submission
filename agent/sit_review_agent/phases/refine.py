@@ -648,7 +648,8 @@ class RefinePhase:
                     a.model_copy(update={"related_finding_ids": [i for i in dict.fromkeys(
                         target.get(x, x) for x in a.related_finding_ids) if i in kept_ids]})
                     for a in ctx.state.sound_area_drafts]
-            ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order"
+            ctx_event(ctx, "refine fallback: " + (REFINE_FALLBACK_IMPACT if call.cut else
+                                                  "the merged findings stand, in severity and confidence order")
                       + (f"; {len(target)} draft(s) carrying the same prior finding as another merged by code"
                          if target else ""), "warn",
                       event="refine_fallback", cut=call.cut, truncated=call.truncated, invalid=bool(call.invalid),

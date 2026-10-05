@@ -214,6 +214,28 @@ def test_refine_states_what_the_salvage_applied_and_what_the_cut_lost(run: Path)
     assert [(f["id"], f["refined"]) for f in _list(v, "result")["items"]] == [("FND-001", True), ("FND-003", False)]
 
 
+OLD_CUT_LINE = ("refine: model call cut by the run deadline; the merged assess findings are reported in severity and "
+                "confidence order, without the global refine pass (no duplicates merged, no registry decisions "
+                "linked, no research evidence attached)")
+NEW_CUT_LINE = ("refine: model call cut by the run deadline; salvaging the 3 finished revision(s) in the cut answer "
+                "where they hold")
+
+
+@pytest.mark.parametrize(("said", "superseded"), [(OLD_CUT_LINE, True), (NEW_CUT_LINE, False)])
+def test_the_superseded_note_stands_only_for_a_run_whose_cut_line_announced_the_fallback(
+        run: Path, said: str, superseded: bool) -> None:
+    """A run written before the cut line was corrected keeps its old line in its log, and the panel says the
+    salvage superseded it; a run with the corrected line gets no such note."""
+    log = run / "progress.jsonl"
+    evs = [json.loads(ln) for ln in log.read_text().splitlines()]
+    for e in evs:
+        if e["type"] == "call_cut":
+            e["message"] = said
+    log.write_text("".join(json.dumps(e) + "\n" for e in evs))
+    [note] = [n["text"] for n in stages.stage_view(run, "refine")["notes"] if "were applied: 2 of them" in n["text"]]
+    assert ("that line is superseded by the refined record" in note) is superseded
+
+
 def test_the_funnel_traces_every_draft_and_adds_up(run: Path) -> None:
     f = stages.funnel(run)
     rows = {r["draft_id"]: r for r in f["lists"][0]["items"]}
