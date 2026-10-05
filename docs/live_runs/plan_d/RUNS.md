@@ -29,6 +29,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_iot_v1_3 | iot_fleet | FULL | medium | 433 | 265.1 | completed_degraded | 25 | 4.90 (lb) | 0 | 5.34/6.14/5.95 | 3.73/4.59/5.30 |
 | d_payments_v1_low | payments_orchestration | FULL | low | 241 | 152.1 | completed_degraded | 20 | 4.62 | 0 | 3.73/4.59/5.30 | 5.15/5.10/5.36 |
 | d_payments_v1_high | payments_orchestration | FULL | high | 509 | 265.4 | completed_degraded | 23 | 1.36 (lb) | 0 | 5.15/5.10/5.36 | 4.36/5.01/5.33 |
+| d_hospital_v1_2 | hospital_scheduling | FULL | medium | 480 | 265.2 | completed_degraded | 25 | 5.05 (lb) | 0 | 4.36/5.01/5.33 | 4.35/5.13/5.42 |
 
 ## Scores
 
@@ -50,3 +51,4 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_iot_v1_2 | iot_fleet | 12/14 (0.857) | 0.929 | 0.444 strict / 0.815 adj | 0.850 | 0.750 | 0 of 27 | 6.83 | 246 | 5.34/6.14/5.95 | 4.38/5.49/5.75 |
 | d_iot_v1_3 | iot_fleet | 11/14 (0.786) | 0.857 | 0.524 strict / 0.857 adj | 0.783 | 0.750 | 0 of 21 | 5.35 | 214 | 3.73/4.59/5.30 | 5.23/5.11/5.38 |
 | d_payments_v1_low | payments_orchestration | 11/14 (0.786) | 0.786 | 0.733 strict / 0.933 adj | 0.783 | 0.750 | 0 of 15 | 3.51 | 170 | 5.15/5.10/5.36 | 5.93/5.91/5.69 |
+| d_payments_v1_high | payments_orchestration | 12/14 (0.857) | 0.857 | 0.545 strict / 0.818 adj | 0.867 | 1.000 | 0 of 22 | 5.34 | 197 | 4.36/5.01/5.33 | 6.82/6.34/5.85 |
