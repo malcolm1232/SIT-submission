@@ -20,6 +20,10 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
+    GET  /runs/<id>/stage/<name>    what one stage produced (``ingest`` ... ``report``, ``assess-N`` per shard), read
+                                    from the run's files by ``ui.stages``; a file not written is named, never an error
+    GET  /runs/<id>/funnel          every merged draft finding and its fate (kept, merged, withdrawn, dropped, reported)
+    GET  /runs/<id>/glossary        the legend: the export's vocabulary (``ui.xref``) as plain text with its sources
     GET  /runs/<id>/doc.pdf         the reviewed PDF, only if its SHA-256 matches the manifest
     GET  /runs/<id>/export.html     the review as one self-contained, cross-linked HTML page with a sidebar of
                                     its eight parts (``?download=1`` saves the bundle, as export.zip does)
@@ -57,7 +61,7 @@ from starlette.staticfiles import StaticFiles
 from sit_review_agent import __version__
 from sit_review_agent.config import UrlPolicy
 from sit_review_agent.errors import ExitCode
-from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share
+from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share, stages
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -404,6 +408,32 @@ def build_app(state: UIState) -> Starlette:
         except KeyError:
             return _err(404, f"{fid} is not in this run's report.json.")
 
+    def stage_read(request: Request, read: Callable[[Path], dict[str, Any] | None], what: str) -> Response:
+        """A stage panel, the funnel or the glossary: a run's files read as they are. A file in an unexpected shape
+        (a run written by an older agent, a file being replaced) is answered with what could not be read, never a
+        server error, so the panel can say so."""
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        try:
+            out = read(rd)
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            return _json({"stage": what, "unreadable": f"{type(exc).__name__}: {exc}", "files": [], "missing": [],
+                          "facts": [], "notes": [], "lists": []})
+        if out is None:
+            return _err(404, f"No stage named {what!r}.")
+        return _json(out)
+
+    async def run_stage(request: Request) -> Response:
+        name = request.path_params["name"]
+        return stage_read(request, lambda rd: stages.stage_view(rd, name), name)
+
+    async def run_funnel(request: Request) -> Response:
+        return stage_read(request, stages.funnel, "funnel")
+
+    async def run_glossary(request: Request) -> Response:
+        return stage_read(request, lambda rd: stages.glossary(state.repo_root, rd), "glossary")
+
     async def run_pdf(request: Request) -> Response:
         rd = run_dir_of(request)
         pdf = rundata.reviewed_pdf(rd, state.repo_root) if rd is not None else None
@@ -524,6 +554,9 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/report", run_report),
         Route("/runs/{run_id}/coverage", run_coverage),
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),
+        Route("/runs/{run_id}/stage/{name}", run_stage),
+        Route("/runs/{run_id}/funnel", run_funnel),
+        Route("/runs/{run_id}/glossary", run_glossary),
         Route("/runs/{run_id}/doc.pdf", run_pdf),
         Route("/runs/{run_id}/export.html", run_export),
         Route("/runs/{run_id}/export.zip", run_export),
