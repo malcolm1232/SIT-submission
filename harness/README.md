@@ -190,5 +190,6 @@ grader package fails to import (`grade` then reports the import error).
 - Ties between findings for one flaw go to the agent's higher-ranked finding (a < 1e-4 weight term).
 - Medians use the lower median when a failed sample leaves an even count.
 - RJR_subst needs the optional recommendation judge; citation recall covers finding claims only (no claim
-  splitter); copy-through needs `--prior-scores`; false_resolution_rate is a prereg proposed addition and
-  stays null.
+  splitter); copy-through needs `--prior-scores`, and so do stale_finding_rate and resolved_acknowledgement
+  on a delta review with a prior table (the v1 scores map each prior finding ID to its key flaw; without
+  them both are null, not 0.0); false_resolution_rate is a prereg proposed addition and stays null.
