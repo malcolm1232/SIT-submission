@@ -86,8 +86,13 @@ again whole, as before.
 
 Fallback (cut with no finished revision that can be applied, truncated twice, declined twice, or
 revisions that still cannot be applied after the repair call): the merged findings stay as merged,
-ranked by severity and confidence (``phases.assess.rank_by_severity``), disclosed. With no drafts
-there is nothing to refine and no model call is made.
+ranked by severity and confidence (``phases.assess.rank_by_severity``), disclosed. In a re-review,
+drafts that carry the same prior finding forward (the duplicates the refine call would have merged)
+are merged by code (:func:`merge_same_prior`), so the delta table has one successor per prior finding:
+the carrier with the least fixed status stays (``delta.LEAST_FIXED``, then rank), the others move their
+criteria to it as a refine merge does, the ranks run 1..k again, ``finding_ids.refine`` maps each
+removed ID to the kept one, and coverage and sound areas are remapped as after a refine merge. With no
+drafts there is nothing to refine and no model call is made.
 """
 
 from __future__ import annotations
@@ -100,7 +105,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from sit_review_agent.context import RunContext
-from sit_review_agent.delta import carried_prior_ids
+from sit_review_agent.delta import LEAST_FIXED, carried_prior_ids
 from sit_review_agent.llm.outputs import (
     FindingDraft,
     FindingRevisionDraft,
@@ -111,7 +116,7 @@ from sit_review_agent.llm.outputs import (
     prior_status_problems,
     revision_problems,
 )
-from sit_review_agent.models import DegradationType, PriorFindingStatus
+from sit_review_agent.models import DegradationType, PriorFindingStatus, ReassessmentStatus
 from sit_review_agent.phases._model_calls import (
     REFINE_FALLBACK_IMPACT,
     KeptItems,
@@ -454,6 +459,33 @@ def repair_impact(r: Repair, findings: int) -> str:
             "severity and confidence order")
 
 
+def merge_same_prior(drafts: Sequence[FindingDraft]) -> tuple[list[FindingDraft], dict[str, str]]:
+    """The refine fallback's code merge (module docstring, "Fallback"): ``drafts`` with every group
+    that carries one prior finding forward (a reassessment with a prior ID and a status other than
+    ``new_in_update``) reduced to its least fixed carrier (``delta.LEAST_FIXED``, then the lower rank),
+    which gains the others' criteria (those it lacks, in rank order; nothing else moves, as in a refine
+    merge), in rank order with the ranks re-derived 1..k; and each removed ID mapped to its kept ID.
+    A draft without a prior ID is never merged. ``drafts`` are not changed; no group: as given."""
+    groups: dict[str, list[tuple[int, int, FindingDraft]]] = {}
+    for d in drafts:
+        r = d.reassessment
+        if r is not None and r.prior_finding_id and r.status is not ReassessmentStatus.NEW_IN_UPDATE:
+            groups.setdefault(r.prior_finding_id, []).append((LEAST_FIXED.index(r.status), d.rank, d))
+    target: dict[str, str] = {}
+    for group in groups.values():
+        keeper = min(group, key=lambda g: g[:2])[2]
+        target.update({d.id: keeper.id for _, _, d in group if d is not keeper})
+    if not target:
+        return list(drafts), {}
+    kept = {d.id: d.model_copy(deep=True) for d in drafts if d.id not in target}
+    for d in sorted(drafts, key=lambda d: d.rank):
+        if d.id in target:
+            k = kept[target[d.id]]
+            k.criterion_ids = [*k.criterion_ids, *(c for c in d.criterion_ids if c not in k.criterion_ids)]
+    order = sorted(kept.values(), key=lambda d: d.rank)
+    return [d.model_copy(update={"rank": i + 1}) for i, d in enumerate(order)], target
+
+
 def _disclose(ctx: RunContext, since: int, impact: str, event: str, dtype: DegradationType, *,
               replace_event: bool = False) -> None:
     """Give the degradations ``call_model`` recorded for this call (after index ``since``; never a
@@ -589,9 +621,39 @@ class RefinePhase:
             if call.split is not None and call.declined and phase.value not in ctx.state.declined_sections:
                 ctx.state.declined_sections.append(phase.value)    # declined only when nothing was applied
             prior_statuses(answers, set(ids))
-            ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order", "warn",
+            merged, target = merge_same_prior(drafts)
+            if target:                                 # duplicate successors of one prior finding: merged by code
+                fmeta = dict(ctx.state.finding_meta)
+                kept_ids = {f.id: f for f in merged}
+                for fid, into in target.items():
+                    pid = by_id[fid].reassessment.prior_finding_id  # type: ignore[union-attr]
+                    for owner, note in ((fid, f"merged into {into} by code in the refine fallback: both carry "
+                                                f"prior finding {pid}"),
+                                        (into, f"{fid} merged into this finding by code in the refine fallback: "
+                                               f"both carry prior finding {pid}")):
+                        m = fmeta.get(owner) or FindingMeta(
+                            finding_id=owner, criterion_ids=list(by_id[owner].criterion_ids),
+                            created_phase=PhaseName.ASSESS, created_call_id=None, last_phase=PhaseName.ASSESS,
+                            last_call_id=None, model=None, prompt_hash=None)
+                        update: dict[str, object] = {"history": [*m.history, FindingRevision(
+                            phase=phase, call_id=None, note=note)]}
+                        if owner in kept_ids:
+                            update["criterion_ids"] = list(kept_ids[owner].criterion_ids)
+                        fmeta[owner] = m.model_copy(update=update)
+                ctx.state.finding_ids = ctx.state.finding_ids.model_copy(update={"refine": dict(target)})
+                ctx.state.finding_drafts = merged
+                ctx.state.finding_meta = fmeta
+                ctx.state.coverage = reconcile_coverage(ctx, ctx.state.coverage, merged, target)
+                ctx.state.sound_area_drafts = [
+                    a.model_copy(update={"related_finding_ids": [i for i in dict.fromkeys(
+                        target.get(x, x) for x in a.related_finding_ids) if i in kept_ids]})
+                    for a in ctx.state.sound_area_drafts]
+            ctx_event(ctx, "refine fallback: the merged findings stand, in severity and confidence order"
+                      + (f"; {len(target)} draft(s) carrying the same prior finding as another merged by code"
+                         if target else ""), "warn",
                       event="refine_fallback", cut=call.cut, truncated=call.truncated, invalid=bool(call.invalid),
-                      declined=not (call.cut or call.truncated or call.invalid or call.repair_error))
+                      declined=not (call.cut or call.truncated or call.invalid or call.repair_error),
+                      merged_same_prior=len(target))
             return ctx                                     # cut, truncated or declined: disclosed by call_model
         else:
             raw = result.parsed

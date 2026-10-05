@@ -43,7 +43,7 @@ from sit_review_agent.models import (
 #: The note of a prior finding no answer gave a status (with ``re_examined`` false).
 NOT_RE_EXAMINED = "not re-examined"
 #: When several findings carry one prior finding forward, the least fixed status stands.
-_LEAST_FIXED = (ReassessmentStatus.STILL_OPEN, ReassessmentStatus.PARTIALLY_ADDRESSED, ReassessmentStatus.RESOLVED)
+LEAST_FIXED = (ReassessmentStatus.STILL_OPEN, ReassessmentStatus.PARTIALLY_ADDRESSED, ReassessmentStatus.RESOLVED)
 
 
 def prior_findings_of(previous_run_dir: str | Path | None) -> list[dict[str, str]]:
@@ -91,7 +91,7 @@ def build_prior_table(prior: Sequence[Mapping[str, str]], findings: Sequence[Fin
         carriers = by_prior.get(pid, [])
         if carriers:
             worst = min((f.reassessment.status for f in carriers if f.reassessment is not None),
-                        key=_LEAST_FIXED.index)
+                        key=LEAST_FIXED.index)
             if len(carriers) == 1:
                 note = carriers[0].reassessment.note if carriers[0].reassessment is not None else None
             else:
