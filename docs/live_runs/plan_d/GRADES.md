@@ -10,3 +10,5 @@ Grader: `sit-eval grade run`, key-blind, 2 samples, seed 0, Opus `high`, `--max-
 | d_iot_v1_1 | iot_fleet | complete | 80.5 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 4.0 | 3.5 | 1.0 | 2.0 | 3.0 | 4 | no | no | 4 | 5.3183 |
 | d_consent_v1_1 | consent_service | complete | 83.0 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 4.0 | 4.0 | 3.0 | 1.0 | 2.0 | 3.0 | 6 | no | yes | 5 | 6.4323 |
 | d_ledger_v1_1 | ledger_migration | complete | 83.2 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 3.5 | 3.5 | 2.0 | 3.0 | 3.0 | 2 | no | no | 4 | 4.8626 |
+| d_exam_v1_1 | exam_platform | complete | 82.0 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.0 | 3.0 | 4.0 | 1.5 | 3.0 | 3.0 | 7 | no | no | 4 | 4.619 |
+| d_hospital_v1_2 | hospital_scheduling | complete | 86.2 | B | PASS | 4.0 | 4.0 | 4.0 | 3.0 | 3.5 | 4.0 | 4.0 | 1.5 | 3.0 | 3.0 | 4 | no | no | 4 | 4.4275 |
