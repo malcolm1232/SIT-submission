@@ -145,3 +145,51 @@ def test_v2_rereview_metrics(tmp_path):
     assert m["new_flaw_recall"]["value"] == 1.0
     assert m["copy_through_rate"]["copies"] == ["FND-002"]
     assert m["changed_section_coverage"]["value"] is None and m["false_resolution_rate"]["value"] is None
+
+
+def _prior_row(prior_id: str, status: str, *, finding_ids: list[str] | None = None,
+               re_examined: bool = True) -> dict[str, object]:
+    return {"prior_id": prior_id, "prior_title": f"Prior {prior_id}", "status": status,
+            "finding_ids": finding_ids or [], "note": None if re_examined else "not re-examined",
+            "re_examined": re_examined}
+
+
+def _v2_prior_table_case(tmp_path, *, with_prior_scores: bool):
+    """Four fixed flaws F01-F04 and one unchanged F05. The previous review's FND-011..FND-015 matched F01..F05
+    (its scores.json). The v2 report's prior table: FND-011 and FND-012 resolved (no successor, as the agent writes
+    a resolved prior finding), FND-013 still open on re-examination, FND-014 not re-examined, FND-015 carried
+    forward by FND-001 (matched to F05). By hand: acknowledged {F01, F02} = 2/4 = 0.5; stale {F03} = 1/4 = 0.25
+    (F04 was not re-examined, so the agent did not raise it)."""
+    flaws = [make_flaw(f"F0{i}", "high", str(i), v2_status="fixed") for i in range(1, 5)]
+    flaws.append(make_flaw("F05", "high", "5", v2_status="unchanged"))
+    key = make_key(flaws, v2=True)
+    findings = [make_finding(1, "5", reassessment={"prior_finding_id": "FND-015", "status": "still_open",
+                                                   "note": None})]
+    review = make_review(findings, mode="delta")
+    review["prior_findings"] = [_prior_row("FND-011", "resolved"), _prior_row("FND-012", "resolved"),
+                                _prior_row("FND-013", "still_open"),
+                                _prior_row("FND-014", "still_open", re_examined=False),
+                                _prior_row("FND-015", "still_open", finding_ids=["FND-001"])]
+    table = default_table()
+    table["match.pair"] = lambda r: pair(3 if r.purpose == "match.pair:F05:FND-001" else 0)
+    prior = ({"findings": [{"finding_id": f"FND-01{i}", "statement": f"v1 finding {i}",
+                            "matched_flaw_strict": f"F0{i}"} for i in range(1, 6)]}
+             if with_prior_scores else None)
+    scores, _, _ = run_pipeline(tmp_path, review, key, responder_from(table), version="v2", prior=prior)
+    return scores["metrics"]
+
+
+def test_v2_metrics_read_the_prior_table(tmp_path):
+    m = _v2_prior_table_case(tmp_path, with_prior_scores=True)
+    assert m["resolved_acknowledgement"]["value"] == pytest.approx(0.5)
+    assert m["resolved_acknowledgement"]["acknowledged"] == ["F01", "F02"]
+    assert m["stale_finding_rate"]["value"] == pytest.approx(0.25)
+    assert m["stale_finding_rate"]["stale"] == ["F03"]
+    assert m["persisted_recall"]["value"] == 1.0
+
+
+def test_v2_prior_table_without_prior_scores_is_null_not_zero(tmp_path):
+    m = _v2_prior_table_case(tmp_path, with_prior_scores=False)
+    for name in ("resolved_acknowledgement", "stale_finding_rate"):
+        assert m[name]["value"] is None
+        assert "--prior-scores" in m[name]["reason"]

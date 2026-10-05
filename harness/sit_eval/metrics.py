@@ -575,14 +575,42 @@ def _v2_metrics(match: MatchResult, key: dict[str, Any], version: str, review: d
         r = fmap[fid].data.get("reassessment") or {}
         return r.get("status")
 
-    stale = [g for g in R if g in g2f and status_of(g2f[g]) != "resolved"]
-    out["stale_finding_rate"] = M(ratio(len(stale), len(R)), "no fixed flaws in the key" if not R else None,
-                                  status="exploratory", stale=stale)
-    if delta:
-        ack = [g for g in R if g in g2f and status_of(g2f[g]) == "resolved"]
-        out["resolved_acknowledgement"] = M(ratio(len(ack), len(R)), "no fixed flaws" if not R else None,
-                                            status="exploratory", acknowledged=ack)
+    # metrics.md §8. A prior finding the agent resolves has no successor finding: its status lives only in
+    # the report's prior table (``prior_findings``, keyed on the v1 finding ID). The v1 scores.json
+    # (``--prior-scores``) maps each v1 finding ID to its strictly matched key flaw.
+    rows = (review.get("prior_findings") or []) if delta else []
+    if rows and prior is None:
+        why = "needs --prior-scores (the v1 review's scores.json) to map the prior table to key flaws"
+        for name, extra in (("stale_finding_rate", "stale"), ("resolved_acknowledgement", "acknowledged")):
+            out[name] = M(None, why, status="exploratory", **{extra: []})
     else:
+        v1_flaw = {r["finding_id"]: r.get("matched_flaw_strict")
+                   for r in (prior or {}).get("findings", []) if r.get("finding_id")}
+        acked: set[str] = set()
+        raised_open: set[str] = set()
+        not_re_examined: set[str] = set()
+        for row in rows:
+            g = v1_flaw.get(row.get("prior_id"))
+            if g is None:
+                continue
+            if not row.get("re_examined", True):
+                not_re_examined.add(g)
+            elif row.get("status") == "resolved":
+                acked.add(g)
+            elif row.get("status") in ("still_open", "partially_addressed"):
+                raised_open.add(g)
+        for g in R:
+            if g in g2f:
+                (acked if status_of(g2f[g]) == "resolved" else raised_open).add(g)
+        stale = [g for g in R if g in raised_open and g not in acked]
+        out["stale_finding_rate"] = M(ratio(len(stale), len(R)), "no fixed flaws in the key" if not R else None,
+                                      status="exploratory", stale=stale,
+                                      not_re_examined=[g for g in R if g in not_re_examined and g not in acked])
+        if delta:
+            ack = [g for g in R if g in acked]
+            out["resolved_acknowledgement"] = M(ratio(len(ack), len(R)), "no fixed flaws" if not R else None,
+                                                status="exploratory", acknowledged=ack)
+    if not delta:
         out["resolved_acknowledgement"] = M(None, "fresh (full) review: no prior review in context",
                                             status="exploratory")
     out["persisted_recall"] = M(ratio(sum(g in g2f for g in P), len(P)), "no persisted flaws" if not P else None,

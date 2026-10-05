@@ -34,7 +34,9 @@ The phase contract (``phases/base.py``, agent/README.md) as implemented here:
   (``PhaseCall.partial``). Other :class:`LLMError`\\ s propagate. A complete answer that broke the
   phase's rules (``check``) gets one repair call; refine keeps the revisions that pass on their own and
   asks that call only for the failing ones (``split``, :class:`KeptItems`), so a repair cut at the
-  stage limit costs the failing revisions, never the valid ones (rehearsal of 2026-10-04). A repair
+  stage limit costs the failing revisions, never the valid ones (rehearsal of 2026-10-04); a rule-clean
+  answer whose only gaps are prior-finding statuses keeps every revision and asks for the statuses
+  only (``KeptItems.statuses``, ``retry`` empty; plan D v2 runs of 2026-10-05). A repair
   call of that kind that fails on the schema or with another :class:`LLMError` returns the kept items
   with ``PhaseCall.repair_error`` set instead of raising, so the run keeps them and reaches its
   report; a failure of the first call still propagates.
@@ -165,6 +167,11 @@ class KeptItems:
     retry: tuple[str, ...]
     #: Added to the correction of the repair brief: what is kept, what to answer again.
     instruction: str
+    #: Re-review: the prior findings whose status the first answer left out, which the repair call
+    #: must give. With ``retry`` empty every item is kept and the repair call is asked for these only
+    #: (plan D v2 runs of 2026-10-05: one status of 55 was missing, the whole answer was asked again
+    #: with seconds left, the repair was cut and the run fell back to the unmerged shard drafts).
+    statuses: tuple[str, ...] = ()
 
 
 # ------------------------------------------------------------------------------ prompt inputs
@@ -369,7 +376,9 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
     the kept items survive it; a persistent refusal there adds nothing to ``declined_sections``,
     the caller decides). The caller merges the kept items with what came back and checks the whole;
     ``check`` and ``ask`` are not run on a repair answer that covers only part of the whole. With
-    ``None`` from ``split`` (nothing to keep) the whole answer is asked again, as without ``split``."""
+    ``None`` from ``split`` (nothing to keep) the whole answer is asked again, as without ``split``.
+    ``KeptItems.retry`` may be empty when only what ``ask`` found is missing (``KeptItems.statuses``):
+    every item is kept and the repair call is asked for the omissions only."""
     effort = ctx.config.effort_for(phase)
     system = system_prompt(ctx).text
     docs = ordered_documents(ctx)
@@ -511,9 +520,12 @@ async def call_model(ctx: RunContext, phase: PhaseName, render: BriefRenderer, s
                 first = result
                 schema_error += "\n\n" + kept.instruction[:4000]
             ctx_event(ctx, f"{phase.value} answer broke {len(problems)} rule(s); one repair call"
-                      + (f" for {len(kept.retry)} item(s), {len(kept.kept)} kept" if kept is not None else ""),
+                      + (f" for {len(kept.retry)} item(s)"
+                         + (f" and {len(kept.statuses)} prior status(es)" if kept.statuses else "")
+                         + f", {len(kept.kept)} kept" if kept is not None else ""),
                       "warn", event="call_retry", reason="rule_repair", stage=phase.value, call_id=result.call_id,
-                      problems=len(problems), **({"kept": len(kept.kept), "retry": len(kept.retry)} if kept else {}))
+                      problems=len(problems), **({"kept": len(kept.kept), "retry": len(kept.retry)} if kept else {}),
+                      **({"statuses": len(kept.statuses)} if kept is not None and kept.statuses else {}))
             continue
         return PhaseCall(result=result, brief=brief)
 

@@ -314,6 +314,18 @@ def prior_status_problems(out: RefineRevisionsOutput, prior_ids: Sequence[str], 
     return problems
 
 
+def missing_prior_statuses(out: RefineRevisionsOutput, prior_ids: Sequence[str], carried: set[str]) -> list[str]:
+    """The prior findings of ``prior_ids`` that no kept finding carries (``carried``) and
+    ``out.prior_statuses`` gives no usable status (none at all, or only a withdrawal with no reason),
+    in the previous review's order. The one omission a complete, rule-clean refine answer may have,
+    which is asked for on its own while every revision is kept (``phases.refine.split_revisions``);
+    the other findings of :func:`prior_status_problems` (an unknown ID, a repeat, a status for a
+    carried finding) are noise that the caller filters out of the usable statuses."""
+    given = {p.prior_finding_id for p in out.prior_statuses
+             if p.note.strip() or p.status is not PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT}
+    return [pid for pid in prior_ids if pid not in carried and pid not in given]
+
+
 def revision_problems(out: RefineRevisionsOutput, finding_ids: list[str], *,
                       drafts: Mapping[str, FindingDraft] | None = None) -> list[str]:
     """Every rule of :class:`FindingRevisionDraft` that ``out`` breaks against the merged draft
