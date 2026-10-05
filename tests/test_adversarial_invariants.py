@@ -268,6 +268,35 @@ async def test_inv05_quote_cut_inside_a_document_url_is_kept(tmp_path: Path) -> 
     assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
 
 
+@pytest.mark.parametrize("scheme", ["HTTPS", "Http"])
+async def test_inv05_model_written_url_with_a_non_lowercase_scheme_is_removed(tmp_path: Path, scheme: str) -> None:
+    """A URL the model wrote with its scheme in another letter case is handled exactly as a
+    lowercase made-up URL: the report phase removes it with the link-removed disclosure. That holds
+    for a made-up URL and for a document URL whose only change is the scheme's case (the model does
+    not get to rewrite a URL of the document); the document's own URL, as written, stays."""
+    pdf = tmp_path / "design.pages.txt"
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
+    made_up = f"{scheme}://made-up.example/paper"
+    recased = DOC_URL.replace("https", scheme, 1)
+
+    def fabricate(p: dict[str, Any]) -> None:
+        f = finding(p, "FND-004")
+        f["statement"] += f" See {made_up} for the provider's real quota, and {recased} for the counts."
+
+    out, rd = await run(tmp_path, fabricate, pdf=pdf)
+    assert rd.report_json.is_file() and not rd.failure.exists()
+    for name in ("report.json", "report.md"):
+        text = (rd.root / name).read_text(encoding="utf-8")
+        assert "made-up.example" not in text and recased not in text
+    f1 = load(rd)["findings"][0]
+    assert f1["statement"].count("[link removed: not in the evidence register]") == 2
+    report = load(rd)
+    deg = next(d for d in report["research_log"]["degradations"] if "not in the evidence register" in d["event"])
+    assert any(deg["id"] in lim["degradation_ids"] for lim in report["limitations"])          # disclosed
+    assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
+
+
 async def test_inv05_url_case_change_in_a_quote_fails_closed(tmp_path: Path) -> None:
     """A refine revision quotes a URL passage of the document with the URL's path in another letter
     case. The quote matches its excerpt after case folding, so verify keeps it and the report never

@@ -30,7 +30,11 @@ from sit_review_agent.models import STOP_REASON_GROUP, ManifestExtra, Review, St
 from sit_review_agent.paths import finding_schema_path
 
 FINDING_SCHEMA_ID = "https://sit-design-review.invalid/spec/finding.schema.json"
-URL_RE = re.compile(r"https?://[^\s)\]>\"']+|\b10\.\d{4,9}/[^\s)\]>\"']+")
+#: A URL or DOI in report text (INV-05, the report phase's redaction). The scheme matches in any
+#: letter case (``HTTPS://`` and ``Http://`` are URLs too); the matched string is compared with the
+#: allowed set as written, so a URL whose only change from an allowed one is its scheme's case is not
+#: allowed. The rest of the pattern has no letters, so the flag changes only the scheme.
+URL_RE = re.compile(r"https?://[^\s)\]>\"']+|\b10\.\d{4,9}/[^\s)\]>\"']+", re.IGNORECASE)
 #: INV-06 minimum length for recommendation text fields (characters, after stripping).
 MIN_TEXT_CHARS = 15
 
