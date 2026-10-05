@@ -27,17 +27,17 @@ ul { padding-left: 18px; margin: 0; }
   grid-template-areas: "nav topbar" "nav main"; }
 .app.rail-collapsed { --navrail-w: 64px; }
 
-/* ---------- the rail (rail.css .navrail, verbatim geometry) ---------- */
+/* ---------- the rail (rail.css .navrail; rows 7 px and heads 12 px since seven pages share it, 5 Oct 2026) ---------- */
 /* the column is dark for the whole page; its contents stay in view (sticky, one viewport tall) */
 .navrail { grid-area: nav; width: var(--navrail-w); background: var(--navrail-bg); color: var(--navrail-fg); border-right: 1px solid var(--navrail-rule); }
 .navrail-inner { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; gap: 2px; padding: 16px 12px; }
-.navrail-brand { display: block; padding: 4px 10px 14px; color: var(--navrail-fg-strong); text-decoration: none;
+.navrail-brand { display: block; padding: 4px 10px 10px; color: var(--navrail-fg-strong); text-decoration: none;
   font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em; white-space: nowrap; }
 .navrail-brand .ai { color: var(--accent-bright); }
 .navrail-group { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: .14em;
-  color: var(--navrail-muted); padding: 16px 10px 8px; white-space: nowrap; }
+  color: var(--navrail-muted); padding: 12px 10px 8px; white-space: nowrap; }
 .navrail-item { display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 500; text-decoration: none;
-  color: var(--navrail-fg); padding: 9px 10px; border-radius: var(--r-pill); white-space: nowrap; transition: background-color 150ms; }
+  color: var(--navrail-fg); padding: 7px 10px; border-radius: var(--r-pill); white-space: nowrap; transition: background-color 150ms; }
 .navrail-item:hover { background: var(--navrail-row); }
 .navrail-item.active { background: var(--navrail-active-bg); color: var(--navrail-active-fg); font-weight: 600; }
 .navrail-ico { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -81,7 +81,7 @@ ul { padding-left: 18px; margin: 0; }
 .rail-tool .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-tool .meta { grid-column: 2; font-size: 11px; color: var(--navrail-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-empty { font-size: 11.5px; color: var(--navrail-muted); padding: 4px 10px 6px; }
-.navrail-foot { flex: none; padding-top: 16px; }
+.navrail-foot { flex: none; padding-top: 12px; }
 .navrail-note { background: var(--navrail-note-bg); border: 1px solid var(--navrail-note-border); border-radius: var(--r-md);
   padding: 11px 12px; font-size: 11.5px; line-height: 1.5; color: var(--navrail-fg); }
 .navrail-toggle { margin-top: 10px; width: 100%; display: flex; align-items: center; gap: 10px; color: var(--navrail-muted);
