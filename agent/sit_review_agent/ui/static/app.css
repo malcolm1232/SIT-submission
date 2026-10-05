@@ -117,6 +117,9 @@ ul { padding-left: 18px; margin: 0; }
 .surface.wide > * { max-width: 1120px; }
 .surface-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 0 0 14px; border-bottom: 1px solid var(--border-subtle); }
 .surface-head > div:first-child { min-width: 0; }
+/* the run's head: the title keeps a reading width; where the actions leave it less, they move under it */
+.surface-head:has(> .head-actions) { flex-wrap: wrap; }
+.surface-head:has(> .head-actions) > div:first-child { flex: 1 1 400px; }
 .surface-title { font-family: var(--serif); font-size: 26px; line-height: 1.15; color: var(--fg); letter-spacing: -0.01em; }
 .surface-sub { font-size: 12.5px; color: var(--fg-muted); margin-top: 6px; }
 .surface-sub b { color: var(--fg); font-weight: 500; }
@@ -224,8 +227,9 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .kv dt { color: var(--fg-muted); margin: 0; }
 .kv dd { margin: 0; max-width: 76ch; }
 .kv.wide { grid-template-columns: 200px minmax(0, 1fr); }
-.sec { margin-top: 26px; }
-.sec h2 { margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; }
+/* the app's own sections; the review document's sections (.rv, review.css) keep the export's */
+.sec:not(.rv .sec) { margin-top: 26px; }
+.sec:not(.rv .sec) h2 { margin-bottom: 8px; display: flex; align-items: baseline; gap: 10px; }
 .sec h2 .n { color: var(--fg-muted); font-weight: 400; font-size: 13px; }
 
 /* ---------- the run view ---------- */
@@ -348,23 +352,6 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .outline .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .outline .input { width: 280px; }
 .out-line { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 12px; color: var(--fg-muted); }
-.verdict { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-top: 26px; }
-.verdict .label { font-family: var(--serif); font-size: 36px; line-height: 1; letter-spacing: -0.01em; }
-.verdict .conf, .verdict .prev { color: var(--fg-muted); font-size: 13.5px; }
-.counts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 16px; font-size: 13px; color: var(--fg-muted); }
-.counts b { color: var(--fg); font-weight: 500; }
-.rationale { max-width: 76ch; margin: 0 0 8px; font-size: 13.5px; line-height: 1.6; white-space: pre-line; }
-.frow { display: grid; grid-template-columns: 28px 64px 78px minmax(0, 1fr) 150px 48px; gap: 12px; align-items: center;
-  min-height: 38px; padding: 6px 10px; border-top: 1px solid var(--border-subtle); font-size: 13px; cursor: pointer;
-  transition: background-color 150ms; background: transparent; border-left: 0; border-right: 0; border-bottom: 0; width: 100%; text-align: left; }
-.frow:hover { background: var(--bg-hover); }
-.flist > .frow:last-of-type { border-bottom: 1px solid var(--border-subtle); }
-.frow .rank, .frow .fid, .frow .disp, .frow .conf { color: var(--fg-muted); }
-.frow .fid { font-size: 12px; }
-.frow .title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.frow .disp { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.frow .conf { text-align: right; }
-.frow.open { background: var(--bg-subtle); }
 .expanded { padding: 12px 14px 18px 122px; border-top: 1px solid var(--border-subtle); background: var(--bg-subtle); font-size: 13px; }
 .expanded p { margin: 0 0 10px; max-width: 76ch; line-height: 1.55; white-space: pre-line; }
 .ev { display: grid; grid-template-columns: 64px 104px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--border-subtle); }
@@ -372,10 +359,50 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .ev .kind, .ev .where { color: var(--fg-muted); }
 .dec { display: flex; gap: 10px; padding: 4px 0; }
 .dec .rel { width: 80px; color: var(--fg-muted); flex: none; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
 .plain li { margin: 0 0 6px; }
 .raw { white-space: pre-wrap; font-family: var(--mono); font-size: 12px; line-height: 18px; background: var(--bg-surface);
   border-top: 1px solid var(--border-subtle); padding: 12px 0; margin: 8px 0 0; }
+
+/* ---------- the Review tab: the export's review document (review.css, the same fragment and script) in the app ----------
+   --rv-top is the sticky chrome above it (the 56 px topbar, and the table of contents when it is a strip on top); the
+   script reads the same value for its scroll positions and its section marker. Wide: the table of contents is a sticky
+   right column, so the side pane opens over it and over the cards' empty right edge, not the reading column. */
+#review > .rv { --rv-top: 56px; margin-top: 8px; }
+.rv [id] { scroll-margin-top: calc(var(--rv-top) + 24px); }
+.rv-grid { display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: 48px; align-items: start; }
+.rv-doc { min-width: 0; }
+.rv .toc { position: sticky; top: calc(var(--rv-top) + 24px); margin-top: 28px; }
+.rv .toc-inner { max-height: calc(100vh - var(--rv-top) - 48px); overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 1px; scrollbar-width: thin; }
+.rv .toc-group { font-family: var(--mono); font-size: 10px; line-height: 14px; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--fg-muted); padding: 16px 10px 6px; }
+.rv .toc a { text-decoration: none; overflow-wrap: normal; }
+.rv .toc a.toc-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--r-pill);
+  font-size: 13px; line-height: 18px; font-weight: 500; color: var(--fg-2); transition: background-color 150ms; }
+.rv .toc a.toc-item:hover { background: var(--bg-hover); color: var(--fg); }
+.rv .toc a.toc-item.cur { background: var(--bg-active); color: var(--fg); font-weight: 600; }
+.rv .toc-item .num { width: 12px; flex: none; font-family: var(--mono); font-size: 11px; color: var(--fg-muted); text-align: right; }
+.rv .toc-heads { list-style: none; margin: 2px 0 6px; padding: 0 0 0 30px; }
+.rv .toc-heads li { margin: 0; }
+.rv .toc-heads a { display: block; padding: 3px 0 3px 9px; margin-left: -10px; border-left: 1px solid var(--border-subtle);
+  font-size: 12px; line-height: 16px; color: var(--fg-muted); }
+.rv .toc-heads a:hover { color: var(--fg); }
+.rv .toc-heads a.cur { color: var(--fg); border-left-color: var(--fg); }
+.rv .x-pane { top: 56px; width: min(520px, calc(100vw - var(--navrail-w) - 56px)); }
+.review-missing { margin: 26px 0 0; padding: 12px 14px; max-width: 76ch; background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md); font-size: 13.5px; line-height: 1.6; color: var(--fg-2); }
+/* below 1280 px the reading column takes the width and the parts are a one-line strip under the topbar */
+@media (max-width: 1279px) {
+  #review > .rv { --rv-top: 100px; }
+  .rv-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .rv .toc { order: -1; top: 56px; z-index: 1; margin: 0; background: var(--bg-app); border-bottom: 1px solid var(--border-subtle); }
+  .rv .toc-inner { flex-direction: row; align-items: center; gap: 2px; height: 44px; max-height: none; overflow-x: auto;
+    overflow-y: hidden; scrollbar-width: none; }
+  .rv .toc-inner::-webkit-scrollbar { display: none; }
+  .rv .toc-group, .rv .toc-heads { display: none; }
+  .rv .toc-entry { flex: none; }
+  .rv .toc a.toc-item { white-space: nowrap; padding: 5px 10px; }
+}
 
 /* the ask: DBSearch's composer (app.css .composer-shell, .composer-hint) at the foot of the review column */
 .ask { margin-top: 34px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
@@ -529,9 +556,9 @@ table.grid.delta tr.ddetail > td { padding: 0 0 8px; }
 /* a chip: a pill that opens its definition; the plain ones are the kinds, categories and other words */
 button.pill { border: 0; margin: 0; font-family: inherit; cursor: pointer; }
 .pill.plain { background: var(--bg-control); color: var(--fg-2); }
-.chip:hover { box-shadow: inset 0 0 0 1px var(--border-hover); }
-.chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; box-shadow: none; }
-.chip[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--fg-muted); }
+.chip:not(.rv .chip):hover { box-shadow: inset 0 0 0 1px var(--border-hover); }
+.chip:not(.rv .chip):focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; box-shadow: none; }
+.chip:not(.rv .chip)[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--fg-muted); }
 .pill.who, .chip.term-word { all: unset; cursor: pointer; border-bottom: 1px dotted var(--fg-disabled); }
 .pill.who { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); white-space: nowrap; }
 .pill.who:focus-visible, .chip.term-word:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
