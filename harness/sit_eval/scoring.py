@@ -71,8 +71,15 @@ def check_condition(flag: str | None, manifest: dict[str, Any] | None,
     """Refuse a ``--condition`` that differs from a condition the run recorded (``manifest.json`` beside the
     report, and the report's ``run_manifest``). ``sit-eval aggregate`` pairs runs by condition, so a contradicting
     flag would misfile the run into the wrong arm. A manifest that records no condition (null or absent: runs
-    made before the condition field was set) takes the flag as given; no flag is always accepted."""
+    made before the condition field was set) takes the flag as given. Without the flag, scoring reads the report's
+    ``run_manifest``, so two recorded conditions that disagree (both non-null) are refused rather than silently
+    resolved in the report's favour; one copy null or absent is accepted as before."""
     if flag is None:
+        file_cond = (manifest or {}).get("condition")
+        report_cond = (run_manifest or {}).get("condition")
+        if file_cond is not None and report_cond is not None and file_cond != report_cond:
+            raise ConditionMismatch(f"the run's manifest.json condition {file_cond} disagrees with its "
+                                    f"report.json run_manifest condition {report_cond}; correct the run folder")
         return
     for source, m in (("manifest.json", manifest), ("report.json run_manifest", run_manifest)):
         recorded = (m or {}).get("condition")
