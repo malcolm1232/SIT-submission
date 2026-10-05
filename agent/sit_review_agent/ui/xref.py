@@ -386,8 +386,8 @@ def run_log_terms(root: Path) -> dict[str, Term]:
     anchor = "agent/sit_review_agent/ingest/anchor.py"
     terms["anchor-resolved"] = Term("anchor-resolved", "resolved", escape(
         "The verbatim quote was found in the canonical text of the cited page and the pages next to it, narrowed to "
-        "the cited section and its neighbours: an exact match on the normalised text first, else a close match "
-        "(partial ratio at or above the run's fuzzy threshold)."), _src(root, anchor, 'status = "unresolved"'))
+        "the cited section and its neighbours: first as the normalised text holds it word for word, else as a "
+        "close match (partial ratio at or above the run's fuzzy threshold)."), _src(root, anchor, 'status = "unresolved"'))
     terms["anchor-repaired"] = Term("anchor-repaired", "repaired", escape(
         "The quote first failed, and the one repair call's new quote for it was found by the same rules."),
         _src(root, anchor, 'status = "unresolved"'))
