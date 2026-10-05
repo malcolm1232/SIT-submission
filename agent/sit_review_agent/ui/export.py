@@ -195,22 +195,42 @@ NAV_JS = r"""(function () {
     show(g, true);
     put(st(), g === "all" ? location.pathname + location.search : "#g" + g);
   });
+  // a cross-link opens its target in the side pane and the main column does not move; a modified click, a wheel-button
+  // click, the sidebar and the header's own links keep their plain anchor behaviour
   document.addEventListener("click", function (e) {
+    if (e.button !== 0) return;
     var a = e.target.closest ? e.target.closest("a[href^='#']") : null;
-    if (!a || a.closest(".toc") || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    if (a.classList.contains("x-back")) { e.preventDefault(); history.back(); return; }
-    var id = decodeURIComponent(a.getAttribute("href").slice(1)), t = id ? document.getElementById(id) : null;
-    if (!t) return;
+    if (a && a.classList.contains("x-back")) { e.preventDefault(); history.back(); return; }
+    if (!a) {
+      if (paneOpen() && !(e.target.closest && e.target.closest(".x-pane, .x-pop, .toc"))) closePane();
+      return;
+    }
+    if (a.closest(".toc") || a.closest(".exp-head") || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var id = decodeURIComponent(a.getAttribute("href").slice(1));
+    if (!id || !document.getElementById(id)) return;
     e.preventDefault();
-    hide();
+    openPane(id, a);
+  });
+  function jump(id) {                                  // move the main column to a target, with a way back
+    var t = document.getElementById(id);
+    if (!t) return;
     var d = st().depth || 0;
     save();
     try { history.pushState({ depth: d + 1 }, "", "#" + id); } catch (x) {}
     go(t);
     backVis();
+  }
+  window.addEventListener("popstate", function (e) {
+    var s = e.state;
+    if (s && typeof s.pane === "number" && s.stack) { adopt(s); return; }
+    if (paneOpen()) {                                  // Back past the pane's first entry: close it, main stays put
+      closed();
+      if (after) { var f = after; after = null; f(); }
+      return;
+    }
+    route();
   });
-  window.addEventListener("popstate", route);
-  window.addEventListener("hashchange", route);
+  window.addEventListener("hashchange", function () { if (!paneOpen()) route(); });
   // the section in view, marked in the sidebar
   var ticking = false;
   function spy() {
@@ -262,12 +282,12 @@ NAV_JS = r"""(function () {
       if (t.tagName === "MARK" || t.classList.contains("doc-sec")) {
         r.setStart(pre, 0); r.setEndBefore(t); var before = r.toString();
         r.setStartAfter(t); r.setEnd(pre, pre.childNodes.length); var after = r.toString();
-        q.appendChild(document.createTextNode((before.length > 240 ? "…" : "") + before.slice(-240)));
+        q.appendChild(document.createTextNode(before));               // the whole page, scrolled to the quote
         if (t.tagName === "MARK") q.appendChild(el("mark", "", t.textContent));
         else q.appendChild(el("b", "", t.getAttribute("data-label") + "\n"));
-        q.appendChild(document.createTextNode(after.slice(0, 260) + (after.length > 260 ? "…" : "")));
+        q.appendChild(document.createTextNode(after));
       } else {
-        var all = pre.textContent; q.textContent = all.slice(0, 520) + (all.length > 520 ? "…" : "");
+        q.textContent = pre.textContent;
       }
       box.appendChild(q);
       var pdf = pdfOf(t); if (pdf) box.appendChild(pdf);
@@ -292,12 +312,20 @@ NAV_JS = r"""(function () {
   }
   function hide() { clearTimeout(timer); pop.hidden = true; shown = null; }
   function place(a) {
-    var r = a.getBoundingClientRect(), w = Math.min(460, window.innerWidth - 32);
+    var r = a.getBoundingClientRect(), w = Math.min(460, window.innerWidth - 32), vh = window.innerHeight;
     pop.style.width = w + "px";
     pop.style.left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16)) + "px";
+    pop.style.maxHeight = "";
     pop.hidden = false;
-    var h = pop.offsetHeight, below = r.bottom + 8;
-    pop.style.top = (below + h > window.innerHeight - 8 && r.top - h - 8 > 8 ? r.top - h - 8 : below) + "px";
+    var h = pop.offsetHeight, below = r.bottom + 4, above = r.top - 4;
+    if (below + h <= vh - 8) pop.style.top = below + "px";           // under the link, 4 px from it
+    else if (above - h >= 8) pop.style.top = (above - h) + "px";      // flipped above it
+    else if (vh - 8 - below >= above - 8) {
+      pop.style.top = below + "px"; pop.style.maxHeight = (vh - 8 - below) + "px";
+    }
+    else { pop.style.top = "8px"; pop.style.maxHeight = (above - 8) + "px"; }
+    var m = pop.querySelector(".x-pop-doc mark, .x-pop-doc b");      // a passage: its quote in view
+    if (m) pop.scrollTop = Math.max(0, m.offsetTop - 64);
   }
   function arm(a) {
     if (a === shown) return;
@@ -318,17 +346,184 @@ NAV_JS = r"""(function () {
     document.addEventListener("mouseover", function (e) {
       var a = link(e);
       if (a) arm(a);
-      else if (!inPop(e)) { clearTimeout(timer); if (shown) timer = setTimeout(hide, 180); }
+      else if (inPop(e)) clearTimeout(timer);                        // on the card: it stays open
+      else { clearTimeout(timer); if (shown && !pop.contains(document.activeElement)) timer = setTimeout(hide, 250); }
     });
   }
   document.addEventListener("focusin", function (e) {
     var a = link(e);
     if (a) arm(a); else if (!inPop(e)) hide();
   });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") hide(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    if (!pop.hidden) { hide(); return; }
+    if (paneOpen()) { e.preventDefault(); closePane(); }
+  });
+  // ---- the side pane: the target's own content, copied from the page with its ids stripped
+  var pane = document.querySelector(".x-pane"), pbody = null, ptitle = null, pkick = null, pcrumb = null;
+  var pprev = null, pnext = null, pshow = null, ppdf = null, stack = [], at = -1, depth = 0, opener = null;
+  var after = null, gen = 0;
+  if (pane) {
+    pbody = pane.querySelector(".x-pane-body"); ptitle = pane.querySelector(".x-pane-title");
+    pkick = pane.querySelector(".x-pane-kicker"); pcrumb = pane.querySelector(".x-pane-crumb");
+    pprev = pane.querySelector(".x-pane-prev"); pnext = pane.querySelector(".x-pane-next");
+    pshow = pane.querySelector(".x-pane-show"); ppdf = pane.querySelector(".x-pane-pdf");
+    pprev.addEventListener("click", function () { history.back(); });
+    pnext.addEventListener("click", function () { history.forward(); });
+    pane.querySelector(".x-pane-close").addEventListener("click", function () { closePane(); });
+    pshow.addEventListener("click", function () {
+      var id = stack[at];
+      after = function () { jump(id); };
+      closePane();
+    });
+    pcrumb.addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-i]");
+      if (b) { var i = +b.getAttribute("data-i"); if (i !== at) history.go(i - at); }
+    });
+  }
+  function paneOpen() { return !!pane && !pane.hidden; }
+  function block(t) {
+    return t.closest(".doc-page") || t.closest("article.finding, .x-entry, li, tr") || t;
+  }
+  function copy(t, b) {
+    t.setAttribute("data-x-here", "");
+    var c;
+    if (b.tagName === "TR") {
+      var table = b.closest("table"), head = table.querySelector("thead");
+      var tb = document.createElement("table"), body = document.createElement("tbody");
+      if (head) tb.appendChild(head.cloneNode(true));
+      body.appendChild(b.cloneNode(true)); tb.appendChild(body);
+      c = el("div", "x-table"); c.appendChild(tb);
+    } else {
+      c = b.cloneNode(true);
+    }
+    t.removeAttribute("data-x-here");
+    var stale = c.querySelectorAll(".x-hit, .x-opener");
+    for (var i = 0; i < stale.length; i++) stale[i].classList.remove("x-hit", "x-opener");
+    var here = c.querySelector("[data-x-here]") || (c.hasAttribute && c.hasAttribute("data-x-here") ? c : null);
+    if (here) { here.removeAttribute("data-x-here"); if (here !== c) here.classList.add("x-hit"); }
+    var h = c.querySelector(":scope > h3, :scope > .doc-page-head");
+    if (h && b.tagName !== "TR") h.parentNode.removeChild(h);
+    c.classList.remove("x-hit");
+    return strip(c);
+  }
+  function label(id, t, b) {
+    var m = /^(?:reg-)?((?:FND|EV|DEG|AD|SA|RQ)-\d+)$/.exec(id);
+    if (m) return m[1];
+    if (b.classList.contains("doc-page")) {
+      if (t.classList.contains("doc-sec")) return t.getAttribute("data-label").split(" ")[0];
+      return "p." + (/-p(\d+)$/.exec(b.id) || ["", "?"])[1];
+    }
+    var h = b.querySelector("h3");
+    var s = (h ? h.textContent : b.textContent).replace(/\s+/g, " ").trim();
+    return s.length > 22 ? s.slice(0, 21) + "\u2026" : s;
+  }
+  function title(id, t, b) {
+    var s;
+    if (b.classList.contains("doc-page")) {
+      s = t.classList.contains("doc-sec") ? t.getAttribute("data-label")
+        : b.querySelector(".doc-page-head span").textContent;
+    } else if (b.tagName === "ARTICLE") {
+      var f = b.querySelector("h3 .x-fid"), h3 = b.querySelector("h3");
+      s = h3.textContent.slice(f ? f.textContent.length : 0);
+    } else if (b.classList.contains("x-ev-entry") && b.querySelector(".x-q")) {
+      s = b.querySelector(".x-q").textContent;                       // an evidence item: its excerpt
+    } else {
+      var h = b.querySelector("h3");
+      s = h ? h.textContent : b.textContent;
+    }
+    s = s.replace(/\s+/g, " ").trim();
+    return s.length > 140 ? s.slice(0, 138) + "\u2026" : s;
+  }
+  function draw() {
+    var id = stack[at], t = document.getElementById(id), b = block(t), c = copy(t, b);
+    pbody.textContent = "";
+    pbody.appendChild(c);
+    pkick.textContent = label(id, t, b);
+    ptitle.textContent = title(id, t, b);
+    pcrumb.textContent = "";
+    for (var i = 0; i < stack.length; i++) {
+      var ti = document.getElementById(stack[i]);
+      if (i) pcrumb.appendChild(el("span", "x-crumb-sep", "\u203a"));
+      var cb = el("button", i === at ? "x-crumb cur" : "x-crumb", label(stack[i], ti, block(ti)));
+      cb.type = "button"; cb.setAttribute("data-i", String(i));
+      if (i === at) cb.setAttribute("aria-current", "location");
+      pcrumb.appendChild(cb);
+    }
+    pcrumb.hidden = stack.length < 2;
+    pprev.disabled = at <= 0;
+    pnext.disabled = at >= stack.length - 1;
+    var pdf = b.classList.contains("doc-page") ? b.querySelector(".x-pdf") : null;
+    ppdf.hidden = !pdf;
+    if (pdf) { ppdf.href = pdf.getAttribute("href"); ppdf.textContent = pdf.textContent; }
+    pbody.scrollTop = 0;
+    var hit = c.querySelector(".x-hit");
+    if (hit && b.classList.contains("doc-page")) pbody.scrollTop = Math.max(0, hit.offsetTop - pbody.clientHeight / 3);
+  }
+  function mark(a) {
+    if (opener) opener.classList.remove("x-opener");
+    opener = a && !a.closest(".x-pane") ? a : opener;
+    if (opener) opener.classList.add("x-opener");
+  }
+  function openPane(id, a) {
+    if (!pane) { jump(id); return; }
+    hide();
+    var fresh = !paneOpen();
+    if (fresh || !a.closest(".x-pane")) { gen += 1; stack = [id]; at = 0; }
+    else { stack = stack.slice(0, at + 1); stack.push(id); at += 1; }
+    if (fresh) { save(); depth = 0; }
+    depth += 1;
+    try { history.pushState({ pane: at, stack: stack.slice(), gen: gen, d: depth }, ""); } catch (x) {}
+    mark(a);
+    pane.hidden = false;
+    root.classList.add("pane-open");
+    draw();
+    if (fresh || !a.closest(".x-pane")) ptitle.focus({ preventScroll: true });
+  }
+  function adopt(s) {
+    // the same chain keeps the entries ahead of this one, so the pane's Forward still has somewhere to go
+    var same = s.gen === gen && stack.length > s.pane && stack[s.pane] === s.stack[s.pane];
+    if (!same) stack = s.stack.slice();
+    at = s.pane; gen = s.gen; depth = s.d || 1;
+    if (!paneOpen()) { pane.hidden = false; root.classList.add("pane-open"); }
+    draw();
+  }
+  function closed() {
+    pane.hidden = true;
+    root.classList.remove("pane-open");
+    stack = []; at = -1; depth = 0;
+    var o = opener;
+    if (opener) opener.classList.remove("x-opener");
+    opener = null;
+    if (o) o.focus({ preventScroll: true });
+  }
+  function closePane() {
+    if (!paneOpen()) return;
+    var s = st();
+    if (typeof s.pane === "number" && depth > 0) history.go(-depth);   // its popstate closes the pane
+    else { closed(); if (after) { var f = after; after = null; f(); } }
+  }
   window.addEventListener("scroll", function () { if (shown) { pop.hidden = true; shown = null; } }, { passive: true });
   route();
 })();"""
+
+
+#: The side pane the script fills with a link's target (hidden, and unused, without script).
+PANE_HTML = ('<aside class="x-pane" role="dialog" aria-labelledby="x-pane-title" hidden>'
+             '<div class="x-pane-bar">'
+             '<button class="x-pane-nav x-pane-prev" type="button" aria-label="Back in the pane" title="Back">'
+             "\u2190</button>"
+             '<button class="x-pane-nav x-pane-next" type="button" aria-label="Forward in the pane" title="Forward">'
+             "\u2192</button>"
+             '<nav class="x-pane-crumb" aria-label="Path in the pane"></nav>'
+             '<button class="x-pane-close" type="button" aria-label="Close the pane" title="Close (Esc)">'
+             "\u00d7</button>"
+             "</div>"
+             '<div class="x-pane-head"><div class="x-pane-kicker"></div>'
+             '<h2 class="x-pane-title" id="x-pane-title" tabindex="-1"></h2>'
+             '<div class="x-pane-actions"><button class="x-pane-show" type="button">Show in the report</button>'
+             '<a class="x-pane-pdf" target="_blank" rel="noopener" hidden></a></div></div>'
+             '<div class="x-pane-body"></div></aside>')
 
 
 class Section:
@@ -874,6 +1069,7 @@ class _Run:
         return (f'{self.head()}<body id="top"><div class="layout">{self.nav()}<div class="wrap">'
                 f"{self.header(note)}{self.body()}</div></div>"
                 '<a class="x-back" href="#" hidden>Back to where I was</a>'
+                f"{PANE_HTML}"
                 f"<script>{NAV_JS}</script></body></html>\n")
 
 

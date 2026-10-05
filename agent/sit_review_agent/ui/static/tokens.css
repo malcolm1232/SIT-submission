@@ -58,6 +58,8 @@
 /* 4. The HTML export only (ui/export.py): the passage marks and the landing highlight, then its dark theme. */
 :root {
   --mark-bg:#FCEFC7; --mark-fg:var(--ink-900); --hit-bg:#FFF7DD; --hit-ring:#E9C46A;
+  --pane-shadow:-24px 0 48px -24px rgba(22,22,26,.22), -1px 0 0 rgba(22,22,26,.04);
+  --sheet-shadow:0 -16px 40px -12px rgba(22,22,26,.24);
 }
 @media (prefers-color-scheme: dark) {
   :root.export-doc {
@@ -77,6 +79,8 @@
     --bg-hover:#26262A; --bg-active:#2E2E33; --border-hover:#4A4A50;
     --sev-critical-bg:#C53030; --sev-critical-fg:#FFFFFF;
     --mark-bg:#3B3012; --mark-fg:#F4E7C3; --hit-bg:#2A2410; --hit-ring:#8A6D22;
+    --pane-shadow:-24px 0 48px -20px rgba(0,0,0,.75), -1px 0 0 rgba(255,255,255,.04);
+    --sheet-shadow:0 -16px 40px -12px rgba(0,0,0,.8);
   }
 }
 
