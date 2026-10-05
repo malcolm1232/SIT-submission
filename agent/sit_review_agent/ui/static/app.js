@@ -59,7 +59,7 @@ const S = { meta: null, runId: null, es: null, model: null, info: null, page: "r
   // The Run log's stage panel (one stage at a time), the findings funnel and the legend, each as the server read
   // them from the run directory (GET /runs/<id>/stage/<name>, /funnel, /glossary); stale: a stage ended since.
   panel: null, funnel: null, glossary: null, stale: false };
-const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
+const PAGES = ["review", "runs", "replay", "architecture", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
 // ------------------------------------------------------------------ the rail and the topbar
@@ -1703,7 +1703,8 @@ function showRun(info, tabs) {
   let pending = false;
   // A record that ends a stage (or a shard) means its file may now be written: the open panel and the funnel are read
   // again, once per repaint, so a run in progress fills them in as it goes.
-  const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); if (S.stale) { S.stale = false; loadPanel(); if (m.x.merged) loadFunnel(); } };
+  const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); if (S.stale) { S.stale = false; loadPanel(); if (m.x.merged) loadFunnel(); }
+    if (S.wantStage && document.querySelector('[data-panel="' + CSS.escape(S.wantStage) + '"]')) { const k = S.wantStage; S.wantStage = null; togglePanel(m, k); } };
   es.addEventListener("progress", (e) => {
     const ev = JSON.parse(e.data);
     S.lastAt = Date.now();
@@ -2136,6 +2137,7 @@ async function route() {
   const page = runId ? "runs" : (PAGES.includes(q.get("page")) ? q.get("page") : "review");
   S.runId = runId;
   S.page = page;
+  S.wantStage = runId ? q.get("stage") : null;     // ?stage=<row key>: the Run log opens that stage's panel
   railActive(page);
   try {
     if (!S.meta) { S.meta = await api("/meta"); renderTopbar(); setupRail(); }
@@ -2158,6 +2160,7 @@ async function route() {
     if (page === "review") await showDrop();
     else if (page === "runs") showRuns();
     else if (page === "replay") showReplay();
+    else if (page === "architecture") await showArchitecture();
     else if (page === "tools") await showTools();
     else if (page === "settings") showSettings();
     else if (page === "developer") showDeveloper();

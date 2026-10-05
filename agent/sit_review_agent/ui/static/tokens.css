@@ -55,6 +55,17 @@
   --waiting-fg:var(--ink-300);
 }
 
+/* 5. The Architectural design view (architecture.css): soft tints that tell the parts of the agent apart. Blue for
+   ingestion and stage 1, green for research, red for the post-research stages, amber for platform concepts, violet
+   for the gateways; each a step-3 background with a step-6 border and a step-11 ink for its kicker. */
+:root {
+  --arch-blue-soft:#EEF3FA; --arch-blue-border:#C8D6EC; --arch-blue-fg:#24528C;
+  --arch-green-soft:var(--green-soft); --arch-green-border:var(--green-border); --arch-green-fg:var(--green);
+  --arch-red-soft:var(--red-soft); --arch-red-border:var(--red-border); --arch-red-fg:var(--red);
+  --arch-amber-soft:var(--amber-soft); --arch-amber-border:#EED9AE; --arch-amber-fg:var(--amber);
+  --arch-violet-soft:#F4F1FA; --arch-violet-border:#D9D0EE; --arch-violet-fg:#5A3E98;
+}
+
 /* 4. The HTML export only (ui/export.py): the passage marks and the landing highlight, then its dark theme. */
 :root {
   --mark-bg:#FCEFC7; --mark-fg:var(--ink-900); --hit-bg:#FFF7DD; --hit-ring:#E9C46A;

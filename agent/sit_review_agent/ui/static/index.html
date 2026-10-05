@@ -6,6 +6,7 @@
 <title>SIT review</title>
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/architecture.css">
 </head>
 <body>
 <!-- DBSearch's app grid (docs/design/ui_restyle.md): a dark rail, a topbar of pills, the surface. -->
@@ -16,6 +17,7 @@
     <a class="navrail-item" data-page="review" href="/"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h6l3 3v8H4z"/><path d="m6.5 9 1.5 1.5 3-3"/></svg><span class="label">Review</span></a>
     <a class="navrail-item" data-page="runs" href="/?page=runs"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg><span class="label">Runs</span></a>
     <a class="navrail-item" data-page="replay" href="/?page=replay"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg><span class="label">Replay</span></a>
+    <a class="navrail-item" data-page="architecture" href="/?page=architecture"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="2" width="5" height="3.5" rx="1"/><rect x="2" y="10.5" width="5" height="3.5" rx="1"/><rect x="9" y="10.5" width="5" height="3.5" rx="1"/><path d="M8 5.5v2.5M4.5 10.5V8h7v2.5"/></svg><span class="label">Architectural design</span></a>
     <div class="navrail-group">Operate</div>
     <a class="navrail-item" data-page="tools" href="/?page=tools"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2.5v4M10 2.5v4"/><path d="M4 6.5h8v2a4 4 0 0 1-8 0z"/><path d="M8 12.5v2"/></svg><span class="label">Tools</span></a>
     <a class="navrail-item" data-page="settings" href="/?page=settings"><svg class="navrail-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 5h11M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/><circle cx="10" cy="11" r="1.6"/></svg><span class="label">Settings</span></a>
@@ -155,6 +157,28 @@
         <button class="btn quiet sp-close" type="button" id="sp-close">Close</button>
       </div>
       <div class="sp-body" id="sp-body"><div id="sp-calls"></div><div id="sp-content"></div></div>
+    </aside>
+  </div>
+</template>
+
+<!-- The Architectural design view (architecture.js): the diagram, and beside it the guide or one topic's panel with its
+     Simple and Advanced tabs; the panel is the run page's stage panel, so opening a topic never moves the diagram. -->
+<template id="tpl-architecture">
+  <div class="surface-head">
+    <div><div class="surface-title">Architectural design</div><div class="surface-sub" id="arch-sub"></div></div>
+    <div class="head-right" id="arch-run"></div>
+  </div>
+  <div class="arch-wrap" id="arch-wrap">
+    <div class="arch-diagram" id="arch-diagram"></div>
+    <div class="arch-guide" id="arch-guide"></div>
+    <aside class="stage-panel arch-panel" id="arch-panel" aria-labelledby="ap-title" hidden>
+      <div class="sp-head">
+        <div class="sp-headtext"><div class="sp-kicker" id="ap-kicker"></div><h2 id="ap-title" tabindex="-1"></h2></div>
+        <button class="btn quiet sp-close" type="button" id="ap-close">Close</button>
+      </div>
+      <div class="tabs arch-tabs" id="ap-tabs" role="tablist" aria-label="Detail"></div>
+      <div class="sp-body"><div id="ap-content" role="tabpanel"></div></div>
+      <div class="arch-nav" id="ap-nav"></div>
     </aside>
   </div>
 </template>
@@ -317,6 +341,7 @@
   }
 }
 </script>
+<script src="/static/architecture.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

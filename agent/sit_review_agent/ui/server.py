@@ -23,6 +23,8 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/stage/<name>    what one stage produced (``ingest`` ... ``report``, ``assess-N`` per shard), read
                                     from the run's files by ``ui.stages``; a file not written is named, never an error
     GET  /runs/<id>/funnel          every merged draft finding and its fate (kept, merged, withdrawn, dropped, reported)
+    GET  /architecture              the Architectural design view: its words, with every number and name filled from the
+                                    config and the code (``ui.architecture``)
     GET  /runs/<id>/glossary        the legend: the export's vocabulary (``ui.xref``) as plain text with its sources
     GET  /runs/<id>/doc.pdf         the reviewed PDF, only if its SHA-256 matches the manifest
     GET  /runs/<id>/export.html     the review as one self-contained, cross-linked HTML page with a sidebar of
@@ -137,6 +139,10 @@ class UIState:
     #: Each profile's ``StopRulesConfig`` by name ("" is the default), for ``GET /limits``: the stage limits
     #: and warnings the runtime would give a run at another deadline, computed by the runtime's own functions.
     stop_rules: dict[str, Any] = field(default_factory=dict)
+    #: The Architectural design view (``ui.architecture.view``), built once from the config; None until first read.
+    architecture: dict[str, Any] | None = None
+    #: ``--config`` as the server was started (None: the default config/agent.yaml), for the architecture view.
+    config_path: Path | None = None
 
 
 def tools_key_missing(state: UIState) -> str | None:
@@ -173,6 +179,11 @@ def build_app(state: UIState) -> Starlette:
 
     async def index(request: Request) -> Response:
         return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
+
+    async def architecture_get(request: Request) -> Response:
+        if state.architecture is None:
+            state.architecture = architecture_view(state.config_path)
+        return _json(state.architecture)
 
     async def meta(request: Request) -> Response:
         return _json({"profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
@@ -540,6 +551,7 @@ def build_app(state: UIState) -> Starlette:
     routes = [
         Route("/", index),
         Route("/meta", meta),
+        Route("/architecture", architecture_get, methods=["GET"]),
         Route("/limits", limits, methods=["GET"]),
         Route("/tools", tools_get, methods=["GET"]),
         Route("/tools/probe", tools_probe, methods=["POST"]),
@@ -631,6 +643,19 @@ def _profiles(config_path: Path | None, stop_rules: dict[str, Any] | None = None
     return out
 
 
+def architecture_view(config_path: Path | None = None) -> dict[str, Any]:
+    """The Architectural design view from the agent's config (and the demo profile for its limits, when it exists)."""
+    from sit_review_agent.config import ConfigOverrides, load_config
+    from sit_review_agent.ui import architecture
+
+    cfg = load_config(config_path)
+    try:
+        demo = load_config(config_path, ConfigOverrides(profile="demo"))
+    except Exception:  # noqa: BLE001 - no demo profile: the base config's limits are quoted instead
+        demo = None
+    return architecture.view(cfg, demo)
+
+
 def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
                 chat_client: chat.ChatClient | None = None, launcher: Launcher | None = None) -> UIState:
     from sit_review_agent.config import load_config
@@ -660,7 +685,7 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
                    commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy,
                    backend=cfg.agent.llm.backend, model=cfg.agent.model, config_files=files,
                    auth_env=cfg.tools.auth_env, probe=probe_with(cfg),
-                   documents=load_documents(Path(cfg.config_root) / "ui.yaml", root))
+                   documents=load_documents(Path(cfg.config_root) / "ui.yaml", root), config_path=config_path)
 
 
 def load_documents(path: Path, repo_root: Path) -> list[dict[str, Any]]:

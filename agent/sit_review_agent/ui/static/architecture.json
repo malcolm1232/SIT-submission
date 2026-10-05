@@ -1,0 +1,661 @@
+{
+  "title": "Architectural design",
+  "tagline": "SIT is a controlled agent runtime, not just an LLM with tools: the LLM proposes, the platform controls.",
+  "order": ["user", "cli", "ingest", "orchestrator", "state-machine", "understand", "plan", "assess", "research",
+            "research-reason", "research-act", "research-observe", "merge", "refine", "verify", "report", "outputs",
+            "llm-gateway", "tool-gateway", "policy", "state", "evidence", "checkpoints", "budgets", "faults",
+            "evaluation", "philosophy"],
+  "topics": {
+    "user": {
+      "title": "User: the design document",
+      "kind": "input",
+      "simple": {
+        "lead": "The user gives SIT one technical design document and gets back a review of it.",
+        "points": [
+          "Every finding is anchored to a quoted passage of that document.",
+          "A change is recommended only when SIT can say what is wrong, why, what evidence supports it and what the change would gain; otherwise it says no change, with a reason.",
+          "An earlier version can be given too, and the run becomes a re-assessment against it."
+        ]
+      },
+      "advanced": [
+        {"h": "What the run accepts",
+         "items": ["A PDF, or a page-marked .txt or Markdown file.", "Optionally an earlier version (--v1) or the run directory of a prior review (--previous); every prior finding then gets exactly one status in the delta table."],
+         "src": "agent/sit_review_agent/phases/ingest.py; agent/sit_review_agent/cli.py --previous; agent/sit_review_agent/delta.py"},
+        {"h": "What it promises",
+         "items": ["Each recommendation names the problem, the reason, the evidence and the gain, or the finding carries a no-change rationale instead."],
+         "src": "spec/finding.schema.json Recommendation; prompts/assess.md"}
+      ]
+    },
+    "cli": {
+      "title": "CLI: one command",
+      "kind": "interface",
+      "simple": {
+        "lead": "The CLI is the interface: one command, dra review <pdf>, runs the whole review.",
+        "points": [
+          "This page starts the same command as a subprocess, so the page adds nothing to the agent.",
+          "Other commands work on a run directory: resume, replay, explain, coverage and states.",
+          "Flags change a run without touching code: --profile demo, --no-tools, --deadline, --faults."
+        ]
+      },
+      "advanced": [
+        {"h": "Commands",
+         "items": ["run (alias review), resume, replay, explain, coverage, states, preflight, selftest and ui.", "sit-review and dra are the same entry point."],
+         "src": "agent/sit_review_agent/cli.py run_cmd; pyproject.toml dra"},
+        {"h": "Exit codes",
+         "items": ["0 ok, 2 usage, 3 LLM unavailable, 4 stage crash, 5 resume drift, 130 interrupted.", "A run that degrades but discloses it still writes its report and exits 0 with outcome completed_degraded."],
+         "src": "agent/sit_review_agent/errors.py ExitCode; agent/sit_review_agent/manifest.py outcome_for"},
+        {"h": "Started from this page",
+         "items": ["Start review runs dra review as a subprocess; the run directory stays the only state."],
+         "src": "agent/sit_review_agent/ui/launcher.py; docs/design/ui_design.md"}
+      ]
+    },
+    "ingest": {
+      "title": "Ingestion: PDF to canonical text",
+      "kind": "code",
+      "stages": ["ingest"],
+      "simple": {
+        "lead": "Ingest is code, not a model: pdfplumber turns the PDF into one page-marked canonical text, and every later quote is checked against those same bytes.",
+        "points": [
+          "It produces a Document: pages, sections and an index of the requirement IDs the text mentions.",
+          "The canonical text is stored once and hashed, and both the model and the verifier read it.",
+          "On the {backend_default} backend the model reads this text only; on the Anthropic API backend the native PDF block goes alongside it, for tables, images and layout."
+        ],
+        "contrast": {"bad": "The model reads the PDF its own way, and the verifier reads a different extraction: a quote can look right to one and wrong to the other.",
+                     "better": "One canonical text, one extractor, read by the model and the verifier alike: deterministic quote matching."}
+      },
+      "advanced": [
+        {"h": "Reads and writes",
+         "items": ["Reads the input file (PDF through pdfplumber, else text).", "Writes the page-marked text with [[PAGE n]] markers and a section index under text/, and each document's hashes, page count and whether a native PDF block is used into the run state."],
+         "src": "agent/sit_review_agent/phases/ingest.py; agent/sit_review_agent/ingest/pdf.py _index_requirements; agent/sit_review_agent/ingest/text.py page_marker"},
+        {"h": "Native PDF or text only",
+         "items": ["ADR-006: the model gets both views and is told to quote only from the canonical text.", "The Claude Code backend sets native_pdf to false, so on it the canonical text carries the document."],
+         "src": "docs/DECISIONS.md ADR-006; agent/sit_review_agent/llm/claude_code.py native_pdf; agent/sit_review_agent/llm/prefix.py document_prefix_message"}
+      ]
+    },
+    "orchestrator": {
+      "title": "Orchestrator",
+      "kind": "code",
+      "simple": {
+        "lead": "The orchestrator is the coordinator: it sets up the runtime, then drives the stages in order and decides what runs at the same time.",
+        "points": [
+          "Before any model call it checks the MCP key, creates the run directory, builds the gateways, attaches the run limits to the LLM stack, starts the MCP warm-up, runs the LLM preflight and loads any fault schedule.",
+          "During the run it starts stage 1's members as concurrent tasks, checks the caps before stage 1 and refine, and writes a checkpoint after every ended phase.",
+          "When a run fails it maps the error to an exit code and writes failure.json, which says why and how to resume."
+        ]
+      },
+      "advanced": [
+        {"h": "Setup",
+         "items": ["run_review: tool key check, run directory, effective config, LLM and tool gateways, background MCP warm-up right after the tool stack exists, LLM preflight, initial manifest, run limits attached."],
+         "src": "agent/sit_review_agent/orchestrator.py run_review; agent/sit_review_agent/orchestrator.py _run_check_tool_key; agent/sit_review_agent/orchestrator.py _run_attach_runtime"},
+        {"h": "The stage loop",
+         "items": ["Orchestrator.run walks the stages; stage 1 runs its members as asyncio tasks on one event loop, with no threads.", "A member still running {stage1_grace_s} s after the stage 1 limit is stopped and disclosed; its code fallback stands.", "A cap that fires before stage 1 or refine skips the run to verify, so a report is still written."],
+         "src": "agent/sit_review_agent/orchestrator.py _stage_1; agent/sit_review_agent/orchestrator.py stage1_grace_s; agent/sit_review_agent/orchestrator.py _skip_on_cap"},
+        {"h": "Failure",
+         "items": ["Errors are typed and mapped to exit codes; failure.json records the phase, the completed phases and whether the run is resumable."],
+         "src": "agent/sit_review_agent/orchestrator.py _run_fail; agent/sit_review_agent/errors.py ExitCode"}
+      ]
+    },
+    "state-machine": {
+      "title": "State machine",
+      "kind": "code",
+      "simple": {
+        "lead": "At the highest level, SIT is an explicit state-machine orchestrator: each phase has a defined responsibility, and the orchestrator controls transitions, budgets, deadlines and checkpoints.",
+        "points": [
+          "The state machine answers: what stage are we in, and what may run next? The orchestrator answers: given that, what do I execute and how do I coordinate it?",
+          "A run is {stage_count} stages in a fixed order: {stage_order}.",
+          "Stage 1 holds {stage_1_members}; research waits for {research_waits_for}, the others start together.",
+          "The path only goes forward. Its one shortcut is also forward: a cap that fires before stage 1 or refine sends the run to verify, so a report is still written."
+        ],
+        "contrast": {"bad": "The LLM controls the whole workflow: what to do next and when to stop.",
+                     "better": "An explicit state machine owns the transitions, and the model works inside one phase at a time."}
+      },
+      "advanced": [
+        {"h": "The tables",
+         "items": ["PhaseName (eight phases), STAGE_ORDER, STAGE_MEMBERS, STAGE_TRANSITIONS (linear), STAGE_ON_CAP (stage 1 and refine jump to verify), STAGE_1_DEPENDS.", "A stage 1 member ends done, cut (running when the limit fired, keeps what it salvaged) or skipped (never started).", "Only research and refine may be disabled in config/agent.yaml."],
+         "src": "agent/sit_review_agent/states.py STAGE_1_DEPENDS; agent/sit_review_agent/states.py OPTIONAL_PHASES; config/agent.yaml phases"},
+        {"h": "Printed from the code",
+         "items": ["dra states prints the graph as Mermaid from the same tables, so the diagram cannot drift."],
+         "src": "agent/sit_review_agent/states.py mermaid; agent/sit_review_agent/cli.py states_cmd"},
+        {"h": "Why a custom state machine",
+         "items": ["ADR-001: a custom loop on the Anthropic SDK with a direct MCP client, chosen on a weighted matrix (custom 92, LangGraph 80, PydanticAI 77), so every retry, degradation and log line is code that can be shown and tested.", "A LangGraph variant of the same agent was built and compared; the custom loop was kept."],
+         "src": "docs/DECISIONS.md ADR-001; research/frameworks/README.md; docs/COMPARISON_LANGGRAPH.md"}
+      ]
+    },
+    "understand": {
+      "title": "Understand",
+      "kind": "one model call",
+      "stages": ["understand"],
+      "simple": {
+        "lead": "Understand builds a structured understanding of the document for the phases after it, and that becomes part of the run state.",
+        "points": [
+          "The intent summary: what the design is for, its objectives, constraints and key assumptions, each with a quoted anchor.",
+          "The decision registry: the approved decisions, pending decisions, constraints and requirements the document states, numbered AD-nnn.",
+          "The registry is then frozen and hashed, so no later call can rewrite what the document decided.",
+          "The important thing is that UNDERSTAND produces structured state, rather than just returning a paragraph."
+        ],
+        "contrast": {"bad": "UNDERSTAND: \"Here's what I think this document means...\" Then RESEARCH: \"Let me figure out what that paragraph means...\"",
+                     "better": "UNDERSTAND -> structured output -> STATE -> RESEARCH and REFINE."}
+      },
+      "advanced": [
+        {"h": "Output schema",
+         "items": ["UnderstandOutput: intent_summary (statement, objectives, constraints, key_assumptions, doc_anchors), registry (type, doc_ref, statement, doc_anchor), document_version, review_inputs_found.", "Registry types: approved_decision, pending_decision, constraint, requirement."],
+         "src": "agent/sit_review_agent/llm/outputs.py UnderstandOutput; agent/sit_review_agent/models.py RegistryEntryType; prompts/understand.md"},
+        {"h": "Who reads it",
+         "items": ["It starts with plan and the assess shards, so neither sees it; research and refine read the intent and the frozen registry."],
+         "src": "agent/sit_review_agent/states.py STAGE_1_DEPENDS; agent/sit_review_agent/phases/refine.py"},
+        {"h": "The frozen registry",
+         "items": ["A finding that would reverse an approved decision must declare it as a challenge with at least two evidence items (INV-10)."],
+         "src": "agent/sit_review_agent/state/decision_registry.py freeze; agent/sit_review_agent/invariants.py check_INV_10"},
+        {"h": "When it is cut",
+         "items": ["The review has no intent summary or registry from the model, and the cut is disclosed."],
+         "src": "agent/sit_review_agent/orchestrator.py _member_cut"}
+      ]
+    },
+    "plan": {
+      "title": "Plan",
+      "kind": "one model call",
+      "stages": ["plan"],
+      "simple": {
+        "lead": "Plan converts the review criteria into concrete research questions, decides which need external research, and which research capability should be used.",
+        "points": [
+          "Job 1: turn each of the {criteria_count} criteria into questions, usually one to three.",
+          "Job 2: decide whether a question needs external research; consistency, completeness and verifiability are answered from the document.",
+          "Job 3: pick one capability whose server is enabled ({capabilities}) and give research up to three search queries.",
+          "Job 4: size the plan to the research budget of {max_tool_calls} tool calls.",
+          "Job 5: name any criterion that does not apply, with a reason; code adds a document-only question for any criterion left out.",
+          "Plan runs at the same time as understand; research starts when both have ended."
+        ]
+      },
+      "advanced": [
+        {"h": "Output schema",
+         "items": ["PlanOutput: questions (id RQ-nnn, criterion_id, question, rationale, needs_external, capability, queries, section_refs) and criteria_skipped (criterion_id, reason)."],
+         "src": "agent/sit_review_agent/llm/outputs.py PlanOutput; prompts/plan.md"},
+        {"h": "What code adds",
+         "items": ["build_plan drops questions for unknown criteria, sets capability none when its server is disabled, and adds a document-only question for every criterion the model neither asked about nor skipped."],
+         "src": "agent/sit_review_agent/phases/plan.py build_plan"},
+        {"h": "Budget",
+         "items": ["The plan sets no budget per question: research as a whole may make at most {max_tool_calls} tool calls in {max_research_iterations} iterations.", "--plan-only stops after the plan with zero tool calls; plan_approval: true waits for approval before research."],
+         "src": "config/stop_rules.yaml; config/agent.yaml plan_approval; agent/sit_review_agent/cli.py --plan-only"}
+      ]
+    },
+    "assess": {
+      "title": "Assess: {shard_count} shards",
+      "kind": "{shard_count} model calls at once",
+      "stages": ["shards"],
+      "simple": {
+        "lead": "Instead of one huge assess call, the criteria are divided into {shard_count} groups, or shards, that run side by side.",
+        "points": [
+          "Each shard receives the document and its own criteria, works against an isolated copy of the run state, and produces draft findings, sound areas and coverage rows.",
+          "Those are concurrent phase executions, not {shard_count} independent agents: asyncio tasks in one process, each waiting on its own model call.",
+          "A shard sees no plan and no research, which is why it never waits: it starts with understand and plan.",
+          "Each finished shard is stored as a serialisable result, so resume re-runs only the shards that had not finished.",
+          "It's not merely \"let's run {shard_count} LLMs\". It's \"let's parallelize independent work while preserving deterministic state ownership and making each shard resumable.\""
+        ],
+        "contrast": {"bad": "One huge assess call over every criterion: the slowest step of the run, and one failure costs the whole assessment.",
+                     "better": "{shard_count} shards side by side: the stage takes as long as its slowest shard, and a failed shard costs only its own criteria."}
+      },
+      "advanced": [
+        {"h": "The shards, from config/agent.yaml",
+         "shards": true,
+         "items": ["Each criterion is in exactly one group. A criterion added live that is in no group becomes its own shard, so it adds a parallel call, not wall time."],
+         "src": "config/agent.yaml shards; agent/sit_review_agent/config.py shards_for"},
+        {"h": "Per shard",
+         "items": ["One conversation, assess-0-s<k>, answering AssessOutput: findings, sound_areas, coverage (every criterion: findings, no_issue or not_applicable).", "Reads the document, its criteria and the review mode; no intent, registry, plan answers or evidence register."],
+         "src": "agent/sit_review_agent/phases/assess.py; agent/sit_review_agent/llm/outputs.py AssessOutput"},
+        {"h": "Isolation and resume",
+         "items": ["Each stage 1 member works on a deep copy of the run state and is merged back when it ends, so a checkpoint never holds half-written state.", "A shard's result is a StateDelta, stored in shards/<k>-<name>.json."],
+         "src": "agent/sit_review_agent/phases/_isolation.py StateDelta; agent/sit_review_agent/orchestrator.py _store_shard"},
+        {"h": "When a shard fails",
+         "items": ["A shard that hangs, refuses, is truncated or crashes leaves the other shards' findings intact, and its own criteria are marked not assessed."],
+         "src": "agent/sit_review_agent/orchestrator.py _cut_shard; tests/robustness/concurrent_oracles.py"},
+        {"h": "Why shards",
+         "items": ["ADR-011: the sequential design with one assess call could not fit the demo slot; the criteria were split into shards that run side by side (four at first, six since USER_DECISIONS #40)."],
+         "src": "docs/DECISIONS.md ADR-011; docs/ARCHITECTURE.md"}
+      ]
+    },
+    "research": {
+      "title": "Research: reason, act, observe",
+      "kind": "model + tools",
+      "stages": ["research"],
+      "simple": {
+        "lead": "Research is the agentic loop: reason, act, observe, then reason again, until the stop rules say enough.",
+        "points": [
+          "It runs inside stage 1: it starts once understand and plan have both ended, beside the assess shards.",
+          "It works on the plan's external questions. The model chooses the tool calls; the platform runs them and records every result as evidence before the model sees it.",
+          "It has three parts: the LLMGateway when it needs to reason, the ToolGateway when it needs the outside world, and the run state.",
+          "Its evidence meets the findings in refine, after the shards are merged.",
+          "With no tool server the run stays document-only, and the report says so."
+        ],
+        "contrast": {"bad_label": "Too simple", "bad": "\"The agent maintains state between the LLM and tool calls.\"",
+                     "better_label": "Better", "better": "\"The runtime maintains structured state that is read and updated by the phases, the LLM gateway and the tool execution flow.\""}
+      },
+      "advanced": [
+        {"h": "Limits",
+         "items": ["At most {max_research_iterations} iterations, {max_rounds_per_iteration} tool rounds per iteration and {max_tool_calls} tool calls; tool text shown to the model is capped at {max_tool_text_chars} characters, the full payload stays in tools.jsonl.", "Active stop rules: {active_stop_rules}."],
+         "src": "config/stop_rules.yaml; agent/sit_review_agent/phases/research.py MAX_ROUNDS_PER_ITERATION; agent/sit_review_agent/stop_rules.py"},
+        {"h": "Who decides to stop",
+         "items": ["The model may vote to stop; code honours the vote only when no external question is still open and at least one tool call was made.", "An answered question needs {min_independent_sources} independent sources or one primary official source, else it is partial."],
+         "src": "agent/sit_review_agent/phases/research.py _vote_stop; agent/sit_review_agent/tools/sources.py independence_key"},
+        {"h": "Output per iteration",
+         "items": ["ResearchOutput: answers (question_id, status answered, partial, unanswered or conflicting, summary, evidence_ids), stop_requested, stop_rationale."],
+         "src": "agent/sit_review_agent/llm/outputs.py ResearchOutput; prompts/research.md"},
+        {"h": "Failure paths",
+         "items": ["No tools or every server down: a tool_unavailable degradation, open external questions become unanswered, the run continues document-only.", "A refusal is retried once with review framing; a call cut by the deadline ends research with stop reason deadline."],
+         "src": "agent/sit_review_agent/phases/research.py"},
+        {"h": "Why a hand-written loop",
+         "items": ["ADR-001: the tool loop is our own code, not the SDK's tool runner, so every round, stop and degradation can be logged and tested."],
+         "src": "docs/DECISIONS.md ADR-001; agent/sit_review_agent/phases/research.py"}
+      ]
+    },
+    "research-reason": {
+      "title": "Reason",
+      "kind": "model, through the LLMGateway",
+      "stages": ["research"],
+      "simple": {
+        "lead": "Reason is the model's turn: what to investigate, which tool, which search query, what next.",
+        "points": [
+          "\"LLM, what should I investigate?\" goes through the LLMGateway to Claude, which answers \"search for X\".",
+          "The model reads the open external questions with the plan's suggested queries, the registry and what the ledger already holds.",
+          "It answers with tool calls, or, when a round is done, with an answer per question.",
+          "The backend is swappable: {backend_list}, default {backend_default}."
+        ]
+      },
+      "advanced": [
+        {"h": "Tools offered",
+         "items": ["Tools are offered by capability under the name <server>__<tool>, from whatever each enabled server lists, so no tool name is hard-coded."],
+         "src": "agent/sit_review_agent/tools/gateway.py qualify; config/tools.yaml capabilities"},
+        {"h": "One conversation",
+         "items": ["One research conversation per run, with the shared document prefix and the research brief; the next round, the wrap-up and the repair turns are parts of the same prompt file."],
+         "src": "agent/sit_review_agent/phases/research.py; prompts/research.md"}
+      ]
+    },
+    "research-act": {
+      "title": "Act",
+      "kind": "platform, through the ToolGateway",
+      "stages": ["research"],
+      "simple": {
+        "lead": "Act is the platform's turn: every tool call the model asked for runs through the ToolGateway, never straight from the model to a server.",
+        "points": [
+          "The calls of one round run concurrently, and every result goes back in one message, failures marked as errors.",
+          "Policy checks each call before it leaves the process.",
+          "The live servers are MCP over streamable HTTP: {servers_enabled} are enabled."
+        ]
+      },
+      "advanced": [
+        {"h": "Each tool round",
+         "items": ["Results return in the order of the model's tool calls; nothing is dropped, and a call over the budget gets a \"not executed\" error result."],
+         "src": "agent/sit_review_agent/phases/research.py"},
+        {"h": "Sessions",
+         "items": ["A session the server closed is reopened once and the call retried once; a session idle for more than {session_idle_reopen_s} s is reopened before the next call; a tool is disabled for the run only after {tool_error_limit} genuine failures in a row."],
+         "src": "agent/sit_review_agent/tools/gateway.py MCPToolGateway; agent/sit_review_agent/tools/gateway.py TOOL_ERROR_LIMIT; config/tools.yaml session_idle_reopen_s"}
+      ]
+    },
+    "research-observe": {
+      "title": "Observe",
+      "kind": "code, into state",
+      "stages": ["research"],
+      "simple": {
+        "lead": "Observe turns each result into evidence the platform owns: sources become EV-nnn ledger entries, and the model sees the result text prefixed with those IDs.",
+        "points": [
+          "So the model can cite only what it has read, by ID.",
+          "Question statuses, tool calls and the budget counters go into the run state.",
+          "The stop rules are checked after every tool round and every iteration; then the model reasons again, or the loop ends.",
+          "Repeat until done, or until a limit is hit."
+        ]
+      },
+      "advanced": [
+        {"h": "From result to ledger",
+         "items": ["Each result is parsed into sources; each source gets an authority class and an independence key; a URL already in the ledger is reused, so only new sources count as progress."],
+         "src": "agent/sit_review_agent/tools/sources.py extract_sources; agent/sit_review_agent/tools/sources.py classify_authority; agent/sit_review_agent/state/evidence_ledger.py add_external"},
+        {"h": "What it writes",
+         "items": ["Question statuses and evidence on the plan, tool_calls, queries_issued, new sources per iteration, unanswered_questions, stop_reason, and the registry hash per iteration."],
+         "src": "agent/sit_review_agent/phases/research.py"}
+      ]
+    },
+    "merge": {
+      "title": "Merge",
+      "kind": "code",
+      "stages": ["merge"],
+      "simple": {
+        "lead": "Merge is code: when stage 1 closes, the shards' findings become one list in the run state.",
+        "points": [
+          "Findings are renumbered FND-nnn in shard order, never in the order the shards finished, so the IDs are deterministic.",
+          "The list is ranked by severity, then confidence.",
+          "The shards' document and inference evidence goes into the ledger, also in shard order, after research has stopped writing to it.",
+          "A map from each shard's own IDs to the merged IDs is kept, so every finding can be traced back to its shard."
+        ]
+      },
+      "advanced": [
+        {"h": "Code",
+         "items": ["AssessPhase.merge renumbers and ranks; Orchestrator._close merges in shard order and writes the stage's closing checkpoint.", "A shard with no result at the close is recorded as cut and its criteria are not assessed."],
+         "src": "agent/sit_review_agent/phases/assess.py rank_by_severity; agent/sit_review_agent/orchestrator.py _close; agent/sit_review_agent/orchestrator.py _cut_shard"},
+        {"h": "Writes",
+         "items": ["finding_drafts, finding_meta, finding_ids.shards, sound_area_drafts, coverage, and the shards' ledger entries."],
+         "src": "agent/sit_review_agent/phases/assess.py"}
+      ]
+    },
+    "refine": {
+      "title": "Refine",
+      "kind": "one model call",
+      "stages": ["refine"],
+      "simple": {
+        "lead": "Refine is one model call over every merged finding: it sees all the shards' findings together with the registry, the research answers and the ledger, and returns one revision per finding.",
+        "points": [
+          "Keep: with the final rank, severity and disposition, the registry links, and any research evidence to add.",
+          "Merge: fold a duplicate into a kept finding, typically the same issue found by two shards.",
+          "Withdraw: unsupported, generic or covered elsewhere.",
+          "This is where research evidence meets the findings."
+        ],
+        "contrast": {"bad": "Ask the model to write every finding out again.",
+                     "better": "Ask for one revision per finding, a patch that code applies exactly."}
+      },
+      "advanced": [
+        {"h": "Output schema",
+         "items": ["RefineRevisionsOutput: revisions (finding_id, action keep, merge or withdraw, merge_into, rank, severity, disposition, affected_decisions, added_evidence, next_step, reason)."],
+         "src": "agent/sit_review_agent/llm/outputs.py FindingRevisionDraft; prompts/refine.md"},
+        {"h": "Checks and repair",
+         "items": ["Code checks one revision per finding, the action rules, ranks 1..n and no evidence added twice; every revision that holds on its own is kept, and at most one repair call asks for the failing ones."],
+         "src": "agent/sit_review_agent/phases/refine.py split_revisions; agent/sit_review_agent/llm/outputs.py apply_revisions"},
+        {"h": "Fallback",
+         "items": ["Refine is optional. If it is off, cut or fails, the merged findings ordered by severity stand, disclosed. On the demo profile it must end by {demo_refine_end} s."],
+         "src": "agent/sit_review_agent/states.py OPTIONAL_PHASES; config/profiles/demo.yaml refine_end"}
+      ]
+    },
+    "verify": {
+      "title": "Verify",
+      "kind": "code, plus one repair call",
+      "stages": ["verify"],
+      "simple": {
+        "lead": "Verify is where the platform, not the model, decides what counts: code checks every quoted anchor against the canonical text.",
+        "points": [
+          "Exact match first, then a fuzzy match at {fuzzy_threshold} or better, near the cited page and section.",
+          "A finding with no anchor that resolves is moved to the unresolved list as Unverified, with no recommendation, and the report says so.",
+          "Evidence is hydrated from the ledger: the model never writes a URL, and a URL that is not in the ledger is removed.",
+          "One repair call may re-quote the failing anchors, only when more than {repair_min_slack_s} s remain. It never sends the run back to research: the next stage is report."
+        ],
+        "contrast": {"bad": "A second model judges the first model's work inside the run.",
+                     "better": "Deterministic checks against the document and the ledger; an independent judge belongs in the evaluation harness."}
+      },
+      "advanced": [
+        {"h": "Anchor rules",
+         "items": ["An anchor is a verbatim quote of at least {min_quote_tokens} tokens with a page and section; search within the cited page plus or minus one, narrowed to the cited section plus or minus one when it resolves.", "Every anchor is recorded in anchors.json as resolved, repaired or unresolved."],
+         "src": "agent/sit_review_agent/ingest/anchor.py AnchorRules; agent/sit_review_agent/ingest/anchor.py verify_anchor"},
+        {"h": "Code checks",
+         "items": ["Unknown evidence IDs, URLs in free text not in the ledger, registry conflicts, hollow fields, verdict against severities."],
+         "src": "agent/sit_review_agent/phases/verify.py unlabelled_conflicts; agent/sit_review_agent/phases/verify.py hollow_fields"},
+        {"h": "The repair call",
+         "items": ["Conversation verify, answer AnchorRepairOutput; skipped and disclosed when {repair_min_slack_s} s or less remain before the verify and verdict reserve."],
+         "src": "agent/sit_review_agent/phases/verify.py REPAIR_MIN_SLACK_S; agent/sit_review_agent/llm/outputs.py AnchorRepairOutput"},
+        {"h": "Why no in-run judge",
+         "items": ["Verification is code against the canonical text and the ledger; a second-model judge is in the harness, where it can be blinded."],
+         "src": "docs/DECISIONS.md ADR-003; harness/sit_eval/grounding.py"}
+      ]
+    },
+    "report": {
+      "title": "Report",
+      "kind": "one model call, then code",
+      "stages": ["report"],
+      "simple": {
+        "lead": "Report is one model call that returns only the verdict; code assembles the rest of the review.",
+        "points": [
+          "The model may say fit, fit with conditions or not fit; only code can say not assessed, with the reason.",
+          "Code runs {invariant_count} invariant checks before report.json is written: anchors resolve, citations are in the ledger, degradations are disclosed.",
+          "The limitations are written by code from the degradations, never by the model.",
+          "report.md is rendered from report.json with a template, so the file and this page cannot disagree."
+        ]
+      },
+      "advanced": [
+        {"h": "Verdict",
+         "items": ["VerdictOutput from the model; not_assessed is set by code only, with the reason deadline, truncated or declined.", "On the demo profile the verdict call must end by {demo_verdict_end} s, else a rule-based verdict stands."],
+         "src": "agent/sit_review_agent/llm/outputs.py VerdictOutput; agent/sit_review_agent/phases/report.py not_assessed_verdict; config/profiles/demo.yaml verdict_end"},
+        {"h": "Assembly",
+         "items": ["assemble_review builds the review, settles finding IDs across every renumbering, runs check_all, renders the Markdown and finalises the manifest."],
+         "src": "agent/sit_review_agent/phases/report.py assemble_review; agent/sit_review_agent/invariants.py check_all; agent/sit_review_agent/report/render.py"}
+      ]
+    },
+    "outputs": {
+      "title": "Output: what a run writes",
+      "kind": "files",
+      "simple": {
+        "lead": "A run directory holds everything about the run: the review, the evidence, and every log needed to explain or replay it.",
+        "points": [
+          "report.md and report.json: the verified findings and the verdict.",
+          "ledger.json: the evidence ledger. anchors.json: every quote and how it resolved.",
+          "manifest.json, checkpoints/, shards/, the call logs and progress.log.",
+          "Evaluation results are not part of a run: the harness scores a finished run from outside."
+        ]
+      },
+      "advanced": [
+        {"h": "The run directory",
+         "items": ["manifest.json, effective_config.json, report.json, report.md, ledger.jsonl and ledger.json, anchors.json, state.json, checkpoints/, shards/, llm.jsonl, tools.jsonl, text/, progress.log and progress.jsonl, failure.json when a run fails."],
+         "src": "agent/sit_review_agent/rundir.py RunDir"},
+        {"h": "The manifest",
+         "items": ["Written before the first model call with outcome crashed, finalised at exit with models, usage, cost, timings and output hashes, so a run that dies never reads as completed."],
+         "src": "agent/sit_review_agent/manifest.py start_manifest; agent/sit_review_agent/manifest.py finalise_manifest"},
+        {"h": "Explain a finding",
+         "items": ["dra explain <finding-id> reads only the run directory: anchors with match scores, evidence with the tool call behind it, and the finding's history across phases."],
+         "src": "agent/sit_review_agent/report/explain.py"}
+      ]
+    },
+    "llm-gateway": {
+      "title": "LLMGateway",
+      "kind": "every model phase",
+      "simple": {
+        "lead": "Every model phase calls the model through one protocol, the LLMGateway; phases never touch an SDK.",
+        "points": [
+          "Live backends: the Claude Code CLI run headless, the default, which bills the Claude subscription with no API key; and the Anthropic API, behind the same protocol.",
+          "Replay serves recorded calls, Fake serves scripted answers for tests, and a fault-injecting wrapper sits under the retries for robustness tests.",
+          "The gateway owns retries, typed stop reasons, one effort level per conversation, and the call log."
+        ],
+        "contrast": {"bad": "Each phase calls a provider SDK directly.",
+                     "better": "One swappable backend: another provider would be one more LLMGateway."}
+      },
+      "advanced": [
+        {"h": "Classes",
+         "items": ["ClaudeCodeGateway and AnthropicGateway (llm.backend: {backend_list}, default {backend_default}); ReplayLLMGateway for dra replay; FakeGateway for transport fake; FaultInjectingLLMGateway when a fault schedule is set.", "Transports: {transports}."],
+         "src": "agent/sit_review_agent/llm/backend.py build_llm_gateway; agent/sit_review_agent/llm/gateway.py FaultInjectingLLMGateway; agent/sit_review_agent/replay.py ReplayLLMGateway; config/agent.yaml backend"},
+        {"h": "Why the CLI is the default",
+         "items": ["ADR-010: the owner's calls bill the subscription or cloud credits rather than a separate API key; the API backend stays for evaluators who hold a key."],
+         "src": "docs/DECISIONS.md ADR-010"},
+        {"h": "Limits the gateway enforces",
+         "items": ["Retries with backoff, one refusal retry with review framing, a pre-send size check against {context_margin_pct} % of the context window, a first-call network window of {first_call_window_s} s so an offline start fails fast, output capped at {max_tokens} tokens, model {model}.", "Each attempt's timeout is the time left before its stage ends."],
+         "src": "config/agent.yaml max_retries; agent/sit_review_agent/llm/runtime.py ContextGuard; agent/sit_review_agent/llm/runtime.py FirstCallNetwork; agent/sit_review_agent/llm/runtime.py RunDeadline"}
+      ]
+    },
+    "tool-gateway": {
+      "title": "ToolGateway",
+      "kind": "every tool call",
+      "simple": {
+        "lead": "Every tool call goes through one protocol, the ToolGateway, built as layers wrapped around the real MCP client.",
+        "points": [
+          "Outermost first: logging, policy, self-replay on resume, fault injection, recording, then the base: the live MCP client, a cassette replay or a fake.",
+          "Fault injection sits below the policy, so a test proves the policy handles the fault rather than the injector hiding it.",
+          "{server_count} MCP servers are configured; {servers_enabled} are enabled."
+        ]
+      },
+      "advanced": [
+        {"h": "The layers, from tools/gateway.py",
+         "items": ["{tool_layer_chain}."],
+         "src": "agent/sit_review_agent/tools/gateway.py build_tool_gateway"},
+        {"h": "The servers, from config/tools.yaml",
+         "servers": true,
+         "items": ["{servers_disabled} are off: browser automation keeps one shared browser for every caller with no domain allowlist, and document intelligence rejected its only probed sample."],
+         "src": "config/tools.yaml servers"},
+        {"h": "Connection and key",
+         "items": ["One long-lived session per server; {connect_timeout_s} s allowed for a cold first connect; a background warm-up overlaps ingest and understand.", "The key is read from SIT_MCP_API_KEY and never logged; a missing key fails the run before any model call unless --no-tools asks for a document-only review."],
+         "src": "agent/sit_review_agent/tools/mcp_client.py ServerConnection; config/tools.yaml connect_timeout_s; agent/sit_review_agent/orchestrator.py _run_check_tool_key"}
+      ]
+    },
+    "policy": {
+      "title": "Policy",
+      "kind": "tool gateway layer",
+      "simple": {
+        "lead": "Policy decides whether a tool call may leave the process: allowed, it continues; not allowed, it is rejected.",
+        "points": [
+          "Only allowlisted tools of enabled servers.",
+          "A fetched URL must have appeared in an earlier result or in the document.",
+          "No secret, key-shaped token or bulk document text may leave in a tool argument.",
+          "A per-server breaker and the tool-call budget are enforced here too."
+        ]
+      },
+      "advanced": [
+        {"h": "Checks",
+         "items": ["The allowlist, the URL policy (a query string added to a seen URL is refused), the argument sanitiser, the per-server breaker (a tool disabled after {tool_error_limit} genuine failures in a row), the budget."],
+         "src": "agent/sit_review_agent/tools/policy.py check_urls; agent/sit_review_agent/tools/policy.py sanitise_args; agent/sit_review_agent/tools/gateway.py PolicyToolGateway; config/url_policy.yaml"}
+      ]
+    },
+    "state": {
+      "title": "State",
+      "kind": "platform",
+      "simple": {
+        "lead": "The runtime maintains structured state that is read and updated by the phases, the LLM gateway and the tool execution flow.",
+        "points": [
+          "It holds the documents, the intent and the registry, the plan, the tool calls, the draft and verified findings, the degradations, the stop reason and the budget.",
+          "The evidence ledger is kept beside it as its own append-only journal.",
+          "Stage 1 members each work on a copy of it and are merged back when they end.",
+          "So the LLM is only one subsystem: the platform owns what state the run is in."
+        ]
+      },
+      "advanced": [
+        {"h": "RunState",
+         "items": ["documents, intent_summary, registry, registry_frozen, registry_hashes, plan, tool_calls, queries_issued, finding_drafts, finding_ids, coverage, findings, sound_areas, anchor_table, verdict, unresolved, limitations, degradations, stop_reason, budget.", "Written to state.json, and snapshotted into every checkpoint."],
+         "src": "agent/sit_review_agent/state/run_state.py RunState; agent/sit_review_agent/state/checkpoint.py write_checkpoint"},
+        {"h": "Copies in stage 1",
+         "items": ["isolate gives a member its own deep copy; merge_member copies back what it replaced and appends what it added."],
+         "src": "agent/sit_review_agent/phases/_isolation.py isolate; agent/sit_review_agent/phases/_isolation.py merge_member"}
+      ]
+    },
+    "evidence": {
+      "title": "Evidence ledger",
+      "kind": "platform",
+      "stages": ["research", "merge"],
+      "simple": {
+        "lead": "Evidence is not just dumped into the prompt: the platform owns it in a ledger, and the model cites it by ID, like EV-002.",
+        "points": [
+          "An external entry is created only from a successful tool call of this run, and carries that call's ID.",
+          "Research writes the external entries; the shards' document and inference entries are added at merge.",
+          "Verify fills each finding's URL and retrieval time from the ledger; nothing in it is ever updated or deleted."
+        ],
+        "contrast": {"bad": "The model says: \"I found this website...\"",
+                     "better": "The platform recorded the source, and the model cites EV-002."}
+      },
+      "advanced": [
+        {"h": "Entries",
+         "items": ["External (from a tool call), doc (canonical text by page and section) and inference (lists what it is derived from, every ID already in the ledger).", "Appended to ledger.jsonl, flushed per entry; ledger.json is the snapshot the report writes."],
+         "src": "agent/sit_review_agent/state/evidence_ledger.py add_external; agent/sit_review_agent/state/evidence_ledger.py add_inference"},
+        {"h": "Citations enforced",
+         "items": ["INV-05 fails the review on a cited evidence ID that is not in the ledger; a model-written URL found in neither the ledger nor the document is removed and disclosed."],
+         "src": "agent/sit_review_agent/invariants.py check_INV_05; agent/sit_review_agent/state/evidence_ledger.py hydrate"}
+      ]
+    },
+    "checkpoints": {
+      "title": "Checkpoints, resume and replay",
+      "kind": "platform",
+      "simple": {
+        "lead": "After every phase the orchestrator writes a checkpoint, so a stopped run resumes where it stopped and a finished run can be replayed exactly.",
+        "points": [
+          "Each checkpoint pins the hashes of the config, the prompt bundle and the canonical text.",
+          "dra resume refuses if those hashes drifted, and re-runs only the members and shards that had not finished.",
+          "A tool call that succeeded before the stop is served from tools.jsonl, never made again.",
+          "dra replay runs the real phases again with the recorded model and tool calls; a request that does not match its recording stops the replay."
+        ]
+      },
+      "advanced": [
+        {"h": "Checkpoint",
+         "items": ["Atomic; pins effective_config, prompts_bundle and canonical_text hashes and the byte offsets of the three journals; in stage 1 every member writes its own when it ends."],
+         "src": "agent/sit_review_agent/state/checkpoint.py PinnedHashes; agent/sit_review_agent/orchestrator.py checkpoint"},
+        {"h": "Resume",
+         "items": ["Loads the latest checkpoint, refuses on drift unless --accept-drift, truncates the ledger to the checkpoint offset, restores the run clock."],
+         "src": "agent/sit_review_agent/orchestrator.py resume_run; agent/sit_review_agent/tools/gateway.py SelfReplayGateway"},
+        {"h": "Replay",
+         "items": ["Model calls served by conversation and request hash, tool calls from tools.jsonl, time from a virtual clock; the replayed report is stamped replayed evidence."],
+         "src": "agent/sit_review_agent/replay.py ReplayDivergence; agent/sit_review_agent/replay.py ReplayClock; docs/DECISIONS.md ADR-009"}
+      ]
+    },
+    "budgets": {
+      "title": "Budgets and stop rules",
+      "kind": "platform",
+      "simple": {
+        "lead": "Budgets are the platform's limits, enforced by code: a deadline, stage limits on the run clock, and caps on research.",
+        "points": [
+          "The demo profile ends stage 1 by {demo_stage_1_end} s, refine by {demo_refine_end} s and the verdict call by {demo_verdict_end} s, inside a {demo_deadline_s} s deadline.",
+          "Each model call is bounded by the time left before its stage ends, so one slow call cannot take the report with it.",
+          "Research stops at {max_tool_calls} tool calls or {max_research_iterations} iterations, or earlier when the evidence is sufficient or new sources dry up.",
+          "A limit that cuts a phase keeps what it salvaged, and the cut is disclosed."
+        ]
+      },
+      "advanced": [
+        {"h": "Stop rules",
+         "items": ["Active: {active_stop_rules}; each is a registered function returning a closed stop-reason code."],
+         "src": "agent/sit_review_agent/stop_rules.py register; config/stop_rules.yaml"},
+        {"h": "Stage limits",
+         "items": ["Absolute seconds on the run clock, not a fraction of the deadline, because the thinking time of a call is a fixed cost. The base profile's deadline is {deadline_s} s."],
+         "src": "config/profiles/demo.yaml stage_limits_s; config/stop_rules.yaml stage_limits_s; agent/sit_review_agent/llm/runtime.py RunDeadline"},
+        {"h": "Degradations",
+         "items": ["Every degraded path is a numbered DEG-nnn with its event and impact, and the report has one limitation per degradation (INV-07)."],
+         "src": "agent/sit_review_agent/state/run_state.py add_degradation; agent/sit_review_agent/invariants.py check_INV_07"}
+      ]
+    },
+    "faults": {
+      "title": "Fault injection and robustness",
+      "kind": "platform",
+      "simple": {
+        "lead": "Fault injection lets SIT show it fails honestly: a schedule makes a tool hang, a model refuse or truncate, the network drop or a phase crash, on purpose.",
+        "points": [
+          "The same schedule file drives a test and a live run, with --faults.",
+          "The injectors sit below the policy and retry layers, so the test exercises the real handling.",
+          "The oracles are the run invariants: a valid review, every anchor resolving, every citation in the ledger, every degradation disclosed, no secret in any file."
+        ]
+      },
+      "advanced": [
+        {"h": "Injectors",
+         "items": ["FaultInjectingGateway for tools, FaultInjectingLLMGateway for the model, and a process fault wrapper for phases and shards."],
+         "src": "agent/sit_review_agent/tools/gateway.py FaultInjectingGateway; agent/sit_review_agent/llm/gateway.py FaultInjectingLLMGateway; agent/sit_review_agent/orchestrator.py _run_ProcessFault; agent/sit_review_agent/tools/faults.py"},
+        {"h": "The offline suite",
+         "items": ["The results table records {robust_total} scenarios: {robust_pass} pass offline, {robust_blocked} are blocked as laptop-only or static, {robust_fail} fail."],
+         "src": "tests/robustness/results/robustness_summary.txt; tests/robustness/oracles.py"}
+      ]
+    },
+    "evaluation": {
+      "title": "Evaluation harness",
+      "kind": "separate package",
+      "simple": {
+        "lead": "The repository separates the agent from the evaluation harness: harness/ is never imported by the agent, and a test proves it.",
+        "points": [
+          "The evaluation items are synthetic design documents with planted flaws and a sealed answer key.",
+          "sit-eval score matches a review against its key; sit-eval grade is a key-blind grader on the lab's rubric.",
+          "The analysis is pre-registered, and a score on an answer key the owner has not signed off is marked exploratory."
+        ],
+        "contrast": {"bad": "The agent grades its own review.",
+                     "better": "A separate, blinded harness that the agent never imports."}
+      },
+      "advanced": [
+        {"h": "Isolation",
+         "items": ["A test walks the agent package's syntax tree and fails on any import of the harness."],
+         "src": "tests/eval_harness/test_eval_isolation.py test_agent_package_is_isolated_from_the_harness"},
+        {"h": "Scoring",
+         "items": ["A judge scores candidate pairs 0 to 3, a Hungarian assignment picks the one-to-one matching, unmatched findings are adjudicated, and grounding judges check citation support."],
+         "src": "harness/sit_eval/matcher.py; harness/sit_eval/hungarian.py; harness/sit_eval/grounding.py; harness/README.md"},
+        {"h": "Pre-registration",
+         "items": ["Hypotheses, metrics and decision rules in one file, with a deviations log."],
+         "src": "eval/prereg.yaml; eval/prereg_deviations.md; harness/sit_eval/lc12.py"}
+      ]
+    },
+    "philosophy": {
+      "title": "LLM proposes, the platform controls",
+      "kind": "principle",
+      "simple": {
+        "lead": "SIT is a controlled agent runtime, not just an LLM with tools: the LLM proposes, and the platform controls state, policy, tools, evidence, checkpoints, verification and budgets.",
+        "points": [
+          "The platform controls what state the run is in, what the model can see, which tools it may call, what evidence is recorded, what can be replayed, which failures can be injected, which checkpoints exist, when the workflow moves on, and when verification passes.",
+          "\"I built an agent runtime where the LLM is not allowed to directly control the entire application. The platform owns the lifecycle, state transitions, tool access, checkpoints, reproducibility and evaluation.\""
+        ]
+      },
+      "advanced": [
+        {"h": "Where each control lives",
+         "items": ["State machine: states.py. Policy: tools/policy.py. Evidence: state/evidence_ledger.py. Checkpoints: state/checkpoint.py. Verification: phases/verify.py and invariants.py. Budgets: stop_rules.py and llm/runtime.py."],
+         "src": "agent/sit_review_agent/states.py; agent/sit_review_agent/tools/policy.py; agent/sit_review_agent/state/evidence_ledger.py; agent/sit_review_agent/state/checkpoint.py; agent/sit_review_agent/phases/verify.py; agent/sit_review_agent/invariants.py; agent/sit_review_agent/stop_rules.py; agent/sit_review_agent/llm/runtime.py"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,135 @@
+/* The Architectural design view (architecture.js). The app's idiom: paper, rules, ink; the parts of the agent are told
+   apart by the soft tints of tokens.css section 5. The panel is the run page's stage panel (app.css .stage-panel):
+   beside the diagram on wide screens, a drawer on the right edge below 1396 px; either way the diagram never moves.
+   No colour literal, no motion and no run value in this file. */
+
+.arch-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; margin-top: 20px; align-items: start; }
+.arch-diagram { grid-column: 1; grid-row: 1; min-width: 0; }
+.arch-guide { grid-column: 2; grid-row: 1; position: sticky; top: 72px; padding: 16px 18px 18px; background: var(--bg-surface);
+  border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+.arch-wrap.panel-open > .arch-guide { display: none; }
+.arch-guide h2 { font-family: var(--serif); font-weight: 400; font-size: 21px; line-height: 1.2; margin: 0 0 8px; }
+.arch-guide p { margin: 0 0 10px; font-size: 13px; line-height: 1.55; color: var(--fg-2); }
+.arch-guide .btn { margin-top: 4px; }
+.arch-legend { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.arch-legend .lg { font-size: 11.5px; line-height: 20px; padding: 0 8px; border-radius: var(--r-pill); border: 1px solid; color: var(--fg-2); }
+#arch-run .notice a { color: var(--fg-muted); }
+.arch-surface .surface-head { align-items: flex-end; }
+#arch-run { max-width: 44%; text-align: right; }
+
+/* ---------- the tones ---------- */
+.tone-blue { --t-soft: var(--arch-blue-soft); --t-border: var(--arch-blue-border); --t-fg: var(--arch-blue-fg); }
+.tone-green { --t-soft: var(--arch-green-soft); --t-border: var(--arch-green-border); --t-fg: var(--arch-green-fg); }
+.tone-red { --t-soft: var(--arch-red-soft); --t-border: var(--arch-red-border); --t-fg: var(--arch-red-fg); }
+.tone-amber { --t-soft: var(--arch-amber-soft); --t-border: var(--arch-amber-border); --t-fg: var(--arch-amber-fg); }
+.tone-violet { --t-soft: var(--arch-violet-soft); --t-border: var(--arch-violet-border); --t-fg: var(--arch-violet-fg); }
+.tone-plain, .tone-ink { --t-soft: var(--bg-surface); --t-border: var(--border-control); --t-fg: var(--fg-muted); }
+.lg.tone-blue, .lg.tone-green, .lg.tone-red, .lg.tone-amber, .lg.tone-violet { background: var(--t-soft); border-color: var(--t-border); }
+
+/* ---------- a box and a chip: real buttons ---------- */
+.arch-box { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  padding: 9px 11px 10px; border-radius: var(--r-sm); background: var(--t-soft, var(--bg-surface));
+  border: 1px solid var(--t-border, var(--border-control)); transition: background-color 150ms, border-color 150ms; }
+.arch-box:hover { border-color: var(--t-fg, var(--border-hover)); }
+.arch-box .ab-title { font-size: 13px; line-height: 18px; font-weight: 600; color: var(--fg); }
+.arch-box .ab-sub { font-size: 11.5px; line-height: 1.4; color: var(--fg-2); overflow-wrap: anywhere; }
+.arch-box.head .ab-title { color: var(--t-fg, var(--fg)); }
+.arch-box.tone-ink .ab-title { color: var(--fg); }
+.arch-box.dashed { border-style: dashed; }
+.arch-chip { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; min-height: 24px; padding: 2px 9px;
+  border-radius: var(--r-pill); background: var(--bg-surface); border: 1px solid var(--t-border, var(--border-subtle));
+  font-size: 12px; line-height: 18px; font-weight: 500; color: var(--fg-2); transition: background-color 150ms, border-color 150ms; }
+.arch-chip .ab-title { font-weight: 500; }
+.arch-chip:hover { background: var(--bg-hover); border-color: var(--border-hover); }
+.arch-chip.shard { display: flex; width: 100%; border-radius: var(--r-sm); padding: 5px 9px; }
+/* the open topic: every box and chip of that topic is marked, as the run page marks its open row */
+.arch-box.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.arch-chip.on { border-color: var(--fg); background: var(--bg-active); color: var(--fg); }
+.arch-box:focus-visible, .arch-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- the layout of the picture ---------- */
+.arch-row { display: flex; align-items: stretch; min-width: 0; }
+.arch-row > .arch-box, .arch-row > .arch-group { flex: 1 1 0; }
+.arch-entry { max-width: 75%; margin: 0 auto; }
+.arch-agent { position: relative; margin-top: 0; padding: 26px 16px 16px; background: var(--bg-surface); border: 1px solid var(--border-control);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.aa-label { position: absolute; top: 8px; left: 16px; font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-muted); }
+.arch-control .arch-box { background: var(--bg-subtle); border-color: var(--border-subtle); }
+.arch-box.wide { width: 100%; }
+.arch-group { padding: 10px; border-radius: var(--r-md); background: var(--t-soft); border: 1px solid var(--t-border); min-width: 0; }
+.arch-group .arch-box { background: var(--bg-surface); }
+.arch-group > .arch-box { width: 100%; }
+.ag-label { font-size: 11.5px; line-height: 16px; font-weight: 600; color: var(--t-fg); margin: 0 0 8px; }
+.arch-lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
+.arch-lane { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.al-head { font-family: var(--mono); font-size: 10px; line-height: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-muted); }
+.arch-loop { display: flex; flex-direction: column; gap: 0; padding: 8px; }
+.arch-loop > .arch-box.head { margin-bottom: 8px; }
+.arch-shards { display: flex; flex-direction: column; gap: 5px; }
+.arch-box.merge { width: 100%; margin-top: 10px; background: var(--bg-surface); border-style: dashed; }
+.arch-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; min-width: 0; }
+.arch-chips.layers { align-items: center; gap: 4px; }
+.arch-sep { flex: none; width: 0; height: 0; border: 4px solid transparent; border-left: 5px solid var(--border-hover); border-right: 0; }
+.arch-loopnote { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11.5px; color: var(--t-fg); }
+.arch-loopnote::before { content: ""; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--t-fg); border-right-color: transparent; border-radius: 50%; }
+.arch-post { margin-top: 0; }
+.arch-output { flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); }
+.ao-label { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-muted); margin-right: 4px; }
+.arch-under { gap: 10px; margin-top: 16px; }
+.arch-concepts { margin-top: 10px; }
+.arch-concepts .arch-chips { margin-top: 0; }
+.arch-outside { justify-content: center; }
+.arch-outside .arch-box { flex: 0 1 50%; background: var(--bg-surface); }
+.arch-philosophy { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.arch-philosophy > .arch-box { flex: none; }
+.arch-philosophy .arch-chips { margin-top: 0; }
+
+/* the connectors: a short line with an arrowhead, down between rows and right between boxes */
+.arch-down { position: relative; height: 22px; display: flex; align-items: center; justify-content: center; }
+.arch-down::before { content: ""; position: absolute; left: 50%; top: 2px; bottom: 6px; border-left: 1px solid var(--border-hover); }
+.arch-down::after { content: ""; position: absolute; left: calc(50% - 4px); bottom: 2px; border: 4px solid transparent; border-top: 5px solid var(--border-hover); border-bottom: 0; }
+.arch-down > span { position: absolute; left: calc(50% + 10px); top: 50%; transform: translateY(-50%); font-size: 11px; color: var(--fg-muted); white-space: nowrap; }
+.arch-down.small { height: 14px; }
+.arch-right { position: relative; flex: 0 0 22px; align-self: center; height: 10px; }
+.arch-right::before { content: ""; position: absolute; left: 3px; right: 7px; top: 50%; border-top: 1px solid var(--border-hover); }
+.arch-right::after { content: ""; position: absolute; right: 2px; top: calc(50% - 4px); border: 4px solid transparent; border-left: 5px solid var(--border-hover); border-right: 0; }
+
+/* ---------- the panel: the stage panel with two tabs and a walk ---------- */
+.arch-panel { grid-column: 2; grid-row: 1; }
+.arch-tabs { flex: none; padding: 0 14px 10px; border-bottom: 1px solid var(--border-subtle); }
+.arch-panel .sp-body { padding-top: 14px; }
+.arch-lead { margin: 0; font-size: 15px; line-height: 1.5; font-weight: 500; color: var(--fg); }
+.arch-points, .arch-items { margin: 10px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; color: var(--fg-2); }
+.arch-points li + li, .arch-items li + li { margin-top: 6px; }
+.arch-items { font-size: 13px; }
+.arch-contrast { display: grid; gap: 6px; margin-top: 14px; }
+.ac-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; padding: 8px 10px; border-radius: var(--r-sm); font-size: 13px; line-height: 1.5; color: var(--fg-2); }
+.ac-row.bad { background: var(--red-soft); }
+.ac-row.better { background: var(--green-soft); }
+.ac-label { font-size: 11.5px; font-weight: 600; line-height: 19.5px; }
+.ac-row.bad .ac-label { color: var(--red); }
+.ac-row.better .ac-label { color: var(--green); }
+.arch-block { margin-top: 18px; }
+.arch-block:first-child { margin-top: 0; }
+.arch-block h3 { margin: 0 0 2px; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--fg); }
+.arch-block .xsrc .mono { overflow-wrap: anywhere; }
+.arch-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 12.5px; }
+.arch-table th { text-align: left; font-size: 11px; font-weight: 500; color: var(--fg-muted); padding: 0 8px 4px 0; border-bottom: 1px solid var(--border-subtle); }
+.arch-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border-subtle); color: var(--fg-2); vertical-align: top; overflow-wrap: anywhere; }
+.arch-table td.mono { font-size: 11.5px; color: var(--fg); }
+.arch-table .num { text-align: right; }
+.arch-servers { list-style: none; margin: 8px 0 0; padding: 0; }
+.arch-servers li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border-subtle); font-size: 12px; }
+.arch-inrun { padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+.arch-runid { font-size: 11px; font-weight: 400; color: var(--fg-muted); margin-left: 6px; overflow-wrap: anywhere; }
+.arch-inrun-stage { margin-top: 10px; font-size: 12px; font-weight: 600; color: var(--fg-2); }
+.arch-inrun .sp-facts { margin-top: 6px; grid-template-columns: 170px minmax(0, 1fr); }
+.arch-runlink { display: inline-block; margin-top: 8px; font-size: 12.5px; color: var(--link); }
+.arch-nav { flex: none; display: flex; justify-content: space-between; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border-subtle); }
+.arch-nav .btn { height: auto; min-height: 32px; padding: 5px 14px; white-space: normal; text-align: left; line-height: 1.3; max-width: 50%; }
+
+/* below 1396 px: one column, the panel is the run page's drawer (app.css), the guide steps aside */
+@media (max-width: 1395px) {
+  .arch-wrap { grid-template-columns: minmax(0, 1fr); }
+  .arch-guide { display: none; }
+}
