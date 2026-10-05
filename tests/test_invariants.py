@@ -151,6 +151,29 @@ def test_inv05_quote_that_ends_inside_a_document_url_is_backed_by_the_document(
         f"URL/DOI in report text not in the ledger: {cut[cut.index('https'):]}"]
 
 
+#: DOC_URL as a PDF extraction can break it across two lines: at a slash, inside a hyphen of the
+#: URL, and with a break hyphen the extraction added inside a word.
+BROKEN_DOC_URLS = ["https://rooms.campus.example/stats/\npeak-weeks", "https://rooms.campus.example/stats/peak-\nweeks",
+                   "https://rooms.campus.example/sta-\nts/peak-weeks"]
+
+
+@pytest.mark.parametrize("broken", BROKEN_DOC_URLS, ids=["slash", "url-hyphen", "break-hyphen"])
+def test_inv05_url_the_document_breaks_across_lines_is_backed(review_dict: dict[str, Any], booking_pages: str,
+                                                               broken: str) -> None:
+    """E2: a URL of the document broken across two lines (a line break, with or without a break
+    hyphen) is ledger-backed in its joined form, so a finding that cites the whole URL passes; a URL
+    the document does not hold, joined or not, still fails."""
+    pages = booking_pages + f"\nWeekly counts are published at {broken} for planning.\n"
+    assert DOC_URL in inv.allowed_urls([], [pages])
+    r = copy.deepcopy(review_dict)
+    r["findings"][0]["statement"] += f" The usage page is {DOC_URL}."
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == []
+    other = copy.deepcopy(review_dict)
+    other["findings"][0]["statement"] += " The usage page is https://rooms.campus.example/stats/peak-days."
+    assert inv.check_INV_05(other, texts={"DOC-booking-v1": pages}).problems == [
+        "URL/DOI in report text not in the ledger: https://rooms.campus.example/stats/peak-days."]
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http", "hTtP"])
 def test_inv05_finds_a_url_whose_scheme_is_not_lowercase(review_dict: dict[str, Any], booking_pages: str,
                                                         scheme: str) -> None:

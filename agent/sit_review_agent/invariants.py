@@ -77,10 +77,31 @@ def _urls_in(text: str) -> set[str]:
     return {u.rstrip(".,;:") for u in URL_RE.findall(text)}
 
 
+#: A URL or DOI that runs to the end of a line, then that line break (E2: a PDF extraction breaks a
+#: long URL across two lines, at a character of the URL or with a break hyphen it added).
+_URL_AT_LINE_END = re.compile(rf"({URL_RE.pattern})[ \t]*\r?\n[ \t]*(?=\S)", re.IGNORECASE)
+
+
+def _broken_urls(text: str) -> set[str]:
+    """The URLs of ``text`` once each line break that ends a URL is removed, in both forms: the
+    URL's last character kept, and a final hyphen dropped as a break hyphen."""
+    out: set[str] = set()
+    for keep_hyphen in (True, False):
+        joined, prev = text, None
+        while joined != prev:
+            prev = joined
+            joined = _URL_AT_LINE_END.sub(
+                lambda m, k=keep_hyphen: m.group(1) if k or not m.group(1).endswith("-") else m.group(1)[:-1], joined)
+        out |= _urls_in(joined)
+    return out
+
+
 def allowed_urls(ledger_entries: Iterable[Mapping[str, Any]], document_texts: Iterable[str]) -> set[str]:
     """The URLs and DOIs report text may hold (INV-05), the one set the report phase's redaction keeps:
     every ledger entry's ``url_or_citation``, every URL in the excerpt of an ``external`` entry (the
-    tool result's own text) and every URL in the canonical text of a reviewed document. A ``doc``
+    tool result's own text) and every URL in the canonical text of a reviewed document, also as it
+    reads with a line break inside a URL removed (:func:`_broken_urls`; both the URL as the lines
+    give it and with a break hyphen dropped, since the text cannot tell the two apart). A ``doc``
     excerpt is never a source: when the model's quote is not in the document, verify records the
     model's anchor quote as the excerpt (``ResolveEvidence.doc_entry``), so a doc excerpt can be
     model text; a URL in a real doc excerpt is in the document text anyway. An ``inference`` excerpt
@@ -91,7 +112,7 @@ def allowed_urls(ledger_entries: Iterable[Mapping[str, Any]], document_texts: It
         if e["source_type"] == "external" and e.get("excerpt"):
             out |= _urls_in(e["excerpt"])
     for t in document_texts:
-        out |= _urls_in(t)
+        out |= _urls_in(t) | _broken_urls(t)
     return out
 
 

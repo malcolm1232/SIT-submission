@@ -289,6 +289,31 @@ async def test_inv05_anchor_quote_that_ends_inside_a_document_url_is_kept(tmp_pa
     assert "link removed" not in rd.report_json.read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize(("broken", "url"), [
+    ("https://rooms.campus.example/stats/\npeak-weeks", DOC_URL),
+    ("https://rooms.campus.example/stats/week-\n12", "https://rooms.campus.example/stats/week-12"),
+    ("https://rooms.campus.example/sta-\nts/peak-weeks", DOC_URL)], ids=["slash", "url-hyphen", "break-hyphen"])
+async def test_inv05_url_the_document_breaks_across_lines_is_kept(tmp_path: Path, broken: str, url: str) -> None:
+    """E2: the document's text holds a URL broken across two lines, as a PDF extraction leaves it.
+    A finding that cites the whole URL cites a URL of the document: the report keeps it (no
+    link-removed rewrite, no disclosure) and every invariant passes. (A URL hyphen at a line end
+    between two lower-case letters is taken for a break hyphen by ingest's de-hyphenation before
+    any invariant reads the text, so the URL-hyphen case here breaks before a digit.)"""
+    pdf = tmp_path / "design.pages.txt"
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    passage = URL_PASSAGE.replace(DOC_URL, broken)
+    pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {passage}"), encoding="utf-8")
+
+    def cite(p: dict[str, Any]) -> None:
+        finding(p, "FND-004")["statement"] += f" Weekly counts are published at {url}."
+
+    out, rd = await run(tmp_path, cite, pdf=pdf)
+    report = load(rd)                                                   # written; every invariant passes
+    assert any(url in f["statement"] for f in report["findings"])
+    assert "link removed" not in rd.report_json.read_text(encoding="utf-8")
+    assert "not in the evidence register" not in degradation_events(report)
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http"])
 async def test_inv05_model_written_url_with_a_non_lowercase_scheme_is_removed(tmp_path: Path, scheme: str) -> None:
     """A URL the model wrote with its scheme in another letter case is handled exactly as a
