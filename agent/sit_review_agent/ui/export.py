@@ -17,7 +17,7 @@ Cross-links (5 Oct 2026): every identifier a cold reader cannot resolve is a lin
 evidence, limitation, sound-area, research-question and registry ids, the document's own requirement and
 principle ids, page and section references, ``[doc:...]`` anchors, the confidence number and the review's
 vocabulary. The linking only wraps text that is there, so the review's words are unchanged; the targets the
-review itself does not hold are in a reference part after the review, labelled as added by the export (how to
+review itself does not hold are in a reference part after the review, labelled as reference material, not part of the review's text (how to
 read the review, the decision registry, the evidence ledger, and the reviewed document's extracted text with
 every quoted passage marked, so a reference resolves inside the one file even when it travels alone). The
 zip (:func:`export_zip`) holds the page as ``index.html``, the reviewed PDF as :data:`PDF_NAME` when the run
@@ -47,7 +47,9 @@ CHAT_HEADING = "Reading-aid chat transcript (not part of the review)"
 REPLAY_STAMP = "replayed evidence"
 REPLAY_NOTE = ("This run was produced by dra replay from recorded model and tool calls; nothing was fetched or "
                "judged anew.")
-ADDED = "added by the export"
+#: The badge on each reference section: true in the exported page and in the app's Review tab alike.
+ADDED = "reference material - not part of the review's text"
+REF_GROUP_LABEL = "Reference material"
 PDF_NAME = "document.pdf"
 
 
@@ -395,7 +397,7 @@ def _verdict_para(html: str, idx: Index) -> str:
     return re.sub(r"<p><strong>([A-Z][a-z ]+)</strong>", lab, html, count=1)
 
 
-# ------------------------------------------------------------------ the reference part (added by the export)
+# ------------------------------------------------------------------ the reference part (reference material)
 
 
 def _entry(eid: str, title: str, body: str, src: str | None = None, cls: str = "") -> str:
@@ -707,7 +709,7 @@ class _Run:
         refs = [(sid, title) for sid, title in re.findall(r'<section class="sec x-ref" data-g="\d+" id="([^"]+)">'
                                                           r"<h2>(.*?) <span", "".join(self.ref))]
         if refs:
-            out.append(f'<div class="toc-group">{escape(ADDED.capitalize())}</div>')
+            out.append(f'<div class="toc-group">{escape(REF_GROUP_LABEL)}</div>')
             out.append(self._nav_entry(REF_GROUP, REF_LABEL, refs))
         out.append("</div></nav>")
         return "".join(out)
@@ -723,9 +725,9 @@ class _Run:
 
     def index_page(self) -> str:
         note = ("The review below is this run's report.md as dra review wrote it, shown as HTML. Its identifiers, "
-                "page and section references are links; the Reference part that follows was "
-                f'<a href="#r-howto">{ADDED}</a> and is not part of the review. report.md and report.json are the '
-                "review's own files.")
+                "page and section references are links; the <a href=\"#r-howto\">Reference part</a> that follows is "
+                "reference material and not part of the review's text. report.md and report.json are the review's "
+                "own files.")
         return (f'{self.head()}<body id="top"><div class="layout">{self.nav()}<div class="wrap">'
                 f"{self.header(note)}{self.body()}</div></div>"
                 '<a class="x-back" href="#" hidden>Back to where I was</a>'

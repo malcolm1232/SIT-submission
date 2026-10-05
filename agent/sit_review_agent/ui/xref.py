@@ -5,7 +5,7 @@ It only wraps text that is already there in ``<a>`` (and ``<abbr>`` / ``<span>``
 tags stripped reads exactly as the plain rendering (``tests/test_ui_export_links.py`` checks this). What a link
 points at is either a place in the review itself (a finding card, a limitation, a sound area, a research
 question, a row of the evidence register) or an entry of the reference part the export adds after the review,
-visibly labelled as added by the export:
+visibly labelled as reference material, not part of the review's text:
 
 * the run's decision registry (``report.json`` ``decision_registry``), the evidence ledger (``evidence_ledger``),
   each with its place in the reviewed document and the findings that cite it;
