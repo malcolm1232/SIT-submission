@@ -1,3 +1,5 @@
+SUPERSEDED by `docs/HANDOVER_261005_PLANNER_B.md` on 05 Oct 2026 15:45; read that file instead.
+
 # SIT planner - handover, written 05 Oct 2026 09:20 +08 by the "SIT planner, 4 Oct afternoon to 5 Oct morning" session
 
 START HERE. This file is self-contained: a new session needs nothing else to continue.
