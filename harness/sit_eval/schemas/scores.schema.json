@@ -27,6 +27,10 @@
     "condition": {"type": ["string", "null"]},
     "verdict_label": {"enum": ["fit", "fit_with_conditions", "not_fit", "not_assessed", null],
                       "description": "the review's verdict label; not_assessed = the agent run produced no assessment (scored intention-to-treat, flagged in warnings)"},
+    "refine_fallback_recorded": {"type": "boolean",
+                                 "description": "true when the scored report's research_log.degradations records a refine fallback or a failed refine repair (the merged findings, or the first answer's kept revisions, stand unrefined): the scores are then partly the fallback's, not the refined agent's; also a warning. Absent in scores written before 2026-10-05"},
+    "refine_fallback_events": {"type": "array", "items": {"type": "string"},
+                               "description": "the event texts of those degradations, in report order; empty when refine_fallback_recorded is false"},
     "scored_run_ready": {"type": "boolean"},
     "doc_sha256_text_matches_review": {"type": ["boolean", "null"]}
    }
