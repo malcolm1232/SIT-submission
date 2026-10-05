@@ -38,10 +38,11 @@ def _join(items: list[str], last: str = "and") -> str:
     return ", ".join(items[:-1]) + f" {last} " + items[-1]
 
 
-def tool_layers() -> list[str]:
-    """The tool gateway's layers, outermost first, as ``tools/gateway.py`` lists them in its module docstring;
-    the base line names its alternatives (live, cassette replay, fake). Only names that are classes there."""
-    from sit_review_agent.tools import gateway
+def tool_layers(gateway: Any = None) -> list[str]:
+    """The tool gateway's layers, outermost first, as ``tools/gateway.py`` (or ``gateway``) lists them in its module
+    docstring; the base line names its alternatives (live, cassette replay, fake). Only names that are classes there."""
+    if gateway is None:
+        from sit_review_agent.tools import gateway
 
     doc = gateway.__doc__ or ""
     block = doc.split("::", 1)[1] if "::" in doc else ""

@@ -9,6 +9,7 @@ import re
 import shutil
 import threading
 import time
+import types
 from pathlib import Path
 from typing import Any, get_args
 
@@ -104,6 +105,15 @@ def test_the_shards_servers_backends_and_layers_are_read_not_written(view: dict[
             assert isinstance(getattr(tool_gateway, name), type), name
     demo = load_config(None, ConfigOverrides(profile="demo")).stop_rules
     assert (f["demo_stage_1_end"], f["demo_deadline_s"]) == (demo.stage_limits_s.stage_1_end, demo.deadline_seconds)
+
+
+def test_a_layer_named_in_the_docstring_but_not_a_class_is_left_out() -> None:
+    fake = types.ModuleType("fake_gateway")
+    fake.__doc__ = ("Layers, outermost first::\n\n    LoggingToolGateway   writes the log\n    RemovedGateway   gone\n"
+                    "    base             MCPToolGateway (live) | GoneGateway\n\nAfter the block.\n")
+    fake.LoggingToolGateway = type("LoggingToolGateway", (), {})  # type: ignore[attr-defined]
+    fake.MCPToolGateway = type("MCPToolGateway", (), {})  # type: ignore[attr-defined]
+    assert architecture.tool_layers(fake) == ["LoggingToolGateway", "MCPToolGateway"]
 
 
 def test_a_config_with_other_shards_changes_the_words() -> None:
