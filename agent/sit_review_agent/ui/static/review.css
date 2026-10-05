@@ -2,8 +2,8 @@
    hover card. One sheet for both places the document is shown: the exported page (ui/export.py inlines it after
    tokens.css, then export.css, the page around it) and the run's Review tab in dra ui (index.html, after app.css).
    Everything is inside an element of class "rv" (the export's <html>, the app's review fragment); an element
-   selector is scoped by :where(.rv), so it keeps the specificity of a bare element and stays out of the app. Every
-   colour is a token (tokens.css, rule 8.1); no motion. */
+   selector is scoped by :where(.rv), so it keeps the specificity of a bare element and stays out of the app, and so
+   is .chip, a class the app's own panels also use. Every colour is a token (tokens.css, rule 8.1); no motion. */
 :where(.rv) { font-size: 15px; line-height: 24px; color: var(--fg); }
 :where(.rv) h1 { font-family: inherit; font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: -0.015em; margin: 28px 0 16px; max-width: 30ch; text-wrap: balance; }
 :where(.rv) h2 { font-size: 21px; line-height: 28px; font-weight: 600; letter-spacing: -0.01em; margin: 48px 0 16px;
@@ -56,25 +56,25 @@ abbr.x-abbr { text-decoration: underline dotted; text-decoration-color: var(--fg
 .x-verdict-row td { padding-top: 12px; padding-bottom: 12px; }
 
 /* chips: the facts of a finding (kind, category, severity, confidence, rank, disposition) */
-.chip { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: var(--r-pill);
+:where(.rv) .chip { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 10px; border-radius: var(--r-pill);
   font-size: 12.5px; line-height: 18px; font-weight: 500; background: var(--bg-control); color: var(--fg-2);
   text-decoration: none; border: 1px solid transparent; overflow-wrap: normal; }
 :where(.rv) a.chip:hover { border-color: var(--border-hover); color: var(--fg); }
-.chip strong { font-weight: 600; }
-.chip.kind { background: var(--solid-ink); color: var(--solid-ink-fg); }
-.chip.kind-strength { background: var(--strength-bg); color: var(--strength-fg); border-color: var(--strength-border); }
-.chip.sev-critical { background: var(--sev-critical-bg); color: var(--sev-critical-fg); }
-.chip.sev-high { background: var(--sev-high-bg); color: var(--sev-high-fg); border-color: var(--sev-high-border); }
-.chip.sev-medium { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
-.chip.sev-low { background: var(--sev-low-bg); color: var(--sev-low-fg); }
-.chip.cat, .chip.rank, .chip.conf { background: transparent; border-color: var(--border-control); color: var(--fg-2); }
-.chip.rank { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
-.chip.disp { background: var(--bg-control); color: var(--fg); }
-.chip.disp-also { background: transparent; border-color: var(--border-control); font-weight: 400; min-height: 22px; padding: 1px 8px; }
-.chip.verdict { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
-.chip.verdict-fit { background: var(--strength-bg); color: var(--strength-fg); border-color: var(--strength-border); }
-.chip.verdict-not_fit { background: var(--sev-high-bg); color: var(--sev-high-fg); border-color: var(--sev-high-border); }
-.chip.verdict-not_assessed { background: var(--bg-control); color: var(--fg-muted); }
+:where(.rv) .chip strong { font-weight: 600; }
+:where(.rv) .chip.kind { background: var(--solid-ink); color: var(--solid-ink-fg); }
+:where(.rv) .chip.kind-strength { background: var(--strength-bg); color: var(--strength-fg); border-color: var(--strength-border); }
+:where(.rv) .chip.sev-critical { background: var(--sev-critical-bg); color: var(--sev-critical-fg); }
+:where(.rv) .chip.sev-high { background: var(--sev-high-bg); color: var(--sev-high-fg); border-color: var(--sev-high-border); }
+:where(.rv) .chip.sev-medium { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
+:where(.rv) .chip.sev-low { background: var(--sev-low-bg); color: var(--sev-low-fg); }
+:where(.rv) .chip.cat, :where(.rv) .chip.rank, :where(.rv) .chip.conf { background: transparent; border-color: var(--border-control); color: var(--fg-2); }
+:where(.rv) .chip.rank { color: var(--fg-muted); font-variant-numeric: tabular-nums; }
+:where(.rv) .chip.disp { background: var(--bg-control); color: var(--fg); }
+:where(.rv) .chip.disp-also { background: transparent; border-color: var(--border-control); font-weight: 400; min-height: 22px; padding: 1px 8px; }
+:where(.rv) .chip.verdict { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
+:where(.rv) .chip.verdict-fit { background: var(--strength-bg); color: var(--strength-fg); border-color: var(--strength-border); }
+:where(.rv) .chip.verdict-not_fit { background: var(--sev-high-bg); color: var(--sev-high-fg); border-color: var(--sev-high-border); }
+:where(.rv) .chip.verdict-not_assessed { background: var(--bg-control); color: var(--fg-muted); }
 .x-sep { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* a finding: a card with its facts as chips and its lines labelled */
@@ -136,10 +136,10 @@ article.finding.x-hit, :root:not(.js) article.finding:target { background: var(-
 .x-place, .x-cited { font-size: 13px; line-height: 20px; }
 .x-muted { color: var(--fg-muted); font-size: 12px; overflow-wrap: anywhere; }
 .x-eref { font-weight: 400; color: var(--fg-2); }
-.chip.reg, .chip.src { min-height: 20px; padding: 0 8px; font-size: 11.5px; font-weight: 500; }
-.chip.reg-approved_decision { background: var(--strength-bg); color: var(--strength-fg); }
-.chip.reg-pending_decision { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
-.chip.src-inference { background: transparent; border-color: var(--border-control); }
+:where(.rv) .chip.reg, :where(.rv) .chip.src { min-height: 20px; padding: 0 8px; font-size: 11.5px; font-weight: 500; }
+:where(.rv) .chip.reg-approved_decision { background: var(--strength-bg); color: var(--strength-fg); }
+:where(.rv) .chip.reg-pending_decision { background: var(--sev-medium-bg); color: var(--sev-medium-fg); }
+:where(.rv) .chip.src-inference { background: transparent; border-color: var(--border-control); }
 
 /* the reviewed document's text, page by page */
 .doc-page { margin: 0 0 14px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }

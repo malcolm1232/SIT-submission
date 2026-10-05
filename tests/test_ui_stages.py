@@ -488,6 +488,28 @@ def test_a_chip_opens_its_definition_with_its_source(page) -> None:
     assert "n/N (shard marker)" in pg.locator(".term-def").inner_text()
 
 
+
+def test_the_review_sheet_leaves_the_panels_chips_alone(page) -> None:
+    """review.css (the Review tab's sheet) is loaded on every page of the app, so its chip rules are scoped to the
+    review document: a stage panel's chips (a ``pill`` that is also a ``chip``) keep the app's pill geometry."""
+    pg, base, _runs, _replay = page
+    open_log(pg, base, RUN)
+    open_panel(pg, "assess 1/2")
+    pg.wait_for_selector("#sp-content button.pill.chip")
+    m = pg.evaluate("""() => {
+      const keys = ['height', 'paddingLeft', 'paddingTop', 'fontSize', 'fontWeight'];
+      const plain = document.createElement('span');
+      plain.className = 'pill';
+      plain.textContent = 'high';
+      document.getElementById('sp-content').append(plain);
+      const want = keys.map(k => getComputedStyle(plain)[k]).join(' ');
+      const got = [...document.querySelectorAll('#sp-content button.pill.chip')]
+        .map(b => keys.map(k => getComputedStyle(b)[k]).join(' '));
+      plain.remove();
+      return { want, got: [...new Set(got)], n: got.length };
+    }""")
+    assert m["n"] > 0 and m["got"] == [m["want"]], m
+
 def test_the_panel_is_reachable_by_keyboard(page) -> None:
     pg, base, _runs, _replay = page
     open_log(pg, base, RUN)
