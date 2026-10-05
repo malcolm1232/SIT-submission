@@ -330,3 +330,29 @@ def test_a_still_open_carrier_keeps_the_row_open_when_another_is_resolved(tmp_pa
     assert (mail["status"], mail["finding_ids"], mail["re_examined"]) == ("still_open", [mail_id], True)
     assert [r.inv_id for r in check_all(report, run_dir) if not r.passed] == []
     assert check_INV_13(report, run_dir).passed
+
+
+def test_split_resolved_keeps_a_less_fixed_entry_and_replaces_a_withdrawal() -> None:
+    """``split_resolved`` alone (refine never gives a status for a prior a kept draft carries, so the
+    pipeline cannot reach this): an existing still_open entry for the resolved carrier's prior finding
+    stands; a withdrawal gives way to ``resolved`` with the carrier's note; the carrier leaves either way."""
+    from types import SimpleNamespace
+
+    from sit_review_agent.delta import split_resolved
+    from sit_review_agent.llm.outputs import PriorStatusDraft
+    from sit_review_agent.models import PriorFindingStatus, Reassessment, ReassessmentStatus
+
+    def carrier(fid: str, pid: str) -> Any:
+        r = Reassessment(prior_finding_id=pid, status=ReassessmentStatus.RESOLVED, note=RESOLVED_NOTE)
+        return SimpleNamespace(id=fid, reassessment=r)
+
+    kept_open = PriorStatusDraft(prior_finding_id="FND-001", status=PriorFindingStatus.STILL_OPEN,
+                                 note="Not tested yet.")
+    withdrawn = PriorStatusDraft(prior_finding_id="FND-002", status=PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT,
+                                 note=WITHDRAW_NOTE)
+    kept, statuses, moved = split_resolved([carrier("FND-005", "FND-001"), carrier("FND-006", "FND-002")],
+                                           ["FND-001", "FND-002"], [kept_open, withdrawn])
+    assert kept == [] and moved == ["FND-005", "FND-006"]
+    by_prior = {s.prior_finding_id: s for s in statuses}
+    assert len(statuses) == 2 and by_prior["FND-001"] == kept_open
+    assert (by_prior["FND-002"].status, by_prior["FND-002"].note) == (PriorFindingStatus.RESOLVED, RESOLVED_NOTE)
