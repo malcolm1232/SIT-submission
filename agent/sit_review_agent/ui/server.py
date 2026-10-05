@@ -4,6 +4,7 @@ Routes (design note section 9, W2)::
 
     GET  /                          the page (``/?run=<id>`` opens a run)
     GET  /static/<file>             index.html, tokens.css, app.css, app.js
+    GET  /favicon.ico               the page's icon, from the static files
     GET  /meta                      profiles, tools, backend, version, config file names, whether runs can start here
     GET  /limits                    the stage limits and warnings a run would get at ``?profile=&deadline_s=``
     GET  /tools                     per server: enabled, the last recorded warm-up and its time, tool count
@@ -20,7 +21,9 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
     GET  /runs/<id>/review.html     the run's Review tab: the export's review document (``export.review_fragment``,
                                     the same renderer and links), an HTML fragment with no script; a run without a
-                                    report.md, or one whose files cannot be drawn, is answered with what is missing
+                                    report.md, or one whose files cannot be drawn, is answered with what is missing.
+                                    ``?view=coverage|evidence|delta``: that tab's body with the same linker, the
+                                    document kept hidden beside it for its links' targets
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
     GET  /runs/<id>/stage/<name>    what one stage produced (``ingest`` ... ``report``, ``assess-N`` per shard), read
@@ -42,6 +45,10 @@ Routes (design note section 9, W2)::
     POST /runs/<id>/stop            SIGINT to a run this server started
     GET  /runs/<id>/chat            chat history and budget
     POST /runs/<id>/chat            one question, one model call (``ui.chat``)
+    POST /runs/<id>/chat/stream     the same, streamed as server-sent events: ``partial`` (the answer's text so far,
+                                    as the model writes it), then ``done`` (the turn as /chat answers it, and the
+                                    budget), ``stopped``, ``refused`` or ``error``; closing the stream stops the call
+    POST /runs/<id>/chat/stop       Stop: ends the answer being streamed; its stream sends ``stopped``
 
 No authentication: the server binds to loopback, and :func:`serve` refuses any other host unless
 ``allow_remote`` is set (then it prints a warning). Anyone who can reach the port can start runs
@@ -50,7 +57,10 @@ and spend chat budget; that is the documented limitation.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import ipaddress
+import json
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -76,6 +86,8 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 DEADLINE_MIN_S = 120
 DEADLINE_MAX_S = 7200
 FINDING_ID_RE = r"^FND-\d+$"
+#: How often a streamed chat answer that has nothing new checks that its page is still there.
+CHAT_POLL_S = 0.5
 #: What the Review tab says when a run has report.json (so the run page opens on its review) but the review document
 #: cannot be drawn: no report.md (a run cut between the two files, or written by an agent older than report.md), or
 #: files in a shape the renderer cannot read.
@@ -155,6 +167,8 @@ class UIState:
     architecture: dict[str, Any] | None = None
     #: ``--config`` as the server was started (None: the default config/agent.yaml), for the architecture view.
     config_path: Path | None = None
+    #: The answer being streamed per run (run ID -> the event its Stop sets): one at a time per run.
+    chat_stops: dict[str, Any] = field(default_factory=dict)
 
 
 def tools_key_missing(state: UIState) -> str | None:
@@ -192,6 +206,10 @@ def build_app(state: UIState) -> Starlette:
     async def index(request: Request) -> Response:
         return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
 
+    async def favicon(request: Request) -> Response:
+        return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon",
+                            headers={"Cache-Control": "max-age=86400"})
+
     async def architecture_get(request: Request) -> Response:
         if state.architecture is None:
             state.architecture = architecture_view(state.config_path)
@@ -209,7 +227,8 @@ def build_app(state: UIState) -> Starlette:
                       # What Stop does, stated from the code: SIGINT is the CLI's Ctrl-C path (errors.ExitCode.SIGINT).
                       "stop_exit_code": int(ExitCode.SIGINT),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
-                               "max_cost_usd": chat.MAX_COST_USD, "label": chat.LABEL}})
+                               "max_cost_usd": chat.MAX_COST_USD, "label": chat.LABEL,
+                               "stopped_error": chat.STOPPED_ERROR, "stopped_text": chat.STOPPED_TEXT}})
 
     async def list_runs(request: Request) -> Response:
         return _json({"runs": rundata.list_runs(state.runs_dir, alive=state.launcher.alive())})
@@ -414,9 +433,13 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, "No such run.")
         if not (rd / "report.md").is_file():
             return _err(404, REVIEW_NO_MD if (rd / "report.json").is_file() else REVIEW_NOT_YET)
+        view = request.query_params.get("view") or "review"
+        if view not in export.VIEWS:
+            return _err(400, f"No view named {view!r}; one of {', '.join(export.VIEWS)}.")
         pdf = rundata.reviewed_pdf(rd, state.repo_root)
         try:
-            html = export.review_fragment(rd, pdf_href=f"/runs/{rd.name}/doc.pdf" if pdf is not None else None)
+            html = export.review_fragment(rd, pdf_href=f"/runs/{rd.name}/doc.pdf" if pdf is not None else None,
+                                          view=view)
         except (OSError, AttributeError, KeyError, TypeError, ValueError) as exc:
             return _err(422, f"{REVIEW_UNREADABLE} ({type(exc).__name__}: {exc}).")
         return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
@@ -573,8 +596,79 @@ def build_app(state: UIState) -> Starlette:
         except chat.ChatRefused as exc:
             return _err(exc.status, exc.message)
 
+    async def chat_stream(request: Request) -> Response:
+        """One question, its answer streamed (``chat.ask`` with ``on_partial``). The question is checked before the
+        stream opens, so a refusal is an HTTP status as on /chat. The reader stops the call by closing the stream:
+        the server sees the page go (a write fails, or the poll below finds it gone) and cancels the call, which
+        ``chat.ask`` logs as a counted call with ``chat.STOPPED_ERROR``."""
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        try:
+            body = await request.json()
+        except ValueError:
+            return _err(400, "Expected a JSON body with a question.")
+        question = str((body or {}).get("question") or "")
+        running = rundata.run_status(rd, process_alive=alive(rd.name)) == "running"
+        try:
+            chat.precheck(rd, question, running=running)
+        except chat.ChatRefused as exc:
+            return _err(exc.status, exc.message)
+        if rd.name in state.chat_stops:
+            return _err(409, "An answer for this run is still being written; stop it or wait for it.")
+        queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+        stop = state.chat_stops[rd.name] = asyncio.Event()
+
+        async def work() -> None:
+            try:
+                res = await chat.ask(rd, question, state.chat_client, running=running, stop=stop,
+                                     on_partial=lambda text: queue.put_nowait(("partial", {"answer": text})))
+                queue.put_nowait(("stopped" if res.get("stopped") else "done", res))
+            except chat.ChatRefused as exc:
+                queue.put_nowait(("refused", {"error": exc.message, "status": exc.status}))
+            except Exception as exc:  # noqa: BLE001 - said in the stream, never a broken page
+                queue.put_nowait(("error", {"error": f"{type(exc).__name__}: {exc}"}))
+
+        async def gen() -> AsyncIterator[str]:
+            task = asyncio.create_task(work())
+            try:
+                while True:
+                    try:
+                        kind, data = await asyncio.wait_for(queue.get(), CHAT_POLL_S)
+                    except TimeoutError:
+                        if await request.is_disconnected():
+                            return
+                        yield ": waiting\n\n"                      # a write that fails once the page has gone
+                        continue
+                    yield f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+                    if kind != "partial":
+                        return
+            finally:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+                if state.chat_stops.get(rd.name) is stop:
+                    del state.chat_stops[rd.name]
+
+        return StreamingResponse(gen(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    async def chat_stop(request: Request) -> Response:
+        """The page's Stop: ends the answer being streamed for this run; its stream then sends ``stopped`` with the
+        turn as it is logged (counted, ``chat.STOPPED_ERROR``) and the budget."""
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        stop = state.chat_stops.get(rd.name)
+        if stop is None:
+            return _err(409, "No answer is being written for this run.")
+        stop.set()
+        return _json({"stopping": True})
+
     routes = [
         Route("/", index),
+        Route("/favicon.ico", favicon),
         Route("/meta", meta),
         Route("/architecture", architecture_get, methods=["GET"]),
         Route("/limits", limits, methods=["GET"]),
@@ -604,6 +698,8 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/stop", run_stop, methods=["POST"]),
         Route("/runs/{run_id}/chat", chat_get, methods=["GET"]),
         Route("/runs/{run_id}/chat", chat_post, methods=["POST"]),
+        Route("/runs/{run_id}/chat/stream", chat_stream, methods=["POST"]),
+        Route("/runs/{run_id}/chat/stop", chat_stop, methods=["POST"]),
         Mount("/static", app=StaticFiles(directory=STATIC_DIR), name="static"),
     ]
     app = Starlette(routes=routes)
