@@ -343,12 +343,13 @@ async def test_inv05_model_written_url_with_a_non_lowercase_scheme_is_removed(tm
     assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
 
 
-async def test_inv05_url_case_change_in_a_quote_fails_closed(tmp_path: Path) -> None:
-    """A refine revision quotes a URL passage of the document with the URL's path in another letter
-    case. The quote matches its excerpt after case folding, so verify keeps it and the report never
-    rewrites it; but the URL it carries is not the document's (a URL's path is case-sensitive), so
-    ``quote_backed_by_excerpt`` does not exempt it and the run ends fail-closed with INV-05 naming
-    the URL; no report.json holds it."""
+async def test_inv05_url_case_change_in_a_quote_is_redacted(tmp_path: Path) -> None:
+    """E3: a refine revision quotes a URL passage of the document with the URL's path in another
+    letter case. The quote matches its excerpt after case folding, so verify keeps it; but the URL
+    it carries is not the document's (a URL's path is case-sensitive), so ``quote_backed_by_excerpt``
+    does not exempt it. The report redacts that URL as it would outside a quote (disclosed), the
+    quote still matches its excerpt with the URL removed, and every invariant passes; no report
+    file holds the changed URL. (Until E3 this run ended fail-closed with INV-05 naming the URL.)"""
     pdf = tmp_path / "design.pages.txt"
     line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
     pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
@@ -368,11 +369,13 @@ async def test_inv05_url_case_change_in_a_quote_fails_closed(tmp_path: Path) -> 
             {"evidence_id": ev, "source_type": "doc", "quote": changed, "supports_claim": True, "derived_from": []})
 
     out, rd = await run(tmp_path, shard, pdf=pdf, revise=refine)
-    assert not rd.report_json.exists()
-    assert rd.failure.is_file()
-    failure = json.loads(rd.failure.read_text(encoding="utf-8"))
-    assert failure["phase"] == "report"
-    assert failure["problems"] == [f"INV-05: URL/DOI in report text not in the ledger: {bad_url}"]
+    report = load(rd)                                                   # written; every invariant passes
+    for name in ("report.json", "report.md"):
+        assert bad_url not in (rd.root / name).read_text(encoding="utf-8")
+    redacted = changed.replace(bad_url, "[link removed: not in the evidence register]")
+    assert redacted in [e["quote"] for f in report["findings"] for e in f["evidence"]]
+    deg = next(d for d in report["research_log"]["degradations"] if "not in the evidence register" in d["event"])
+    assert any(deg["id"] in lim["degradation_ids"] for lim in report["limitations"])          # disclosed
 
 
 async def test_inv05_made_up_url_in_a_made_up_anchor_never_reaches_the_report(tmp_path: Path) -> None:

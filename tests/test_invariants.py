@@ -174,6 +174,36 @@ def test_inv05_url_the_document_breaks_across_lines_is_backed(review_dict: dict[
         "URL/DOI in report text not in the ledger: https://rooms.campus.example/stats/peak-days."]
 
 
+def test_report_redaction_covers_a_url_inside_a_quote_inv05_does_not_exempt(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """E3: a doc quote that occurs in its excerpt only after case folding carries a URL the document
+    does not have (path case changed); INV-05 does not exempt it, so the report's redaction rewrites
+    that URL as it would outside a quote, and INV-05 passes on the redacted review. A quote INV-05
+    has verified (cut inside a backed document URL) stays exactly as it was."""
+    from sit_review_agent.phases.report import LINK_REMOVED, _redact
+
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    r = copy.deepcopy(review_dict)
+    ledger = next(e for e in r["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] += f" Weekly counts are published at {DOC_URL} for planning."
+    cites = [e for f in r["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004"]
+    bad = DOC_URL.replace("/stats/", "/Stats/")
+    cites[0]["quote"] = f"Weekly counts are published at {bad} for planning."
+    cut = f"Weekly counts are published at {DOC_URL[: DOC_URL.index('/stats') + 4]}"
+    r["findings"][0]["evidence"].append({**cites[0], "quote": cut})
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {bad}"]
+    allowed = inv.allowed_urls(r["evidence_ledger"], [pages])
+    excerpts = {e["evidence_id"]: e["excerpt"] or "" for e in r["evidence_ledger"]}
+    counter = [0]
+    out = {k: (v if k in ("evidence_ledger", "metadata") else _redact(v, allowed, counter, excerpts, (pages,)))
+           for k, v in r.items()}
+    quotes = [e["quote"] for f in out["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004"]
+    assert f"Weekly counts are published at {LINK_REMOVED} for planning." in quotes and counter == [1]
+    assert cut in quotes                                                # verified: untouched
+    assert inv.check_INV_05(out, texts={"DOC-booking-v1": pages}).problems == []
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http", "hTtP"])
 def test_inv05_finds_a_url_whose_scheme_is_not_lowercase(review_dict: dict[str, Any], booking_pages: str,
                                                         scheme: str) -> None:
