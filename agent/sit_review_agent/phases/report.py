@@ -33,7 +33,10 @@ What assembly guarantees by construction (each is disclosed, never hidden):
   to a withdrawn, dropped or unverified draft is removed with its clause, and a disclosure names a draft
   as ``draft FND-nnn``; the coverage notes of ``report.md`` the same way. The counts go to the manifest
   (``extra.finding_ids.rewrites``) and INV-12 checks the result. Model briefs are never rewritten (a
-  recorded run replays with the same requests), so this happens here, after the verdict call.
+  recorded run replays with the same requests), so this happens here, after the verdict call;
+* in a re-review a finding reassessed as resolved is a delta-table row only, not a finding (card A3,
+  decision 47; :func:`move_resolved_to_prior_table`): it leaves the findings before the verdict
+  call, so the verdict, the severity counts and the findings count hold only open issues.
 
 Anything the invariants still reject after that is a bug: the phase writes ``failure.json`` and
 ``report.invalid.json`` and raises :class:`~sit_review_agent.errors.StageCrash` (exit 4).
@@ -46,7 +49,14 @@ from typing import Any
 
 from sit_review_agent.clock import isoformat_z
 from sit_review_agent.context import RunContext
-from sit_review_agent.delta import build_prior_table, mark_regressions, prior_findings_of, unknown_prior_refs
+from sit_review_agent.delta import (
+    MOVED_TO_PRIOR_TABLE,
+    build_prior_table,
+    mark_regressions,
+    prior_findings_of,
+    split_resolved,
+    unknown_prior_refs,
+)
 from sit_review_agent.errors import (
     ExitCode,
     LLMDeadlineError,
@@ -466,6 +476,28 @@ def _intent(ctx: RunContext) -> IntentSummary:
                          doc_anchors=[anchor])
 
 
+def move_resolved_to_prior_table(ctx: RunContext) -> list[str]:
+    """Delta mode, card A3 (decision 47): each finding whose reassessment says its prior finding is
+    resolved leaves ``state.findings`` and becomes that prior finding's ``resolved`` status
+    (``state.prior_statuses``, read by :func:`build_prior_table`), so the verdict, the counts and the
+    report hold only open issues. IDs are kept, not renumbered; ``state.finding_ids.report`` records
+    each one moved, and :func:`settle_refs` removes the references to it (they are no final ID). The
+    findings' evidence leaves the cited set with them. Runs before the verdict call; a re-run of the
+    phase finds nothing left to move. Returns the IDs moved."""
+    st = ctx.state
+    prior_ids = [p["id"] for p in prior_findings_of(st.previous_run_dir)]
+    kept, statuses, moved = split_resolved(st.findings, prior_ids, st.prior_statuses)
+    if not moved:
+        return []
+    st.findings = kept
+    st.prior_statuses = statuses
+    st.finding_ids = st.finding_ids.model_copy(
+        update={"report": {**st.finding_ids.report, **dict.fromkeys(moved, MOVED_TO_PRIOR_TABLE)}})
+    ctx_event(ctx, f"{len(moved)} finding(s) reassessed as resolved moved to the delta table only: "
+              f"{', '.join(moved)}", event="resolved_to_prior_table", finding_ids=moved)
+    return moved
+
+
 def _delta_table(ctx: RunContext, findings: list[Finding]) -> tuple[list[Finding], list[PriorFindingEntry]]:
     """Delta mode (``delta``): the findings with ``reassessment.regression`` computed from the two
     texts, and the delta table with one status per finding of the previous review. Prior findings
@@ -587,7 +619,10 @@ class ReportPhase:
         if not ctx.documents:
             raise StageCrash(PhaseName.REPORT.value, InvariantViolation("no documents loaded"))
         missing = assessment_missing([d.event for d in st.degradations], st.declined_sections)
-        if missing is not None and not st.findings and not st.sound_areas:
+        unassessed = missing is not None and not st.findings and not st.sound_areas
+        if st.review_mode is ReviewMode.DELTA:
+            move_resolved_to_prior_table(ctx)                       # before the verdict sees the findings
+        if unassessed:
             # No assessment (out of time, robustness LLM-05; truncated twice, LLM-07; declined, LLM-06):
             # no model verdict on an unassessed design. A verdict call could only invent one.
             why = NOT_ASSESSED_WHY[missing]

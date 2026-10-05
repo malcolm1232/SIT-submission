@@ -5,7 +5,9 @@ its ID there (``prior_id``; the previous review is never renumbered):
 
 * carried forward by one or more findings of this review (``reassessment.prior_finding_id``, a
   status other than ``new_in_update``): their status; when several carry it, the least fixed one
-  (still_open, then partially_addressed, then resolved), each successor named in the note;
+  (still_open, then partially_addressed, then resolved), each successor named in the note; a
+  carrier reassessed as resolved is moved out of the findings first (:func:`split_resolved`, card
+  A3), so it gives the row only through its ``resolved`` status below;
 * otherwise the status refine gave it (``state.prior_statuses``: resolved, partially_addressed,
   still_open, or withdrawn_on_reassessment with a one-line reason; refine is asked once when its
   answer omits one);
@@ -68,6 +70,52 @@ def carried_prior_ids(findings: Iterable[Any]) -> set[str]:
         if r is not None and r.prior_finding_id and r.status is not ReassessmentStatus.NEW_IN_UPDATE:
             out.add(r.prior_finding_id)
     return out
+
+
+#: Why a finding the report moved out of the findings left them (``state.finding_ids.report``).
+MOVED_TO_PRIOR_TABLE = "resolved, moved to the prior table"
+#: Prior statuses as fixed as ``resolved`` or less: such an entry already given for a prior stands.
+_NOT_MORE_FIXED = (PriorFindingStatus.STILL_OPEN, PriorFindingStatus.PARTIALLY_ADDRESSED, PriorFindingStatus.RESOLVED)
+
+
+def split_resolved(findings: Sequence[Finding], prior_ids: Iterable[str],
+                   statuses: Sequence[PriorStatusDraft]) -> tuple[list[Finding], list[PriorStatusDraft], list[str]]:
+    """Card A3 (decision 47): a finding whose reassessment says its prior finding is ``resolved``
+    states no open issue, so it is a row of the delta table only, not a finding of this review.
+
+    Returns the findings to keep, the prior statuses with one ``resolved`` entry (the carriers' notes)
+    per prior finding left with no kept carrier, and the IDs moved out (kept unrenumbered). A resolved
+    carrier of an ID the previous review does not have stays a finding (it has no row to move to,
+    and ``unknown_prior_refs`` discloses it). Where another kept finding still carries the same prior
+    finding, that carrier gives the row as before. An entry already given for a prior finding with a
+    status as fixed as ``resolved`` or less stands; a withdrawal gives way to the carriers' answer,
+    as it did when the carrier was in the table."""
+    known = set(prior_ids)
+    moved = [f for f in findings if f.reassessment is not None
+             and f.reassessment.status is ReassessmentStatus.RESOLVED and f.reassessment.prior_finding_id in known]
+    if not moved:
+        return list(findings), list(statuses), []
+    gone = {f.id for f in moved}
+    kept = [f for f in findings if f.id not in gone]
+    still_carried = carried_prior_ids(kept)
+    notes: dict[str, list[str]] = {}
+    for f in moved:
+        r = f.reassessment
+        assert r is not None and r.prior_finding_id is not None
+        bucket = notes.setdefault(r.prior_finding_id, [])
+        note = " ".join((r.note or "").split())
+        if note and note not in bucket:
+            bucket.append(note)
+    out = list(statuses)
+    for pid, texts in notes.items():
+        if pid in still_carried:
+            continue
+        existing = [s for s in out if s.prior_finding_id == pid]
+        if existing and all(s.status in _NOT_MORE_FIXED for s in existing):
+            continue
+        out = [s for s in out if s.prior_finding_id != pid]
+        out.append(PriorStatusDraft(prior_finding_id=pid, status=PriorFindingStatus.RESOLVED, note=" ".join(texts)))
+    return kept, out, [f.id for f in moved]
 
 
 def build_prior_table(prior: Sequence[Mapping[str, str]], findings: Sequence[Finding],

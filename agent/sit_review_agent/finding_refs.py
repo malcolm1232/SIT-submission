@@ -306,7 +306,7 @@ def manifest_record(ids: FindingIdMap, final: Iterable[str]) -> dict[str, Any]:
     ID it became, or null), the prior review's IDs and the report's rewrite counts."""
     return {"shards": {k: dict(v) for k, v in ids.shards.items()}, "refine": dict(ids.refine),
             "verify": dict(ids.verify), "final": chain_of(ids, final).final_map(), "prior": list(ids.prior),
-            "rewrites": dict(ids.rewrites)}
+            "rewrites": dict(ids.rewrites), **({"report": dict(ids.report)} if ids.report else {})}
 
 
 # ============================================================================ checking (INV-12)
