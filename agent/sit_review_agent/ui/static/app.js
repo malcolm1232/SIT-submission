@@ -251,19 +251,21 @@ async function showDrop() {
     const say = (lim, dd) => "Stage 1 ends by " + clock(lim.stage_1_end) + ", refine by " + clock(lim.refine_end) + ", verdict by " + clock(lim.verdict_end) + ", deadline " + clock(dd) + ".";
     if (Number.isNaN(d)) { help.textContent = ""; dhelp.className = "help error"; dhelp.textContent = "Give a number of minutes from " + intl(dmin / 60) + " to " + intl(dmax / 60) + "."; return; }
     dhelp.className = "help";
-    if (!p || d === null) { help.textContent = ""; dhelp.textContent = p ? "Empty: the " + p.label + " profile's own deadline." : ""; if (p && d === null) help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
-    dhelp.textContent = d === p.deadline_s ? "The " + p.label + " profile's own deadline." : "Passed as --deadline " + d + "; the profile's own is " + dur(p.deadline_s) + ".";
-    if (d === p.deadline_s) { help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
-    help.textContent = "Reading the limits for " + clock(d) + " from the server.";
+    if (!p) { help.textContent = ""; dhelp.textContent = ""; return; }
+    // At the profile's own deadline (the field empty or equal to it) the run gets no --deadline, so the server is asked
+    // without one and applies no scaling; it still states research's end and the warnings, at every deadline.
+    const own = d === null || d === p.deadline_s;
+    dhelp.textContent = d === null ? "Empty: the " + p.label + " profile's own deadline." : (own ? "The " + p.label + " profile's own deadline." : "Passed as --deadline " + d + "; the profile's own is " + dur(p.deadline_s) + ".");
+    help.textContent = own ? say(p.stage_limits_s, p.deadline_s) : "Reading the limits for " + clock(d) + " from the server.";
     try {
-      const L = await api("/limits?profile=" + encodeURIComponent(p.name) + "&deadline_s=" + d);
+      const L = await api("/limits?profile=" + encodeURIComponent(p.name) + (own ? "" : "&deadline_s=" + d));
       if (mine !== limitsAsk) return;
       const parts = [say(L.stage_limits_s, L.deadline_s)];
       if (L.scaled) parts.push("Scaled from the profile's, with the reserves (" + intl(L.report_reserve_s) + " s for verify and verdict, " + intl(L.refine_reserve_s) + " s for refine); the run says so first.");
       if (typeof L.research_end_s === "number") parts.push("Research ends by " + clock(L.research_end_s) + ".");
       for (const w of L.warnings) parts.push(sentence(w) + ".");
       help.textContent = parts.join(" ");
-    } catch (err) { if (mine === limitsAsk) help.textContent = "The limits for this deadline could not be read: " + err.message; }
+    } catch (err) { if (mine === limitsAsk) help.textContent = (own ? say(p.stage_limits_s, p.deadline_s) + " " : "") + "The limits for this deadline could not be read: " + err.message; }
   };
   const refresh = () => {
     const prev = $("prev-input").files[0];

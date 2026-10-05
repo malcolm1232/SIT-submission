@@ -542,6 +542,15 @@ def test_the_deadline_field_and_a_missing_key_on_the_review_form(page, monkeypat
     assert pg.locator("#start-btn").is_disabled() and "from 2 to 120" in pg.locator("#deadline-help").inner_text()
     pg.fill("#deadline-min", "15")
     assert "--deadline" not in pg.locator("#cmd-preview").inner_text() and pg.locator("#start-btn").is_enabled()
+    # at the profile's own deadline the form still says when research ends (it asks the server with no --deadline)
+    eff = sr.effective()
+    end = eff.research_end_s()
+    want = f"Research ends by {int(end) // 60:02d}:{int(end) % 60:02d}."
+    pg.wait_for_function("w => document.getElementById('profile-help').textContent.includes(w)", arg=want)
+    assert pg.locator("#profile-help").inner_text().startswith("Stage 1 ends by 07:21")
+    assert "Scaled from the profile's" not in pg.locator("#profile-help").inner_text()
+    pg.fill("#deadline-min", "")
+    pg.wait_for_function("w => document.getElementById('profile-help').textContent.includes(w)", arg=want)
 
 
 def test_a_run_that_died_before_its_first_event_shows_what_it_printed(page) -> None:
