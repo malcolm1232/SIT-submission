@@ -699,6 +699,14 @@ def browser_page(tmp_path: Path, monkeypatch):
     assert errors == []
 
 
+def wait_open(pg, name: str) -> None:
+    """Wait until the ``name`` pill's box is open: its click handler unhides ``#<name>-box`` and sets the pill's
+    aria-expanded in one task, so once this holds the box can be read; reading right after the click raced that task
+    under load."""
+    pg.wait_for_function("(n) => !document.getElementById(n + '-box').hidden"
+                         " && document.getElementById(n + '-btn').getAttribute('aria-expanded') === 'true'", arg=name)
+
+
 def test_the_three_actions_in_a_browser(browser_page) -> None:
     from sit_review_agent.ui import mail, share
 
@@ -731,7 +739,9 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     with ctx.expect_page() as tab:
         pg.click("#out-open")
     exp = tab.value
-    exp.wait_for_load_state()
+    # The new tab can be handed over still on about:blank, whose load has already fired; wait for the review file
+    # itself to load (the same race as the export sidebar test's part tab).
+    exp.wait_for_url(base + "/runs/ui_flow_1/export.html")
     report = json.loads((FLOW / "report.json").read_text(encoding="utf-8"))
     first = min(report["findings"], key=lambda f: f["rank"])
     assert exp.get_by_role("heading", name=f"{first['id']} {one_line(first['title'])}").count() == 1
@@ -740,11 +750,14 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     # enabled only for one plain address, reaches the (fake) server and is reported.
     assert pg.locator("#email-box").is_hidden()
     pg.click("#email-btn")
+    wait_open(pg, "email")
     send = pg.locator("#email-send")
     assert send.inner_text() == "Email the review" and send.is_disabled()
     pg.fill("#email-to", "not an address")
+    pg.wait_for_function("document.getElementById('email-send').disabled")
     assert send.is_disabled()
     pg.fill("#email-to", "reader@example.org")
+    pg.wait_for_function("!document.getElementById('email-send').disabled")
     assert send.is_enabled()
     send.click()
     pg.wait_for_selector("#email-result.ok")
@@ -753,6 +766,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     # 3. Share: a loopback server shows the restart line and says why there is no link.
     assert pg.locator("#share-box").is_hidden()
     pg.click("#share-btn")
+    wait_open(pg, "share")
     assert pg.locator("#share-line").inner_text() == f"dra ui --host 0.0.0.0 --allow-remote --port {state.port}"
     assert pg.locator("#share-text").inner_text() == share.LOOPBACK_TEXT
     state.bind_host, state.lan_ip = "0.0.0.0", lambda: "192.168.1.23"
@@ -760,6 +774,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     pg.wait_for_selector(".frow")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     pg.click("#share-btn")
+    wait_open(pg, "share")
     assert pg.locator("#share-line").inner_text() == f"http://192.168.1.23:{state.port}/?run=ui_flow_1"
     assert pg.locator("#share-text").inner_text() == share.SHARE_TEXT
     # Without the password the button is disabled and says why, never a silent no-op.
@@ -770,6 +785,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     pg.wait_for_selector(".frow")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     pg.click("#email-btn")
+    wait_open(pg, "email")
     assert pg.locator("#email-send").is_disabled() and pg.locator("#email-to").is_disabled()
     assert pg.locator("#email-help").inner_text().startswith(mail.NOT_CONFIGURED + " (")
 
@@ -783,13 +799,20 @@ def test_a_pasted_link_on_the_drop_screen(browser_page) -> None:
     start = pg.locator("#start-btn")
     assert start.is_disabled()
     pg.fill("#doc-link", "http://docs.example.org/a.pdf")
+    pg.wait_for_function("document.getElementById('start-btn').disabled"
+                         " && !document.getElementById('link-error').hidden")
     assert start.is_disabled() and pg.locator("#link-error").is_visible()
     pg.fill("#run-id", "linked")
     pg.fill("#doc-link", "https://docs.example.org/specs/Payments%20Design%20v2")
+    pg.wait_for_function("!document.getElementById('start-btn').disabled"
+                         " && document.getElementById('link-error').hidden"
+                         " && document.getElementById('cmd-preview').textContent.includes('Payments_Design_v2.pdf')")
     assert start.is_enabled() and pg.locator("#link-error").is_hidden()
     assert "review runs/linked/ui/input/Payments_Design_v2.pdf " in pg.locator("#cmd-preview").inner_text()
     dropped = pg.evaluate_handle("() => { const d = new DataTransfer(); "
                                  "d.setData('text/uri-list', 'https://cdn.example.net/x/y.pdf'); return d; }")
     pg.dispatch_event("#dropzone", "drop", {"dataTransfer": dropped})
+    pg.wait_for_function("document.getElementById('doc-link').value === 'https://cdn.example.net/x/y.pdf'"
+                         " && document.getElementById('cmd-preview').textContent.includes('/y.pdf')")
     assert pg.locator("#doc-link").input_value() == "https://cdn.example.net/x/y.pdf"
     assert "runs/linked/ui/input/y.pdf" in pg.locator("#cmd-preview").inner_text()

@@ -263,6 +263,9 @@ def test_the_page_in_a_browser(served) -> None:
         assert rows == {f["id"]: f["title"] for f in report["findings"]}
         for f in report["findings"][:5]:
             page.click(f'.frow[data-fid="{f["id"]}"]')
+            # The row's click handler adds the expanded block after it in one task; wait for that before reading it.
+            page.wait_for_function("(id) => document.querySelector("
+                                   "'.frow[data-fid=\"' + id + '\"] + .expanded .statement') !== null", arg=f["id"])
             got = page.locator(f'.frow[data-fid="{f["id"]}"] + .expanded .statement').inner_text()
             assert got == f["statement"]
             quotes = page.locator(f'.frow[data-fid="{f["id"]}"] + .expanded .quote').all_inner_texts()

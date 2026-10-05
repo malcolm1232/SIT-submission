@@ -311,12 +311,18 @@ def test_the_panel_follows_the_run_from_assess_to_refine_to_finished(page) -> No
     why = pg.locator('.track[data-track="understand"] .why-btn')
     assert why.get_attribute("aria-expanded") == "false"
     why.click()
+    # Each Why click repaints the run in one task; wait for the repaint the next read needs (it raced under load).
+    pg.wait_for_function("document.querySelector('.track[data-track=\"understand\"] .why-btn')"
+                         ".getAttribute('aria-expanded') === 'true'"
+                         " && document.querySelector('.why[data-why=\"understand\"] .xtext') !== null")
     block = pg.locator('.why[data-why="understand"] .xtext')
     assert block.inner_text().startswith("Understand is one model call that reads the whole document once")
     assert pg.locator('.track[data-track="understand"] .why-btn').get_attribute("aria-expanded") == "true"
     pg.locator('.track[data-track="understand"] .why-btn').click()
+    pg.wait_for_function("document.querySelector('.why[data-why=\"understand\"]') === null")
     assert pg.locator('.why[data-why="understand"]').count() == 0
     pg.locator("#axis-why").click()
+    pg.wait_for_function("document.querySelector('#axis-why-text .xentry[data-stage=\"limits\"] .xtext') !== null")
     assert pg.locator('#axis-why-text .xentry[data-stage="limits"] .xtext').inner_text().startswith(
         "Every stage has a fixed end on the run clock")
 

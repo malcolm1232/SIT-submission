@@ -212,9 +212,13 @@ def test_stop_takes_two_clicks_and_states_what_the_signal_does(page) -> None:
     assert int(ExitCode.SIGINT) == 130
     assert pg.locator("#stop-btn").inner_text() == "Stop run" and pg.locator("#stop-keep").is_hidden()
     pg.click("#stop-btn")                                       # arms only
+    pg.wait_for_function("document.getElementById('stop-btn').textContent === 'Confirm stop'"
+                         " && !document.getElementById('stop-keep').hidden")
     assert pg.locator("#stop-btn").inner_text() == "Confirm stop" and pg.locator("#stop-keep").is_visible()
     assert posts == [] and proc.code is None
     pg.click("#stop-keep")                                      # disarms
+    pg.wait_for_function("document.getElementById('stop-btn').textContent === 'Stop run'"
+                         " && document.getElementById('stop-keep').hidden")
     assert pg.locator("#stop-btn").inner_text() == "Stop run" and pg.locator("#stop-keep").is_hidden()
     assert posts == []
     pg.click("#stop-btn")
@@ -283,6 +287,15 @@ def test_the_head_clock_ticks_only_the_seconds_since_the_last_event_and_stops_wi
     assert pg.evaluate("SIT.state.tick") is None
 
 
+def wait_calls_open(pg, key: str) -> None:
+    """Wait until the row ``key`` is open on its calls: its name button's click repaints the run with the row's
+    button expanded and its calls block under it in one task, so once this holds the block can be read; reading
+    right after the click raced that repaint under load."""
+    pg.wait_for_function("(k) => { const b = document.querySelector('.track[data-track=\"' + k + '\"] .name-btn');"
+                         " return b !== null && b.getAttribute('aria-expanded') === 'true'"
+                         " && document.querySelector('.calls[data-track=\"' + k + '\"]') !== null; }", arg=key)
+
+
 def _record(seq: int, prev: dict[str, Any], type_: str, phase: str, kind: str, fields: dict[str, Any]) -> str:
     """One progress.jsonl line in the schema shape, a second after ``prev`` on both clocks."""
     return json.dumps({"v": 1, "seq": seq, "t": prev["t"] + 1, "run_s": (prev["run_s"] or 0) + 1, "type": type_,
@@ -324,6 +337,7 @@ def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_
     assert row.locator(".name-btn").get_attribute("data-calls") == "1"
     assert pg.locator(f'.calls[data-track="{key}"]').count() == 0
     row.locator(".name-btn").click()
+    wait_calls_open(pg, key)
     calls = pg.locator(f'.calls[data-track="{key}"] .callrow')
     assert calls.count() == 1
     assert calls.first.get_attribute("data-call") == cid and calls.first.get_attribute("data-status") == "running"
@@ -347,6 +361,7 @@ def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_
     # A finished call: closed at its record time, no status line invented for it.
     done_cid, done_ev = next((cid, e) for cid, e in closed.items() if opened[cid]["phase"] == "understand")
     pg.locator('.track[data-track="understand"] .name-btn').click()
+    wait_calls_open(pg, "understand")
     done = pg.locator('.calls[data-track="understand"] .callrow')
     assert done.count() == 1 and done.first.get_attribute("data-call") == done_cid
     assert done.first.locator(".pill").inner_text() == f"closed at {_mmss(done_ev['run_s'])}"
