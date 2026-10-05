@@ -274,13 +274,14 @@ def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, T
     terms = _system_md_terms(root)
     rp = "prompts/report.md"
     terms["verdict-fit"] = Term("verdict-fit", "fit", escape(
-        "The design is fit for its stated purpose as written. An open critical or high finding is not compatible "
-        "with an unconditional fit."), _src(root, rp, "critical or high finding is not compatible"))
+        "The verdict without conditions. The verdict must agree with the findings: an open critical or high finding "
+        "is not compatible with an unconditional fit."), _src(root, rp, "critical or high finding is not compatible"))
     terms["verdict-fit_with_conditions"] = Term("verdict-fit_with_conditions", "fit with conditions", escape(
         "The verdict with conditions: each condition is stated and linked to the finding IDs it depends on (the "
         "Conditions list under Fitness for purpose)."), _src(root, rp, "For `fit_with_conditions`"))
     terms["verdict-not_fit"] = Term("verdict-not_fit", "not fit", escape(
-        "The design is not fit for its stated purpose as written."), _src(root, rp, "- Give one verdict"))
+        "One of the three verdicts the review gives (fit, fit with conditions, not fit), each with a rationale, a "
+        "confidence, a verdict per objective and what evidence would change it."), _src(root, rp, "- Give one verdict"))
     terms["verdict-not_assessed"] = Term("verdict-not_assessed", "not assessed", escape(
         "Set by code only, when the run produced no assessment: no judgement of the design."),
         _src(root, "agent/sit_review_agent/models.py", "NOT_ASSESSED = "))
