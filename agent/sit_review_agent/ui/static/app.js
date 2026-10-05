@@ -55,7 +55,10 @@ const S = { meta: null, runId: null, es: null, model: null, info: null, page: "r
   // The browser's clock when the last event arrived, and the one-second tick that adds the seconds since to the head clock.
   lastAt: null, tick: null,
   // The open run's progress.log tail (GET /runs/<id>/log): the lines kept, the byte offset to read from next.
-  log: null };
+  log: null,
+  // The Run log's stage panel (one stage at a time), the findings funnel and the legend, each as the server read
+  // them from the run directory (GET /runs/<id>/stage/<name>, /funnel, /glossary); stale: a stage ended since.
+  panel: null, funnel: null, glossary: null, stale: false };
 const PAGES = ["review", "runs", "replay", "tools", "settings", "developer"];
 const RAIL_KEY = "navrail-collapsed";
 
@@ -476,7 +479,7 @@ function showDeveloper() {
     h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
     h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
     h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
-  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/stage/<name> · GET /runs/<id>/funnel · GET /runs/<id>/glossary · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
 }
 
 // ------------------------------------------------------------------ the run, from the event stream
@@ -491,6 +494,8 @@ const SEQ = [
   { phase: "verdict", limit: "verdict_end", about: "verdict-only call, else the rule-based verdict" },
   { phase: "report", limit: "deadline", about: "report.md and report.json rendered in code, invariants checked" },
 ];
+// The records after which a stage's or a shard's file can have been written (ui/stages.py reads those files).
+const STAGE_ENDS = ["phase_done", "shard_drafted", "shard_cut", "shard_failed", "shards_merged", "refined", "refine_fallback", "anchors_verified", "verdict", "run_finished", "run_error"];
 // call_closed outcomes that end the call without an answer (the schema's enum, less ok, cut and replaced).
 const CALL_FAILED = ["refusal", "truncated", "error", "cancelled", "interrupted"];
 
@@ -498,12 +503,12 @@ function newRunModel() {
   return { limits: null, deadline: null, profile: null, mode: null, replay: false, resumed: false, shardCount: null, lastT: 0,
     tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
     stopRule: null, doc: null, runId: null,
+    // The limit note of a cut refine call, completed by the refined or refine_fallback record that follows it.
+    refineCut: null,
     // Whether the run was launched with --no-tools (ui/launch.json, set by showRun); null for a run started elsewhere.
     noTools: null,
     // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
     limitNotes: [], draftedByCall: new Map(),
-    // The track rows the reader expanded to their calls; kept across repaints.
-    open: new Set(),
     // The counts the "What is happening" panel fills in (recordFacts), each the fields of one record type; and the rows
     // (track keys, or "limits" for the axis) whose Why is open.
     x: { ended: false, criteria: null, intent: null, plan: null, research: null, servers: [], toolCalls: null, researchStop: null, merged: null,
@@ -533,7 +538,7 @@ function limitFor(m, stage) {
   return typeof s === "number" ? s : null;
 }
 function limitName(stage) { return stage === "stage_1" || STAGE1.includes(stage) || stage === "assess" || stage === "merge" ? "stage 1" : words(stage); }
-function noteLimit(m, t, text) { m.limitNotes.push({ t, text }); }
+function noteLimit(m, t, text) { const n = { t, text }; m.limitNotes.push(n); return n; }
 
 function track(m, key, label) {
   if (!m.tracks.has(key)) m.tracks.set(key, { key, label: label || key, status: "waiting", call: null, start: null, end: null, text: null, strong: null, cutAt: null, skippedAt: null, shard: null, disclose: null, calls: new Map() });
@@ -679,8 +684,25 @@ function applyEvent(m, ev) {
       { const cr = t.calls.get(f.call_id); if (cr) { cr.outcome = "cut"; cr.closedAt = t.cutAt; cr.kept = f.kept_items; } }
       {
         const lim = limitFor(m, f.stage);
-        noteLimit(m, now, sentence(words(f.stage)) + ": the model call " + f.call_id + " was cut at " + clock(t.cutAt) + (lim !== null ? " (" + limitName(f.stage) + " ends by " + clock(lim) + ")" : "") + "; " + intl(f.kept_items) + " finished item(s) kept.");
+        const note = noteLimit(m, now, sentence(words(f.stage)) + ": the model call " + f.call_id + " was cut at " + clock(t.cutAt) + (lim !== null ? " (" + limitName(f.stage) + " ends by " + clock(lim) + ")" : "") + "; " + intl(f.kept_items) + " finished item(s) kept.");
+        if (f.stage === "refine") m.refineCut = note;
       }
+      break;
+    }
+    // What refine did with the cut call's finished revisions (phases/refine.py): applied (salvaged) or none (fallback).
+    // The row and the limit note say it, so neither stops at "kept"; the counts are the record's.
+    case "refined": {
+      const t = track(m, "refine");
+      t.strong = intl(f.findings);
+      t.text = " findings: " + intl(f.revised) + " revised, " + intl(f.merged) + " merged, " + intl(f.withdrawn) + " withdrawn, " + intl(f.unchanged) + " unchanged" +
+        (f.salvaged ? "; " + intl(f.applied) + " of " + intl(f.salvaged_items) + " finished revisions applied" : "");
+      if (f.salvaged && m.refineCut) m.refineCut.text += " Refine then applied " + intl(f.applied) + " of the " + intl(f.salvaged_items) + " finished revisions (" + intl(f.merged) + " merges into kept findings among them) and dropped " + intl(f.dropped) + "; a finding without an applied revision stays as merged.";
+      break;
+    }
+    case "refine_fallback": {
+      const t = track(m, "refine");
+      t.strong = null; t.text = "fallback: no revision applied; the merged findings stand, in severity and confidence order";
+      if (m.refineCut) m.refineCut.text += " No revision could be applied: the merged findings stand, in severity and confidence order.";
       break;
     }
     case "stop_rule": m.stopRule = f; break;
@@ -904,14 +926,20 @@ function trackRow(m, t, limit) {
   const status = h("div", { class: "status" });
   { if (t.shard) status.append(t.shard + (t.strong || t.text ? " · " : "")); if (t.strong) status.append(h("b", { text: t.strong })); if (t.text) status.append(t.text); }
   status.title = status.textContent;
-  // A row with calls expands to them (keyed by call_id); the open set lives in the model so a repaint keeps it.
-  const n = t.calls.size, open = m.open.has(t.key);
-  const name = n ? h("button", { class: "name-btn", type: "button", "aria-expanded": String(open), "data-calls": String(n), title: (open ? "Hide" : "Show") + " the " + intl(n) + " model call" + (n === 1 ? "" : "s"),
-    onclick: () => { if (open) m.open.delete(t.key); else m.open.add(t.key); renderRun(m); } },
-    h("span", { class: "chev", text: open ? "▾" : "▸" }), t.label) : t.label;
+  const open = panelOpen(t.key);
   return h("div", { class: "track" + (open ? " open" : ""), "data-track": t.key, "data-status": t.status },
-    h("div", { class: "name" }, name, t.call ? h("span", { class: "call mono", text: t.call }) : null),
+    h("div", { class: "name" }, nameButton(m, t.key, t.label, t.calls.size), t.call ? h("span", { class: "call mono", text: t.call }) : null),
     h("div", {}, h("span", { class: "pill " + t.status, text: pillText })), time, status, whyButton(m, t.key, entryOf(t.key)));
+}
+
+// A row's name opens what its stage produced in the panel beside the rows (one stage at a time); the row of the
+// shards before their number is known has nothing to open yet.
+function nameButton(m, key, label, calls) {
+  if (!stageOf(key)) return label;
+  const open = panelOpen(key);
+  return h("button", { class: "name-btn", type: "button", "aria-expanded": String(open), "aria-controls": "stage-panel", "data-panel": key, "data-calls": String(calls),
+    title: (open ? "Close" : "Open") + " what " + label + " produced", onclick: () => togglePanel(m, key) },
+  h("span", { class: "chev", "aria-hidden": "true", text: "▸" }), label);
 }
 
 // The latest call_status fields of a call, as the record has them: label, reasoning tokens, items, chars.
@@ -933,8 +961,10 @@ function callState(m, cr) {
   return ["done", "closed at " + clock(cr.closedAt)];
 }
 
-// The calls of one track: one row per call_id with its purpose, state, latest status and the draft items it streamed.
-function callsBlock(m, t) {
+// The calls of one track: one row per call_id with its purpose, state and latest status, and while the stage's own
+// file is not written yet, what its stream has carried so far: the finding drafts by title, every other list by its
+// count, since the stream carries no text for those (the file, listed below once written, holds them in full).
+function callsBlock(m, t, streamed) {
   const box = h("div", { class: "calls", "data-track": t.key });
   for (const cr of t.calls.values()) {
     const [st, stText] = callState(m, cr);
@@ -946,17 +976,466 @@ function callsBlock(m, t) {
       h("div", {}, h("span", { class: "pill " + st, text: stText })),
       h("div", { class: "cstatus", text: callStatusText(cr) }));
     box.append(row);
-    if (cr.drafts.length || lists.length) {
+    if (streamed && (cr.drafts.length || lists.length)) {
       const d = h("div", { class: "cdrafts" });
+      if (cr.drafts.length) d.append(h("div", { class: "clists" }, "Findings streamed so far ", chip("draft, unverified", "run-draft", "draft")));
       cr.drafts.forEach((x, i) => {
         const sev = x.kind === "strength" ? "strength" : (x.severity || "");
-        d.append(h("div", { class: "cdraft" }, h("span", { class: "num mono", text: String(i + 1) }), sev ? h("span", { class: "pill " + sev, text: sev }) : null, x.kind && x.kind !== "strength" ? h("span", { class: "kind", text: words(x.kind) }) : null, h("span", { class: "text", text: x.title || "" })));
+        d.append(h("div", { class: "cdraft" }, h("span", { class: "num mono", text: String(i + 1) }), sev ? chip(sev, sev === "strength" ? "kind-strength" : "sev-" + sev, sev) : null, x.kind && x.kind !== "strength" ? h("span", { class: "kind", text: words(x.kind) }) : null, h("span", { class: "text", text: x.title || "" })));
       });
-      if (lists.length) d.append(h("div", { class: "clists", text: "also streamed: " + lists.join(", ") }));
+      for (const l of lists) d.append(h("div", { class: "clists", text: l + " streamed so far: the stream carries their count, the stage's file their text." }));
       box.append(d);
     }
   }
   return box;
+}
+
+// ------------------------------------------------------------------ the stage panel: what each stage produced
+// GET /runs/<id>/stage/<name> (ui/stages.py) reads the files the run wrote when each stage ended; this page only lays
+// them out. One stage at a time, in the Draft findings column's place beside the rows, so opening a stage never
+// moves the rows. Every list is whole: its count is its length, its text wraps and nothing is cut short; a long one
+// gets a filter and group headings. Drafts keep their draft, unverified chip. A file the run has not written is named
+// with what it would hold. A chip opens its definition from GET /runs/<id>/glossary, the export's one vocabulary.
+
+// The panel a row opens: a shard row its shard, the verdict row the report; "funnel" is the findings funnel.
+function stageOf(key) {
+  if (key === "funnel") return "funnel";
+  if (key.startsWith("assess ")) return "assess-" + parseInt(key.slice(7), 10);
+  if (key === "assess") return null;
+  return key === "verdict" ? "report" : key;
+}
+function panelOpen(key) { return !!S.panel && S.panel.key === key; }
+let UID = 0;
+
+function togglePanel(m, key) {
+  if (panelOpen(key)) { closePanel(m); return; }
+  S.panel = { key, stage: stageOf(key), data: null, error: null, ask: 0, open: new Set(), filters: new Map(), legends: new Set(), focus: true };
+  renderRun(m);
+  renderFunnel();
+  loadGlossary();
+  loadPanel();
+}
+
+function closePanel(m) {
+  const key = S.panel ? S.panel.key : null;
+  S.panel = null;
+  renderRun(m);
+  renderFunnel();
+  const back = key ? document.querySelector('[data-panel="' + key + '"]') : null;
+  if (back) back.focus();
+}
+
+async function loadPanel() {
+  const P = S.panel;
+  if (!P || !P.stage || !S.runId) return;
+  const ask = ++P.ask;
+  const url = "/runs/" + encodeURIComponent(S.runId) + (P.stage === "funnel" ? "/funnel" : "/stage/" + encodeURIComponent(P.stage));
+  try { const d = await api(url); if (S.panel !== P || ask !== P.ask) return; P.data = d; P.error = null; }
+  catch (e) { if (S.panel !== P || ask !== P.ask) return; P.error = e.message; }
+  renderPanel();
+}
+
+async function loadGlossary() {
+  const runId = S.runId;
+  if (!runId || (S.glossary && S.glossary.runId === runId)) return S.glossary;
+  const G = { runId, terms: null, error: null };
+  S.glossary = G;
+  try { G.terms = (await api("/runs/" + encodeURIComponent(runId) + "/glossary")).terms || {}; }
+  catch (e) { G.error = e.message; }
+  return G;
+}
+
+// The panel's frame on every repaint of the run (open or not, the live model calls); its content only when read.
+function renderPanelFrame(m) {
+  const box = $("stage-panel");
+  if (!box) return;
+  const P = S.panel;
+  box.parentElement.classList.toggle("panel-open", !!P);
+  box.hidden = !P;
+  const calls = $("sp-calls");
+  clear(calls);
+  if (!P || !m || P.stage === "funnel") return;
+  const t = m.tracks.get(P.key);
+  if (!t || !t.calls.size) return;
+  // The streamed items only while the stage's own file is missing: once written, the lists below hold them in full.
+  const streamed = !P.data || (P.data.missing || []).length > 0;
+  calls.append(h("div", { class: "sp-list-head" }, h("h3", {}, "Model calls ", h("span", { class: "n num", text: intl(t.calls.size) }))), callsBlock(m, t, streamed));
+}
+
+function renderPanel() {
+  const P = S.panel;
+  if (!P || !$("stage-panel")) return;
+  renderPanelFrame(S.model);
+  const D = P.data;
+  $("sp-title").textContent = D && D.title ? D.title : (P.stage === "funnel" ? "The findings, from drafts to the report" : words(P.key));
+  $("sp-kicker").textContent = P.stage === "funnel" ? "Every merged draft and its fate" : "What this stage produced";
+  const c = clear($("sp-content"));
+  if (P.error) c.append(h("p", { class: "error", text: "This stage could not be read: " + P.error }));
+  else if (!D) c.append(h("p", { class: "sp-empty", text: "Reading the run's files." }));
+  else {
+    if (D.unreadable) c.append(h("div", { class: "sp-missing" }, "The run's files for this stage are not in the shape this page reads (" + D.unreadable + "), so nothing is listed from them."));
+    for (const x of D.missing || []) c.append(missingLine(x));
+    for (const n of D.notes || []) c.append(h("div", { class: "sp-note" + (n.tone === "warn" ? " warn" : "") }, h("span", { text: n.text }), n.src ? h("span", { class: "sp-src" }, " From ", h("span", { class: "mono", text: n.src }), ".") : null));
+    if (P.stage === "funnel") c.append(funnelSummary(D));
+    for (const [k, label] of [["statement", "The design's purpose and scope, as understand summarised it"], ["rationale", "Rationale"], ["what_would_change_it", "What would change it"]]) {
+      if (D[k]) c.append(h("div", { class: "sp-prose" }, h("h3", { text: label }), h("p", { text: D[k] })));
+    }
+    const facts = (D.facts || []).filter((f) => f.value !== null && f.value !== undefined && f.value !== "");
+    if (facts.length) c.append(h("dl", { class: "kv sp-facts" }, facts.map((f) => [h("dt", { text: sentence(f.label) }), h("dd", { title: f.src ? "From " + f.src : null }, String(typeof f.value === "number" ? intl(f.value) : f.value))])));
+    if ((D.files || []).length) c.append(h("div", { class: "sp-src sp-files" }, "Read from ", h("span", { class: "mono", text: D.files.join(", ") })));
+    for (const L of D.lists || []) c.append(listBlock(P, L, D));
+  }
+  if (P.focus) { P.focus = false; $("sp-title").focus({ preventScroll: true }); }
+}
+
+function missingLine(x) {
+  const running = S.info && S.info.status === "running";
+  return h("div", { class: "sp-missing" }, h("span", { class: "mono", text: x.file }), running
+    ? " is not written yet; the stage writes it when it ends. It holds " + x.what + "."
+    : " is not in this run directory (a run cut short, or one written before the file existed), so this panel cannot list " + x.what + ".");
+}
+
+// The glossary terms a list's chips and headings use, and the ones the list names: its legend.
+function listTerms(L) {
+  const out = [...(L.terms || [])];
+  for (const g of L.groups || []) if (g.term) out.push(g.term);
+  for (const it of L.items || []) for (const t of itemTerms(it)) out.push(t);
+  return [...new Set(out)].filter((t) => !S.glossary || !S.glossary.terms || S.glossary.terms[t]);
+}
+
+function listBlock(P, L, D) {
+  const sec = h("section", { class: "sp-list", "data-list": L.key });
+  const legendOn = P.legends.has(L.key);
+  const terms = listTerms(L);
+  const shown = h("span", { class: "n num", text: intl(L.count) });
+  const legend = terms.length ? h("button", { class: "legend-btn", type: "button", "aria-expanded": String(legendOn), text: "What do these mean?",
+    onclick: () => { if (P.legends.has(L.key)) P.legends.delete(L.key); else P.legends.add(L.key); renderPanel(); } }) : null;
+  sec.append(h("div", { class: "sp-list-head" }, h("h3", {}, L.title + " ", shown), L.draft ? chip("draft, unverified", "run-draft", "draft") : null, legend));
+  if (legendOn) sec.append(legendBlock(terms));
+  if (L.src) sec.append(h("div", { class: "sp-src" }, "From ", h("span", { class: "mono", text: L.src })));
+  if (L.note) sec.append(h("p", { class: "sp-lnote", text: L.note }));
+  if (!(L.items || []).length) { sec.append(h("p", { class: "sp-empty", text: L.empty })); return sec; }
+  const body = h("div", { class: "sp-items" });
+  const groups = (L.groups || []).length ? L.groups : [{ key: null }];
+  for (const g of groups) {
+    const gbox = h("div", { class: "sp-groupbox", "data-group": g.key === null ? "" : g.key });
+    if (g.key !== null) gbox.append(h("h4", { class: "sp-group" }, g.term ? chip(g.label, g.term, chipClass(g.term)) : h("span", { class: "sp-glabel", text: g.label }), h("span", { class: "n num", text: intl(g.count) })));
+    for (const it of L.items) if (g.key === null || it.group === g.key) gbox.append(itemEl(P, L, it, D));
+    body.append(gbox);
+  }
+  if (L.items.length >= 10) {
+    const input = h("input", { class: "input sp-filter", type: "search", autocomplete: "off", spellcheck: "false", placeholder: "Filter the " + intl(L.count) + " items", "aria-label": "Filter: " + L.title });
+    input.value = P.filters.get(L.key) || "";
+    const apply = () => {
+      const q = input.value.trim().toLowerCase();
+      P.filters.set(L.key, input.value);
+      let n = 0;
+      for (const el of body.querySelectorAll(".sp-item")) { const on = !q || el.dataset.search.includes(q); el.hidden = !on; if (on) n++; }
+      for (const gb of body.querySelectorAll(".sp-groupbox")) gb.hidden = !gb.querySelector(".sp-item:not([hidden])");
+      shown.textContent = q ? intl(n) + " of " + intl(L.count) : intl(L.count);
+    };
+    input.addEventListener("input", apply);
+    sec.append(input);
+    sec.append(body);
+    apply();
+    return sec;
+  }
+  sec.append(body);
+  return sec;
+}
+
+function legendBlock(terms) {
+  const G = S.glossary;
+  const box = h("div", { class: "term-legend" });
+  if (!G || !G.terms) { box.append(h("p", { class: "sp-empty", text: G && G.error ? "The glossary could not be read: " + G.error : "Reading the glossary." })); return box; }
+  for (const t of terms) box.append(termBody(t, G.terms[t]));
+  return box;
+}
+
+function termBody(key, T) {
+  if (!T) return h("div", { class: "term-entry" }, h("b", { text: key }), h("p", { text: "This word has no entry in the glossary." }));
+  return h("div", { class: "term-entry", "data-term": key }, h("b", { class: "term-label", text: T.label }), T.paras.map((p) => h("p", { text: p })),
+    h("div", { class: "sp-src" }, "From ", h("span", { class: "mono", text: T.src })));
+}
+
+// A chip: a pill that opens its glossary entry in place (one at a time on the page); without a term, a plain pill.
+function chip(text, term, cls) {
+  const c = "pill" + (cls ? " " + cls : "");
+  if (!term) return h("span", { class: c, text });
+  return h("button", { class: c + " chip", type: "button", "data-term": term, "aria-expanded": "false", title: "What “" + text + "” means", text });
+}
+function chipClass(term) {
+  const [fam, val] = [term.split("-")[0], term.split("-").slice(1).join("-")];
+  if (fam === "sev") return val;
+  if (term === "kind-strength") return "strength";
+  return "plain";
+}
+
+// One click on a chip opens its definition right under the line that holds it, and closes any other.
+async function showTerm(btn) {
+  const term = btn.dataset.term;
+  const prev = document.querySelector(".term-def");
+  const same = prev && prev.dataset.for === term && btn.getAttribute("aria-expanded") === "true";
+  if (prev) prev.remove();
+  for (const b of document.querySelectorAll('.chip[aria-expanded="true"]')) b.setAttribute("aria-expanded", "false");
+  if (same) return;
+  const host = btn.closest(".sp-meta, .sp-group, .sp-list-head, dd, .cdraft, .clists, .line, h2, .fhead") || btn.parentElement;
+  const id = "term-" + (++UID);
+  const box = h("div", { class: "term-def", id, role: "note", "data-for": term });
+  const close = h("button", { class: "btn ghost td-close", type: "button", text: "Close", onclick: () => { box.remove(); btn.setAttribute("aria-expanded", "false"); btn.focus(); } });
+  box.append(h("div", { class: "td-head" }, h("span", { class: "td-kicker", text: "What it means" }), close));
+  host.after(box);
+  btn.setAttribute("aria-expanded", "true");
+  btn.setAttribute("aria-controls", id);
+  const G = await loadGlossary();
+  if (!box.isConnected) return;
+  box.append(G && G.terms ? termBody(term, G.terms[term]) : h("p", { class: "sp-empty", text: "The glossary could not be read" + (G && G.error ? ": " + G.error : ".") }));
+}
+document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest(".chip[data-term]"); if (b) { e.preventDefault(); e.stopPropagation(); showTerm(b); } });
+
+// ---------- the items: one renderer per type of record (ui/stages.py), each a meta line, its text and its full record
+
+function ids(xs) { return (xs || []).filter(Boolean).join(", "); }
+function loc(a) { return a ? "p." + (a.page ?? "–") + (a.section_ref ? " §" + a.section_ref : "") : ""; }
+function quoteLine(a, extra) {
+  return h("div", { class: "qrow" }, h("span", { class: "qloc num", text: loc(a) }), h("span", { class: "quote", text: "“" + (a.quote || "") + "”" }),
+    (a.requirement_ids || []).length ? h("span", { class: "qreq", text: " " + a.requirement_ids.join(", ") }) : null, extra || null);
+}
+function sevChip(f) { return f.kind === "strength" ? chip("strength", "kind-strength", "strength") : (f.severity ? chip(f.severity, "sev-" + f.severity, f.severity) : null); }
+function kindChip(kind) { return kind && kind !== "strength" ? chip(words(kind), "kind-" + kind, "plain") : null; }
+function kvBlock(rows) {
+  const kv = h("dl", { class: "kv" });
+  for (const [k, v] of rows) if (v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) kv.append(h("dt", {}, k), h("dd", {}, v));
+  return kv;
+}
+function termWord(text, term) { return h("button", { class: "chip term-word", type: "button", "data-term": term, "aria-expanded": "false", text }); }
+
+function anchorStatus(rows, i) {
+  const r = (rows || []).find((x) => x.anchor_index === i);
+  if (!r) return null;
+  return h("span", { class: "qstat" }, " ", chip(r.anchor_status, "anchor-" + r.anchor_status, r.anchor_status === "unresolved" ? "high" : "plain"),
+    " " + [r.method && r.method !== "none" ? r.method + " match" : null, typeof r.score === "number" && r.method !== "none" ? "score " + conf(r.score) : null, (r.reasons || []).join(", ") || null].filter(Boolean).join(", "));
+}
+
+// A finding in full: every field of its record as the stage's file holds it.
+function findingRecord(it) {
+  const f = it.rec || {};
+  const box = h("div", { class: "rec" });
+  box.append(h("p", { class: "statement", text: f.statement || "" }));
+  box.append(kvBlock([
+    [termWord("Rank", "rank"), typeof f.rank === "number" ? String(f.rank) : null],
+    [termWord("Confidence", "confidence"), typeof f.confidence === "number" ? conf(f.confidence) : null],
+    ["Category", f.category ? chip(words(f.category), "cat-" + f.category, "plain") : null],
+    ["Disposition", f.disposition ? [chip(words(f.disposition), "disp-" + f.disposition, "plain"), ...(f.secondary_dispositions || []).map((d) => [" also ", chip(words(d), "disp-" + d, "plain")])] : null],
+    ["Criteria", (f.criterion_ids || []).map((c) => [chip(words(c), "crit-" + c, "plain"), " "])],
+    ["Acknowledged in the document", f.acknowledged_in_doc ? "yes" : null],
+    ["Tags", ids(f.tags)],
+    ["Provenance", f.provenance ? [f.provenance.phase, f.provenance.model].filter(Boolean).join(", ") : null],
+  ]));
+  if ((f.doc_anchors || []).length) {
+    box.append(h("h4", { text: "Where in the document" }));
+    f.doc_anchors.forEach((a, i) => box.append(quoteLine(a, anchorStatus(it.anchors, i))));
+  }
+  if ((f.evidence || []).length) {
+    box.append(h("h4", { text: "Evidence" }));
+    for (const e of f.evidence) {
+      const kind = words(e.source_type) + (e.source_type === "inference" ? "" : (e.supports_claim === false ? ", contrary" : ", supports"));
+      box.append(h("div", { class: "evrow" }, h("span", { class: "evid mono", text: e.evidence_id }), h("span", { class: "evkind", text: kind }),
+        h("span", { class: "evtext" }, e.quote ? "“" + e.quote + "”" : (e.url_or_citation || ""), (e.derived_from || []).length ? h("span", { class: "muted", text: " derived from " + e.derived_from.join(", ") }) : null)));
+    }
+  }
+  const r = f.recommendation;
+  if (r) {
+    box.append(h("h4", { text: "Recommendation" }));
+    box.append(kvBlock([["Change", r.change_summary], ["Issue", r.issue], ["Rationale", r.rationale], ["Expected benefit", r.expected_benefit], ["Verification", r.verification],
+      ["Objectives", ids(r.objective_refs)], ["Evidence", ids(r.supporting_evidence_ids)]]));
+  }
+  if (f.next_step) box.append(h("h4", { text: "Next step" }), h("p", { text: (f.next_step.owner ? f.next_step.owner + ": " : "") + (f.next_step.action || "") }));
+  if (f.no_change_rationale) box.append(h("h4", { text: "No change, because" }), h("p", { text: f.no_change_rationale }));
+  if ((f.affected_decisions || []).length) {
+    box.append(h("h4", { text: "Decisions it touches" }));
+    for (const d of f.affected_decisions) box.append(h("div", { class: "dec" }, h("span", { class: "rel", text: d.relation }), h("span", {}, h("b", { text: d.registry_id }), " " + (d.justification || ""))));
+  }
+  if (f.reassessment) box.append(h("h4", { text: "Re-assessment" }), h("p", { text: words(f.reassessment.status) + (f.reassessment.prior_finding_id ? " (was " + f.reassessment.prior_finding_id + ")" : "") + (f.reassessment.note ? ": " + f.reassessment.note : "") }));
+  return box;
+}
+
+function rawRecord(rec) {
+  return kvBlock(Object.entries(rec || {}).map(([k, v]) => [sentence(k), typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)]));
+}
+
+const ITEM = {
+  section: { meta: (it) => [h("span", { class: "mono", text: "§" + it.id }), " p." + it.page_start + (it.page_end !== it.page_start ? "–" + it.page_end : "") + " · " + intl(it.chars) + " characters"],
+    text: (it) => it.heading, cls: (it) => "lvl" + Math.min(it.level || 1, 2) },
+  page: { meta: () => [], text: (it) => "Page " + it.number + ": " + intl(it.chars) + " characters of text" + (it.image_only ? ", image only (no text extracted)" : "") },
+  degradation: { meta: (it) => [chip(it.id, "id-DEG", "plain"), " " + words(it.dtype)], text: (it) => it.event, after: (it) => h("p", { class: "sp-after", text: "Impact: " + it.impact }) },
+  registry: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", chip(words(it.rtype), "reg-" + it.rtype, "plain"), it.doc_ref ? " " + it.doc_ref : ""], text: (it) => it.statement,
+    detail: (it) => h("div", { class: "rec" }, it.anchor ? quoteLine(it.anchor) : h("p", { class: "muted", text: "No location recorded." })) },
+  text: { meta: (it) => [chip("review input found", it.term, "plain")], text: (it) => it.text },
+  intent: { meta: (it) => (it.ref ? [h("b", { class: "mono", text: it.ref })] : []), text: (it) => it.text },
+  anchor_quote: { meta: () => [], text: (it) => loc(it.anchor) + " “" + (it.anchor.quote || "") + "”" },
+  criterion: { meta: (it) => [chip(words(it.id), "crit-" + it.id, "plain")], text: (it) => it.question || it.id },
+  question: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", it.needs_external ? chip("needs external research", "q-external", "plain") : h("span", { class: "muted", text: "from the document" }), it.status && it.status !== "open" ? " · " + words(it.status) : ""],
+    text: (it) => it.question,
+    detail: (it) => h("div", { class: "rec" }, kvBlock([["Criterion", chip(words(it.criterion), "crit-" + it.criterion, "plain")], ["Why it matters", it.rationale], ["Sections", ids(it.section_refs)],
+      ["Tool (capability)", it.needs_external ? it.capability : null], ["Search queries", (it.queries || []).length ? h("ul", { class: "plain" }, it.queries.map((q) => h("li", { text: q }))) : null],
+      ["Status", words(it.status)], ["Answer", it.summary], ["Ledger entries it cites", ids(it.evidence_ids)]])) },
+  skip: { meta: () => [], text: (it) => JSON.stringify(it.rec), detail: (it) => rawRecord(it.rec) },
+  tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), " " + (it.rec.server || "")], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") },
+  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), " " + words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec) },
+  finding: {
+    meta: (it) => [h("b", { class: "mono", text: it.id || it.local_id }),
+      it.merged_id ? " · numbered " + it.merged_id + " at the merge" : "", it.shard ? " · shard " + (it.shard_index || "?") + "'s " + it.local_id : "", " · ", sevChip(it.rec || {}), " ", kindChip((it.rec || {}).kind),
+      typeof (it.rec || {}).confidence === "number" ? " · confidence " + conf(it.rec.confidence) : "", typeof (it.rec || {}).rank === "number" && !it.draft ? " · rank " + it.rec.rank : ""],
+    text: (it) => (it.rec || {}).title,
+    after: (it) => (it.fate ? h("p", { class: "sp-after", text: "Became: " + it.fate }) : (it.refined === false ? h("p", { class: "sp-after warn", text: "Not refined: no revision was applied to it." }) : null)),
+    detail: findingRecord },
+  sound_area: { meta: (it) => [it.rec.id ? h("b", { class: "mono", text: it.rec.id }) : null, " " + (it.rec.section_refs || []).map((x) => "§" + x).join(", ")],
+    text: (it) => it.rec.why_sound,
+    detail: (it) => { const b = h("div", { class: "rec" }); (it.rec.doc_anchors || []).forEach((a) => b.append(quoteLine(a))); b.append(kvBlock([["Related findings", ids(it.rec.related_finding_ids)], ["Evidence", ids(it.rec.evidence_ids)]])); return b; } },
+  coverage: { meta: (it) => [chip(words(it.rec.criterion_id), "crit-" + it.rec.criterion_id, "plain"), " ", chip(words(it.rec.outcome), "cov-" + it.rec.outcome, "plain"), (it.rec.finding_ids || []).length ? " " + it.rec.finding_ids.join(", ") : ""],
+    text: (it) => it.rec.note || "" },
+  revision: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", it.group === "merged" ? chip("merge", "rev-merge", "plain") : (it.group === "withdrawn" ? chip("withdraw", "rev-withdraw", "plain") : (it.group.startsWith("not") ? h("span", { class: "muted", text: "no revision applied" }) : chip("keep", "rev-keep", "plain"))),
+    it.into ? " into " + it.into : "", " · ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)],
+    text: (it) => it.title,
+    after: (it) => h("p", { class: "sp-after" + (it.note ? "" : " muted"), text: it.note ? sentence(it.note) : (it.group.startsWith("not refined") ? "No revision of the cut answer was applied to it: it stays as merged." : "No reason recorded.") }),
+    detail: (it) => kvBlock([["Fields refine changed", ids(it.changed)], ["From the call", it.call_id]]) },
+  anchor: { meta: (it) => [h("b", { class: "mono", text: it.owner + " #" + (it.index + 1) }), " ", chip(it.status, "anchor-" + it.status, it.status === "unresolved" ? "high" : "plain"),
+    " " + [loc(it), it.method && it.method !== "none" ? it.method + " match" : null, typeof it.score === "number" && it.method !== "none" ? "score " + conf(it.score) : null, (it.reasons || []).join(", ") || null].filter(Boolean).join(" · ")],
+    text: (it) => (it.quote ? "“" + it.quote + "”" : "(the quote is not in this stage's state)") },
+  verified: { meta: (it) => [h("b", { class: "mono", text: it.id }), it.severity || it.kind ? [" ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)] : null], text: (it) => it.title || "",
+    after: (it) => h("p", { class: "sp-after", text: sentence(it.why) }),
+    detail: (it) => { const b = h("div", { class: "rec" }); for (const a of it.anchors || []) b.append(h("div", { class: "qrow" }, chip(a.status, "anchor-" + a.status, a.status === "unresolved" ? "high" : "plain"), h("span", { class: "qloc num", text: " " + loc(a) }), h("span", { class: "quote", text: a.quote ? "“" + a.quote + "”" : "" }))); return b; } },
+  invariant: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", h("span", { class: "pill " + (it.result === "passed" ? "done" : (it.result.startsWith("failed") ? "high" : "plain")), text: it.result })], text: (it) => it.about,
+    after: (it) => ((it.problems || []).length ? h("ul", { class: "plain small" }, it.problems.map((x) => h("li", { text: x }))) : null) },
+  condition: { meta: (it) => [h("span", { class: "mono", text: ids(it.ids) })], text: (it) => it.text },
+  objective: { meta: (it) => [it.ref ? h("b", { class: "mono", text: it.ref }) : null, " ", chip(words(it.label), "verdict-" + it.label, "plain"), (it.ids || []).length ? " " + it.ids.join(", ") : ""], text: (it) => it.text || it.ref || "",
+    after: (it) => (it.rationale ? h("p", { class: "sp-after", text: it.rationale }) : null) },
+  unresolved: { meta: (it) => [h("span", { class: "mono", text: ids(it.rec.finding_ids) })], text: (it) => it.rec.text,
+    after: (it) => (it.rec.next_step ? h("p", { class: "sp-after", text: "Next step: " + (it.rec.next_step.owner ? it.rec.next_step.owner + ": " : "") + (it.rec.next_step.action || "") }) : null) },
+  limitation: { meta: (it) => [h("span", { class: "mono", text: ids(it.rec.degradation_ids) })], text: (it) => it.rec.text },
+  fate: { meta: (it) => [h("b", { class: "mono", text: it.draft_id }), it.shard ? " · shard " + words(it.shard) + (it.shard_local_id ? " (its " + it.shard_local_id + ")" : "") + " · " : " · ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)],
+    text: (it) => it.title,
+    after: (it) => h("p", { class: "sp-after" + (it.agrees === false ? " warn" : "") }, h("b", { text: sentence(it.fate) }),
+      " · refine: " + it.refine + (it.verify ? " · verify: " + it.verify : "") + (it.agrees === false ? " · the manifest's finding_ids.final says " + (it.manifest_final || "nothing") : "")) },
+};
+ITEM.raw = { meta: () => [], text: (it) => JSON.stringify(it), detail: null };
+
+// The glossary terms an item's chips use (for its list's legend).
+function itemTerms(it) {
+  const r = it.rec || {};
+  const out = [];
+  const sevOf = (kind, sev) => (kind === "strength" ? "kind-strength" : (sev ? "sev-" + sev : null));
+  if (it.type === "finding") out.push(sevOf(r.kind, r.severity), r.kind && r.kind !== "strength" ? "kind-" + r.kind : null);
+  if (["revision", "verified", "fate"].includes(it.type)) out.push(sevOf(it.kind, it.severity), it.kind && it.kind !== "strength" ? "kind-" + it.kind : null);
+  if (it.type === "registry") out.push("reg-" + it.rtype);
+  if (it.type === "coverage") out.push("crit-" + r.criterion_id, "cov-" + r.outcome);
+  if (it.type === "criterion") out.push("crit-" + it.id);
+  if (it.type === "anchor") out.push("anchor-" + it.status);
+  if (it.type === "objective") out.push("verdict-" + it.label);
+  if (it.type === "question" && it.needs_external) out.push("q-external");
+  return out.filter(Boolean);
+}
+
+function searchText(it) { return JSON.stringify(it).toLowerCase(); }
+
+function itemEl(P, L, it, D) {
+  const R = ITEM[it.type] || ITEM.raw;
+  const key = L.key + ":" + it.key;
+  const el = h("div", { class: "sp-item" + (it.draft ? " is-draft" : "") + (R.cls ? " " + R.cls(it) : ""), "data-key": it.key, "data-type": it.type });
+  el.dataset.search = searchText(it);
+  const meta = R.meta(it, D).filter((x) => x !== null && x !== undefined && x !== "");
+  if (meta.length) el.append(h("div", { class: "sp-meta" }, meta));
+  const text = R.text(it, D);
+  if (R.detail) {
+    const open = P.open.has(key), id = "spd-" + (++UID);
+    const det = h("div", { class: "sp-detail", id, hidden: !open });
+    const btn = h("button", { class: "sp-text sp-toggle", type: "button", "aria-expanded": String(open), "aria-controls": id, title: "Show the whole record" },
+      h("span", { class: "chev", "aria-hidden": "true", text: "▸" }), h("span", { class: "sp-tx", text: text || "" }));
+    btn.addEventListener("click", () => {
+      const on = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(on));
+      if (on) { P.open.add(key); if (!det.firstChild) det.append(R.detail(it, D)); } else P.open.delete(key);
+      det.hidden = !on;
+    });
+    if (open) det.append(R.detail(it, D));
+    el.append(btn);
+    const after = R.after ? R.after(it, D) : null;
+    if (after) el.append(after);
+    el.append(det);
+  } else {
+    el.append(h("div", { class: "sp-text" }, h("span", { class: "sp-tx", text: text || "" })));
+    const after = R.after ? R.after(it, D) : null;
+    if (after) el.append(after);
+  }
+  return el;
+}
+
+// ---------- the findings funnel, across the "Then, in order" block: every merged draft to its fate (GET /runs/<id>/funnel)
+
+async function loadFunnel() {
+  const runId = S.runId;
+  if (!runId || !$("funnel")) return;
+  try { const d = await api("/runs/" + encodeURIComponent(runId) + "/funnel"); if (S.runId === runId) S.funnel = { runId, data: d }; }
+  catch (e) { if (S.runId === runId) S.funnel = { runId, data: null, error: e.message }; }
+  renderFunnel();
+  if (S.panel && S.panel.stage === "funnel" && S.funnel && S.funnel.data) { S.panel.data = S.funnel.data; renderPanel(); }
+}
+
+function parts(pairs) { return pairs.filter(([n, , always]) => always || n).map(([n, label]) => intl(n) + " " + label).join(", "); }
+
+// The totals by step, from the rows, and whether they add up and agree with the run's own records.
+function funnelChecks(F) {
+  const T = F.totals, R = T.refine, V = T.verify, rec = F.recorded || {}, out = [];
+  const refineSum = Object.values(R).reduce((a, b) => a + b, 0);
+  out.push(refineSum === T.drafts ? { ok: true, text: "Every draft has one fate: " + intl(refineSum) + " of " + intl(T.drafts) + "." }
+    : { ok: false, text: "The refine fates cover " + intl(refineSum) + " of the " + intl(T.drafts) + " drafts." });
+  const r = rec.refined || {};
+  if (typeof r.findings === "number") {
+    const unchanged = R["kept as drafted"] + R["not refined (counted as unchanged)"];
+    const same = r.revised === R.revised && r.unchanged === unchanged && r.merged === R.merged && r.withdrawn === R.withdrawn && r.findings === T.after_refine;
+    out.push({ ok: same, text: "The run's refined record: " + intl(r.revised) + " revised, " + intl(r.unchanged) + " unchanged, " + intl(r.merged) + " merged, " + intl(r.withdrawn) + " withdrawn, " + intl(r.findings) + " findings" + (same ? ", the same." : "; the rows above differ.") });
+  }
+  const a = rec.anchors_verified || {};
+  if (typeof a.findings_verified === "number") out.push({ ok: a.findings_verified === V.verified, text: "Verify recorded " + intl(a.findings_verified) + " verified and " + intl(a.findings_unverified) + " unverified" + (a.findings_verified === V.verified ? ", the same." : "; the rows above differ.") });
+  if (typeof T.report_findings === "number") out.push({ ok: T.report_findings === T.reported, text: "report.json holds " + intl(T.report_findings) + " findings" + (T.report_findings === T.reported ? ", the same." : "; the rows above differ.") });
+  if ((F.manifest_disagrees || []).length) out.push({ ok: false, text: "The manifest's finding_ids.final disagrees for " + F.manifest_disagrees.join(", ") + "." });
+  return out;
+}
+
+function funnelSteps(F) {
+  const T = F.totals, R = T.refine, V = T.verify;
+  const step = (n, label, sub) => h("div", { class: "fstep" }, h("div", { class: "fnum num", text: typeof n === "number" ? intl(n) : "–" }), h("div", { class: "flabel", text: label }), sub ? h("div", { class: "fsub num", text: sub }) : null);
+  const arrow = () => h("span", { class: "farrow", "aria-hidden": "true", text: "→" });
+  return h("div", { class: "fsteps" },
+    step(T.drafts, "merged drafts", "from the assess shards"), arrow(),
+    step(T.after_refine, "after refine", parts([[R.revised, "revised", true], [R["kept as drafted"], "kept as drafted"], [R["not refined (counted as unchanged)"], "not refined"], [R.merged, "merged into another", true], [R.withdrawn, "withdrawn", true], [R["not recorded"], "not recorded"]])), arrow(),
+    step(T.after_refine === null ? null : V.verified, "verified", parts([[V["moved to unresolved (unverified)"], "moved to unresolved", true], [V["dropped by verify"], "dropped", true], [V.renumbered, "renumbered"], [V["not verified yet"], "not verified yet"]])), arrow(),
+    step(T.reported, "reported", "in report.json"));
+}
+
+function funnelSummary(F) {
+  const box = h("div", { class: "funnel in-panel" });
+  if (!F.totals || !F.totals.drafts) return box;
+  box.append(funnelSteps(F));
+  for (const c of funnelChecks(F)) box.append(h("div", { class: "fcheck" + (c.ok ? "" : " warn"), text: c.text }));
+  return box;
+}
+
+function renderFunnel() {
+  const box = $("funnel");
+  if (!box) return;
+  const F = S.funnel && S.funnel.runId === S.runId ? S.funnel.data : null;
+  box.hidden = !F || !F.totals || !F.totals.drafts;
+  clear(box);
+  if (box.hidden) return;
+  const open = panelOpen("funnel");
+  box.append(h("div", { class: "fhead" }, h("h3", {}, "The findings, from drafts to the report"),
+    h("button", { class: "why-btn funnel-open", type: "button", "data-panel": "funnel", "aria-controls": "stage-panel", "aria-expanded": String(open), text: open ? "Close the trace" : "Trace every finding",
+      onclick: () => togglePanel(S.model, "funnel") })));
+  box.append(funnelSteps(F));
+  const checks = funnelChecks(F), bad = checks.filter((c) => !c.ok);
+  box.append(h("div", { class: "fcheck" + (bad.length ? " warn" : "") }, bad.length ? bad.map((c) => c.text).join(" ") : "Adds up: every draft has one fate, and the counts match the run's refined and verify records and report.json."));
 }
 
 function stage1Summary(m, shards) {
@@ -980,7 +1459,6 @@ function renderRun(m) {
     const t = track(m, k);
     s1.append(trackRow(m, t, lim.stage_1_end ?? null));
     const why = whyBlock(m, k, entryOf(k)); if (why) s1.append(why);
-    if (m.open.has(k) && t.calls.size) s1.append(callsBlock(m, t));
   }
   const summary = stage1Summary(m, shards);
   $("stage1-limit").textContent = (lim.stage_1_end !== undefined ? "ends by " + clock(lim.stage_1_end) : "") + (summary ? " · " + summary : "");
@@ -994,7 +1472,7 @@ function renderRun(m) {
     const t = track(m, row.phase);
     const limit = row.limit === "deadline" ? m.deadline : (row.limit ? lim[row.limit] : null);
     if (t.status === "waiting" && row.when) {
-      seq.append(h("div", { class: "track", "data-track": row.phase, "data-status": "waiting" }, h("div", { class: "name", text: row.phase }), h("div", {}, h("span", { class: "pill waiting", text: "waiting" })),
+      seq.append(h("div", { class: "track" + (panelOpen(row.phase) ? " open" : ""), "data-track": row.phase, "data-status": "waiting" }, h("div", { class: "name" }, nameButton(m, row.phase, row.phase, 0)), h("div", {}, h("span", { class: "pill waiting", text: "waiting" })),
         h("div", { class: "time num muted", text: row.when }), h("div", { class: "status", text: row.about }), whyButton(m, row.phase, entryOf(row.phase))));
     } else {
       const r = trackRow(m, t, limit ?? null);
@@ -1002,7 +1480,6 @@ function renderRun(m) {
       seq.append(r);
     }
     const why = whyBlock(m, row.phase, entryOf(row.phase)); if (why) seq.append(why);
-    if (t.status !== "waiting" || !row.when) { if (m.open.has(row.phase) && t.calls.size) seq.append(callsBlock(m, t)); }
   }
   const axisWhy = $("axis-why");
   if (axisWhy) {
@@ -1023,8 +1500,10 @@ function renderRun(m) {
   for (const x of m.drafts) {
     const sev = x.kind === "strength" ? "strength" : (x.severity || "");
     d.append(h("div", { class: "draft" }, h("div", { class: "t num mono", text: clock(x.t) }),
-      h("div", { class: "line" }, sev ? h("span", { class: "pill " + sev, text: sev }) : null, h("span", { class: "text", text: x.title || "" }), h("span", { class: "who mono", text: x.who }))));
+      h("div", { class: "line" }, sev ? chip(sev, sev === "strength" ? "kind-strength" : "sev-" + sev, sev) : null, h("span", { class: "text", text: x.title || "" }),
+        x.who.includes("/") ? chip(x.who, "run-shard", "who mono") : h("span", { class: "who mono", text: x.who }))));
   }
+  renderPanelFrame(m);
   const feed = clear($("status-feed"));
   for (const ev of [...m.events].reverse()) {
     const marker = { step: "", wait: "... ", warn: "WARN ", done: "OK ", draft: "DRAFT " }[ev.kind] || "";
@@ -1191,6 +1670,8 @@ function showRun(info, tabs) {
   const app = clear($("app"));
   app.className = "surface wide";
   app.append(tpl("tpl-run"));
+  S.panel = null;
+  if (S.funnel && S.funnel.runId !== info.run_id) S.funnel = null;
   const m = newRunModel();
   m.noTools = typeof info.no_tools === "boolean" ? info.no_tools : null;
   S.model = m;
@@ -1199,6 +1680,8 @@ function showRun(info, tabs) {
   renderRun(m);
   runTop(info, m, tabs);
   renderRailTools();
+  $("sp-close").addEventListener("click", () => closePanel(m));
+  $("stage-panel").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closePanel(m); } });
   if (info.argv) $("legend").after(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
   // A run just started has no progress.jsonl until the child's first event: the stream is opened anyway and
   // the server follows the file from the moment it appears. Only a run that ended without one has no timeline.
@@ -1215,11 +1698,14 @@ function showRun(info, tabs) {
   S.es = es;
   if (info.status === "running" && !info.replayed) startTick();
   let pending = false;
-  const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); };
+  // A record that ends a stage (or a shard) means its file may now be written: the open panel and the funnel are read
+  // again, once per repaint, so a run in progress fills them in as it goes.
+  const paint = () => { pending = false; renderRun(m); runTop(info, m, tabs); if (S.stale) { S.stale = false; loadPanel(); if (m.x.merged) loadFunnel(); } };
   es.addEventListener("progress", (e) => {
     const ev = JSON.parse(e.data);
     S.lastAt = Date.now();
     applyEvent(m, ev);
+    if (STAGE_ENDS.includes(ev.type)) S.stale = true;
     if (!pending) { pending = true; requestAnimationFrame(paint); }
     // The other rail rows are re-read at the open run's status cadence (one call_status record per tick),
     // never on a browser timer.
@@ -1228,6 +1714,8 @@ function showRun(info, tabs) {
   es.addEventListener("end", async (e) => {
     stopTick(); es.close(); S.es = null;
     pollLog();
+    loadPanel();
+    loadFunnel();
     const end = JSON.parse(e.data || "{}");
     const fresh = await api("/runs/" + encodeURIComponent(info.run_id));
     info.status = fresh.status;
@@ -1680,6 +2168,6 @@ async function route() {
 }
 
 // The run model and its reducer, reachable by tests that feed a recorded stream through the page.
-window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN };
+window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf };
 window.addEventListener("popstate", route);
 route();

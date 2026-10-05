@@ -131,12 +131,14 @@
       <div class="tracks" id="stage1-tracks"></div>
       <div id="stage1-disclosures"></div>
       <div class="stage-head"><h2>Then, in order</h2><span class="limit">each waits for the stage before it; a cut keeps what was finished and says so in the report</span></div>
+      <!-- the findings funnel: every merged draft followed to its fate, from GET /runs/<id>/funnel (ui/stages.py) -->
+      <section class="funnel" id="funnel" aria-label="The findings, from drafts to the report" hidden></section>
       <div class="tracks" id="seq-tracks"></div>
       <div class="notice" id="stop-rule" hidden></div>
-      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Event times are the record's own run clock; the head clock and the axis cursor add only the seconds since the last event arrived, counted on this browser's clock, and the limit markers are the run's recorded limits. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head.</div>
+      <div class="legend" id="legend">The bar is elapsed time against the stage limit on the run clock, nothing else. It is not an estimate of completion. Event times are the record's own run clock; the head clock and the axis cursor add only the seconds since the last event arrived, counted on this browser's clock, and the limit markers are the run's recorded limits. A track that hits its limit shows <span class="pill cut">cut</span> with the time, and what it kept as a disclosure line under its stage. A run served by <span class="mono">dra replay</span> carries <span class="pill replayed">replayed evidence</span> in the head. A row's name opens what that stage produced, read from the files the run wrote, in the panel beside the rows; a chip there opens what it means.</div>
     </div>
-    <div class="feed">
-      <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <span class="pill draft">draft, unverified</span></h2>
+    <div class="feed" id="feed">
+      <h2>Draft findings <span class="muted num" style="font-weight:400" id="draft-count"></span> <button class="pill draft chip" type="button" data-term="run-draft" aria-expanded="false">draft, unverified</button></h2>
       <div class="rule">Each line appears as its JSON object completes in a shard's stream. None has been through refine or verify; IDs, ranks and severities can change, and a draft can be withdrawn.</div>
       <div id="drafts"></div>
       <div class="log">
@@ -145,6 +147,15 @@
         <div class="rows" id="status-feed"></div>
       </div>
     </div>
+    <!-- one stage at a time: what it produced, from GET /runs/<id>/stage/<name>; it takes the Draft findings column's
+         place, so opening a stage never moves the stage rows -->
+    <aside class="stage-panel" id="stage-panel" aria-labelledby="sp-title" hidden>
+      <div class="sp-head">
+        <div class="sp-headtext"><div class="sp-kicker" id="sp-kicker">What this stage produced</div><h2 id="sp-title" tabindex="-1"></h2></div>
+        <button class="btn quiet sp-close" type="button" id="sp-close">Close</button>
+      </div>
+      <div class="sp-body" id="sp-body"><div id="sp-calls"></div><div id="sp-content"></div></div>
+    </aside>
   </div>
 </template>
 

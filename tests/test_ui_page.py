@@ -305,9 +305,10 @@ def _record(seq: int, prev: dict[str, Any], type_: str, phase: str, kind: str, f
 
 
 def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_so_far(page) -> None:
-    """Change C: each track row opens to its model calls (keyed by call_id) with the latest call_status fields
-    (reasoning tokens, items, chars) and the draft items streamed from it (severity, kind, title); the expansion
-    survives the repaint on the next event; a finished call reads closed at its record time."""
+    """Change C: each track row opens its stage panel with its model calls (keyed by call_id), the latest call_status
+    fields (reasoning tokens, items, chars) and, while the stage's file is not written, the draft items streamed from
+    it (severity, kind, title); the panel survives the repaint on the next event; a finished call reads closed at its
+    record time. One stage is open at a time (5 Oct 2026: the panel beside the rows)."""
     from sit_review_agent.ui.launcher import Launched
 
     pg, base, runs, state = page
@@ -352,6 +353,7 @@ def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_
     assert drafts.count() == 1
     assert drafts.first.locator(".pill").inner_text() == "high" and drafts.first.locator(".kind").inner_text() == "risk"
     assert drafts.first.locator(".text").inner_text() == "A drafted title"
+    assert pg.locator(".calls .cdraft .text").all_inner_texts() == ["A drafted title"]     # titles only, no model text
     # The row stays open through the repaint of the next event, and the new status replaces the old one.
     status2 = dict(status, thinking_tokens=2000, items=3, chars=9000)
     with (rd / "progress.jsonl").open("a", encoding="utf-8") as fh:
@@ -368,7 +370,9 @@ def test_a_stage_row_expands_to_its_calls_with_the_latest_status_and_the_drafts_
     assert done.count() == 1 and done.first.get_attribute("data-call") == done_cid
     assert done.first.locator(".pill").inner_text() == f"closed at {_mmss(done_ev['run_s'])}"
     assert done.first.locator(".cstatus").inner_text() == ""
-    assert pg.locator(".calls .cdraft .text").all_inner_texts() == ["A drafted title"]     # titles only, no model text
+    # One stage at a time: understand replaced the shard in the panel, and the shard's row is closed again.
+    assert pg.locator(".calls").count() == 1 and pg.locator(".calls .cdraft").count() == 0
+    assert pg.locator(f'.track[data-track="{key}"] .name-btn').get_attribute("aria-expanded") == "false"
 
 
 def test_a_fired_limit_is_stated_in_plain_words(page) -> None:
