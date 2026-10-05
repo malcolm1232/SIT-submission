@@ -33,3 +33,7 @@ Grouping by the draft's own ID instead of the prior ID made both new tests fail;
 
 No live model run reached the fallback branch with duplicate carriers; the behaviour is shown with the fake gateway only.
 The final report's delta table after verify was not inspected end to end.
+
+## Verified (fresh-context verifier, 5 Oct 2026)
+
+Verified with no fix: probes (three carriers, distinct priors, rank tie, delta table after merge) held, all gates matched, and the most-fixed-keeper mutation failed the first test.
