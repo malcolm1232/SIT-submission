@@ -85,7 +85,15 @@ def score(
     from sit_eval.config import load_eval_config
     from sit_eval.judge import build_judge
     from sit_eval.loaders import LoadError, infer_doc_version, load_document, load_key, load_review
-    from sit_eval.scoring import ScoreOptions, plan_calls, score_review, validate_scores, write_outputs
+    from sit_eval.scoring import (
+        ConditionMismatch,
+        ScoreOptions,
+        check_condition,
+        plan_calls,
+        score_review,
+        validate_scores,
+        write_outputs,
+    )
 
     cfg = load_eval_config(config)
     kind = judge or cfg.judge.kind
@@ -115,6 +123,11 @@ def score(
         key_data = load_key(key)
     except LoadError as exc:
         _fail(str(exc))
+    # the condition aggregate pairs on: a flag that contradicts the run's manifest is refused before any call
+    try:
+        check_condition(condition, rin.manifest, rin.data.get("run_manifest"))
+    except ConditionMismatch as exc:
+        _fail(f"refusing to score: {exc}")
     if doc_version not in (None, "v1", "v2"):
         _fail("--doc-version must be v1 or v2")
     version = doc_version or infer_doc_version(rin, key_data, doc)

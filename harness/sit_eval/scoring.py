@@ -59,6 +59,25 @@ class ScoreOptions:
     exploratory: bool = False   # LC12 override (--exploratory): allows an unsigned key, marks every artefact
 
 
+class ConditionMismatch(ValueError):
+    """``--condition`` contradicts the condition the run's own manifest records."""
+
+
+def check_condition(flag: str | None, manifest: dict[str, Any] | None,
+                    run_manifest: dict[str, Any] | None) -> None:
+    """Refuse a ``--condition`` that differs from a condition the run recorded (``manifest.json`` beside the
+    report, and the report's ``run_manifest``). ``sit-eval aggregate`` pairs runs by condition, so a contradicting
+    flag would misfile the run into the wrong arm. A manifest that records no condition (null or absent: runs
+    made before the condition field was set) takes the flag as given; no flag is always accepted."""
+    if flag is None:
+        return
+    for source, m in (("manifest.json", manifest), ("report.json run_manifest", run_manifest)):
+        recorded = (m or {}).get("condition")
+        if recorded is not None and recorded != flag:
+            raise ConditionMismatch(f"--condition {flag} contradicts the run's {source} condition {recorded}; "
+                                    "drop the flag or correct it")
+
+
 def _verdict_label(rin: ReviewInput) -> str | None:
     return (rin.data.get("verdict") or {}).get("label")
 
