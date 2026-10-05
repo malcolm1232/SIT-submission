@@ -275,7 +275,7 @@ def registry_sha256(registry: list) -> str:
 REVIEW["research_log"]["registry_sha256_by_iteration"] = [
     {"iteration": i, "sha256": registry_sha256(REVIEW["decision_registry"])} for i in (1, 2)]
 
-URL_RE = re.compile(r"https?://[^\s)\]>\"']+|\b10\.\d{4,9}/[^\s)\]>\"']+")
+URL_RE = re.compile(r"https?://[^\s)\]>\"']+|\b10\.\d{4,9}/[^\s)\]>\"']+", re.IGNORECASE)  # scheme in any case, as invariants.URL_RE
 
 
 def _strings(node, skip=()):

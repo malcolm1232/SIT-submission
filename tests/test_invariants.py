@@ -6,6 +6,8 @@ import copy
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from sit_review_agent import invariants as inv
 
 
@@ -121,6 +123,26 @@ def test_inv05_quote_urls_must_match_their_excerpt_in_exact_case(
     pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
     assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
         f"URL/DOI in report text not in the ledger: {bad}"]
+
+
+@pytest.mark.parametrize("scheme", ["HTTPS", "Http", "hTtP"])
+def test_inv05_finds_a_url_whose_scheme_is_not_lowercase(review_dict: dict[str, Any], booking_pages: str,
+                                                        scheme: str) -> None:
+    """A URL whose scheme is not lowercase is a URL: INV-05 names a made-up one, and a document URL
+    whose only change is its scheme's case is not the document's URL (the model does not get to
+    rewrite it). An allowed URL written as the document writes it still passes."""
+    made_up = f"{scheme}://made-up.example/p"
+    bad = copy.deepcopy(review_dict)
+    bad["findings"][0]["statement"] += f" See {made_up}."
+    assert inv.check_INV_05(bad, texts={"DOC-booking-v1": booking_pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {made_up}."]
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    recased = DOC_URL.replace("https", scheme, 1)
+    moved = copy.deepcopy(review_dict)
+    moved["findings"][0]["statement"] += f" The usage page is {recased}."
+    assert inv.check_INV_05(moved, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {recased}."]
+    assert inv.allowed_urls([], [f"Figures at {recased} weekly."]) == {recased}     # kept as written
 
 
 def test_inv07_requires_disclosure(review_dict: dict[str, Any]) -> None:
