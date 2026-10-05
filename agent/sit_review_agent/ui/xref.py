@@ -11,7 +11,8 @@ visibly labelled as added by the export:
   each with its place in the reviewed document and the findings that cite it;
 * the reviewed document's extracted text (``text/<doc>.pages.txt``), page by page with its sections marked and
   every passage the review quotes highlighted, so a page or section reference resolves inside the one file even
-  when it is emailed alone; where the PDF travels with the page (the zip, the server) each page links to it;
+  when it is emailed alone; where the PDF is beside the page (the zip, the server, the app's Review tab) each page
+  links to it;
 * "How to read this review": the review's own vocabulary taken from the code and the prompts (kinds,
   categories, severities, dispositions, verdict labels, the confidence number, rank, the reporting threshold,
   the tools rows, the coverage criteria of this run's config) and the abbreviations the document defines.

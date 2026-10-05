@@ -18,6 +18,9 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/events          progress.jsonl as server-sent events (Last-Event-ID or ?after=N)
     GET  /runs/<id>/log             the last lines of progress.log as JSON (?after=<byte offset> follows it)
     GET  /runs/<id>/report          report.json plus what the page joins from the run directory
+    GET  /runs/<id>/review.html     the run's Review tab: the export's review document (``export.review_fragment``,
+                                    the same renderer and links), an HTML fragment with no script; a run without a
+                                    report.md, or one whose files cannot be drawn, is answered with what is missing
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
     GET  /runs/<id>/stage/<name>    what one stage produced (``ingest`` ... ``report``, ``assess-N`` per shard), read
@@ -71,6 +74,15 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 DEADLINE_MIN_S = 120
 DEADLINE_MAX_S = 7200
 FINDING_ID_RE = r"^FND-\d+$"
+#: What the Review tab says when a run has report.json (so the run page opens on its review) but the review document
+#: cannot be drawn: no report.md (a run cut between the two files, or written by an agent older than report.md), or
+#: files in a shape the renderer cannot read.
+REVIEW_NO_MD = ("This run has report.json but no report.md, the file the review is drawn from, so the review cannot be "
+                "shown here. The Coverage and Evidence tabs read report.json.")
+REVIEW_NOT_YET = ("This run has no report yet: neither report.md nor report.json is in its directory (a run in "
+                  "progress, or one that ended before its report was written). The Run log shows how far it got.")
+REVIEW_UNREADABLE = ("This run's report.md or report.json is in a shape the review page cannot read, so the review "
+                     "cannot be shown here; report.md and report.json are its own files")
 
 
 class RemoteHostRefused(ValueError):
@@ -385,6 +397,19 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, "This run has no report.json.")
         return _json(payload)
 
+    async def run_review_html(request: Request) -> Response:
+        rd = run_dir_of(request)
+        if rd is None:
+            return _err(404, "No such run.")
+        if not (rd / "report.md").is_file():
+            return _err(404, REVIEW_NO_MD if (rd / "report.json").is_file() else REVIEW_NOT_YET)
+        pdf = rundata.reviewed_pdf(rd, state.repo_root)
+        try:
+            html = export.review_fragment(rd, pdf_href=f"/runs/{rd.name}/doc.pdf" if pdf is not None else None)
+        except (OSError, AttributeError, KeyError, TypeError, ValueError) as exc:
+            return _err(422, f"{REVIEW_UNREADABLE} ({type(exc).__name__}: {exc}).")
+        return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+
     async def run_coverage(request: Request) -> Response:
         rd = run_dir_of(request)
         if rd is None or not (rd / "report.json").is_file():
@@ -551,6 +576,7 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/events", run_events),
         Route("/runs/{run_id}/log", run_log),
         Route("/runs/{run_id}/report", run_report),
+        Route("/runs/{run_id}/review.html", run_review_html),
         Route("/runs/{run_id}/coverage", run_coverage),
         Route("/runs/{run_id}/explain/{finding_id}", run_explain),
         Route("/runs/{run_id}/stage/{name}", run_stage),
