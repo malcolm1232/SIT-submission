@@ -425,7 +425,7 @@ class LangGraphOrchestrator(Orchestrator):
                 done, _ = await asyncio.wait({task}, timeout=self.stage1_poll_s if watch else None)
                 if done:
                     break
-                limit = ctx.config.stop_rules.stage_limits_s.stage_1_end
+                limit = ctx.config.stop_rules.effective().stage_limits_s.stage_1_end
                 if ctx.elapsed_s() < limit + self.stage1_grace_s:
                     continue
                 if not self._fired:

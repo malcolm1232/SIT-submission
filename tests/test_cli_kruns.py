@@ -167,17 +167,25 @@ def test_demo_profile_and_a_deadline_that_does_not_fit_the_reserves(cfgdir: Path
         man = json.loads((runs / f"demo-k{i}" / "manifest.json").read_text(encoding="utf-8"))
         assert man["budgets"]["deadline_s"] == 900 and man["extra"]["config"]["cli_args"]["profile"] == "demo"
         assert man["extra"]["k_index"] == i
-    # the runbook's "short rerun" against the default reserves (180 s + 600 s): announced, not silent
+    # the runbook's "short rerun": limits and reserves scale together (USER_DECISIONS #48), said in one WARN line,
+    # and the run directory records the effective values and what they were scaled from
     res = invoke(["review", str(PDF), *base(cfgdir), "--deadline", "300", "--run-id", "short"])
     assert res.exit_code == 0, res.output
-    assert "WARN deadline 300 s leaves research no time" in res.output and "share 120 s" in res.output
-    # the demo reserves of the 900 s profile (125 s and 334 s, USER_DECISIONS #47) leave research no time at 300 s
-    # either: the scaling and the lost research are both announced, never silent
-    res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "demo", "--deadline", "300", "--run-id", "short2"])
+    assert "verify and verdict 180 -> 15 s and refine 600 -> 50 s, so research ends by 235 s" in res.output
+    assert "leaves research no time" not in res.output
+    res = invoke(["review", str(PDF), *base(cfgdir), "--profile", "demo", "--deadline", "540", "--run-id", "short2"])
     assert res.exit_code == 0, res.output
-    assert "WARN deadline 300 s is not above this profile's stage limits" in res.output
-    assert "scaled by 300/900 to 147 / 258 / 294 s" in res.output
-    assert "WARN deadline 300 s leaves research no time" in res.output
+    assert "WARN deadline 540 s is not above this profile's stage limits" in res.output
+    assert "scaled by 540/900 to 264 / 465 / 529 s" in res.output
+    assert "verify and verdict 125 -> 75 s and refine 334 -> 200 s, so research ends by 264 s" in res.output
+    eff = json.loads((runs / "short2" / "effective_config.json").read_text(encoding="utf-8"))["stop_rules"]
+    assert (eff["deadline_seconds"], eff["report_reserve_seconds"], eff["refine_reserve_seconds"]) == (540, 75, 200)
+    assert eff["stage_limits_s"] == {"stage_1_end": 264, "refine_end": 465, "verdict_end": 529}
+    stop = json.loads((runs / "short2" / "manifest.json").read_text(encoding="utf-8"))["extra"]["stop"]
+    assert stop["params"]["refine_reserve_seconds"] == 200 and stop["scaled_from"]["refine_reserve_seconds"] == 334
+    started = json.loads((runs / "short2" / "progress.jsonl").read_text(encoding="utf-8").splitlines()[0])["fields"]
+    assert (started["report_reserve_s"], started["refine_reserve_s"], started["research_end_s"]) == (75, 200, 264)
+    assert started["scaled_from"]["deadline_s"] == 900 and started["stage_limits_scaled"] is True
 
 
 def test_not_assessed_runs_are_not_a_verdict_in_the_group_summary() -> None:

@@ -604,7 +604,10 @@ def build_manifest(ctx: RunContext, outcome: Outcome, *, end_utc: str | None = N
                             "tools_list_sha256": None, "health_at_start": None} for s in cfg.tools.servers],
                "tool_calls": len(tool_ids), **session_reopens(ctx)},
         stop={"active_rules": list(cfg.stop_rules.active), "params": cfg.stop_rules.model_dump(mode="json"),
-              "stop_reason": st.stop_reason.model_dump(mode="json") if st.stop_reason else None},
+              "stop_reason": st.stop_reason.model_dump(mode="json") if st.stop_reason else None,
+              # params are the effective rules; a deadline other than the profile's adds what they were scaled from
+              **({"scaled_from": cfg.stop_rules.scaled_from.model_dump(mode="json")}
+                 if cfg.stop_rules.scaled_from is not None else {})},
         fault_injection={"profile": sched_id or "none", "schedule_sha256": sched_sha},
         timing={"wall_clock_s": run_clock_s(ctx),
                 "per_stage_s": dict(st.budget.phase_seconds),

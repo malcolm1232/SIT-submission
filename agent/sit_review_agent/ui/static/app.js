@@ -258,8 +258,9 @@ async function showDrop() {
     try {
       const L = await api("/limits?profile=" + encodeURIComponent(p.name) + "&deadline_s=" + d);
       if (mine !== limitsAsk) return;
-      const parts = [say(L.stage_limits_s, L.deadline_s) + (L.scaled ? " Scaled from the profile's limits; the run says so first." : "")];
-      if (typeof L.research_end_s === "number" && L.research_end_s < L.stage_limits_s.stage_1_end) parts.push("Research's own deadline rule keeps the profile's reserves (" + intl(L.report_reserve_s) + " s for verify and report, " + intl(L.refine_reserve_s) + " s for refine), so research ends by " + clock(Math.max(0, L.research_end_s)) + ".");
+      const parts = [say(L.stage_limits_s, L.deadline_s)];
+      if (L.scaled) parts.push("Scaled from the profile's, with the reserves (" + intl(L.report_reserve_s) + " s for verify and verdict, " + intl(L.refine_reserve_s) + " s for refine); the run says so first.");
+      if (typeof L.research_end_s === "number") parts.push("Research ends by " + clock(L.research_end_s) + ".");
       for (const w of L.warnings) parts.push(sentence(w) + ".");
       help.textContent = parts.join(" ");
     } catch (err) { if (mine === limitsAsk) help.textContent = "The limits for this deadline could not be read: " + err.message; }

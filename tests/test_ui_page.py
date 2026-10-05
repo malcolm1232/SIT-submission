@@ -534,9 +534,10 @@ def test_the_deadline_field_and_a_missing_key_on_the_review_form(page, monkeypat
     assert warn.is_hidden() and pg.locator("#start-btn").is_enabled()
     pg.fill("#deadline-min", "9")
     assert "--profile demo --deadline 540 --no-tools" in pg.locator("#cmd-preview").inner_text()
-    pg.wait_for_function("document.getElementById('profile-help').textContent.includes('research ends by 01:21')")
+    pg.wait_for_function("document.getElementById('profile-help').textContent.includes('Research ends by 04:24.')")
     help_text = pg.locator("#profile-help").inner_text()
     assert help_text.startswith("Stage 1 ends by 04:24, refine by 07:45, verdict by 08:49")
+    assert "with the reserves (75 s for verify and verdict, 200 s for refine)" in help_text   # USER_DECISIONS #48
     pg.fill("#deadline-min", "1")
     assert pg.locator("#start-btn").is_disabled() and "from 2 to 120" in pg.locator("#deadline-help").inner_text()
     pg.fill("#deadline-min", "15")

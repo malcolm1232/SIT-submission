@@ -109,7 +109,7 @@ REPAIR_MIN_SLACK_S = 60.0
 def repair_slack_s(ctx: RunContext) -> float:
     """Seconds left before the verify and verdict reserve (``stop_rules.report_reserve_seconds``)
     begins: what the anchor repair call may use without taking time from the verdict call."""
-    return ctx.remaining_s() - ctx.config.stop_rules.report_reserve_seconds
+    return ctx.remaining_s() - ctx.config.stop_rules.effective().report_reserve_seconds
 #: Failures listed in the single repair turn (the rest stay unresolved).
 MAX_REPAIRS_PER_CALL = 60
 INTENT_OWNER = "intent"

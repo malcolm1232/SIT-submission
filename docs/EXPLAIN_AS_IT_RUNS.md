@@ -141,7 +141,7 @@ Why limits at all: in a live demo a run with no end is worse than a run that end
 They are absolute seconds, not fractions of the deadline, because a model call's thinking is a fixed cost, about 105 s per assess shard at medium (`config/stop_rules.yaml` comment on `stage_limits_s`).
 The limit is enforced inside each model call, as its attempt timeout, so one slow call cannot take the report with it (`llm/runtime.py` `RunDeadline`).
 `--deadline N`, or the Deadline field on the Review form, changes them: at or below 883 s or above 900 s the three limits scale by N / 900 and the run says so first, for example 540 s gives 264, 465 and 529 s (`config/profiles/demo.yaml` comment, `llm/runtime.py` `effective_stage_limits`).
-The two reserves do not scale, so at 540 s research's own deadline rule ends it by 81 s on the run clock, and the form says so before the run starts (`ui/server.py` `GET /limits`).
+The two reserves scale by the same factor (75 s and 200 s at 540 s), so research's own deadline rule ends it with stage 1, at 264 s; the run says so first and the form shows it before the run starts (`config.py` `StopRulesConfig.effective`, `ui/server.py` `GET /limits`, decision #48).
 Stage 1 also has a 30 s grace after its limit, after which members still running are stopped and disclosed (`orchestrator.py` `stage1_grace_s`).
 Before stage 1 and before refine the orchestrator checks the caps, and a cap that fires jumps to verify, so a report is always written (`orchestrator.py` `_cap`, `_skip_on_cap`; `states.py` `STAGE_ON_CAP`).
 

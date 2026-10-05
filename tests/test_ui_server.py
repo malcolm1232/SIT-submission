@@ -607,8 +607,8 @@ def test_meta_states_the_deadline_bounds(tmp_path: Path) -> None:
 
 def test_the_limits_route_reads_the_runtimes_own_scaling() -> None:
     """GET /limits answers from llm.runtime for the shipped demo profile (900 s, USER_DECISIONS #47): its own
-    deadline is unscaled; 540 s scales to 264 / 465 / 529 s and research's deadline rule, keeping both reserves,
-    ends research by 81 s, which the form states."""
+    deadline is unscaled; 540 s scales the limits to 264 / 465 / 529 s and the reserves to 75 s and 200 s by the
+    same factor (USER_DECISIONS #48), so research ends with stage 1 at 264 s, which the form states."""
     from sit_review_agent.ui.server import build_state
 
     state = build_state(runs_dir=None, chat_client=NoChat(), launcher=Launcher(repo_root=REPO, popen=FakePopen()))
@@ -620,7 +620,9 @@ def test_the_limits_route_reads_the_runtimes_own_scaling() -> None:
     short = client.get("/limits?profile=demo&deadline_s=540").json()
     assert short["stage_limits_s"] == {"stage_1_end": 264, "refine_end": 465, "verdict_end": 529}
     assert short["scaled"] is True and "scaled by 540/900" in short["note"] and short["warnings"] == []
-    assert short["research_end_s"] == 81 and (short["report_reserve_s"], short["refine_reserve_s"]) == (125, 334)
+    assert short["research_end_s"] == 264 and (short["report_reserve_s"], short["refine_reserve_s"]) == (75, 200)
+    for d, research in ((300, 147), (1800, 882)):
+        assert client.get(f"/limits?profile=demo&deadline_s={d}").json()["research_end_s"] == research
     assert client.get("/limits?profile=nope").status_code == 404
     assert client.get("/limits?profile=demo&deadline_s=5").status_code == 400
 

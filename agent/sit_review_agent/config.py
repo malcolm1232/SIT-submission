@@ -21,7 +21,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from sit_review_agent.errors import ConfigError
 from sit_review_agent.hashing import sha256_file, sha256_json
@@ -273,6 +282,10 @@ class StopRulesConfig(_Cfg):
                                                              "assess_reserve_seconds on 2026-10-03)")
     stage_limits_s: StageLimits
     max_output_tokens: int | None = None
+    #: The rules as the profile set them, when :meth:`effective` scaled these from them for another deadline;
+    #: ``None`` for rules at their own run length. Private: never dumped or hashed, so a run at its profile's
+    #: own deadline keeps its effective_config.json byte for byte.
+    _scaled_from: StopRulesConfig | None = PrivateAttr(default=None)
 
     @model_validator(mode="before")
     @classmethod
@@ -280,6 +293,81 @@ class StopRulesConfig(_Cfg):
         if isinstance(data, dict):
             _refuse_renamed_keys(data)
         return data
+
+    @property
+    def scaled_from(self) -> StopRulesConfig | None:
+        return self._scaled_from
+
+    def planned_seconds(self) -> int:
+        """The run length the stage limits and reserves were set for: ``refine_end + report_reserve_seconds``
+        (775 + 125 = 900 s on the demo profile, 3420 + 180 = 3600 s on the default)."""
+        lim = self.stage_limits_s
+        return max(lim.refine_end + self.report_reserve_seconds, lim.verdict_end + 1)
+
+    def effective(self) -> StopRulesConfig:
+        """These rules at their own ``deadline_seconds``: the ONE place a deadline other than the profile's run
+        length reaches the stage limits and the two reserves (USER_DECISIONS #47 and #48).
+
+        A deadline from ``verdict_end + 1`` to :meth:`planned_seconds` keeps everything as set (a profile's own
+        deadline included). Any other deadline multiplies the three stage limits AND the two reserves by
+        ``deadline / planned``, each rounded down to whole seconds: so research's own deadline rule, the
+        model-call timeouts, the verify slack and the between-phase rule all keep the split the profile encodes
+        (``--profile demo --deadline 540``: limits 264 / 465 / 529 s, reserves 75 s and 200 s, research ends by
+        264 s, as on the former 540 s profile). Scaling down keeps every stage and stage 1 the largest share,
+        which is where findings come from; scaling up gives every stage its share of the added time. Limits
+        that rounding would leave out of order (a deadline of a few seconds) fall back to a quarter, a half and
+        three quarters of the deadline; below 4 s no three whole-second limits fit and the deadline is refused.
+        Already effective rules are returned as they are, so every reader may call this."""
+        if self._scaled_from is not None:
+            return self
+        lim = self.stage_limits_s.as_dict()
+        d, planned = self.deadline_seconds, self.planned_seconds()
+        if lim["verdict_end"] < d <= planned:
+            return self
+        f = d / planned
+        new = {k: max(1, int(v * f)) for k, v in lim.items()}
+        if not (new["stage_1_end"] < new["refine_end"] < new["verdict_end"] < d):
+            new = {"stage_1_end": max(1, d // 4), "refine_end": max(2, d // 2), "verdict_end": max(3, 3 * d // 4)}
+            if not (new["stage_1_end"] < new["refine_end"] < new["verdict_end"] < d):
+                raise ValueError(f"deadline {d} s is too short for three stage limits in whole seconds (at least 4 s)")
+        out = self.model_copy(update={"stage_limits_s": StageLimits(**new),
+                                      "report_reserve_seconds": int(self.report_reserve_seconds * f),
+                                      "refine_reserve_seconds": int(self.refine_reserve_seconds * f)})
+        out._scaled_from = self
+        return out
+
+    def with_deadline(self, deadline_seconds: int) -> StopRulesConfig:
+        """The profile's rules (before any scaling) at ``deadline_seconds``, made :meth:`effective`."""
+        base = self._scaled_from or self
+        return base.model_copy(update={"deadline_seconds": deadline_seconds}).effective()
+
+    def research_end_s(self) -> int:
+        """Run-clock second by which research's own deadline rule ends it: the deadline less both reserves,
+        and never after the stage 1 limit (``phases/research.py``). Read on effective rules."""
+        return min(self.deadline_seconds - self.report_reserve_seconds - self.refine_reserve_seconds,
+                   self.stage_limits_s.stage_1_end)
+
+    def scaling_note(self) -> str | None:
+        """The announcement of :meth:`effective`'s scaling (the first progress lines of the run, the Review
+        form), or ``None`` when nothing was scaled."""
+        base = self._scaled_from
+        if base is None:
+            return None
+        keys = ("stage_1_end", "refine_end", "verdict_end")
+        old_l, new_l = base.stage_limits_s.as_dict(), self.stage_limits_s.as_dict()
+        d, planned = self.deadline_seconds, base.planned_seconds()
+        old = " / ".join(f"{old_l[k]}" for k in keys)
+        new = " / ".join(f"{new_l[k]}" for k in keys)
+        reserves = (f"; the two reserves with them, verify and verdict {base.report_reserve_seconds} -> "
+                    f"{self.report_reserve_seconds} s and refine {base.refine_reserve_seconds} -> "
+                    f"{self.refine_reserve_seconds} s, so research ends by {self.research_end_s()} s")
+        if d > planned:
+            return (f"deadline {d} s is longer than the {planned} s run this profile's stage limits were set for "
+                    f"({old} s for stage 1, refine and the verdict): the three limits are scaled up by "
+                    f"{d}/{planned} to {new} s, so every stage gets its share of the added time{reserves}")
+        return (f"deadline {d} s is not above this profile's stage limits ({old} s for stage 1, refine and the "
+                f"verdict, set for a {planned} s run): the three limits are scaled by {d}/{planned} to {new} s"
+                f"{reserves}; a model call still streaming at its limit is cut and its finished items are kept")
 
     def stage_limits_problem(self) -> str | None:
         """Why the stage limits do not fit ``deadline_seconds``, or ``None``. A file-level rule
@@ -611,7 +699,14 @@ def load_config(path: str | Path | None = None, overrides: ConfigOverrides | Non
     personas = _parse(PersonasConfig, _read_yaml(paths["persona"]), paths["persona"])
     url_path = root / tools.url_policy
     url_policy = _parse(UrlPolicy, _read_yaml(url_path), url_path)
+    profile_rules = stop
     agent, stop, tools = apply_overrides(agent, stop, tools, ov)
+    try:
+        stop = stop.effective()             # the one scaling of limits and reserves to a non-profile deadline
+    except ValueError as exc:
+        raise ConfigError(f"--deadline: {exc}") from None
+    if stop.scaled_from is not None:
+        stop._scaled_from = profile_rules   # what they were scaled from, with the profile's own deadline
     hashed = [agent_path, *paths.values(), url_path, *([profile_path] if profile_path else [])]
     try:
         return EffectiveConfig(
