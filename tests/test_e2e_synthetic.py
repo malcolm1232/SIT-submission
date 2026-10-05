@@ -13,7 +13,7 @@ What it pins down (integration verifier, cross-workstream seams):
 * a registry entry whose anchor cites the wrong page is re-anchored right after ``understand``
   (seam found here: ``understand`` records the iteration-0 registry hash, which used to turn the
   settlement into a no-op and fail INV-04 at report);
-* assess runs as four concurrent shards (one per criterion group of ``config/agent.yaml``), the
+* assess runs as concurrent shards (one per criterion group of ``config/agent.yaml``), the
   merge numbers the findings in shard order and ranks them by severity, and turns the model's
   ``NEW-n`` doc/inference evidence into ledger entries without a tool reference; a short verbatim
   quote is extended to 8 words, and one anchor is repaired in verify;
