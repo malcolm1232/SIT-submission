@@ -114,7 +114,7 @@ article.finding.x-hit, :root:not(.js) article.finding:target { background: var(-
 :where(.rv) tr.x-hit { box-shadow: none; }
 [id] { scroll-margin-top: 24px; }
 
-/* ---------- the reference part (added by the export) ---------- */
+/* ---------- the reference part (reference material, not part of the review's text) ---------- */
 .x-reference { margin-top: 64px; }
 .x-ref > h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; border-top: 2px solid var(--fg); }
 .x-added { font-family: var(--mono); font-size: 10.5px; line-height: 16px; letter-spacing: .1em; text-transform: uppercase;
@@ -255,5 +255,4 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
   .x-runtable td:first-child { width: 120px; white-space: normal; }
   #s-fitness-for-purpose td:first-child { min-width: 160px; }
   .x-back { right: 16px; bottom: 16px; }
-}
 }

@@ -153,6 +153,12 @@ def test_the_export_stylesheet_keeps_the_page_rules() -> None:
 
 
 def _page_rules(css: str) -> None:
+    # balanced braces: a stray "}" would make the browser drop the rule after it (in the export, the next sheet's first)
+    depth = 0
+    for ch in re.sub(r"/\*.*?\*/", "", css, flags=re.S):
+        depth += {"{": 1, "}": -1}.get(ch, 0)
+        assert depth >= 0
+    assert depth == 0
     assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", css) and not re.search(r"\brgba?\(|\bhsla?\(", css)
     assert "animation" not in css and "transition" not in css and "@keyframes" not in css
     assert "http" not in css and "url(" not in css and "@import" not in css
