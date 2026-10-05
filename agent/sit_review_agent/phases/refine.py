@@ -42,7 +42,12 @@ Rules kept from the earlier refine:
   once, through the same repair call as an invalid answer (``call_model(ask=...)``), whose correction
   names each missing prior ID (``prompts/refine.md`` is unchanged: the rule reaches the model through
   the field's schema description and that correction, since a prompt edit would stop the replay of
-  committed runs); what the repair answer still leaves out is filled in by the report as
+  committed runs). A complete answer that holds to the revision rules and lacks only some statuses
+  keeps every revision, and that repair call is asked for the missing statuses only
+  (:func:`split_revisions` with ``llm.outputs.missing_prior_statuses``; plan D v2 runs of 2026-10-05:
+  the whole answer was asked again, the repair was cut and the run fell back to the unmerged drafts,
+  v2 precision 0.11 to 0.25). A repair cut at the limit or failed leaves the first answer applied and
+  those priors out of ``state.prior_statuses``; what no answer gives is filled in by the report as
   ``still_open``, "not re-examined", disclosed (``delta.build_prior_table``). The usable statuses go
   to ``state.prior_statuses``.
 
@@ -102,6 +107,7 @@ from sit_review_agent.llm.outputs import (
     RefineRevisionsOutput,
     RevisionAction,
     apply_revisions,
+    missing_prior_statuses,
     prior_status_problems,
     revision_problems,
 )
@@ -310,19 +316,37 @@ def salvage_impact(s: Salvage, findings: int) -> str:
             "merged severity and confidence order")
 
 
-def split_revisions(out: RefineRevisionsOutput, drafts: Sequence[FindingDraft]) -> KeptItems | None:
-    """What a complete refine answer that broke the rules keeps (module docstring, "Repair for the
-    failing revisions only"): every revision that holds on its own (:func:`independent_revisions`
-    after the BEH-10 revert), as the model gave it; the findings without one are asked again. ``None``
-    when nothing holds or nothing is missing (then the whole answer is asked again, as before)."""
+def _status_request(statuses: Sequence[str]) -> str:
+    return (f"only these {len(statuses)} prior finding(s) of the previous review: {', '.join(statuses)} (each "
+            "resolved, partially_addressed, still_open or withdrawn_on_reassessment with a one-line note)")
+
+
+def split_revisions(out: RefineRevisionsOutput, drafts: Sequence[FindingDraft],
+                    statuses: Sequence[str] = ()) -> KeptItems | None:
+    """What a complete refine answer with problems keeps (module docstring, "Repair for the failing
+    revisions only"): every revision that holds on its own (:func:`independent_revisions` after the
+    BEH-10 revert), as the model gave it; the findings without one are asked again, and so are the
+    prior statuses ``statuses`` the answer left out (``llm.outputs.missing_prior_statuses``). An answer
+    whose every revision holds, as a set, and whose only gaps are those statuses keeps every revision
+    and asks the repair call for the statuses only (``KeptItems.retry`` empty). ``None`` when nothing
+    holds or nothing is missing (then the whole answer is asked again, as before)."""
     by_id = {d.id: d for d in drafts}
     parsed, _ = _parse_items(out.revisions, by_id)
     fixed = without_unexplained_changes(RefineRevisionsOutput(revisions=parsed), by_id).revisions
     chosen, _ = independent_revisions(fixed, by_id)
     kept_ids = {r.finding_id for r in chosen}
     retry = [d.id for d in drafts if d.id not in kept_ids]
-    if not kept_ids or not retry:
+    if not kept_ids:
         return None
+    if not retry:
+        if not statuses or revision_problems(RefineRevisionsOutput(revisions=fixed), [d.id for d in drafts],
+                                             drafts=by_id):
+            return None
+        instruction = (
+            f"Your revisions for all {len(drafts)} findings were accepted and are kept exactly as you gave them; do "
+            "not send them again (an empty revisions list). The complete answer this time is prior_statuses with "
+            f"exactly one entry for each of {_status_request(statuses)}; give no other prior status.")
+        return KeptItems(kept=tuple(parsed), retry=(), instruction=instruction, statuses=tuple(statuses))
     kept = tuple(r for r in parsed if r.finding_id in kept_ids)
     taken = {r.rank for r in chosen if r.action is RevisionAction.KEEP and r.rank is not None}
     free = [i for i in range(1, len(taken) + len(retry) + 1) if i not in taken]
@@ -331,9 +355,10 @@ def split_revisions(out: RefineRevisionsOutput, drafts: Sequence[FindingDraft]) 
         f"gave them; do not send them again. The complete answer this time is one revision for each of these "
         f"{len(retry)} finding(s) only: {', '.join(retry)}. A finding you keep among them takes one of the free "
         f"ranks {', '.join(str(i) for i in free[:20])}{', ...' if len(free) > 20 else ''} (lowest first), so the "
-        "kept ranks still run 1..n without gaps once a merged or withdrawn finding frees its rank. In a re-review "
-        "also give prior_statuses in full, as the rules say.")
-    return KeptItems(kept=kept, retry=tuple(retry), instruction=instruction)
+        "kept ranks still run 1..n without gaps once a merged or withdrawn finding frees its rank. "
+        + (f"Also give prior_statuses for {_status_request(statuses)}, which the answer left out." if statuses
+           else "In a re-review also give prior_statuses in full, as the rules say."))
+    return KeptItems(kept=kept, retry=tuple(retry), instruction=instruction, statuses=tuple(statuses))
 
 
 @dataclass(frozen=True)
@@ -345,6 +370,8 @@ class Repair:
     how: str
     #: The findings the repair call was asked for.
     retry: tuple[str, ...]
+    #: The prior findings whose status the repair call was asked for (``retry`` empty: those only).
+    statuses: tuple[str, ...]
     #: Revisions the repair call gave for them (a revision for a kept finding is ignored, not counted).
     returned: int
     #: Revisions the repair call gave for kept findings, ignored.
@@ -391,7 +418,8 @@ def repair_outcome(call: PhaseCall, drafts: Sequence[FindingDraft]) -> Repair | 
     s = salvage_revisions({"revisions": [*split.kept, *repaired]}, drafts)
     if s is None or s.applied == 0:
         return None
-    return Repair(how=how, retry=split.retry, returned=len(repaired), extra=len(given) - len(repaired),
+    return Repair(how=how, retry=split.retry, statuses=split.statuses, returned=len(repaired),
+                  extra=len(given) - len(repaired),
                   kept_applied=sum(1 for f in s.raw if f in kept_ids),
                   repaired_applied=sum(1 for f in s.raw if f not in kept_ids), salvage=s)
 
@@ -399,10 +427,19 @@ def repair_outcome(call: PhaseCall, drafts: Sequence[FindingDraft]) -> Repair | 
 def repair_impact(r: Repair, findings: int) -> str:
     """The degradation impact when the first answer's kept revisions were applied with the repaired ones."""
     at_limit = " at the limit" if r.how.startswith("was cut") else ""
-    text = (f"{r.salvage.applied} of {findings} refine revisions (one per merged finding) were applied: "
-            f"{r.kept_applied} kept from the first answer, which broke the revision rules for {len(r.retry)} "
-            f"finding(s) ({_listed(list(r.retry), 5)}), and {r.repaired_applied} repaired{at_limit} by the one "
-            f"repair call, which {r.how} with {r.returned} revision(s) for them")
+    left_out = (f" left out the status of {len(r.statuses)} prior finding(s) of the previous review "
+                f"({_listed(list(r.statuses), 5)})") if r.statuses else ""
+    if not r.retry:                     # status-only repair: every revision came from the first answer
+        text = (f"{r.salvage.applied} of {findings} refine revisions (one per merged finding) were applied from the "
+                f"first answer, which held to the revision rules but{left_out}; the one repair call, asked for "
+                f"those statuses only, {r.how}; a prior finding whose status still did not arrive is recorded in "
+                "the delta table as still_open, not re-examined")
+    else:
+        text = (f"{r.salvage.applied} of {findings} refine revisions (one per merged finding) were applied: "
+                f"{r.kept_applied} kept from the first answer, which broke the revision rules for {len(r.retry)} "
+                f"finding(s) ({_listed(list(r.retry), 5)}){' and' + left_out if left_out else ''}, and "
+                f"{r.repaired_applied} repaired{at_limit} by the one repair call, which {r.how} with {r.returned} "
+                "revision(s) for them")
     if r.salvage.set_problems:
         text += (". The merged set did not hold together (" + _listed(r.salvage.set_problems, 2) + "), so only its "
                  "independent revisions were applied (keeps, withdrawals, merges into a kept finding; ranks "
@@ -417,14 +454,17 @@ def repair_impact(r: Repair, findings: int) -> str:
             "severity and confidence order")
 
 
-def _disclose(ctx: RunContext, since: int, impact: str, event: str, dtype: DegradationType) -> None:
+def _disclose(ctx: RunContext, since: int, impact: str, event: str, dtype: DegradationType, *,
+              replace_event: bool = False) -> None:
     """Give the degradations ``call_model`` recorded for this call (after index ``since``; never a
-    model fallback) the impact of what was applied, or record one with ``event`` when it recorded none."""
+    model fallback) the impact of what was applied (and ``event`` too with ``replace_event``: a repair
+    asked for prior statuses only is not "the refine call was cut"), or record one with ``event`` when
+    it recorded none."""
     degs = ctx.state.degradations
     replaced = False
     for i in range(since, len(degs)):
         if degs[i].type is not DegradationType.MODEL_FALLBACK:
-            degs[i] = degs[i].model_copy(update={"impact": impact})
+            degs[i] = degs[i].model_copy(update={"impact": impact, **({"event": event} if replace_event else {})})
             replaced = True
     if not replaced:
         ctx.state.add_degradation(dtype, event, impact)
@@ -469,7 +509,7 @@ class RefinePhase:
             return prior_status_problems(out, prior_ids, kept_carry(out)) if prior_ids else []
 
         def split(out: RefineRevisionsOutput, problems: list[str]) -> KeptItems | None:
-            return split_revisions(out, drafts)
+            return split_revisions(out, drafts, missing_prior_statuses(out, prior_ids, kept_carry(out)))
 
         def prior_statuses(answers: Sequence[RefineRevisionsOutput], kept_ids: set[str]) -> None:
             """The usable prior statuses of ``answers`` (the first that gives one for a prior ID counts),
@@ -517,9 +557,11 @@ class RefinePhase:
                     model_of[fid] = call.first.model if fid in kept_ids else (
                         result.model if result is not None else ctx.config.agent.model)
                 if repair.unrefined or salvage.set_problems or salvage.dropped or not result:
+                    what = (f"broke the revision rules for {len(repair.retry)} finding(s)" if repair.retry else
+                            f"left out the status of {len(repair.statuses)} prior finding(s) of the previous review")
                     _disclose(ctx, since, repair_impact(repair, len(drafts)),
-                              f"the refine answer broke the revision rules for {len(repair.retry)} finding(s); the one "
-                              f"repair call, asked for those only, {repair.how}", DegradationType.OTHER)
+                              f"the refine answer {what}; the one repair call, asked for those only, {repair.how}",
+                              DegradationType.OTHER, replace_event=not repair.retry)
                 call_id = later
             else:
                 call_id = call.cut_id
