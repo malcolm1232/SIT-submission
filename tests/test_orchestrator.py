@@ -103,8 +103,11 @@ async def test_deadline_cap_skips_to_verify_and_is_disclosed(tmp_path: Path) -> 
 
 async def test_cap_before_refine_skips_it_and_is_disclosed(tmp_path: Path) -> None:
     clock, log = FakeClock(), []
-    ctx = make_ctx(tmp_path, clock, deadline_seconds=1000)          # the deadline rule fires at 1000 - 180 s
-    slow = Recorder(PhaseName.RESEARCH, log, clock=clock, advance=900)
+    # --deadline 1000 scales the default's limits and reserves by 1000/3600 (USER_DECISIONS #48): refine ends by
+    # 950 s and the deadline rule fires at 1000 - 50 s, so a research that runs to 960 s leaves refine no start.
+    ctx = make_ctx(tmp_path, clock, deadline_seconds=1000)
+    assert ctx.config.stop_rules.stage_limits_s.refine_end == 950 and ctx.config.stop_rules.report_reserve_seconds == 50
+    slow = Recorder(PhaseName.RESEARCH, log, clock=clock, advance=960)
     await Orchestrator(phases(log, research=slow)).run(ctx)
     assert log == ["ingest", "understand", "plan", "assess", "research", "verify", "report"]
     [d] = ctx.state.degradations
@@ -114,8 +117,18 @@ async def test_cap_before_refine_skips_it_and_is_disclosed(tmp_path: Path) -> No
 @pytest.mark.parametrize(("limit", "skipped"), [("stage_1_end", "stage 1"), ("refine_end", "refine")])
 async def test_a_passed_stage_limit_skips_the_stage(tmp_path: Path, limit: str, skipped: str) -> None:
     """stop_rules.stage_limits_s: a stage whose limit has passed does not start (deadline rule active)."""
+    from sit_review_agent.config import StageLimits
+
     clock, log = FakeClock(), []
-    ctx = make_ctx(tmp_path, clock, deadline_seconds=5000)          # so the deadline rule itself fires later
+    ctx = make_ctx(tmp_path, clock)
+    # Rules at their own run length (planned = verdict_end + 1 = 5000 s, nothing scaled) whose deadline rule fires
+    # at 5000 - 60 s, after both limits: only the stage limit can stop the stage. (The shipped profiles end refine
+    # exactly a report reserve before the deadline, so there the deadline rule fires at the same second.)
+    rules = ctx.config.stop_rules.model_copy(update={
+        "deadline_seconds": 5000, "report_reserve_seconds": 60, "refine_reserve_seconds": 0,
+        "stage_limits_s": StageLimits(stage_1_end=500, refine_end=1000, verdict_end=4999)})
+    assert rules.effective() is rules
+    ctx.config = ctx.config.model_copy(update={"stop_rules": rules})
     limits = ctx.config.stop_rules.stage_limits_s
     at = getattr(limits, limit)
     who = PhaseName.INGEST if limit == "stage_1_end" else PhaseName.RESEARCH
