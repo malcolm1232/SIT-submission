@@ -29,6 +29,14 @@ def flow_runs(tmp_path: Path) -> Path:
     return runs
 
 
+def wait_active(pg, g: str) -> None:
+    """Wait until the sidebar item ``g`` is the active one. The page's click and hashchange handlers set the
+    active item, the hidden sections and the URL in one task, so once this holds the whole state can be read;
+    reading right after a click raced that task under load (seen once in a full suite)."""
+    pg.wait_for_function("(g) => { const a = document.querySelectorAll('.toc-item.active');"
+                         " return a.length === 1 && a[0].getAttribute('data-g') === g; }", arg=g)
+
+
 def sections(html: str) -> list[tuple[str, str, str]]:
     return SEC_RE.findall(html)
 
@@ -183,21 +191,29 @@ def test_the_sidebar_in_a_browser_and_every_section_without_script(browser_page)
     assert visible.count() == len(secs) + 1                              # All sections, the chat included
     assert pg.locator(".toc-item.active .label").inner_text() == "All sections"
     pg.click(".toc-item[data-g='3']")
+    wait_active(pg, "3")
     assert [one_line(t) for t in pg.locator(".sec:visible h2").all_inner_texts()] == ["Risks"]
     assert pg.locator(".pre h1").is_visible() and pg.locator(".pre table").is_visible()   # title and verdict stay
     assert pg.url.endswith("#g3")
     pg.click(".toc-item[data-g='2']")
+    wait_active(pg, "2")
     assert [one_line(t) for t in pg.locator(".sec:visible h2").all_inner_texts()] == \
         ["Strengths", "Areas where no change is needed"]
     pg.click(".toc-heads a[href='#s-evidence-register']")                 # a heading opens its part
+    pg.wait_for_function("!document.getElementById('s-evidence-register').closest('.sec').hidden"
+                         " && document.getElementById('s-risks').closest('.sec').hidden")
     assert pg.locator("#s-evidence-register").is_visible() and pg.locator("#s-risks").is_hidden()
     pg.click(".toc-item[data-g='all']")
+    wait_active(pg, "all")
     assert visible.count() == len(secs) + 1
-    pg.goto(url + "#g4")
+    pg.goto(url + "#g4")                                                # a same-page hash: the route runs on hashchange
+    wait_active(pg, "4")
     assert [one_line(t) for t in pg.locator(".sec:visible h2").all_inner_texts()] == ["Gaps"]
     with ctx.expect_page() as tab:                                      # "this section only" opens the part's file
         pg.click(".toc-file[href='export/04_gaps.html']", modifiers=["Meta"])
-    tab.value.wait_for_load_state()
+    # The new tab can be handed over still on about:blank, whose load has already fired; wait for the part
+    # file itself to load (seen under load as "execution context was destroyed" mid-read).
+    tab.value.wait_for_url(base + "/runs/ui_flow_1/export/04_gaps.html")
     assert [one_line(t) for t in tab.value.locator("h2").all_inner_texts()] == ["Gaps"]
     tab.value.close()
     # without script: nothing is hidden and every section and the chat transcript show
