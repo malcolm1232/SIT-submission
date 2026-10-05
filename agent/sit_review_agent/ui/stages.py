@@ -112,8 +112,8 @@ def _fields(ev: dict[str, Any] | None) -> dict[str, Any]:
     return dict(ev.get("fields") or {}) if ev else {}
 
 
-def _fact(label: str, value: Any, src: str | None = None) -> dict[str, Any]:
-    return {"label": label, "value": value, "src": src}
+def _fact(label: str, value: Any, src: str | None = None, *, mono: bool = False) -> dict[str, Any]:
+    return {"label": label, "value": value, "src": src, "mono": mono}
 
 
 def _list(key: str, title: str, items: list[dict[str, Any]], *, src: str | None, groups: list[dict[str, Any]] |
@@ -183,8 +183,8 @@ def view_ingest(r: Reader) -> dict[str, Any]:
             _fact("pages", d.get("page_count"), src),
             _fact("sections", len(sections) if sections else ev.get("sections"), sec_rel if sections else
                   "progress.jsonl document_ingested"),
-            _fact("SHA-256 of the PDF", d.get("sha256_pdf"), src),
-            _fact("SHA-256 of the extracted text", d.get("sha256_text"), src),
+            _fact("SHA-256 of the PDF", d.get("sha256_pdf"), src, mono=True),
+            _fact("SHA-256 of the extracted text", d.get("sha256_text"), src, mono=True),
             _fact("text extracted", f"{intl(sum(_span(p) for p in pages))} characters of page-marked text from "
                   f"{len(pages)} pages" if pages else None, sec_rel),
             _fact("pages with no text (image only)", ", ".join(str(n) for n in image_only) if image_only else "none",
@@ -240,8 +240,8 @@ def view_understand(r: Reader) -> dict[str, Any]:
     hashes = [h for h in st.get("registry_hashes") or [] if isinstance(h, dict)]
     ready = _fields(r.last("intent_ready"))
     facts = [_fact("registry entries", len(reg) if st else ready.get("registry_entries"), src),
-             _fact("registry frozen", ("yes, SHA-256 " + str(hashes[-1].get("sha256"))) if st.get("registry_frozen")
-                   and hashes else ("no" if st else None), src),
+             _fact("registry frozen", ("yes" if st.get("registry_frozen") else "no") if st else None, src),
+             _fact("registry SHA-256", hashes[-1].get("sha256") if hashes else None, src, mono=True),
              _fact("review inputs found", len(st.get("review_inputs_found") or []) if st else None, src)]
     lists = [
         _list("registry", "Decision registry", reg, src=f"{src} state.registry" if src else None,
@@ -447,15 +447,20 @@ def view_assess(r: Reader, n: int) -> dict[str, Any]:
     notes = []
     if (res or {}).get("detail"):
         notes.append({"text": str(res["detail"]), "src": f"shards/{path.name}" if path else None, "tone": "warn"})
+    # The stream against the answer: a list whose item numbers started over is an answer the model wrote again.
+    differ, restarts = [], 0
     for key, kept in (("findings", len(findings)), ("sound_areas", len(sound)), ("coverage", len(cov))):
         idx = streamed.get(key) or []
-        restarts = sum(1 for a, b in zip(idx, idx[1:], strict=False) if b <= a)
-        if res is not None and idx and (len(idx) != kept or restarts):
-            notes.append({"text": f"The call streamed {len(idx)} {key.replace('_', ' ')} item(s)"
-                          + (f" and its numbering started over {restarts} time(s), so the model wrote its answer "
-                             "again" if restarts else "")
-                          + f"; the shard's answer holds {kept}, which are the ones listed here.",
-                          "src": "progress.jsonl draft_item; " + f"shards/{path.name}" if path else None})
+        restarts = max(restarts, sum(1 for a, b in zip(idx, idx[1:], strict=False) if b <= a))
+        if res is not None and idx and len(idx) != kept:
+            differ.append((key.replace("_", " "), len(idx), kept))
+    if differ:
+        notes.append({"text": "The call's stream carried " + ", ".join(f"{n} {k}" for k, n, _ in differ)
+                      + (f"; its item numbers started over {restarts} time(s), as when the model writes its answer "
+                         "again" if restarts else "")
+                      + ". The shard's answer holds " + ", ".join(f"{kept} {k}" for k, _, kept in differ)
+                      + ", the ones listed here.",
+                      "src": "progress.jsonl draft_item; " + (f"shards/{path.name}" if path else "")})
     lists = [
         _list("criteria", "Criteria this shard checked against", [
             {"type": "criterion", "key": f"s{n}:{c}", "group": "", "id": c, "question": crit.get(str(c))}
@@ -719,6 +724,7 @@ def invariant_items(r: Reader) -> dict[str, Any]:
     for n in INVARIANTS:
         fn = getattr(invariants, f"check_INV_{n}", None)
         doc = (inspect.getdoc(fn) or "").split("\n\n")[0].replace("\n", " ") if fn else ""
+        doc = re.sub(r":\w+:`~?([^`]*)`", r"\1", doc).replace("``", "")      # the docstring's reST, as plain text
         mine = [p for p in problems if p.startswith(f"INV-{n}")]
         result = ("failed" if mine else ("passed" if has_report else ("failed (another check)" if problems else
                                                                         "not checked yet")))

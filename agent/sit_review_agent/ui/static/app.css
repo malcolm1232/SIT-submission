@@ -495,7 +495,9 @@ table.grid.delta tr.ddetail > td { padding: 0 0 8px; }
 .sp-glabel::first-letter { text-transform: uppercase; }
 .sp-item { padding: 8px 0 9px; border-bottom: 1px solid var(--border-subtle); }
 .sp-item.lvl2 { padding-left: 16px; }
-.sp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 12px; line-height: 20px; color: var(--fg-muted); margin-bottom: 2px; }
+.sp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: 12px; line-height: 20px; color: var(--fg-muted); margin-bottom: 2px; }
+.sp-item[data-type="page"] { padding: 4px 0 5px; }
+.sp-facts dd.mono { font-size: 11.5px; line-height: 1.5; }
 .sp-meta b { color: var(--fg); font-weight: 500; }
 .sp-text { font-size: 13px; line-height: 1.45; color: var(--fg); overflow-wrap: anywhere; }
 .sp-toggle { all: unset; box-sizing: border-box; cursor: pointer; display: grid; grid-template-columns: 14px minmax(0, 1fr); width: 100%;
@@ -567,6 +569,7 @@ button.pill { border: 0; margin: 0; font-family: inherit; cursor: pointer; }
 @media (max-width: 1395px) {
   .run-wrap { grid-template-columns: minmax(0, 1fr); }
   .run-wrap.panel-open > .feed { display: block; }
+  /* align-self back to stretch: start (the sticky column's) would size the fixed drawer to its content instead */
   .stage-panel { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 3; width: min(480px, calc(100vw - var(--navrail-w) - 56px));
-    max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: var(--shadow-lg); }
+    align-self: stretch; max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: var(--shadow-lg); }
 }

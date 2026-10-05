@@ -1077,12 +1077,12 @@ function renderPanel() {
     for (const x of D.missing || []) c.append(missingLine(x));
     for (const n of D.notes || []) c.append(h("div", { class: "sp-note" + (n.tone === "warn" ? " warn" : "") }, h("span", { text: n.text }), n.src ? h("span", { class: "sp-src" }, " From ", h("span", { class: "mono", text: n.src }), ".") : null));
     if (P.stage === "funnel") c.append(funnelSummary(D));
+    const facts = (D.facts || []).filter((f) => f.value !== null && f.value !== undefined && f.value !== "");
+    if (facts.length) c.append(h("dl", { class: "kv sp-facts" }, facts.map((f) => [h("dt", { text: sentence(f.label) }), h("dd", { class: f.mono ? "mono" : null, title: f.src ? "From " + f.src : null }, String(typeof f.value === "number" ? intl(f.value) : f.value))])));
+    if ((D.files || []).length) c.append(h("div", { class: "sp-src sp-files" }, "Read from ", h("span", { class: "mono", text: D.files.join(", ") })));
     for (const [k, label] of [["statement", "The design's purpose and scope, as understand summarised it"], ["rationale", "Rationale"], ["what_would_change_it", "What would change it"]]) {
       if (D[k]) c.append(h("div", { class: "sp-prose" }, h("h3", { text: label }), h("p", { text: D[k] })));
     }
-    const facts = (D.facts || []).filter((f) => f.value !== null && f.value !== undefined && f.value !== "");
-    if (facts.length) c.append(h("dl", { class: "kv sp-facts" }, facts.map((f) => [h("dt", { text: sentence(f.label) }), h("dd", { title: f.src ? "From " + f.src : null }, String(typeof f.value === "number" ? intl(f.value) : f.value))])));
-    if ((D.files || []).length) c.append(h("div", { class: "sp-src sp-files" }, "Read from ", h("span", { class: "mono", text: D.files.join(", ") })));
     for (const L of D.lists || []) c.append(listBlock(P, L, D));
   }
   if (P.focus) { P.focus = false; $("sp-title").focus({ preventScroll: true }); }
@@ -1208,6 +1208,8 @@ function kvBlock(rows) {
   for (const [k, v] of rows) if (v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length)) kv.append(h("dt", {}, k), h("dd", {}, v));
   return kv;
 }
+// Whether a list's groups are its items' own chip (a kind, a registry type, an outcome): the item then does not repeat it.
+function groupedBy(L, fam) { return !!L && (L.groups || []).some((g) => g.term && g.term.startsWith(fam + "-")); }
 function termWord(text, term) { return h("button", { class: "chip term-word", type: "button", "data-term": term, "aria-expanded": "false", text }); }
 
 function anchorStatus(rows, i) {
@@ -1265,59 +1267,59 @@ function rawRecord(rec) {
 }
 
 const ITEM = {
-  section: { meta: (it) => [h("span", { class: "mono", text: "§" + it.id }), " p." + it.page_start + (it.page_end !== it.page_start ? "–" + it.page_end : "") + " · " + intl(it.chars) + " characters"],
+  section: { meta: (it) => [h("span", { class: "mono", text: "§" + it.id }), "p." + it.page_start + (it.page_end !== it.page_start ? "–" + it.page_end : ""), intl(it.chars) + " characters"],
     text: (it) => it.heading, cls: (it) => "lvl" + Math.min(it.level || 1, 2) },
   page: { meta: () => [], text: (it) => "Page " + it.number + ": " + intl(it.chars) + " characters of text" + (it.image_only ? ", image only (no text extracted)" : "") },
-  degradation: { meta: (it) => [chip(it.id, "id-DEG", "plain"), " " + words(it.dtype)], text: (it) => it.event, after: (it) => h("p", { class: "sp-after", text: "Impact: " + it.impact }) },
-  registry: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", chip(words(it.rtype), "reg-" + it.rtype, "plain"), it.doc_ref ? " " + it.doc_ref : ""], text: (it) => it.statement,
+  degradation: { meta: (it) => [chip(it.id, "id-DEG", "plain"), words(it.dtype)], text: (it) => it.event, after: (it) => h("p", { class: "sp-after", text: "Impact: " + it.impact }) },
+  registry: { meta: (it, D, L) => [h("b", { class: "mono", text: it.id }), groupedBy(L, "reg") ? null : chip(words(it.rtype), "reg-" + it.rtype, "plain"), it.doc_ref || ""], text: (it) => it.statement,
     detail: (it) => h("div", { class: "rec" }, it.anchor ? quoteLine(it.anchor) : h("p", { class: "muted", text: "No location recorded." })) },
   text: { meta: (it) => [chip("review input found", it.term, "plain")], text: (it) => it.text },
   intent: { meta: (it) => (it.ref ? [h("b", { class: "mono", text: it.ref })] : []), text: (it) => it.text },
   anchor_quote: { meta: () => [], text: (it) => loc(it.anchor) + " “" + (it.anchor.quote || "") + "”" },
   criterion: { meta: (it) => [chip(words(it.id), "crit-" + it.id, "plain")], text: (it) => it.question || it.id },
-  question: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", it.needs_external ? chip("needs external research", "q-external", "plain") : h("span", { class: "muted", text: "from the document" }), it.status && it.status !== "open" ? " · " + words(it.status) : ""],
+  question: { meta: (it) => [h("b", { class: "mono", text: it.id }), it.needs_external ? chip("needs external research", "q-external", "plain") : "from the document", it.status && it.status !== "open" ? words(it.status) : ""],
     text: (it) => it.question,
     detail: (it) => h("div", { class: "rec" }, kvBlock([["Criterion", chip(words(it.criterion), "crit-" + it.criterion, "plain")], ["Why it matters", it.rationale], ["Sections", ids(it.section_refs)],
       ["Tool (capability)", it.needs_external ? it.capability : null], ["Search queries", (it.queries || []).length ? h("ul", { class: "plain" }, it.queries.map((q) => h("li", { text: q }))) : null],
       ["Status", words(it.status)], ["Answer", it.summary], ["Ledger entries it cites", ids(it.evidence_ids)]])) },
   skip: { meta: () => [], text: (it) => JSON.stringify(it.rec), detail: (it) => rawRecord(it.rec) },
-  tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), " " + (it.rec.server || "")], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") },
-  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), " " + words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec) },
+  tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), it.rec.server || ""], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") },
+  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec) },
   finding: {
-    meta: (it) => [h("b", { class: "mono", text: it.id || it.local_id }),
-      it.merged_id ? " · numbered " + it.merged_id + " at the merge" : "", it.shard ? " · shard " + (it.shard_index || "?") + "'s " + it.local_id : "", " · ", sevChip(it.rec || {}), " ", kindChip((it.rec || {}).kind),
-      typeof (it.rec || {}).confidence === "number" ? " · confidence " + conf(it.rec.confidence) : "", typeof (it.rec || {}).rank === "number" && !it.draft ? " · rank " + it.rec.rank : ""],
+    meta: (it, D, L) => [h("b", { class: "mono", text: it.id || it.local_id }),
+      it.merged_id ? "numbered " + it.merged_id + " at the merge" : "", it.shard ? "shard " + (it.shard_index || "?") + "'s " + it.local_id : "", sevChip(it.rec || {}), groupedBy(L, "kind") ? null : kindChip((it.rec || {}).kind),
+      typeof (it.rec || {}).confidence === "number" ? "confidence " + conf(it.rec.confidence) : "", typeof (it.rec || {}).rank === "number" && !it.draft ? "rank " + it.rec.rank : ""],
     text: (it) => (it.rec || {}).title,
     after: (it) => (it.fate ? h("p", { class: "sp-after", text: "Became: " + it.fate }) : (it.refined === false ? h("p", { class: "sp-after warn", text: "Not refined: no revision was applied to it." }) : null)),
     detail: findingRecord },
-  sound_area: { meta: (it) => [it.rec.id ? h("b", { class: "mono", text: it.rec.id }) : null, " " + (it.rec.section_refs || []).map((x) => "§" + x).join(", ")],
+  sound_area: { meta: (it) => [it.rec.id ? h("b", { class: "mono", text: it.rec.id }) : null, (it.rec.section_refs || []).map((x) => "§" + x).join(", ")],
     text: (it) => it.rec.why_sound,
     detail: (it) => { const b = h("div", { class: "rec" }); (it.rec.doc_anchors || []).forEach((a) => b.append(quoteLine(a))); b.append(kvBlock([["Related findings", ids(it.rec.related_finding_ids)], ["Evidence", ids(it.rec.evidence_ids)]])); return b; } },
-  coverage: { meta: (it) => [chip(words(it.rec.criterion_id), "crit-" + it.rec.criterion_id, "plain"), " ", chip(words(it.rec.outcome), "cov-" + it.rec.outcome, "plain"), (it.rec.finding_ids || []).length ? " " + it.rec.finding_ids.join(", ") : ""],
+  coverage: { meta: (it, D, L) => [chip(words(it.rec.criterion_id), "crit-" + it.rec.criterion_id, "plain"), groupedBy(L, "cov") ? null : chip(words(it.rec.outcome), "cov-" + it.rec.outcome, "plain"), (it.rec.finding_ids || []).join(", ")],
     text: (it) => it.rec.note || "" },
-  revision: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", it.group === "merged" ? chip("merge", "rev-merge", "plain") : (it.group === "withdrawn" ? chip("withdraw", "rev-withdraw", "plain") : (it.group.startsWith("not") ? h("span", { class: "muted", text: "no revision applied" }) : chip("keep", "rev-keep", "plain"))),
-    it.into ? " into " + it.into : "", " · ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)],
+  revision: { meta: (it) => [h("b", { class: "mono", text: it.id }), it.group === "merged" ? chip("merge", "rev-merge", "plain") : (it.group === "withdrawn" ? chip("withdraw", "rev-withdraw", "plain") : (it.group.startsWith("not") ? "no revision applied" : chip("keep", "rev-keep", "plain"))),
+    it.into ? "into " + it.into : "", sevChip({ kind: it.kind, severity: it.severity }), kindChip(it.kind)],
     text: (it) => it.title,
     after: (it) => h("p", { class: "sp-after" + (it.note ? "" : " muted"), text: it.note ? sentence(it.note) : (it.group.startsWith("not refined") ? "No revision of the cut answer was applied to it: it stays as merged." : "No reason recorded.") }),
     detail: (it) => kvBlock([["Fields refine changed", ids(it.changed)], ["From the call", it.call_id]]) },
-  anchor: { meta: (it) => [h("b", { class: "mono", text: it.owner + " #" + (it.index + 1) }), " ", chip(it.status, "anchor-" + it.status, it.status === "unresolved" ? "high" : "plain"),
-    " " + [loc(it), it.method && it.method !== "none" ? it.method + " match" : null, typeof it.score === "number" && it.method !== "none" ? "score " + conf(it.score) : null, (it.reasons || []).join(", ") || null].filter(Boolean).join(" · ")],
+  anchor: { meta: (it) => [h("b", { class: "mono", text: it.owner + " #" + (it.index + 1) }), chip(it.status, "anchor-" + it.status, it.status === "unresolved" ? "high" : "plain"),
+    loc(it), it.method && it.method !== "none" ? it.method + " match" : "", typeof it.score === "number" && it.method !== "none" ? "score " + conf(it.score) : "", (it.reasons || []).join(", ")],
     text: (it) => (it.quote ? "“" + it.quote + "”" : "(the quote is not in this stage's state)") },
-  verified: { meta: (it) => [h("b", { class: "mono", text: it.id }), it.severity || it.kind ? [" ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)] : null], text: (it) => it.title || "",
+  verified: { meta: (it) => [h("b", { class: "mono", text: it.id }), it.severity || it.kind ? [sevChip({ kind: it.kind, severity: it.severity }), kindChip(it.kind)] : null], text: (it) => it.title || "",
     after: (it) => h("p", { class: "sp-after", text: sentence(it.why) }),
     detail: (it) => { const b = h("div", { class: "rec" }); for (const a of it.anchors || []) b.append(h("div", { class: "qrow" }, chip(a.status, "anchor-" + a.status, a.status === "unresolved" ? "high" : "plain"), h("span", { class: "qloc num", text: " " + loc(a) }), h("span", { class: "quote", text: a.quote ? "“" + a.quote + "”" : "" }))); return b; } },
-  invariant: { meta: (it) => [h("b", { class: "mono", text: it.id }), " ", h("span", { class: "pill " + (it.result === "passed" ? "done" : (it.result.startsWith("failed") ? "high" : "plain")), text: it.result })], text: (it) => it.about,
+  invariant: { meta: (it) => [h("b", { class: "mono", text: it.id }), h("span", { class: "pill " + (it.result === "passed" ? "done" : (it.result.startsWith("failed") ? "high" : "plain")), text: it.result })], text: (it) => it.about,
     after: (it) => ((it.problems || []).length ? h("ul", { class: "plain small" }, it.problems.map((x) => h("li", { text: x }))) : null) },
   condition: { meta: (it) => [h("span", { class: "mono", text: ids(it.ids) })], text: (it) => it.text },
-  objective: { meta: (it) => [it.ref ? h("b", { class: "mono", text: it.ref }) : null, " ", chip(words(it.label), "verdict-" + it.label, "plain"), (it.ids || []).length ? " " + it.ids.join(", ") : ""], text: (it) => it.text || it.ref || "",
+  objective: { meta: (it) => [it.ref ? h("b", { text: it.ref }) : null, chip(words(it.label), "verdict-" + it.label, "plain"), (it.ids || []).join(", ")], text: (it) => it.text || it.ref || "",
     after: (it) => (it.rationale ? h("p", { class: "sp-after", text: it.rationale }) : null) },
   unresolved: { meta: (it) => [h("span", { class: "mono", text: ids(it.rec.finding_ids) })], text: (it) => it.rec.text,
     after: (it) => (it.rec.next_step ? h("p", { class: "sp-after", text: "Next step: " + (it.rec.next_step.owner ? it.rec.next_step.owner + ": " : "") + (it.rec.next_step.action || "") }) : null) },
   limitation: { meta: (it) => [h("span", { class: "mono", text: ids(it.rec.degradation_ids) })], text: (it) => it.rec.text },
-  fate: { meta: (it) => [h("b", { class: "mono", text: it.draft_id }), it.shard ? " · shard " + words(it.shard) + (it.shard_local_id ? " (its " + it.shard_local_id + ")" : "") + " · " : " · ", sevChip({ kind: it.kind, severity: it.severity }), " ", kindChip(it.kind)],
+  fate: { meta: (it) => [h("b", { class: "mono", text: it.draft_id }), it.shard ? "shard " + words(it.shard) + (it.shard_local_id ? " (its " + it.shard_local_id + ")" : "") : "", sevChip({ kind: it.kind, severity: it.severity }), kindChip(it.kind)],
     text: (it) => it.title,
     after: (it) => h("p", { class: "sp-after" + (it.agrees === false ? " warn" : "") }, h("b", { text: sentence(it.fate) }),
-      " · refine: " + it.refine + (it.verify ? " · verify: " + it.verify : "") + (it.agrees === false ? " · the manifest's finding_ids.final says " + (it.manifest_final || "nothing") : "")) },
+      " · refine: " + it.refine + (it.verify ? " · verify" + (it.merged_into ? " of " + it.merged_into : "") + ": " + it.verify : "") + (it.agrees === false ? " · the manifest's finding_ids.final says " + (it.manifest_final || "nothing") : "")) },
 };
 ITEM.raw = { meta: () => [], text: (it) => JSON.stringify(it), detail: null };
 
@@ -1344,7 +1346,7 @@ function itemEl(P, L, it, D) {
   const key = L.key + ":" + it.key;
   const el = h("div", { class: "sp-item" + (it.draft ? " is-draft" : "") + (R.cls ? " " + R.cls(it) : ""), "data-key": it.key, "data-type": it.type });
   el.dataset.search = searchText(it);
-  const meta = R.meta(it, D).filter((x) => x !== null && x !== undefined && x !== "");
+  const meta = R.meta(it, D, L).flat(Infinity).filter((x) => x !== null && x !== undefined && x !== "").map((x) => (typeof x === "string" ? h("span", { text: x.trim() }) : x)).filter((x) => x.textContent !== "");
   if (meta.length) el.append(h("div", { class: "sp-meta" }, meta));
   const text = R.text(it, D);
   if (R.detail) {
