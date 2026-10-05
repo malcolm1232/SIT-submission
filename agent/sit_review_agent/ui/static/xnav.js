@@ -8,7 +8,8 @@
 // steps, "Show in the report" and the sidebar's parts are browser history entries, so Back returns to the place the
 // reader left. With opt.history false (the app, whose own router owns history) the pane keeps its own stack, nothing
 // is pushed and every in-document link is handled here. opt.top() is the height of the page's fixed chrome above the
-// document; opt.more(id) may return { href, label } for one more action in the pane. The returned object's destroy()
+// document; opt.more(id) may return { href, label } for one more action in the pane; opt.column (default ".wrap") is
+// the reading column that makes room for the pane. The returned object's destroy()
 // removes every listener; they also remove themselves once `box` has left the page.
 (function () {
   function xnav(box, opt) {
@@ -103,7 +104,9 @@
         return;
       }
       if (!a) {
-        if (paneOpen() && !(e.target.closest && e.target.closest(".x-pane, .x-pop, .toc"))) closePane();
+        // a target its own handler has just replaced (the pane's breadcrumb redraws itself) was inside the pane
+        if (paneOpen() && e.target.isConnected && !(e.target.closest && e.target.closest(".x-pane, .x-pop, .toc")))
+          closePane();
         return;
       }
       if (a.closest(".toc") || a.closest(".exp-head") || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -172,9 +175,29 @@
       if (on_ && box2 && box2.scrollHeight > box2.clientHeight && on_.offsetParent &&
           (on_.offsetTop < box2.scrollTop + 48 || on_.offsetTop > box2.scrollTop + box2.clientHeight - 48))
         box2.scrollTop = on_.offsetTop - box2.clientHeight / 2;
-      if (part && box2 && box2.scrollWidth > box2.clientWidth &&      // a one-line strip: the part in its view
-          (part.offsetLeft < box2.scrollLeft || part.offsetLeft + part.offsetWidth > box2.scrollLeft + box2.clientWidth))
-        box2.scrollLeft = part.offsetLeft - 16;
+      if (part && box2 && box2.scrollWidth > box2.clientWidth &&      // a one-line strip: the part in its view, clear
+          (part.offsetLeft < box2.scrollLeft + 72 ||                     // of the faded edges
+           part.offsetLeft + part.offsetWidth > box2.scrollLeft + box2.clientWidth - 72))
+        box2.scrollLeft = part.offsetLeft - 72;
+      edges();
+    }
+    // a one-line strip of parts (the app below 1280 px): an edge that has more beyond it fades, so no label ends
+    // in a hard cut, and a mouse wheel over the strip scrolls it sideways
+    var bar = box.querySelector(".toc-inner");
+    function edges() {
+      if (!bar || hist) return;
+      var wide = bar.scrollWidth > bar.clientWidth + 1;
+      bar.classList.toggle("x-fade-l", wide && bar.scrollLeft > 1);
+      bar.classList.toggle("x-fade-r", wide && bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 1);
+    }
+    if (bar && !hist) {
+      on(bar, "scroll", edges, { passive: true });
+      on(window, "resize", edges);
+      on(bar, "wheel", function (e) {
+        if (bar.scrollWidth <= bar.clientWidth + 1 || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+        e.preventDefault();
+        bar.scrollLeft += e.deltaY;
+      }, { passive: false });
     }
     on(window, "scroll", function () {
       if (!ticking) { ticking = true; window.requestAnimationFrame(function () { ticking = false; spy(); }); }
@@ -407,10 +430,30 @@
       opener = a && !a.closest(".x-pane") ? a : opener;
       if (opener) opener.classList.add("x-opener");
     }
+    // Beside the pane: from 1280 px, while the pane is open the reading column ends left of it (its measure narrows,
+    // and the class "x-beside" lets the page hide what the pane covers), so no line runs under the pane. The reflow
+    // and the scroll that undoes it happen in one task, before any paint: the link the reader clicked keeps its exact
+    // place on the screen, on open and on close. Below 1280 px there is no room, and the pane is an overlay.
+    var col = box.querySelector(opt.column || ".wrap"), GAP = 24, WIDE = 1280, MEASURE = 440;
+    function topOf(a) { return a && a.isConnected && a.getClientRects().length ? a.getBoundingClientRect().top : null; }
+    function room(on) {
+      if (!col) return;
+      box.classList.remove("x-beside");
+      col.style.maxWidth = "";
+      if (!on || window.innerWidth < WIDE) return;
+      box.classList.add("x-beside");
+      var r = col.getBoundingClientRect(), w = pane.getBoundingClientRect().left - GAP - r.left;
+      if (w >= r.width) return;                        // it already ends left of the pane: nothing to make room for
+      if (w >= MEASURE) col.style.maxWidth = w + "px"; else box.classList.remove("x-beside");
+    }
+    function settle(a, top0) {                          // the link back where it was, to the pixel
+      var top1 = top0 === null ? null : topOf(a);
+      if (top1 !== null && top1 !== top0) window.scrollBy(0, top1 - top0);
+    }
     function openPane(id, a) {
       if (!pane) { jump(id); return; }
       hide();
-      var fresh = !paneOpen();
+      var fresh = !paneOpen(), top0 = fresh ? topOf(a) : null;
       if (fresh || !a.closest(".x-pane")) { gen += 1; stack = [id]; at = 0; }
       else { stack = stack.slice(0, at + 1); stack.push(id); at += 1; }
       if (fresh) { save(); depth = 0; }
@@ -420,6 +463,7 @@
       pane.hidden = false;
       root.classList.add("pane-open");
       draw();
+      if (fresh) { room(true); settle(a, top0); }
       if (fresh || !a.closest(".x-pane")) ptitle.focus({ preventScroll: true });
     }
     function adopt(s) {
@@ -427,12 +471,15 @@
       var same = s.gen === gen && stack.length > s.pane && stack[s.pane] === s.stack[s.pane];
       if (!same) stack = s.stack.slice();
       at = s.pane; gen = s.gen; depth = s.d || 1;
-      if (!paneOpen()) { pane.hidden = false; root.classList.add("pane-open"); }
+      if (!paneOpen()) { pane.hidden = false; root.classList.add("pane-open"); room(true); }
       draw();
     }
     function closed() {
+      var top0 = topOf(opener);
       pane.hidden = true;
       root.classList.remove("pane-open");
+      room(false);
+      settle(opener, top0);
       stack = []; at = -1; depth = 0;
       var o = opener;
       if (opener) opener.classList.remove("x-opener");
@@ -446,6 +493,12 @@
       else { closed(); if (after) { var f = after; after = null; f(); } }
     }
     on(window, "scroll", function () { if (shown) { pop.hidden = true; shown = null; } }, { passive: true });
+    on(window, "resize", function () {                 // a new width: the room beside the pane again, the link kept
+      if (!paneOpen()) return;
+      var top0 = topOf(opener);
+      room(true);
+      settle(opener, top0);
+    });
     if (hist) route(); else landing();
     return { destroy: destroy };
   }

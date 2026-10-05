@@ -19,7 +19,11 @@ html, body { margin: 0; background: var(--bg-app); color: var(--fg); font-family
 .stamp { margin-top: 12px; padding: 8px 12px; border-radius: 6px; background: var(--bg-control); font-size: 13px; }
 
 
-@media (min-width: 1280px) { .pane-open .layout > .wrap { margin-left: 0; } }
+@media (min-width: 1280px) {
+  .pane-open .layout > .wrap { margin-left: 0; }
+  /* the pane open (xnav.js "x-beside"): the column ends left of it, and its right padding gives way to the gap */
+  .x-beside .layout > .wrap { padding-right: 0; }
+}
 
 /* ---------- the chat transcript ---------- */
 .chat-transcript { margin-top: 48px; border-top: 2px solid var(--fg); }

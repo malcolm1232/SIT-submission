@@ -167,6 +167,34 @@ def centre(pg, link) -> None:
     pg.wait_for_timeout(50)
 
 
+def top(link) -> float:
+    return link.evaluate("e => e.getBoundingClientRect().top")
+
+
+#: Where the review column's text ends against where the open pane begins: the column's right edge and the right end
+#: of every line of text on screen (at 1440 the column makes room for the pane, so both are left of it).
+BESIDE = """() => {
+  const col = document.querySelector('#rv .rv-doc'), pane = document.querySelector('#rv .x-pane');
+  const w = document.createTreeWalker(col, NodeFilter.SHOW_TEXT), r = document.createRange();
+  let text = 0;
+  for (let n; (n = w.nextNode());) {
+    if (!n.data.trim()) continue;
+    r.selectNodeContents(n);
+    const clip = n.parentElement.closest('.x-table');                 // a wide table scrolls inside its own box
+    const edge = clip ? clip.getBoundingClientRect().right : Infinity;
+    for (const b of r.getClientRects()) {
+      if (b.width && b.bottom > 0 && b.top < innerHeight) text = Math.max(text, Math.min(b.right, edge));
+    }
+  }
+  return { col: col.getBoundingClientRect().right, text, pane: pane.getBoundingClientRect().left };
+}"""
+
+
+def clear_of_pane(pg) -> None:
+    m = pg.evaluate(BESIDE)
+    assert m["text"] > 0 and m["col"] <= m["pane"] and m["text"] <= m["pane"], m
+
+
 #: Per family: [mentions, links, links whose target is in the Review tab] over the review's text (headings are where
 #: links land), and the mentions that are not a link to a target there.
 TALLY = """(arg) => {
@@ -227,7 +255,7 @@ def test_every_mention_is_a_link_to_a_target_in_the_tab_and_the_text_is_the_expo
     assert [" ".join(t.split()) for t in tab] == [" ".join(t.split()) for t in body]
 
 
-def test_a_link_opens_the_pane_and_the_review_column_does_not_move(app_page) -> None:
+def test_a_link_opens_the_pane_beside_the_review_and_the_clicked_link_keeps_its_place(app_page) -> None:
     pg, ctx, base, runs = app_page
     open_review(pg, base)
     report = json.loads((runs / RUN / "report.json").read_text(encoding="utf-8"))
@@ -245,10 +273,11 @@ def test_a_link_opens_the_pane_and_the_review_column_does_not_move(app_page) -> 
             continue
         seen += 1
         centre(pg, link)
-        y0, href, url = _y(pg), link.get_attribute("href"), pg.url
+        t0, href, url = top(link), link.get_attribute("href"), pg.url
         link.click()
         pg.wait_for_selector("#rv .x-pane:not([hidden])")
-        assert _y(pg) == y0, name                                    # the review column did not move, to the pixel
+        assert abs(top(link) - t0) < 1, name                         # the clicked link kept its place, to the pixel
+        clear_of_pane(pg)                                            # and no line of the review runs under the pane
         assert pg.url == url, name                                   # the app's router saw nothing
         assert pg.evaluate("() => document.querySelector('.x-pane-body').textContent.trim().length") > 0, name
         ids = pg.evaluate("() => [...document.querySelectorAll('[id]')].map(e => e.id)")
@@ -257,16 +286,17 @@ def test_a_link_opens_the_pane_and_the_review_column_does_not_move(app_page) -> 
         assert pg.evaluate("() => document.activeElement.classList.contains('x-pane-title')"), name
         pg.keyboard.press("Escape")
         pg.wait_for_selector("#rv .x-pane", state="hidden")
-        assert _y(pg) == y0, name
+        assert abs(top(link) - t0) < 1, name                         # closed: the full measure, the link in place
         assert pg.evaluate("h => document.activeElement.getAttribute('href') === h", href), name   # focus came back
         assert pg.locator("#rv .x-opener").count() == 0
     assert seen >= 6
     # a chain inside the pane: its own back and forward and the breadcrumb; the review column never moves
     link = pg.locator("#rv .report a.x-ev").first
     centre(pg, link)
-    y0 = _y(pg)
+    t0 = top(link)
     link.click()
     pg.wait_for_selector("#rv .x-pane:not([hidden])")
+    y1 = _y(pg)                                                     # links inside the pane never move the review
     first = pg.locator(".x-pane-kicker").inner_text()
     pg.locator(".x-pane-body a.xref").first.click()
     pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent !== k", arg=first)
@@ -278,17 +308,19 @@ def test_a_link_opens_the_pane_and_the_review_column_does_not_move(app_page) -> 
     pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent === k", arg=second)
     pg.locator(".x-pane-crumb .x-crumb").first.click()
     pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent === k", arg=first)
-    assert _y(pg) == y0
+    assert pg.locator("#rv .x-pane").is_visible() and pg.locator(".x-pane-crumb .x-crumb").count() == 2
+    assert _y(pg) == y1
     pg.keyboard.press("Escape")
     pg.wait_for_selector("#rv .x-pane", state="hidden")
-    assert _y(pg) == y0 and pg.url == f"{base}/?run={RUN}"
+    assert abs(top(link) - t0) < 1 and pg.url == f"{base}/?run={RUN}"
+    y0 = _y(pg)
     # a click on the review outside a link closes the pane
     link.click()
     pg.wait_for_selector("#rv .x-pane:not([hidden])")
     box = pg.locator("#rv .report").bounding_box()
     pg.mouse.click(box["x"] + 4, 400)
     pg.wait_for_selector("#rv .x-pane", state="hidden")
-    assert _y(pg) == y0
+    assert abs(top(link) - t0) < 1
     # "Show in the report" moves the review to the target, and "Back to where I was" returns
     link.click()
     pg.wait_for_selector("#rv .x-pane:not([hidden])")
@@ -307,8 +339,8 @@ def test_a_link_opens_the_pane_and_the_review_column_does_not_move(app_page) -> 
     t.wait_for_selector("#rv .report")
     assert t.url.endswith(href)
     t.wait_for_function("id => document.getElementById(id).classList.contains('x-hit')", arg=href[1:])
-    top = t.evaluate("id => document.getElementById(id).getBoundingClientRect().top", href[1:])
-    assert 56 <= top <= 140, top                                    # under the topbar, not behind it
+    land = t.evaluate("id => document.getElementById(id).getBoundingClientRect().top", href[1:])
+    assert 56 <= land <= 140, land                                  # under the topbar, not behind it
     t.close()
     assert pg.locator("#rv .x-pane").is_hidden()
 
@@ -328,10 +360,10 @@ def test_a_coverage_criterion_offers_the_coverage_tab_and_a_chat_citation_opens_
     cite = pg.locator("#chat-turns a.cite")
     if cite.count():
         centre(pg, cite.first)
-        y0 = _y(pg)
+        t0 = top(cite.first)
         cite.first.click()
         pg.wait_for_selector("#rv .x-pane:not([hidden])")
-        assert _y(pg) == y0 and pg.locator(".x-pane-kicker").inner_text() == cite.first.inner_text()
+        assert abs(top(cite.first) - t0) < 1 and pg.locator(".x-pane-kicker").inner_text() == cite.first.inner_text()
         pg.keyboard.press("Escape")
         pg.wait_for_selector("#rv .x-pane", state="hidden")
     crit = pg.locator("#rv .report a.x-crit").first
@@ -374,14 +406,19 @@ def test_the_table_of_contents_marks_the_part_in_view(app_page) -> None:
     pg.wait_for_function("g => document.querySelector('#rv .toc a.toc-item.cur').getAttribute('data-g') === g", arg=g)
     assert pg.url == url
     first = item.get_attribute("href")[1:]
-    top = pg.evaluate("id => document.getElementById(id).getBoundingClientRect().top", first)
-    assert 56 <= top <= 140, top
+    land = pg.evaluate("id => document.getElementById(id).getBoundingClientRect().top", first)
+    assert 56 <= land <= 140, land
     pg.set_viewport_size({"width": 1024, "height": 800})            # the strip on top: the same marking
     pg.wait_for_timeout(100)
     assert pg.evaluate("() => getComputedStyle(document.querySelector('#rv .toc-heads')).display") == "none"
+    fades = "() => ['x-fade-l', 'x-fade-r'].map(c => document.querySelector('#rv .toc-inner').classList.contains(c))"
+    pg.evaluate("window.scrollTo(0, 0)")
+    pg.wait_for_function("document.querySelector('#rv .toc-inner').scrollLeft === 0")
+    assert pg.evaluate(fades) == [False, True]                      # more parts to the right: that edge fades
     pg.evaluate("document.getElementById('r-howto').scrollIntoView()")   # the last part, at the strip's far end
     pg.wait_for_function("g => document.querySelector('#rv .toc a.toc-item.cur').getAttribute('data-g') === g",
                          arg=str(export.REF_GROUP + 1))
+    pg.wait_for_function(f"(({fades})()).join() === 'true,false'")    # at the far end only the left edge fades
     cur = pg.locator("#rv .toc a.toc-item.cur").bounding_box()
     strip = pg.locator("#rv .toc-inner").bounding_box()
     assert strip["x"] - 1 <= cur["x"] and cur["x"] + cur["width"] <= strip["x"] + strip["width"] + 1   # in view

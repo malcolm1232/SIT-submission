@@ -1876,7 +1876,7 @@ async function reviewDoc(runId) {
   }
   const parsed = new DOMParser().parseFromString(await res.text(), "text/html");
   const box = document.adoptNode(parsed.getElementById("rv"));
-  return { el: box, wire: () => window.sitXnav(box, { history: false, top: () => reviewTop(box), more: (id) => reviewMore(runId, id) }) };
+  return { el: box, wire: () => window.sitXnav(box, { history: false, column: ".rv-doc", top: () => reviewTop(box), more: (id) => reviewMore(runId, id) }) };
 }
 
 // The height of the app's sticky chrome above the review (the topbar, and the table of contents when it is a strip on

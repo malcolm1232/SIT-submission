@@ -389,6 +389,9 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .rv .toc-heads a:hover { color: var(--fg); }
 .rv .toc-heads a.cur { color: var(--fg); border-left-color: var(--fg); }
 .rv .x-pane { top: 56px; width: min(520px, calc(100vw - var(--navrail-w) - 56px)); }
+/* the pane open from 1280 px (xnav.js "x-beside"): the review ends left of it, and the table of contents it covers hides */
+.rv.x-beside .rv-grid { grid-template-columns: minmax(0, 1fr); }
+.rv.x-beside .toc { display: none; }
 .review-missing { margin: 26px 0 0; padding: 12px 14px; max-width: 76ch; background: var(--bg-surface); border: 1px solid var(--border-subtle);
   border-radius: var(--r-md); font-size: 13.5px; line-height: 1.6; color: var(--fg-2); }
 /* below 1280 px the reading column takes the width and the parts are a one-line strip under the topbar */
@@ -402,6 +405,14 @@ table.grid tr.link:hover { background: var(--bg-hover); }
   .rv .toc-group, .rv .toc-heads { display: none; }
   .rv .toc-entry { flex: none; }
   .rv .toc a.toc-item { white-space: nowrap; padding: 5px 10px; }
+  /* more parts beyond an edge: that edge fades out (xnav.js sets the classes), so no label ends in a hard cut */
+  .rv .toc-inner.x-fade-r { -webkit-mask-image: linear-gradient(to right, var(--fg) calc(100% - 72px), transparent);
+    mask-image: linear-gradient(to right, var(--fg) calc(100% - 72px), transparent); }
+  .rv .toc-inner.x-fade-l { -webkit-mask-image: linear-gradient(to right, transparent, var(--fg) 72px);
+    mask-image: linear-gradient(to right, transparent, var(--fg) 72px); }
+  .rv .toc-inner.x-fade-l.x-fade-r {
+    -webkit-mask-image: linear-gradient(to right, transparent, var(--fg) 72px, var(--fg) calc(100% - 72px), transparent);
+    mask-image: linear-gradient(to right, transparent, var(--fg) 72px, var(--fg) calc(100% - 72px), transparent); }
 }
 
 /* the ask: DBSearch's composer (app.css .composer-shell, .composer-hint) at the foot of the review column */
