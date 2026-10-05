@@ -14,15 +14,15 @@ eight parts of :data:`GROUPS`. The page carries a sidebar of the parts and one f
 (:data:`NAV_JS`) that shows one part at a time; without script every section shows.
 
 Cross-links (5 Oct 2026): every identifier a cold reader cannot resolve is a link (:mod:`.xref`): finding,
-evidence, limitation, sound-area, research-question and registry ids, the document's own requirement and
-principle ids, page and section references, ``[doc:...]`` anchors, the confidence number and the review's
-vocabulary. The linking only wraps text that is there, so the review's words are unchanged; the targets the
-review itself does not hold are in a reference part after the review, labelled as reference material, not part of the review's text (how to
-read the review, the decision registry, the evidence ledger, and the reviewed document's extracted text with
-every quoted passage marked, so a reference resolves inside the one file even when it travels alone). The
-zip (:func:`export_zip`) holds the page as ``index.html``, the reviewed PDF as :data:`PDF_NAME` when the run
-can vouch for it (its SHA-256 matches the manifest), ``report.md`` and ``report.json``; each page of the
-document text then links to its page of the PDF.
+evidence, limitation, sound-area, research-question and registry ids, the document's own requirement and principle
+ids, page and section references, ``[doc:...]`` anchors, the confidence number and the review's vocabulary. The
+linking only wraps text that is there, so the review's words are unchanged; the targets the review itself does not
+hold are in a reference part after the review, labelled as reference material, not part of the review's text (how
+to read the review, the decision registry, the evidence ledger, and the reviewed document's extracted text with
+every quoted passage marked, so a reference resolves inside the one file even when it travels alone). The zip
+(:func:`export_zip`) holds the page as ``index.html``, the reviewed PDF as :data:`PDF_NAME` when the run can vouch
+for it (its SHA-256 matches the manifest), ``report.md`` and ``report.json``; each page of the document text then
+links to its page of the PDF.
 """
 
 from __future__ import annotations
