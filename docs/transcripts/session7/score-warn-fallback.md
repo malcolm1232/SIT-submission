@@ -8,9 +8,6 @@ Those are: an impact that contains the agent's `REFINE_FALLBACK_IMPACT` (revisio
 A repair that returned in full, and a model fallback, are not counted.
 When there is one, the scorer prints one stderr line with the run id and the first event's first 120 characters, and also adds that line to `warnings`.
 No metric value changes.
-
-## Fields
-
 `inputs.refine_fallback_recorded` (boolean) and `inputs.refine_fallback_events` (list of event texts), written next to `run_id`, `condition` and `verdict_label`.
 `harness/sit_eval/schemas/scores.schema.json` describes both fields (they are optional, so older scores still validate).
 
@@ -28,11 +25,9 @@ All 9 are in `tests/eval_harness/test_eval_score_refine_fallback.py`.
 ruff: All checks passed!
 pytest: 2017 passed, 1 skipped, 2 xfailed.
 selftest: selftest passed.
-
-## Mutation
-
 With the detection's append disabled, 6 of the 9 new tests failed.
 The file was restored from a `cp` backup and `cmp` confirmed it matches.
+Verifier (5 Oct 2026): the status-only refine repair (N of N revisions applied from the first answer) was flagged; the rule now excludes it, 3 new tests, ruff clean, 2020 passed, 1 skipped, 2 xfailed, selftest, smoke and leakage_grep passed, mutation 9 of 12 failed.
 
 ## Not verified
 
