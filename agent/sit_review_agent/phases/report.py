@@ -175,13 +175,21 @@ async def _verdict_call(ctx: RunContext) -> tuple[VerdictOutput | None, str | No
     return None, "the model declined the verdict"
 
 
-def fallback_verdict(findings: list[Finding], reason: str) -> Verdict:
+def fallback_verdict(findings: list[Finding], reason: str, *, by_design: bool = False) -> Verdict:
     """LLM-free verdict by rule (fresh_eyes N3): any open critical finding -> not_fit; any other
-    open finding -> fit_with_conditions (conditions = the five highest-ranked); else fit."""
+    open finding -> fit_with_conditions (conditions = the five highest-ranked); else fit.
+
+    ``by_design`` marks condition B0, whose single call is the assessment, so the rule verdict is the
+    design and not a fallback after a missing model verdict."""
     open_ = [f for f in findings if f.disposition is not Disposition.NO_CHANGE and f.kind is not Kind.STRENGTH]
     critical = [f for f in open_ if f.severity is Severity.CRITICAL]
-    why = (f"Verdict derived by rule from the severities and dispositions of the verified findings, because no "
-           f"model verdict was available ({reason}). See the limitations.")
+    if by_design:
+        why = ("Verdict derived by rule from the severities and dispositions of the verified findings: condition B0 "
+               "is the single-call baseline, whose one model call is the assessment, so by design there is no "
+               "separate verdict call.")
+    else:
+        why = (f"Verdict derived by rule from the severities and dispositions of the verified findings, because no "
+               f"model verdict was available ({reason}). See Evidence limitations.")
     if critical:
         return Verdict(label=VerdictLabel.NOT_FIT, rationale=why, confidence=0.5,
                        conditions=[VerdictCondition(text=f"Resolve {f.id}: {f.title}", finding_ids=[f.id])
@@ -594,7 +602,7 @@ class ReportPhase:
             reason = "condition B0: the single-call baseline makes no verdict call"
             ctx_event(ctx, f"{reason}; the verdict is derived by rule from the verified findings",
                       event="verdict_by_rule", condition="B0")
-            st.verdict = fallback_verdict(st.findings, reason)
+            st.verdict = fallback_verdict(st.findings, reason, by_design=True)
             st.limitations = []
         else:
             out, reason = await _verdict_call(ctx)

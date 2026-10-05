@@ -223,6 +223,15 @@ def test_b0_makes_exactly_one_model_call_and_a_valid_report(b0_run: tuple[RunDir
     assert not any(e.event == "anchor_repair" for e in events)          # every anchor verified: no repair needed
 
 
+def test_b0_verdict_rationale_says_the_rule_verdict_is_by_design(b0_run: tuple[RunDir, NullProgress]) -> None:
+    """B0 has no verdict call by design, so the rationale must not read as a missing model verdict."""
+    rd, _ = b0_run
+    rationale = json.loads(rd.report_json.read_text(encoding="utf-8"))["verdict"]["rationale"]
+    assert "by design there is no separate verdict call" in rationale
+    assert "no model verdict was available" not in rationale
+    assert "See the limitations" not in rationale
+
+
 def test_b0_brief_is_the_single_call_prompt(b0_run: tuple[RunDir, NullProgress]) -> None:
     """The one call rendered ``prompts/assess_single.md`` (its hash is the finding's prompt hash)."""
     from sit_review_agent.prompts import PromptBundle

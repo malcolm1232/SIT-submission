@@ -503,6 +503,16 @@ def test_fallback_verdict_rules() -> None:
     assert fallback_verdict([r.findings[1]], "x").label.value == "fit"
 
 
+def test_fallback_verdict_rationale_wording() -> None:
+    data = json.loads((FIXTURES / "review_example.json").read_text(encoding="utf-8"))
+    r = Review.model_validate(data)
+    fallback = fallback_verdict(r.findings, "x").rationale
+    assert fallback.endswith("See Evidence limitations.") and "no model verdict was available (x)" in fallback
+    by_design = fallback_verdict(r.findings, "x", by_design=True).rationale
+    assert "by design there is no separate verdict call" in by_design
+    assert "no model verdict was available" not in by_design
+
+
 # ============================================================================ render
 
 
