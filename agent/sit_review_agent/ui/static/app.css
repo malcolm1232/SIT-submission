@@ -44,6 +44,10 @@ ul { padding-left: 18px; margin: 0; }
 /* the surface slot (rail.css .navrail-slot): here it carries the runs and the tool servers */
 /* a rail too short for the tool servers and the Logs panel's minimum scrolls instead of cutting them off */
 .navrail-slot { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 1px; overflow-x: hidden; overflow-y: auto; }
+/* the rail's own scrollers (the slot, the runs list, the log): a thin bar in the rail's colours, never the
+   browser's light default on the dark band */
+.navrail-slot, #rail-runs, .rail-log { scrollbar-width: thin; scrollbar-color: var(--navrail-scroll) transparent; }
+.navrail-slot:hover, #rail-runs:hover, .rail-log:hover { scrollbar-color: var(--navrail-scroll-hover) transparent; }
 /* the runs list gives way first so every tool server stays in view, down to one whole run row: the open run
    stays in view (renderRailRuns scrolls its row in) and the Logs frame gives way below that, to its 3 lines */
 #rail-runs { --run-pad: 6px; --run-line: 18px; --run-meta-line: 16px; flex: 0 1000 auto; min-height: 0; overflow-y: auto; }
@@ -165,9 +169,7 @@ ul { padding-left: 18px; margin: 0; }
   font-size: 13px; font-weight: 500; color: var(--fg-muted); background: transparent; border: 0; transition: background-color 150ms; }
 .tab:hover { background: var(--bg-hover); }
 .tab.on { background: var(--bg-active); color: var(--fg); font-weight: 600; }
-/* a tab shown off (``disabled``, or ``aria-disabled`` so it still opens and its reason can be read) */
-.tab:disabled, .tab.off { color: var(--fg-disabled); cursor: not-allowed; background: transparent; }
-.tab.off.on { background: var(--bg-hover); }
+.tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .notice { font-size: 12px; line-height: 16px; color: var(--fg-muted); }
 .error { color: var(--red); font-size: 13px; }
 .ok { color: var(--green); }
@@ -351,8 +353,28 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 .outline .cmd { margin-top: 6px; color: var(--fg); user-select: all; word-break: normal; overflow-wrap: anywhere; }
 .outline .row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .outline .input { width: 280px; }
-.out-line { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; font-size: 12px; color: var(--fg-muted); }
-.expanded { padding: 12px 14px 18px 122px; border-top: 1px solid var(--border-subtle); background: var(--bg-subtle); font-size: 13px; }
+/* Download: the zip and a chevron as one pill pair, and under them what the zip holds and its files one by one */
+.dl { position: relative; }
+.dl-pair { display: inline-flex; }
+.dl-pair .dl-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.dl-pair .dl-more { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; padding: 0 9px; }
+.dl-pair .btn:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--focus); outline-offset: 1px; }
+.dl-more .ico { width: 14px; height: 14px; }
+.dl-more[aria-expanded="true"] { background: var(--bg-active); color: var(--fg); }
+.dl-pop { position: absolute; top: 100%; right: 0; z-index: 30; width: 360px; max-width: calc(100vw - 32px);
+  padding: 14px 16px 12px; border: 1px solid var(--border-control); border-radius: var(--r-md); background: var(--bg-surface);
+  box-shadow: var(--shadow-lg); font-size: 12.5px; line-height: 1.55; color: var(--fg-2); margin-top: 6px; }
+.dl-pop::before { content: ""; position: absolute; left: 0; right: 0; top: -8px; height: 8px; }  /* the way down from the control */
+.dl-pop[hidden] { display: none; }
+.dl-help { margin: 0; }
+.dl-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-subtle); }
+.dl-links a { color: var(--fg); font-weight: 500; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border-hover); }
+.dl-links a:hover { text-decoration-color: var(--fg); }
+.head-actions { position: relative; }
+/* the counts on top (ui/reviewtabs.py counts_strip, moved here from the review fragment) */
+.run-counts { margin-top: 12px; }
+.run-counts[hidden] { display: none; }
+.scroll-x { overflow-x: auto; }.expanded { padding: 12px 14px 18px 122px; border-top: 1px solid var(--border-subtle); background: var(--bg-subtle); font-size: 13px; }
 .expanded p { margin: 0 0 10px; max-width: 76ch; line-height: 1.55; white-space: pre-line; }
 .ev { display: grid; grid-template-columns: 64px 104px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--border-subtle); }
 .ev .id { font-weight: 500; }
@@ -367,7 +389,7 @@ table.grid tr.link:hover { background: var(--bg-hover); }
    --rv-top is the sticky chrome above it (the 56 px topbar, and the table of contents when it is a strip on top); the
    script reads the same value for its scroll positions and its section marker. Wide: the table of contents is a sticky
    right column, so the side pane opens over it and over the cards' empty right edge, not the reading column. */
-#review > .rv { --rv-top: 56px; margin-top: 8px; }
+#review > .rv { --rv-top: 56px; --pane-gap: 8px; margin-top: 8px; }
 .rv [id] { scroll-margin-top: calc(var(--rv-top) + 24px); }
 .rv-grid { display: grid; grid-template-columns: minmax(0, 1fr) 216px; gap: 48px; align-items: start; }
 .rv-doc { min-width: 0; }
@@ -388,7 +410,11 @@ table.grid tr.link:hover { background: var(--bg-hover); }
   font-size: 12px; line-height: 16px; color: var(--fg-muted); }
 .rv .toc-heads a:hover { color: var(--fg); }
 .rv .toc-heads a.cur { color: var(--fg); border-left-color: var(--fg); }
-.rv .x-pane { top: 56px; width: min(520px, calc(100vw - var(--navrail-w) - 56px)); }
+/* the pane starts under the run head and its tabs (app.js paneClear sets --pane-top), up to the topbar once they have scrolled away */
+.rv .x-pane { top: var(--pane-top, 56px); width: min(520px, calc(100vw - var(--navrail-w) - 56px)); }
+/* another tab of the run (Coverage, Evidence, Delta): its own body, one column, the review document hidden beside it */
+.rv-tab .rv-grid { grid-template-columns: minmax(0, 1fr); }
+.rv-tab .x-pane-show { display: none; }
 /* the pane open from 1280 px (xnav.js "x-beside"): the review ends left of it, and the table of contents it covers hides */
 .rv.x-beside .rv-grid { grid-template-columns: minmax(0, 1fr); }
 .rv.x-beside .toc { display: none; }
@@ -397,6 +423,7 @@ table.grid tr.link:hover { background: var(--bg-hover); }
 /* below 1280 px the reading column takes the width and the parts are a one-line strip under the topbar */
 @media (max-width: 1279px) {
   #review > .rv { --rv-top: 100px; }
+  #review > .rv.rv-tab { --rv-top: 56px; }
   .rv-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .rv .toc { order: -1; top: 56px; z-index: 1; margin: 0; background: var(--bg-app); border-bottom: 1px solid var(--border-subtle); }
   .rv .toc-inner { flex-direction: row; align-items: center; gap: 2px; height: 44px; max-height: none; overflow-x: auto;
@@ -449,6 +476,12 @@ table.grid tr.link:hover { background: var(--bg-hover); }
   letter-spacing: .14em; color: var(--fg-muted); padding: 9px 6px 0; }
 .composer-hint .trust { color: var(--accent); }
 .ask .budget { font-size: 12px; color: var(--fg-muted); margin-top: 10px; }
+.ask-btn.ask-stop { background: var(--bg-surface); color: var(--fg); border: 1px solid var(--border-control); }
+.ask-btn.ask-stop:hover { background: var(--bg-hover); border-color: var(--border-hover); }
+.ask-btn[hidden] { display: none; }
+.turn .answer.streaming:empty::before { content: "…"; color: var(--fg-muted); }
+.ask .turn { scroll-margin-bottom: 96px; }
+.turn .a p.stopped { color: var(--fg-muted); }
 .ask .error { margin-top: 8px; }
 
 /* ---------- the Runs, Replay, Tools, Settings and Developer pages ---------- */
