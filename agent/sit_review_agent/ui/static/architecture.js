@@ -42,7 +42,7 @@ async function showArchitecture() {
   }
   const q = new URLSearchParams(location.search);
   ARCH.run = archPickRun(q.get("from"));
-  $("arch-sub").textContent = ARCH.data.tagline;
+  $("arch-sub").append(ARCH.data.tagline, h("br"), h("span", { class: "arch-subnote", text: "Every name, count and limit in the diagram is read from the config and the code this server runs." }));
   archRunNote();
   archDiagram($("arch-diagram"));
   archGuide();
@@ -64,8 +64,8 @@ function archPickRun(named) {
 
 function archRunNote() {
   const box = clear($("arch-run"));
-  if (!ARCH.run) { box.append(h("span", { class: "notice", text: "Names and limits read from the config and the code; no finished run here, so no run values." })); return; }
-  box.append(h("span", { class: "notice" }, "Names and limits read from the config and the code; run values from ", h("a", { class: "mono", href: "/?run=" + encodeURIComponent(ARCH.run), text: ARCH.run,
+  if (!ARCH.run) { box.append(h("span", { class: "notice", text: "No finished run here, so no run values." })); return; }
+  box.append(h("span", { class: "notice" }, "Run values from ", h("a", { class: "mono arch-runref", href: "/?run=" + encodeURIComponent(ARCH.run), text: ARCH.run,
     onclick: (ev) => { ev.preventDefault(); go(ARCH.run); } })));
 }
 
@@ -148,9 +148,9 @@ function archDiagram(root) {
         archChip("verify", "Verified findings"), archChip("evidence", "Evidence ledger"), archChip("report", "Report"), archChip("outputs", "Run directory")),
       h("div", { class: "arch-row arch-under" },
         group("tone-violet", null, archBtn("llm-gateway", "Every model phase: LLMGateway", "one protocol; phases never touch an SDK", "arch-box tone-violet head"),
-          h("div", { class: "arch-chips" }, backends)),
+          h("div", { class: "arch-stack" }, backends)),
         group("tone-violet", null, archBtn("tool-gateway", "Every tool call: ToolGateway", "layers, outermost first", "arch-box tone-violet head"),
-          h("div", { class: "arch-chips layers" }, layers),
+          h("div", { class: "arch-stack layers" }, layers),
           h("div", { class: "arch-chips" }, archChip("tool-gateway", "MCP: " + F.servers_enabled_count + " of " + F.server_count + " servers enabled")))),
       group("tone-amber arch-concepts", "Key platform concepts",
         h("div", { class: "arch-chips" },

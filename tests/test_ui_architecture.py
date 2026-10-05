@@ -237,7 +237,7 @@ def test_the_diagram_draws_the_configured_shards_and_layers(page) -> None:
     _open(pg, base)
     f = pg.evaluate("ARCH.data.facts")
     assert pg.locator(".arch-shards .arch-chip").count() == f["shard_count"]
-    assert pg.locator(".arch-chips.layers .arch-chip").count() == len(f["tool_layers"])
+    assert pg.locator(".arch-stack.layers .arch-chip").count() == len(f["tool_layers"])
 
 
 def test_the_tab_choice_stays_as_the_topics_are_walked(page) -> None:
