@@ -116,21 +116,44 @@ def quote_backed_by_excerpt(quote: str, excerpt: str, allowed: set[str]) -> bool
         and _urls_in(excerpt) <= allowed
 
 
-def _report_text(node: Any, allowed: set[str], excerpts: Mapping[str, str]) -> Iterator[str]:
-    """Every string of ``node`` that INV-05's URL scan reads: all but ``url_or_citation`` and a doc
-    or external ``quote`` backed by its excerpt (:func:`quote_backed_by_excerpt`)."""
+@lru_cache(maxsize=16)
+def _document_index(text: str) -> tuple[str, frozenset[str]]:
+    return _norm(text), frozenset(_urls_in(text))
+
+
+def quote_in_document(quote: str, document_texts: Iterable[str]) -> bool:
+    """True when ``quote`` is a contiguous run of a reviewed document's text (after whitespace and
+    case folding, :func:`quote_in_excerpt`'s rule) and each of its URLs is, in exact case, a URL of
+    that text or the start of one. Such a quote carries no URL of its own: one that ends partway
+    through a document URL is a verbatim cut, so INV-05's URL scan skips it."""
+    q, urls = _norm(quote), _urls_in(quote)
+    for t in document_texts:
+        norm, have = _document_index(t)
+        if q and q in norm and all(any(h.startswith(u) for h in have) for u in urls):
+            return True
+    return False
+
+
+def _report_text(node: Any, allowed: set[str], excerpts: Mapping[str, str],
+                 document_texts: tuple[str, ...] = ()) -> Iterator[str]:
+    """Every string of ``node`` that INV-05's URL scan reads: all but ``url_or_citation``, a doc or
+    external ``quote`` backed by its excerpt (:func:`quote_backed_by_excerpt`) and any ``quote``
+    that is a run of a reviewed document's text (:func:`quote_in_document`)."""
     if isinstance(node, str):
         yield node
     elif isinstance(node, list):
         for v in node:
-            yield from _report_text(v, allowed, excerpts)
+            yield from _report_text(v, allowed, excerpts, document_texts)
     elif isinstance(node, dict):
-        backed = node.get("source_type") in ("doc", "external") and isinstance(node.get("quote"), str) \
-            and quote_backed_by_excerpt(node["quote"], excerpts.get(node.get("evidence_id") or "", ""), allowed)
+        quote = node.get("quote")
+        backed = isinstance(quote, str) and (
+            (node.get("source_type") in ("doc", "external")
+             and quote_backed_by_excerpt(quote, excerpts.get(node.get("evidence_id") or "", ""), allowed))
+            or quote_in_document(quote, document_texts))
         for k, v in node.items():
             if k == "url_or_citation" or (k == "quote" and backed):
                 continue
-            yield from _report_text(v, allowed, excerpts)
+            yield from _report_text(v, allowed, excerpts, document_texts)
 
 
 # ======================================================================================== INV-03
@@ -238,7 +261,9 @@ def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None
     were read before being cited; no URL or DOI in report text outside :func:`allowed_urls` (the
     ledger's sources, external excerpts and the canonical texts named by ``documents[].text_path``,
     or ``texts``; never a doc excerpt). A doc or external quote backed by its excerpt
-    (:func:`quote_backed_by_excerpt`) is not scanned; any other quote is."""
+    (:func:`quote_backed_by_excerpt`) and a quote that is a run of a document's text
+    (:func:`quote_in_document`, which covers a quote cut inside a document URL) are not scanned; any
+    other quote is."""
     r = _as_dict(review)
     problems: list[str] = []
     ledger = {e["evidence_id"]: e for e in r["evidence_ledger"]}
@@ -280,7 +305,7 @@ def check_INV_05(review: Review | Mapping[str, Any], run_dir: Path | None = None
     allowed = allowed_urls(r["evidence_ledger"], raw.values())
     excerpts = {e["evidence_id"]: e["excerpt"] or "" for e in r["evidence_ledger"]}
     free = {k: v for k, v in r.items() if k not in ("evidence_ledger", "run_manifest", "metadata")}
-    for t in _report_text(free, allowed, excerpts):
+    for t in _report_text(free, allowed, excerpts, tuple(raw.values())):
         for u in URL_RE.findall(t):
             if u.rstrip(".,;:") not in allowed:
                 problems.append(f"URL/DOI in report text not in the ledger: {u}")

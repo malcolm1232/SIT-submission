@@ -268,6 +268,27 @@ async def test_inv05_quote_cut_inside_a_document_url_is_kept(tmp_path: Path) -> 
     assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
 
 
+async def test_inv05_anchor_quote_that_ends_inside_a_document_url_is_kept(tmp_path: Path) -> None:
+    """E1: a shard anchors a finding with a passage of the document that stops partway through a
+    URL. INV-04 resolves the anchor in the canonical text and the report never rewrites an anchor
+    quote; INV-05 must see that the quote is a run of the document text, so the cut URL does not
+    fail the report stage closed."""
+    pdf = tmp_path / "design.pages.txt"
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
+    cut = URL_PASSAGE[: URL_PASSAGE.index("/stats") + 4]               # ends inside DOC_URL
+    title = "Peak-day reminder volume is not tested"
+
+    def shard(p: dict[str, Any]) -> None:
+        f = next(f for f in p["findings"] if f["title"] == title)
+        f["doc_anchors"].append({**f["doc_anchors"][0], "quote": cut})
+
+    out, rd = await run(tmp_path, shard, pdf=pdf)
+    report = load(rd)                                                   # written; every invariant passes
+    assert cut in [a["quote"] for f in report["findings"] for a in f["doc_anchors"]]
+    assert "link removed" not in rd.report_json.read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http"])
 async def test_inv05_model_written_url_with_a_non_lowercase_scheme_is_removed(tmp_path: Path, scheme: str) -> None:
     """A URL the model wrote with its scheme in another letter case is handled exactly as a

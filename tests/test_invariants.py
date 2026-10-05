@@ -125,6 +125,32 @@ def test_inv05_quote_urls_must_match_their_excerpt_in_exact_case(
         f"URL/DOI in report text not in the ledger: {bad}"]
 
 
+def test_inv05_quote_that_ends_inside_a_document_url_is_backed_by_the_document(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """E1: an anchor quote, or a doc quote whose ledger excerpt is that same cut text (the model's
+    anchor quote), that ends partway through a URL of the document is a contiguous run of the
+    document text, so INV-05 does not scan it; the same quote fails when the document lacks the URL."""
+    passage = f"Weekly counts are published at {DOC_URL} for planning."
+    cut = passage[: passage.index("/stats") + 4]                         # ends inside DOC_URL
+    pages = booking_pages + f"\n{passage}\n"
+    anchor = copy.deepcopy(review_dict)
+    anchor["findings"][0]["doc_anchors"][0]["quote"] = cut
+    assert inv.check_INV_05(anchor, texts={"DOC-booking-v1": pages}).problems == []
+    cited = copy.deepcopy(review_dict)
+    ledger = next(e for e in cited["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] = cut
+    cite = next(e for f in cited["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
+    cite["quote"] = cut
+    assert inv.check_INV_05(cited, texts={"DOC-booking-v1": pages}).problems == []
+    for r in (anchor, cited):
+        assert inv.check_INV_05(r, texts={"DOC-booking-v1": booking_pages}).problems == [
+            f"URL/DOI in report text not in the ledger: {cut[cut.index('https'):]}"]
+    moved = copy.deepcopy(anchor)                                       # not a run of the document text
+    moved["findings"][0]["doc_anchors"][0]["quote"] = cut.replace("Weekly", "Monthly")
+    assert inv.check_INV_05(moved, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {cut[cut.index('https'):]}"]
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http", "hTtP"])
 def test_inv05_finds_a_url_whose_scheme_is_not_lowercase(review_dict: dict[str, Any], booking_pages: str,
                                                         scheme: str) -> None:
