@@ -38,9 +38,12 @@ from markdown_it import MarkdownIt
 
 from sit_review_agent.paths import repo_root
 from sit_review_agent.report.render import APPENDIX_HEADING, SECTION_ORDER
-from sit_review_agent.ui import chat
+from sit_review_agent.ui import chat, rundata, tablerows
 from sit_review_agent.ui.rundata import read_json
 from sit_review_agent.ui.xref import Doc, Index
+
+#: ``pdf=AUTO``: the run's reviewed PDF when its SHA-256 matches the manifest (``rundata.reviewed_pdf``), else none
+AUTO = "auto"
 
 STATIC_DIR = Path(__file__).parent / "static"
 CHAT_HEADING = "Reading-aid chat transcript (not part of the review)"
@@ -494,10 +497,59 @@ def _registry(idx: Index) -> str:
         body = f'<p>{idx.link_text(escape(str(e.get("statement") or "")))}</p>'
         if isinstance(e.get("doc_anchor"), dict):
             body += _place(idx, e["doc_anchor"])
+            row = _anchor_row(idx, e["doc_anchor"])
+            if row is not None and not tablerows.same_words(row.sentence, str(e.get("statement") or "")):
+                body += _row_html(row)
         body += _cited_by(idx, rid, "decision")
         out.append(_entry(rid, title, body, cls="x-reg"))
     out.append("</section>")
     return "".join(out)
+
+
+def _anchor_row(idx: Index, a: dict[str, Any]) -> tablerows.Row | None:
+    """The PDF table row that holds a report.json document anchor's quote, when there is one."""
+    d = idx.doc
+    if d is None or str(a.get("doc_id") or d.doc_id) != d.doc_id or not a.get("quote"):
+        return None
+    page = a.get("page") if isinstance(a.get("page"), int) else None
+    span = d.locate(str(a["quote"]), page)
+    if span is None:
+        return None
+    pg = d.page_of(span[0])
+    return next((r for r in idx.rows_on(pg) if r.span and r.span[0] <= span[0] < r.span[1]), None) if pg else None
+
+
+def _row_html(row: tablerows.Row | None, marks: list[str] | None = None, note: bool = False) -> str:
+    """A rebuilt table row (or the plain table note), labelled as what it is: chrome, not the review."""
+    data = f' data-marks="{escape(" ".join(marks))}"' if marks is not None else ""
+    if note or row is None:
+        return (f'<div class="doc-row doc-row-note"{data}><p class="doc-row-label">{escape(tablerows.TABLE_NOTE)}'
+                "</p></div>")
+    return (f'<div class="doc-row"{data}><p class="doc-row-text">{escape(row.sentence)}</p>'
+            f'<p class="doc-row-label">{escape(row.label)}</p></div>')
+
+
+def _page_chrome(idx: Index, d: Doc, segs: list[tuple[int, int]], n: int, ps: int, pe: int) -> str:
+    """The rebuilt rows (or table notes) of page ``n`` beside the passages the review points at on it: each
+    definition the linker resolved, and each PDF table row a quoted passage falls in."""
+    if d is not idx.doc:
+        return ""
+    page_segs = [(i, s, e) for i, (s, e) in enumerate(segs) if s < pe and e > ps]
+    if not page_segs:
+        return ""
+    for r in idx.rows_on(n):
+        if r.span and any(s < r.span[1] and e > r.span[0] for _, s, e in page_segs) and \
+                not any(c.span == r.span and c.row is not None for c in idx.chrome):
+            idx.chrome.append(tablerows.Chrome(r.span, n, row=r))
+    out, seen = [], set()
+    for c in sorted((c for c in idx.chrome if c.page == n), key=lambda c: c.span):
+        marks = [f"{d.prefix}-q{i + 1}" for i, s, e in page_segs if s < c.span[1] and e > c.span[0]]
+        key = (c.span, c.note)
+        if not marks or key in seen:
+            continue
+        seen.add(key)
+        out.append(_row_html(c.row, marks, c.note))
+    return f'<div class="doc-rows">{"".join(out)}</div>' if out else ""
 
 
 def _ledger(idx: Index) -> str:
@@ -595,6 +647,7 @@ def _doc_text(idx: Index, pdf_href: str | None) -> str:
             label = f"Page {n}" + (f" · §{secs[0].get('section_id')} {secs[0].get('heading')}" if secs else "")
             out.append(f'<div class="doc-page" id="{d.prefix}-p{n}" data-label="{escape(f"Page {n} · {d.doc_id}")}">'
                        f'<div class="doc-page-head"><span>{escape(label)}</span>{link}</div>'
+                       f"{_page_chrome(idx, d, segs, n, ps, pe)}"
                        f'<pre class="doc-text">{_doc_pre(d, segs, ps, pe, used)}</pre></div>')
         out.append("</section>")
     return "".join(out)
@@ -607,7 +660,7 @@ class _Run:
     """The export of one run: the header, the cut and linked report, the chat and the reference part."""
 
     def __init__(self, run_dir: Path, *, replayed: bool, exported_at: str | None, pdf_href: str | None,
-                 with_chat: bool = True) -> None:
+                 with_chat: bool = True, pdf: Path | str | None = AUTO) -> None:
         report_md = (run_dir / "report.md").read_text(encoding="utf-8")
         report = read_json(run_dir / "report.json") or {}
         report = report if isinstance(report, dict) else {}
@@ -621,7 +674,10 @@ class _Run:
         preamble, self.sections = split_report(report_md)
         self.chat = chat_section(run_dir) if with_chat else ""
         self.chat_group = len(GROUPS) - 1
-        self.index = idx = Index(run_dir, report, root=repo_root(), pdf_href=pdf_href)
+        if pdf == AUTO:
+            pdf = rundata.reviewed_pdf(run_dir, repo_root())
+        self.index = idx = Index(run_dir, report, root=repo_root(), pdf_href=pdf_href,
+                                 pdf=pdf if isinstance(pdf, Path) else None)
         # 1. structure: cards, chips, ids (no text changes)
         pre = _preamble(preamble, idx)
         for s in self.sections:
@@ -736,20 +792,20 @@ class _Run:
 
 
 def export_html(run_dir: Path, *, replayed: bool, exported_at: str | None = None,
-                pdf_href: str | None = None) -> str:
+                pdf_href: str | None = None, pdf: Path | str | None = AUTO) -> str:
     """The export of ``run_dir`` as one page. ``pdf_href`` is where the reviewed PDF sits beside the page
     (:data:`PDF_NAME` in the zip, ``doc.pdf`` on the server); ``None`` for a file sent on its own, whose page
     and section references then resolve to the document text inside it. Raises ``FileNotFoundError`` when the
     run has no ``report.md``."""
-    return _Run(run_dir, replayed=replayed, exported_at=exported_at, pdf_href=pdf_href).index_page()
+    return _Run(run_dir, replayed=replayed, exported_at=exported_at, pdf_href=pdf_href, pdf=pdf).index_page()
 
 
-def review_fragment(run_dir: Path, *, pdf_href: str | None) -> str:
+def review_fragment(run_dir: Path, *, pdf_href: str | None, pdf: Path | str | None = AUTO) -> str:
     """The run's Review tab in ``dra ui`` (:meth:`_Run.fragment`): the same renderer and linker as
     :func:`export_html`, so the tab and the export say the same words with the same links. ``pdf_href`` is the
     app's own ``/runs/<id>/doc.pdf`` (or ``None`` when the run cannot vouch for its PDF). Raises
     ``FileNotFoundError`` when the run has no ``report.md``."""
-    return _Run(run_dir, replayed=False, exported_at=None, pdf_href=pdf_href, with_chat=False).fragment()
+    return _Run(run_dir, replayed=False, exported_at=None, pdf_href=pdf_href, with_chat=False, pdf=pdf).fragment()
 
 
 def link_counts(run_dir: Path, *, pdf_href: str | None = None) -> dict[str, list[int]]:
@@ -775,7 +831,7 @@ def export_zip(run_dir: Path, *, replayed: bool, exported_at: str | None = None,
     import zipfile
 
     html = export_html(run_dir, replayed=replayed, exported_at=exported_at,
-                       pdf_href=PDF_NAME if pdf is not None else None)
+                       pdf_href=PDF_NAME if pdf is not None else None, pdf=pdf)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr(INDEX_NAME, html)
