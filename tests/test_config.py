@@ -251,18 +251,27 @@ def test_a_profile_without_stage_limits_inherits_the_base_values(tmp_path: Path)
     d = _copy_config(tmp_path)
     _profile(d, "stop_rules:\n  deadline_seconds: 4000\n")
     sr = load_config(d, ConfigOverrides(profile="t")).stop_rules
-    assert sr.deadline_seconds == 4000 and sr.stage_limits_s.as_dict() == {"stage_1_end": 2820, "refine_end": 3420,
-                                                                           "verdict_end": 3540}
+    # The inherited limits were set for a 3600 s run, so at 4000 s they and the reserves scale by 4000/3600
+    # (USER_DECISIONS #48; the limits did so in the runtime before), from the base values they inherit.
+    assert sr.scaled_from is not None and sr.scaled_from.stage_limits_s.as_dict() == {
+        "stage_1_end": 2820, "refine_end": 3420, "verdict_end": 3540}
+    assert sr.deadline_seconds == 4000 and sr.stage_limits_s.as_dict() == {"stage_1_end": 3133, "refine_end": 3800,
+                                                                           "verdict_end": 3933}
     _profile(d, "stop_rules:\n  stage_limits_s:\n    verdict_end: 3590\n")
     sr = load_config(d, ConfigOverrides(profile="t")).stop_rules
     assert sr.stage_limits_s.as_dict() == {"stage_1_end": 2820, "refine_end": 3420, "verdict_end": 3590}
 
 
 def test_cli_deadline_below_the_stage_limits_still_loads() -> None:
-    """``--deadline`` is applied after validation (like the reserves, whose mismatch ``llm.runtime
-    .deadline_warnings`` announces); the limits keep their file values and W1's runtime clamps them."""
+    """``--deadline`` is applied after validation, then ``StopRulesConfig.effective`` scales the limits and
+    the reserves to it (USER_DECISIONS #48), so the loaded rules are the ones every reader uses."""
     cfg = load_config(overrides=ConfigOverrides(deadline_seconds=300))
-    assert cfg.stop_rules.deadline_seconds == 300 and cfg.stop_rules.stage_limits_s.verdict_end == 3540
+    sr = cfg.stop_rules
+    assert sr.deadline_seconds == 300 and sr.stage_limits_s.as_dict() == {"stage_1_end": 235, "refine_end": 285,
+                                                                          "verdict_end": 295}
+    assert (sr.report_reserve_seconds, sr.refine_reserve_seconds) == (15, 50) and sr.effective() is sr
+    with pytest.raises(ConfigError, match="--deadline: deadline 3 s is too short"):
+        load_config(overrides=ConfigOverrides(deadline_seconds=3))
 
 
 def test_default_claude_code_argv_is_hermetic(tmp_path: Path) -> None:

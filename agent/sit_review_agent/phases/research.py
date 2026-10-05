@@ -143,14 +143,12 @@ class _ResearchRun:
     def __init__(self, ctx: RunContext) -> None:
         self.ctx = ctx
         self.state = ctx.state
-        sr = ctx.config.stop_rules
+        sr = ctx.config.stop_rules.effective()
         # Research absorbs the squeeze (robustness LLM-05): its deadline rule also keeps
         # refine_reserve_seconds, as the model-call timeouts do (llm.runtime.RunDeadline), and it is
-        # bounded by the stage 1 limit (latency redesign): the rule fires at
-        # min(deadline - both reserves, stage_limits_s.stage_1_end).
-        self.params = sr.model_copy(update={"report_reserve_seconds": max(
-            sr.report_reserve_seconds + sr.refine_reserve_seconds,
-            sr.deadline_seconds - sr.stage_limits_s.stage_1_end)})
+        # bounded by the stage 1 limit (latency redesign): the rule fires at research_end_s(),
+        # min(deadline - both reserves, stage_limits_s.stage_1_end), on the effective (scaled) rules.
+        self.params = sr.model_copy(update={"report_reserve_seconds": sr.deadline_seconds - sr.research_end_s()})
         self.call_ids = ctx.state.llm_calls.setdefault(PhaseName.RESEARCH.value, [])
         self.conversation_id = f"{ctx.state.run_id}-research-{len(self.call_ids)}"
         self.messages: list[dict[str, Any]] = []

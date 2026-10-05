@@ -382,7 +382,7 @@ def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window
                   deadline_bound: frozenset[PhaseName] = frozenset()) -> RuntimeLimits:
     """Limits for a run with ``config`` (an ``EffectiveConfig``) and the run clock ``elapsed``;
     ``deadline_bound`` names the phases no stage limit bounds (:attr:`RunDeadline.deadline_bound`)."""
-    sr = config.stop_rules
+    sr = config.stop_rules.effective()
     active = "deadline" in sr.active
     limits = effective_stage_limits(sr)[0] if active else None
     deadline = RunDeadline(deadline_s=float(sr.deadline_seconds) if active else None,
@@ -394,72 +394,52 @@ def build_runtime(config: Any, elapsed: Callable[[], float], *, retrieved_window
 
 
 def effective_stage_limits(stop_rules: Any) -> tuple[dict[str, float], str | None]:
-    """The stage limits a run uses, and the announcement when they differ from the file's.
-
-    The limits are absolute run-clock seconds set for one run length per profile. A ``--deadline``
-    at or below ``verdict_end`` (``--profile demo --deadline 300``, runbook §4.2) is applied after
-    the file check, so the limits would end past the deadline. They are then SCALED, not refused: the
-    three limits are multiplied by ``deadline / planned``, where ``planned`` is the run length the
-    limits were set for, ``refine_end + report_reserve_seconds`` (775 + 125 = 900 s on the demo
-    profile, 3420 + 180 = 3600 s on the default; ``config/stop_rules.yaml`` derives them that way).
-    Scaling keeps every stage, and stage 1 keeps the largest share, which is where findings come
-    from (salvaged at the cut), so a short rerun still reports findings (design section 7 verifier
-    check). Refusing would end the rerun the runbook relies on before it starts.
-
-    A ``--deadline`` ABOVE ``planned`` (``--profile demo --deadline 1200``) scales the three limits
-    UP by the same ``deadline / planned`` (588 / 1033 / 1177 s at 1200 s on the demo profile),
-    announced the same way, so the time the user added on purpose reaches the stages
-    instead of idling after ``verdict_end``. Scaling up multiplies every gap by the same factor
-    above 1, so ``refine_end`` still leaves at least ``report_reserve_seconds`` before the deadline
-    and ``verdict_end`` at least the profile's render margin (``planned - verdict_end``); the tests
-    pin both. A deadline from ``verdict_end + 1`` to ``planned`` (the profile's own run length
-    included) keeps the limits as set."""
-    lim = stop_rules.stage_limits_s.as_dict()
-    d = int(stop_rules.deadline_seconds)
-    planned = max(lim["refine_end"] + int(stop_rules.report_reserve_seconds), lim["verdict_end"] + 1)
-    if lim["verdict_end"] < d <= planned:
-        return {k: float(v) for k, v in lim.items()}, None
-    f = d / planned
-    scaled: dict[str, float] = {k: float(max(1, int(v * f))) for k, v in lim.items()}
-    # Keep them strictly increasing and below the deadline whatever the rounding (a tiny deadline).
-    if not (scaled["stage_1_end"] < scaled["refine_end"] < scaled["verdict_end"] < d):
-        scaled = {"stage_1_end": d * 0.25, "refine_end": d * 0.5, "verdict_end": d * 0.75}
-    old = " / ".join(f"{lim[k]}" for k in ("stage_1_end", "refine_end", "verdict_end"))
-    new = " / ".join(f"{scaled[k]:g}" for k in ("stage_1_end", "refine_end", "verdict_end"))
-    if d > planned:
-        return scaled, (f"deadline {d} s is longer than the {planned} s run this profile's stage limits were set for "
-                        f"({old} s for stage 1, refine and the verdict): the three limits are scaled up by "
-                        f"{d}/{planned} to {new} s, so every stage gets its share of the added time")
-    note = (f"deadline {d} s is not above this profile's stage limits ({old} s for stage 1, refine and the "
-            f"verdict, set for a {planned} s run): the three limits are scaled by {d}/{planned} to {new} s; "
-            f"a model call still streaming at its limit is cut and its finished items are kept")
-    return scaled, note
+    """The stage limits a run uses, and the announcement when they differ from the profile's: a view of
+    ``StopRulesConfig.effective`` (``config.py``), the one place a non-profile deadline scales the three stage
+    limits and the two reserves. ``load_config`` already returns effective rules; rules built by hand (a test, the
+    Review form's ``GET /limits``) are made effective here the same way."""
+    eff = stop_rules.effective()
+    return {k: float(v) for k, v in eff.stage_limits_s.as_dict().items()}, eff.scaling_note()
 
 
 def deadline_warnings(stop_rules: Any, *, min_attempt_s: float = MIN_ATTEMPT_S) -> list[str]:
-    """What a deadline that does not fit its own limits or reserves will do, said before the run
-    starts (``stop_rules``: the run's ``StopRules``). ``--deadline`` and a profile each set one side,
-    so the pair can be inconsistent: the stage limits are then scaled (:func:`effective_stage_limits`,
-    announced first), and a deadline below the reserves the between-phase rules keep (``--deadline
-    300`` against the default 180 s + 600 s) would end the run "not assessed" or document-only with
-    no hint why."""
+    """What the run's deadline will do, said in WARN lines before the first model call (``stop_rules``: the
+    run's rules, made effective here). First the scaling note when the deadline is not the profile's own
+    (``StopRulesConfig.scaling_note``: limits and reserves, USER_DECISIONS #48); then every stage whose window
+    is too short to start one model attempt, since the runtime refuses an attempt with less than
+    ``min_attempt_s`` (``MIN_ATTEMPT_S``, 10 s) before its limit and the stage would otherwise be skipped or
+    cut in silence. Research needs two attempts' time from the run start, because the plan call runs before it.
+    The windows: before verify (the deadline less the verify and verdict reserve), stage 1 (0 to
+    ``stage_1_end``), research (to ``research_end_s``), refine (``stage_1_end`` to ``refine_end``) and the
+    verdict call (``refine_end`` to ``verdict_end``)."""
     if "deadline" not in stop_rules.active:
         return []
+    eff = stop_rules.effective()
     out: list[str] = []
-    note = effective_stage_limits(stop_rules)[1]
+    note = eff.scaling_note()
     if note is not None:
         out.append(note)
-    d, r, a = stop_rules.deadline_seconds, stop_rules.report_reserve_seconds, stop_rules.refine_reserve_seconds
-    fix = "raise --deadline, or use a profile with smaller reserves (--profile demo)"
+    d, r, a = eff.deadline_seconds, eff.report_reserve_seconds, eff.refine_reserve_seconds
+    lim = eff.stage_limits_s
+    fix = "raise --deadline"
     before_verify = d - r
     if before_verify < min_attempt_s:
         return [*out, f"deadline {d} s does not exceed the verify + report reserve ({r} s) by one model attempt: "
                       f"no model call can run before verify, so the report will say the design was not assessed; "
                       f"{fix}"]
-    if before_verify - a < min_attempt_s:
-        return [*out, f"deadline {d} s leaves research no time: {r} s is kept for verify + report and {a} s for "
-                      f"refine, so understand, plan and assess share {before_verify} s and the review will be "
-                      f"document-only (not assessed if those calls need longer); {fix}"]
+    research_end = eff.research_end_s()
+    if research_end - min_attempt_s < min_attempt_s:
+        out.append(f"deadline {d} s leaves research no time: its deadline rule ends it at {research_end} s on the run "
+                   f"clock ({r} s kept for verify + report and {a} s for refine), less than one plan attempt and "
+                   f"one research attempt of {min_attempt_s:g} s each, so the review will be document-only; {fix}")
+    windows = (("stage 1 (understand, plan and the assess shards)", lim.stage_1_end, "the design will not be "
+                "assessed"),
+               ("refine", lim.refine_end - lim.stage_1_end, "the merged findings will stand unrefined"),
+               ("the verdict call", lim.verdict_end - lim.refine_end, "the rule-based verdict will be used"))
+    for name, span, then in windows:
+        if span < min_attempt_s:
+            out.append(f"deadline {d} s leaves {name} {span} s, less than one model attempt ({min_attempt_s:g} s): "
+                       f"{then}; {fix}")
     return out
 
 

@@ -300,8 +300,10 @@ def test_a_deadline_below_the_stage_limits_scales_them_and_says_so(base: Effecti
     assert edge_note is None and edge["verdict_end"] == 530             # one second above: kept as set
     at, at_note = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 530}))
     assert at_note is not None and at["verdict_end"] < 530             # at the limit: scaled
-    tiny, _ = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 3}))
-    assert tiny["stage_1_end"] < tiny["refine_end"] < tiny["verdict_end"] < 3
+    tiny, _ = effective_stage_limits(rules.model_copy(update={"deadline_seconds": 4}))
+    assert tiny["stage_1_end"] < tiny["refine_end"] < tiny["verdict_end"] < 4
+    with pytest.raises(ValueError, match="too short for three stage limits"):   # no three whole seconds below 4 s
+        effective_stage_limits(rules.model_copy(update={"deadline_seconds": 3}))
 
 
 def test_a_deadline_above_the_planned_run_scales_the_limits_up_and_says_so(base: EffectiveConfig) -> None:
@@ -596,21 +598,31 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
     assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (900, 125, 334)
     assert deadline_warnings(demo) == []
-    # A deadline below the stage limits is announced first (the limits are scaled), then the reserves.
+    # A deadline below the stage limits scales the limits AND the reserves (USER_DECISIONS #48): one line says
+    # both, and research keeps its share, so nothing else is announced. Before #48 the default's 180 s + 600 s
+    # reserves stayed, and 300 s left research no time.
     short = deadline_warnings(rules(deadline_seconds=300))
-    assert len(short) == 2 and "scaled by 300/3600" in short[0]
-    assert "leaves research no time" in short[1] and "share 120 s" in short[1]
-    assert "s for refine" in short[1] and "for assess" not in short[1]          # the reserve is refine's
-    none = deadline_warnings(rules(deadline_seconds=185))
-    assert len(none) == 2 and "no model call can run before verify" in none[1] and "not assessed" in none[1]
-    # The former 540 s demo reserves (75 s + 200 s) left research 25 s at 300 s: only the scaling was announced.
+    assert short == [effective_stage_limits(rules(deadline_seconds=300))[1]]
+    assert "scaled by 300/3600 to 235 / 285 / 295 s" in short[0]
+    assert "verify and verdict 180 -> 15 s and refine 600 -> 50 s, so research ends by 235 s" in short[0]
     old = demo_540(demo).model_copy(update={"deadline_seconds": 300})
     assert deadline_warnings(old) == [effective_stage_limits(old)[1]]
     assert "scaled by 300/540 to 147 / 258 / 294 s" in deadline_warnings(old)[0]
-    # The 900 s profile's reserves (125 s + 334 s) leave none at 300 s: the scaling, then the lost research.
     demo_short = deadline_warnings(demo.model_copy(update={"deadline_seconds": 300}))
-    assert len(demo_short) == 2 and "scaled by 300/900 to 147 / 258 / 294 s" in demo_short[0]
-    assert "leaves research no time" in demo_short[1]
+    assert len(demo_short) == 1 and "scaled by 300/900 to 147 / 258 / 294 s" in demo_short[0]
+    assert "verify and verdict 125 -> 41 s and refine 334 -> 111 s, so research ends by 147 s" in demo_short[0]
+    # A very short deadline names each stage that cannot start one model attempt, before the first call.
+    tiny = deadline_warnings(rules(deadline_seconds=30))
+    assert [w.split(" s, less")[0] for w in tiny[1:]] == ["deadline 30 s leaves refine 5",
+                                                          "deadline 30 s leaves the verdict call 1"]
+    # The before-verify check, at a profile's own run length with a reserve that eats it.
+    from sit_review_agent.config import StageLimits
+
+    eaten = rules(deadline_seconds=100, report_reserve_seconds=95, refine_reserve_seconds=0,
+                  stage_limits_s=StageLimits(stage_1_end=1, refine_end=5, verdict_end=99))
+    assert eaten.effective() is eaten                                       # its own run length: nothing scaled
+    none = deadline_warnings(eaten)
+    assert len(none) == 1 and "no model call can run before verify" in none[0] and "not assessed" in none[0]
     assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
 
 
@@ -619,14 +631,19 @@ def test_deadline_warning_boundary_is_one_model_attempt(base: EffectiveConfig) -
     remainder: a deadline that leaves it 5 s is announced, one that leaves exactly one attempt is
     not. (Session 4 verifier: the boundary `< min_attempt_s` could be weakened to `< 0` with every
     other test passing.)"""
+    from sit_review_agent.config import StageLimits
     from sit_review_agent.llm.runtime import MIN_ATTEMPT_S, deadline_warnings
 
-    sr = base.stop_rules
-    fit = sr.report_reserve_seconds + sr.refine_reserve_seconds
-    tight = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S / 2}))
-    assert len(tight) == 2 and "leaves research no time" in tight[1]          # [0]: the limits are scaled
-    roomy = deadline_warnings(sr.model_copy(update={"deadline_seconds": fit + MIN_ATTEMPT_S}))
-    assert len(roomy) == 1 and "scaled by" in roomy[0]
+    # Rules at their own run length (planned = 85 + 15 = 100 s, nothing scaled): research ends at
+    # min(100 - 15 - refine reserve, stage_1_end 20); it needs one plan attempt and one research attempt.
+    def at(refine_reserve: int) -> Any:
+        return base.stop_rules.model_copy(update={
+            "deadline_seconds": 100, "report_reserve_seconds": 15, "refine_reserve_seconds": refine_reserve,
+            "stage_limits_s": StageLimits(stage_1_end=20, refine_end=85, verdict_end=99)})
+    assert at(65).research_end_s() == 2 * MIN_ATTEMPT_S and deadline_warnings(at(65)) == []
+    tight = deadline_warnings(at(66))
+    assert at(66).research_end_s() == 2 * MIN_ATTEMPT_S - 1
+    assert len(tight) == 1 and "leaves research no time" in tight[0] and "ends it at 19 s" in tight[0]
 
 
 def test_not_assessed_verdict_is_never_a_certification() -> None:

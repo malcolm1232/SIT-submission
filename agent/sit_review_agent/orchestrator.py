@@ -152,10 +152,10 @@ class Orchestrator:
     def _cap(self, ctx: RunContext, stage: Stage) -> StopReason | None:
         """A cap that stops ``stage`` from starting: the active between-phase caps, or (with the
         ``deadline`` rule active) the stage's own limit already passed."""
-        cap = check_caps(ctx.state, ctx.config.stop_rules, ctx.elapsed_s())
+        cap = check_caps(ctx.state, ctx.config.stop_rules.effective(), ctx.elapsed_s())
         if cap is not None or not _deadline_active(ctx):
             return cap
-        limits = ctx.config.stop_rules.stage_limits_s
+        limits = ctx.config.stop_rules.effective().stage_limits_s
         limit = {Stage.STAGE_1: ("stage_1_end", limits.stage_1_end),
                  Stage.REFINE: ("refine_end", limits.refine_end)}.get(stage)
         if limit is not None and ctx.elapsed_s() >= limit[1]:
@@ -276,7 +276,8 @@ class Orchestrator:
             ctx.registry.freeze()
         if not ctx.registry.hashes():
             ctx.registry.record_iteration(0)
-        cap = check_caps(ctx.state, ctx.config.stop_rules, ctx.elapsed_s())   # the deadline itself, no stage limit
+        # the deadline itself, no stage limit
+        cap = check_caps(ctx.state, ctx.config.stop_rules.effective(), ctx.elapsed_s())
         if cap is not None:
             return self._skip_on_cap(ctx, Stage.STAGE_1, cap)
         stored = self._load_shards(ctx)
@@ -389,7 +390,7 @@ class Orchestrator:
                 finished, _ = await asyncio.wait(set(running), timeout=self.stage1_poll_s if watch else None,
                                                  return_when=asyncio.FIRST_COMPLETED)
                 if not finished:
-                    limit = ctx.config.stop_rules.stage_limits_s.stage_1_end
+                    limit = ctx.config.stop_rules.effective().stage_limits_s.stage_1_end
                     if ctx.elapsed_s() < limit + self.stage1_grace_s:
                         continue
                     fired = True
@@ -880,7 +881,7 @@ def _run_started(progress: object, cfg: EffectiveConfig, rd: RunDir, state: obje
     and the assess shard groups in launch order."""
     from sit_review_agent.llm.runtime import effective_stage_limits
 
-    sr = cfg.stop_rules
+    sr = cfg.stop_rules.effective()
     limits, note = effective_stage_limits(sr)
     docs = [{"doc_id": getattr(d, "doc_id", None), "role": getattr(getattr(d, "role", None), "value", None),
              "title": getattr(d, "title", None) or None, "version": getattr(d, "version", None),
@@ -902,7 +903,14 @@ def _run_started(progress: object, cfg: EffectiveConfig, rd: RunDir, state: obje
                  model=cfg.agent.model, backend=cfg.agent.llm.backend, transport=cfg.agent.transport.value,
                  deadline_active="deadline" in sr.active, deadline_s=sr.deadline_seconds,
                  stage_limits_s=limits, stage_limits_scaled=note is not None,
-                 report_reserve_s=sr.report_reserve_seconds, criteria=cfg.criteria.ids(), shards=shards,
+                 report_reserve_s=sr.report_reserve_seconds, refine_reserve_s=sr.refine_reserve_seconds,
+                 research_end_s=sr.research_end_s(),
+                 scaled_from=None if sr.scaled_from is None else {
+                     "deadline_s": sr.scaled_from.deadline_seconds,
+                     "stage_limits_s": sr.scaled_from.stage_limits_s.as_dict(),
+                     "report_reserve_s": sr.scaled_from.report_reserve_seconds,
+                     "refine_reserve_s": sr.scaled_from.refine_reserve_seconds},
+                 criteria=cfg.criteria.ids(), shards=shards,
                  phases_enabled=[p.value for p in PHASE_ORDER if cfg.agent.phases.enabled(p)])
 
 

@@ -443,7 +443,7 @@ def _default_stop_reason(ctx: RunContext) -> StopReason:
     if stop is None:
         ran = PhaseName.RESEARCH in ctx.state.completed_phases
         stop = StopReason.of(StopReasonCode.SUFFICIENT_EVIDENCE, "research_completed" if ran else "research_not_run")
-    settled = stop_rules.settle_sufficient_evidence(stop, ctx.state, ctx.config.stop_rules, ctx.ledger)
+    settled = stop_rules.settle_sufficient_evidence(stop, ctx.state, ctx.config.stop_rules.effective(), ctx.ledger)
     if ctx.state.stop_reason is not None or settled is not stop:
         ctx.state.stop_reason = settled
     return settled

@@ -218,18 +218,17 @@ def build_app(state: UIState) -> Starlette:
         if isinstance(d, str):
             return _err(400, d)
         if d is not None:
-            sr = sr.model_copy(update={"deadline_seconds": d})
+            sr = sr.with_deadline(d)            # the one scaling (StopRulesConfig.effective), as load_config does
         lim, note = effective_stage_limits(sr)
-        active = "deadline" in sr.active
-        warnings = deadline_warnings(sr)
+        eff = sr.effective()
+        warnings = deadline_warnings(eff)
         if note is not None and warnings[:1] == [note]:
             warnings = warnings[1:]              # the scaling note is "note"; "warnings" are the rest
-        return _json({"deadline_s": sr.deadline_seconds, "stage_limits_s": lim, "scaled": note is not None,
+        return _json({"deadline_s": eff.deadline_seconds, "stage_limits_s": lim, "scaled": note is not None,
                       "note": note, "warnings": warnings,
-                      # research's own deadline rule keeps both reserves (phases/research.py)
-                      "research_end_s": (sr.deadline_seconds - sr.report_reserve_seconds - sr.refine_reserve_seconds)
-                      if active else None,
-                      "report_reserve_s": sr.report_reserve_seconds, "refine_reserve_s": sr.refine_reserve_seconds})
+                      # research's own deadline rule (phases/research.py), on the same effective rules
+                      "research_end_s": eff.research_end_s() if "deadline" in eff.active else None,
+                      "report_reserve_s": eff.report_reserve_seconds, "refine_reserve_s": eff.refine_reserve_seconds})
 
     async def documents_list(request: Request) -> Response:
         """The sample documents offered as chips on the Review page: a chip fills the form with the file and
