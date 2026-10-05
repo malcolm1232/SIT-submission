@@ -96,3 +96,18 @@ def test_the_run_says_so_before_its_first_model_call(cfgdir: Path) -> None:  # n
     first_call = next(i for i, (t, _) in enumerate(kinds) if t == "call_opened")
     warned = [i for i, (t, m) in enumerate(kinds) if t == "deadline_warning" and "less than one model attempt" in m]
     assert len(warned) == 2 and max(warned) < first_call
+
+
+def test_the_band_kept_as_set_is_verdict_end_plus_one_to_the_planned_run() -> None:
+    """Demo (verdict_end 883 s, planned 900 s): 884 to 900 s keep limits and reserves as set; 883 s and 901 s
+    scale, down and up, both limits and reserves."""
+    def at(d: int) -> object:
+        return load_config(overrides=ConfigOverrides(profile="demo", deadline_seconds=d)).stop_rules
+
+    for d in (884, 900):
+        assert at(d).scaled_from is None and at(d).report_reserve_seconds == 125
+    for d in (883, 901):
+        sr = at(d)
+        assert sr.scaled_from is not None and sr.scaled_from.deadline_seconds == 900, d
+    assert at(901).refine_reserve_seconds == 334 and "scaled up by 901/900" in (at(901).scaling_note() or "")
+    assert at(883).refine_reserve_seconds == int(334 * 883 / 900) == 327
