@@ -379,3 +379,19 @@ already happened (none had for entries made before the freeze).
 - **Decided by:** the owner, 2026-10-04 22:40, with the planner's shaping (`docs/USER_DECISIONS.md` #46).
 - **Scored runs before the change:** none (`frozen: false`; no key is `scored_run_ready`). Every score stays
   exploratory until the owner signs the keys (ruling #26).
+
+## 14. 2026-10-05: plan D ran the eight synthetic keyed documents only; the two held-out items were not run
+
+- **Fields:** none of `eval/prereg.yaml` is edited; this entry narrows the run plan of entry 13.
+- **Old text (entry 13):** ten keyed documents, the three S-dev synthetic items, the two S-heldout items and the
+  five new synthetic items, each with one full-agent run and one single-call baseline run.
+- **New text:** plan D ran the eight synthetic keyed documents only (the three S-dev synthetic items and the five
+  new synthetic items); the two S-heldout items in `eval/blind/` were not run, by the agent or by the baseline.
+- **Reason:** to keep the held-out set's budget of three evaluations (`docs/SEALING.md`, access budget S-heldout 3)
+  for the frozen stage, and because the keys are unsigned, so a held-out score now could only be exploratory and
+  would spend that budget without a confirmatory result.
+- **Decided by:** the planner's ruling under the owner's delegation (the owner, 2026-10-03 02:50, "u make the shot
+  calling"; plan D approved by the owner, 2026-10-04 22:40).
+- **Scored runs before the change:** none on the held-out items; the plan D scores of the eight synthetic documents
+  are exploratory (`frozen: false`, no key `scored_run_ready`, ruling #26) and are reported in
+  `docs/COMPARISON_PLAN_D.md`.

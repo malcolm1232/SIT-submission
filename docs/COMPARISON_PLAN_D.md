@@ -10,8 +10,8 @@ Times are Singapore time (UTC+8) unless marked Z.
 
 Plan D is decision #46 of `docs/USER_DECISIONS.md` and entry 13 of `eval/prereg_deviations.md`: Malcolm's word of 4 Oct 2026 22:40, "less runs, but more variants document wise", all at effort medium.
 Entry 13 names ten keyed documents (three S-dev synthetic items, two S-heldout items and five new synthetic items), one full-agent run and one single-call baseline run per document, five v2 re-assessments, two extra full-agent runs on each of two documents, and one low and one high effort run on one document.
-What ran is eight of those ten documents: the two S-heldout items in `eval/blind/` were not run, by the planner's ruling, to keep their budget of at most three logged evaluations in total (the budget rule is in `docs/HANDOVER_261004_PLANNER.md` section 6).
-That ruling is a departure from the text of entry 13 and is not yet recorded in `eval/prereg_deviations.md`.
+What ran is eight of those ten documents: the two S-heldout items in `eval/blind/` were not run, by the planner's ruling under the owner's delegation, to keep the held-out set's budget of three evaluations for the frozen stage (`docs/SEALING.md`, access budget S-heldout 3) and because the keys are unsigned.
+That departure from the text of entry 13 is recorded as entry 14 of `eval/prereg_deviations.md`.
 The eight documents are `payments_orchestration`, `clinical_rpm`, `research_lakehouse`, `iot_fleet`, `consent_service`, `hospital_scheduling`, `ledger_migration` and `exam_platform` under `eval/synthetic/`, each with 14 planted flaws in its v1 key (`scores.json` `metrics.recall.g` = 14 on every v1 row).
 FULL is the agent (`dra review <doc>/design_v1.pdf --profile demo --no-tools`) and B0 is the single-call baseline (`--condition B0 --no-tools`), both on the Claude Code CLI backend at effort medium, one run per document (`RUNS.md` and `RUNS_B0.md` headers).
 Both conditions ran with tools off (`--no-tools`), so neither did external research: every FULL run cites 0 external sources (`RUNS.md` column "external cited").
@@ -27,7 +27,7 @@ The runs and scorings took place on 5 Oct 2026: the first FULL model call starte
 The Claude subscription's session limit interrupted the work from 06:05 to 07:10: the first refused call is at 06:05:32 (`d_consent_v2_1/llm.jsonl`, outcome `LLMUnavailableError`) and the limit reset at 07:10 (`RUNS_B0.md` notes).
 It affected six things, and no scored row comes from a call made during it:
 - `d_consent_v2_1` aborted in refine after 15 refused attempts (`llm.jsonl` outcome counts); it was resumed after the reset and then crashed on INV-04 (section 7).
-- The first scoring of `d_iot_v2_1` was stopped by hand at 06:20 with 291 of 337 judge calls errored and was rescored after the reset (`RUNS.md` Scores).
+- The first scoring of `d_iot_v2_1` was stopped by hand at 06:20 with 291 of 337 judge calls errored and was rescored after the reset (`RUNS.md` Scores); its judge log holds 340 entries from 06:05:43 to 06:20:45, 46 ok and 294 errored, at $5.03 (`eval_d/judge_calls.jsonl` `outcome` and `call_cost_usd`, counted by script), three entries more than `RUNS.md` counted.
 - The first scoring of `d_b0_iot_v1_1` had all 31 judge calls (124 attempts) refused; it was rescored at 07:13 and the row carries that score (`RUNS_B0.md` notes).
 - `d_b0_consent_v1_1` crashed in assess after 30 s and 5 refused attempts; its rerun `d_b0_consent_v1_2` is the scored B0 consent row (`RUNS_B0.md`).
 - `d_b0_hospital_v1_1` started at the limit and was stopped by the worker; `d_b0_hospital_v1_2` is the scored B0 hospital row (`RUNS_B0.md`).
@@ -60,8 +60,9 @@ The FULL hospital row is the rerun `d_hospital_v1_2` (section 7) and the B0 cons
 | **Total or mean** | **FULL** | **98 of 112** | **106 of 112** | **0.594** | **0.883** | **0.896** | **0.906** | **0 of 170** | **3,426** | **50.39 (lower bound)** | **42.63** |
 | **Total or mean** | **B0** | **88 of 112** | **101 of 112** | **0.755** | **0.973** | **0.856** | **0.906** | **0 of 118** | **2,196** | **6.74** | **25.38** |
 
-The totals were recomputed from the rows: the recall and flag counts are sums of `scores.json` `metrics.recall.tp`, `metrics.lenient_recall.tp` and the scored-finding counts, the precision, severity and critical columns are means over the eight documents, and the wall and cost columns are sums.
+The totals were recomputed from the rows: the recall and flag counts are sums of `scores.json` `metrics.recall.tp`, `metrics.lenient_recall.tp` and the scored-finding counts, the precision, severity and critical columns are means over the eight documents, and the wall and cost columns are sums of the rows as printed.
 The strict recall totals agree with the tables: 98 of 112 for FULL and 88 of 112 for B0.
+Summed before rounding, FULL run cost is $50.40 (`manifest.json` `usage.cost_usd`) and B0 scoring cost $25.39 (`scores.json` `calls.cost_usd_reported`); the wall column is `RUNS.md` "wall s", which is within 3 s per run of `manifest.json` `extra.timing.wall_clock_s` (sums 3,418.8 s and 2,188.8 s).
 Every run's outcome is `completed_degraded` (`RUNS.md`, `RUNS_B0.md`): every report lists an `input_degraded` entry, every FULL report a `tool_unavailable` entry (tools were off), and the FULL runs carry 0 to 2 deadline cuts of calls each (`report.json` `research_log.degradations` types, counted by script).
 B0 is one logical model call: `llm.jsonl` holds 1 attempt for each of the eight scored B0 runs (`RUNS_B0.md` column "attempts").
 
@@ -149,42 +150,51 @@ Five v2 re-assessments ran with `--previous runs/d_<doc>_v1_1` (`manifest.json` 
 | d_iot_v2_1 (rescore, cap 24) | 7 of 8 | 0.875 | 0.121 | 0.224 | 58 | 43 | 1 of 58 | 5.00 |
 
 Source: `RUNS.md` Scores for recall, precision, flags and cost; `scores.json` `metrics.precision_strict.n` and `metrics.adjudication_counts` for the scored findings and duplicates.
+The two rescores at the $24 cap reused judge answers cached by the stopped scorings (103 of 126 calls on lakehouse, 113 of 124 on iot, `scores.json` `calls.calls_cached`), so their $11.33 and $5.00 cover only the 23 and 11 live calls; the full v2 scoring spend is in section 7.
 Recall against the v2 keys was 8 of 9, 6 of 9, 7 of 9 and 7 of 8.
-Precision did not on lakehouse and iot: 0.111 strict and 0.254 adjudicated over 63 findings, and 0.121 and 0.224 over 58.
+Precision fell sharply on lakehouse and iot: 0.111 strict and 0.254 adjudicated over 63 findings, and 0.121 and 0.224 over 58.
 The harness adjudicated 46 of the 63 lakehouse findings and 43 of the 58 iot findings as DUPLICATE (duplication rate 0.730 and 0.741), against 4 of 28 and 2 of 29 on payments and clinical v2 (`metrics.adjudication_counts` and `metrics.duplication_rate`).
 The one hallucination flag of plan D is on iot v2: 1 of 58 findings adjudicated HALLUCINATED (`metrics.adjudication_counts`, and `RUNS.md` "1 of 58").
 Consent v2 did not score: its first attempt aborted in refine at the session limit, and the resume crashed in report on the INV-04 invariant (rc=4, `RUNS.md` rows `d_consent_v2_1` and `d_consent_v2_1 (resumed)`).
 A separate read-only diagnosis (`docs/transcripts/session6/v2-diagnosis.md` committed as 2a91b83 on branch `s4/v2-diag`, 5 Oct 2026, not yet verified or merged) classifies the scored findings of lakehouse v2 (63) and iot v2 (58): 7 and 7 strict matches to an open gold flaw, 1 and 0 lenient-only matches, 0 and 0 matched to a flaw the v2 key marks fixed, 3 and 2 new unmatched non-duplicates (one of the iot two is the HALLUCINATED flag), and 46 and 43 adjudicated DUPLICATE.
 It finds that 36 of the 46 and 35 of the 43 duplicates share their duplicate target's prior finding id, so most of the surplus is several assess shards carrying the same v1 finding forward.
 Its stated root cause is that refine did not complete on these two runs: the first refine answer was complete but left out the status of one prior finding, the repair call was cut by the deadline with 18 s and 45 s left, and refine fell back to the unmerged drafts, so 41 and 42 planned merges were not applied (against 49 and 30 merges in the v1 runs).
-It proposes agent and harness changes and a re-run of the two v2 documents after them; none of that has been done.
+It proposes agent and harness changes and a re-run of the two v2 documents after them; a fix to the refine path is in progress (worktree branch `s4/refine-prior-status`, nothing committed or merged when this was checked), and no re-run has been made.
+So the lakehouse and iot v2 precision figures describe a run whose refine fell back to unmerged drafts, not the agent's refine working as designed.
 
 ## 7. Defects the evaluation found, and their state
 
 - INV-05 report crash: `d_hospital_v1_1` crashed in report (rc=4, StageCrash, INV-05 evidence quote invariant) after 385 s and $5.91 (`RUNS.md` Runs).
-  The repair landed on the main branch in 6980c33, e0c7925, 2ef95e4 and 6ca319d, with its worker note at 0da6c61 (`git log 280c4b4..6ca319d -- agent`).
-  The repaired code was not re-run on hospital: the scored FULL hospital row is the rerun `d_hospital_v1_2` on the old code (eba6974 plus docs), which did not hit the crash (`RUNS.md`, `manifest.json` `extra.code.git_commit` 764c3f0).
-  No plan D run, FULL or B0, was made on the repaired code (eba6974 and 280c4b4 are both ancestors of 0da6c61).
+  The fix is on the truth branch `claude/happy-darwin-d0bl94` in four commits, 6980c33, e0c7925, 2ef95e4 and 6ca319d, plus 6ca33e7 for a URL scheme in any letter case (`git log 280c4b4..6ca33e7 -- agent`); 0da6c61 and 88abd54 are worker notes, not code.
+  So the cause of the hospital crash is fixed on the tip, but the fixed code has not been re-run on hospital: the scored FULL hospital row is the rerun `d_hospital_v1_2` on the old code (eba6974 plus docs), which did not hit the crash (`RUNS.md`, `manifest.json` `extra.code.git_commit` 764c3f0).
+  No plan D run, FULL or B0, was made on the fixed code (eba6974 and 280c4b4 are both ancestors of 6980c33, and no run commit contains it).
 - INV-04 crash on resume: `d_consent_v2_1 (resumed)` crashed in report on the INV-04 invariant (quote-anchor verification, `agent/sit_review_agent/invariants.py`), not scored (`RUNS.md`).
   The same unverified diagnosis note (`docs/transcripts/session6/v2-diagnosis.md`, Question B, 2a91b83 on `s4/v2-diag`) finds that the report phase's redaction on the run's code rewrote a document URL inside a sound-area anchor quote, the same cause the INV-05 repair 6980c33 addressed, and that at 6ca319d the check passes on the crashed report with the quote restored.
   It proposes resuming the run on the repaired code and scoring it, plus a guard; neither has been done, so consent v2 has no score.
 - Two scorings stopped at the $18 judge cap: `d_lakehouse_v2_1` stopped_budget at a recorded $15.90 and the first post-reset `d_iot_v2_1` rescore stopped_budget at $15.62, each rc=3 with no metrics (`RUNS.md` Scores).
   Both were rescored at a $24 cap, at $11.33 and $5.00, and those are the rows used (`RUNS.md`, `scores.json` `judge.max_cost_usd` = 24.0).
-  The recorded spend at each stop is below $18; the tables do not say why the cap fired below its figure, and this file does not explain it.
-  The v2 scoring spend is therefore $27.23 on lakehouse ($15.90 plus $11.33) and at least $20.62 on iot ($15.62 plus $5.00, plus the hand-stopped first scoring, whose cost is not recorded).
+  The cap fired below $18 by its own rule: the scorer refuses to start a call when committed spend plus a reserve for every call in flight and for the next call would pass the cap (`harness/sit_eval/calls.py` `JudgeRunner._check_budget`), the reserve is the judge's per-call limit of $1.00 (`harness/sit_eval/config.py` `max_budget_usd_per_call`, recorded as `scores.json` `calls.budget.reserve_usd` 1.0), and at concurrency 4 it can stop once committed spend passes $14; the figure recorded is the committed spend after the calls in flight finished.
+  The judge logs agree: the stopped lakehouse scoring made 103 calls at $15.90 and the stopped iot rescore 67 calls at $15.62, all ok (`eval_d/judge_calls.jsonl`, counted by script).
+  The v2 scoring spend is therefore $27.23 on lakehouse ($15.90 plus $11.33) and $25.65 on iot ($5.03 for the hand-stopped first scoring, from its judge log, plus $15.62 plus $5.00).
 
 ## 8. Caveats
 
 - Exploratory: every score was made with `--exploratory`, the LC12 override for keys that are not signed off, and the harness says "these scores are exploratory and may not be reported as confirmatory" (`scores.json` `exploratory_note`).
 - Keys unsigned: every key has `scored_run_ready = false` (`scores.json` warnings), and only Malcolm signs them (decision #26).
 - Prereg unfrozen: "eval/prereg.yaml is not frozen (frozen: false): these scores are UNFROZEN PILOT scores, exploratory only, and carry no confirmatory claim" (`scores.json` `prereg.message`).
-- Plan D ran eight of the ten documents named in prereg deviation entry 13; the two held-out items were not run, and that change is not yet in `eval/prereg_deviations.md` (section 1).
+- Plan D ran eight of the ten documents named in prereg deviation entry 13; the two held-out items were not run, so nothing here is measured on held-out material (entry 14 of `eval/prereg_deviations.md`, section 1).
 - Same model family: the agent, the B0 call, the scoring judge (Opus, effort high) and the grader (Opus, high) are all the same model family (`RUNS.md`, `RUNS_B0.md` and `GRADES.md` headers), so a shared blind spot would not show.
 - One run per document: each per-document row is one draw, the run-to-run spread is one flaw on the two documents where it was measured, and B0's spread was not measured (section 3).
 - Who wrote the documents: five of the eight documents (`iot_fleet`, `consent_service`, `hospital_scheduling`, `ledger_migration`, `exam_platform`) and their keys were authored by the same model family within this project (worker notes `docs/transcripts/session6/item-*.md`; decision #46); the two held-out items in `eval/blind/` were not touched.
 - B0 is one logical call with the same retry path as the agent's calls; its attempts are recorded in `llm.jsonl` and every scored B0 run has 1 (`RUNS_B0.md`).
 - Tools off: both conditions ran with `--no-tools`, so this compares the agent's structure, not its research; the with-tools agent is not measured here.
 - Code differs between arms: FULL at eba6974, B0 at 280c4b4, and the diff touches files on the FULL path (section 1).
+- Unlabelled agent scorings: the FULL scorings carry no `--condition`, so the aggregate compares `unlabelled` with `B0`, and the prereg pilot cost checkpoint reads `not_evaluable`; applied by hand it would read `fail`, a $6.15 lower-bound median FULL run cost against the $3.24 threshold (section 2).
+- Hospital row: the scored FULL hospital row is the rerun `d_hospital_v1_2` on the old code, after the first run crashed on INV-05; the fixed code was not run on hospital (section 7).
+- Session limit: the subscription's session limit refused calls from 06:05 to 07:10, which aborted the first consent v2 run and voided two scorings, one grade and two B0 runs that were then redone; no scored row comes from a call made during it (section 1).
+- Judge caps: two v2 scorings stopped at the $18 cap and were rescored at a $24 cap from the cached judge answers, so their table cost covers only the live calls (sections 6 and 7).
+- Effort ablation: the high-effort run lost 7 of its 10 model calls to deadline cuts, so it measures the time limits as much as the effort (section 4).
+- v2 figures: the lakehouse and iot v2 precision reflects a refine fallback to unmerged drafts (unverified diagnosis, section 6), a fix for it is in progress and not merged, and consent v2 has no score.
 - Cost figures are the CLI's estimates on the subscription, not billed amounts, and three of the eight FULL v1 costs are lower bounds (section 2).
 - Grounding judges off: G3 and citation-support metrics are null (`scores.json` warnings), so "hallucination flags" here means G1 failures plus adjudicated HALLUCINATED only.
 - Load: runs and scorings shared the Mac with other work, under a gate of a 5-minute load below 10 and over 35 percent free memory (`RUNS.md` header); load can change wall time, not scores.
@@ -192,9 +202,9 @@ It proposes agent and harness changes and a re-run of the two v2 documents after
 ## 9. What this allows Malcolm to say, and what it does not
 
 He can say:
-- "On eight synthetic design documents with 14 planted flaws each, the agent found 98 of 112 flaws exactly, against 88 of 112 for a single model call on the same documents."
-- "The paired difference is 8.9 points of strict recall, with a bootstrap interval of 3.6 to 15.2 points, but the document-level sign test gives only p = 0.06, because five documents favoured the agent and three tied."
-- "An independent grader that never saw the answer key gave all eight agent reviews a pass at grade B, mean 82 of 100, with no material hallucination."
+- "In an exploratory test on eight synthetic design documents with 14 planted flaws each, one run per document, the agent matched 98 of 112 flaws strictly (recall 0.875), against 88 of 112 (0.786) for a single model call on the same documents."
+- "The paired gain is +0.089 in strict recall, with a 95 percent bootstrap interval of +0.036 to +0.152, but the document-level sign-flip test gives only p = 0.0625, because five documents favoured the agent and three tied."
+- "The scorer flagged no finding as hallucinated in any of the agent's fourteen scored v1 runs (0 of 170 findings on the eight compared runs, without the grounding judges), and a key-blind grader of the same model family passed all eight reviews at grade B, mean 82.15 of 100."
 
 He cannot say:
 - That the agent is better than a single call in a confirmatory sense: the keys are unsigned, the prereg is unfrozen, and every figure is labelled exploratory by the harness.
