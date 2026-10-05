@@ -214,6 +214,32 @@ def test_a_document_excerpt_links_its_references_and_an_outside_one_keeps_its_ow
     assert "FND-001</a> (supports)" in rows["EV-001"]
 
 
+
+def test_an_outside_sources_row_gives_its_title_and_its_address(tmp_path: Path) -> None:
+    """A run with tools on (6 Oct 2026, the first one): an outside source's row in the Evidence tab gave only its
+    title, so the reader could not see where it came from. It gives the title, then the address as text, as the
+    source's entry does; a tool call's citation is shown whole in the same wrapping column."""
+    from test_ui_export_links import PAGES, _run
+    call = 'mcp:mcp-internet-search/search_web?{"mode":"answer","query":"' + "pgvector hnsw filtering " * 6 + '"}'
+    report = {"metadata": {"documents": [{"doc_id": "DOC-x", "role": "under_review", "title": "X",
+                                          "text_path": "text/DOC-x.pages.txt"}]},
+              "findings": [{"id": "FND-001", "title": "t", "kind": "gap", "severity": "low", "rank": 1,
+                            "evidence": [{"evidence_id": "EV-001", "supports_claim": True}]}],
+              "evidence_ledger": [
+                  {"evidence_id": "EV-001", "source_type": "external", "excerpt": "Lifetimes are set per policy.",
+                   "url_or_citation": "https://learn.example.org/token-lifetimes", "title": "Token lifetimes",
+                   "authority": "primary_official", "derived_from": []},
+                  {"evidence_id": "EV-002", "source_type": "external", "excerpt": "No results.",
+                   "url_or_citation": call, "derived_from": []}]}
+    rd = _run(tmp_path / "runs", "# Design review: X\n\n## Gaps\n\n### FND-001 t\n", report, PAGES, [])
+    frag = export.review_fragment(rd, pdf_href=None, view="evidence")
+    rows = dict(re.findall(r'<tr class="ev-row"><td><a [^>]*href="#(EV-\d+)"[^>]*>.*?</a></td>(.*?)</tr>', frag))
+    where = [re.findall(r"<td>(.*?)</td>", r)[1] for r in (rows["EV-001"], rows["EV-002"])]
+    assert text_of(where[0]) == "Token lifetimes https://learn.example.org/token-lifetimes"
+    assert 'class="x-muted x-url">https://learn.example.org/token-lifetimes<' in where[0]
+    assert "<a " not in where[0]                                     # an address a tool returned is not a link
+    assert text_of(where[1]) == call and 'class="x-ev-where x-muted"' in where[1]
+
 def test_the_coverage_tab_says_what_the_grid_and_each_code_mean_from_their_sources(runs: Path) -> None:  # noqa: F811
     frag = export.review_fragment(runs / RUN, pdf_href=None, view="coverage")
     html = frag.split('<div class="cv-intro">', 1)[1].split('<div class="x-table cv-grid">', 1)[0]
@@ -385,6 +411,22 @@ def test_the_coverage_and_evidence_tabs_use_the_reviews_hover_card_and_pane(app_
     assert pg.locator(".x-pane-kicker").inner_text() == "Coverage"
     assert pg.locator("#rv .x-pane-body .x-row").count() >= 1
 
+
+
+def test_a_long_citation_wraps_inside_the_registers_column(app_page) -> None:  # noqa: F811
+    """A tool call's citation is one long word: it wraps in the Where column, so the register keeps the width of
+    the reading column and its excerpts stay in view (it ran 420 px past it on the first run with tools on)."""
+    pg, ctx, base, runs_dir = app_page
+    open_review(pg, base, tab="evidence")
+    m = pg.evaluate("""() => {
+      const cell = document.querySelectorAll('#rv .rv-view tr.ev-row')[1].children[2];
+      cell.innerHTML = '<span class="x-ev-where x-muted">mcp:mcp-internet-search/search_web?{"fetch_top_n":2,'
+        + '"mode":"answer","query":"pgvector hnsw filtering iterative index scans ef_search"}</span>';
+      const g = document.querySelector('#rv .rv-view .ev-grid');
+      return { box: g.getBoundingClientRect().width, table: g.querySelector('table').getBoundingClientRect().width,
+               where: cell.getBoundingClientRect().width };
+    }""")
+    assert m["table"] <= m["box"] + 1 and m["where"] <= 330, m
 
 def test_the_rail_scrollers_use_the_rails_colours(app_page) -> None:  # noqa: F811
     pg, ctx, base, runs_dir = app_page

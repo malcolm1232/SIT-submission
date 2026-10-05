@@ -303,9 +303,13 @@ def _ev_where(idx: Index, e: dict[str, Any], cite: str) -> str:
         href = idx.location(m.group(2), m.group(3), str(e.get("excerpt") or ""), d)
         loc = f"p.{m.group(2)} §{m.group(3)}"
         return idx.a(href, loc, "x-loc", "page/section", idx._loc_title(m.group(2), m.group(3))) if href else loc
+    # an outside source: its title, then its address as text (as its entry in the reference part says it; an address
+    # a tool returned is not made a link here); a tool call's citation, its ids linked. Both wrap in their column.
     if re.match(r"https?://", cite):
-        return f'<span class="x-muted">{escape(str(e.get("title") or cite))}</span>'
-    return f'<span class="x-muted">{idx.link_ids(escape(cite))}</span>' if cite else ""
+        title = str(e.get("title") or "")
+        return (f'<span class="x-ev-where">{f"{escape(title)} " if title else ""}'
+                f'<span class="x-muted x-url">{escape(cite)}</span></span>')
+    return f'<span class="x-ev-where x-muted">{idx.link_ids(escape(cite))}</span>' if cite else ""
 
 
 def _cited(idx: Index, eid: str) -> str:

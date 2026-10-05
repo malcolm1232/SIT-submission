@@ -363,5 +363,10 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .ev-grid tr.ev-row:has(a.x-rowlink:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
 .ev-grid td a:not(.x-rowlink) { position: relative; z-index: 1; }
 .ev-grid td:nth-child(3) { white-space: nowrap; }
+/* an outside source's title and address, or a tool call's citation: one column of at most 300 px that wraps,
+   so a long address never widens the register past its column */
+.ev-grid td:nth-child(3) .x-ev-where { display: block; min-width: 180px; max-width: 300px; white-space: normal;
+  overflow-wrap: anywhere; }
+.ev-grid .x-ev-where .x-url { display: block; margin-top: 2px; font-size: 12px; line-height: 17px; }
 .ev-grid td:nth-child(4) { min-width: 280px; color: var(--fg-2); }
 .ev-grid td:nth-child(5) { min-width: 120px; }
