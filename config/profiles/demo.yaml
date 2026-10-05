@@ -34,10 +34,10 @@ stop_rules:
   # They match the limits below: stage_1_end = 900 - 125 - 334 = 441, refine_end = 900 - 125 = 775. Each model
   # call is bounded by its stage limit (llm/runtime.py, W1); a --deadline at or below 883 s or above 900 s scales
   # the three limits by deadline / (refine_end + report_reserve_seconds) = deadline / 900, said first (--deadline
-  # 540: 264 / 465 / 529 s). The reserves are NOT scaled: at --deadline 540 research's own deadline rule ends it
-  # by 540 - 125 - 334 = 81 s on the run clock, so a 9-minute run with tools gets no research (it began at ~136 s).
-  # stage_limits_s: design section 4's 265 / 465 / 530 s at 540 s, scaled by 900/540 as llm/runtime.py
-  # effective_stage_limits computes it. Absolute seconds, not a fraction of the deadline (the thinking block per
+  # 540: 264 / 465 / 529 s), and the two reserves by the same factor (75 s, 200 s; research ends by 264 s, as on
+  # the former 540 s profile; USER_DECISIONS #48), all in config.py StopRulesConfig.effective.
+  # stage_limits_s: design section 4's 265 / 465 / 530 s at 540 s, scaled by 900/540 as config.py
+  # StopRulesConfig.effective computes it. Absolute seconds, not a fraction of the deadline (the thinking block per
   stage_limits_s:               # call is fixed); see config/stop_rules.yaml for the rule
     stage_1_end: 441            # understand, plan, research and the six assess shards end by here
     refine_end: 775             # refine ends by here, else the merged findings ordered by severity stand

@@ -409,7 +409,22 @@ already happened (none had for entries made before the freeze).
 - **Reason:** the owner's document-only demo run of 2026-10-05 lost its refine pass to the 465 s limit; his word,
   5 Oct 2026 21:15: "longer than 9 mins" (`docs/USER_DECISIONS.md` #47).
 - **Decided by:** the owner (#47). Which deadline the next evaluation runs use is open for the planner: runs
-  comparable with plan D need the old clock, and `--deadline 540` alone does not give it (the reserves stay 125 s and
-  334 s, so research would end by run time 81 s; #47).
+  comparable with plan D need the old clock, which `--deadline 540` gives since entry 16 (limits 264 / 465 / 529 s,
+  reserves 75 s and 200 s).
 - **Scored runs before the change:** none confirmatory (`frozen: false`). The plan D runs (entries 13 and 14) were
   made before this change, with the profile as it was then.
+
+## 16. 2026-10-05: a run given a deadline other than its profile's scales the two reserves with the stage limits
+
+- **Fields:** none of `eval/prereg.yaml` is edited.
+- **Old behaviour:** a `--deadline` other than the profile's run length scaled the three stage limits by deadline over
+  the planned run length (`llm/runtime.py` `effective_stage_limits`) but kept the profile's two reserves, so research's
+  own deadline rule and the verify slack used the profile's reserves against the shorter or longer clock.
+- **New behaviour:** the two reserves scale by the same factor as the limits, in one place (`config.py`
+  `StopRulesConfig.effective`), and `effective_config.json` and the manifest record the effective values.
+  A run at its profile's own deadline is unchanged.
+- **Reason:** with the demo profile at 900 s (entry 15), `--deadline 540` ended research by run time 81 s; the owner's
+  ruling, 5 Oct 2026: "yes fix it" (`docs/USER_DECISIONS.md` #48).
+- **Decided by:** the owner (#48).
+- **Scored runs before the change:** none confirmatory (`frozen: false`). Every evaluation run so far used its
+  profile's own deadline, as far as their recorded `cli_args` show; such runs are not affected.
