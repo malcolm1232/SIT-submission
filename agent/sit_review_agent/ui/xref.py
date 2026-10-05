@@ -308,7 +308,115 @@ def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, T
                                             "this run's effective_config.json, criteria")
     for k, (label, text) in ID_FAMILIES.items():
         terms[f"id-{k}"] = Term(f"id-{k}", f"{k}-nnn: {label}", escape(text), "agent/sit_review_agent/models.py")
+    terms.update(run_log_terms(root))
     return terms
+
+
+def _bullets(root: Path, rel: str, after: str, prefix: str) -> dict[str, Term]:
+    """The ``- `name`: text`` bullets of ``rel`` that follow the first line holding ``after`` (a bullet's
+    continuation lines are indented deeper than its dash; the list ends at the first other line), each as the
+    term ``prefix-name`` with its own words and line."""
+    try:
+        lines = (root / rel).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    start = next((i for i, ln in enumerate(lines) if after in ln), None)
+    out: dict[str, Term] = {}
+    i = len(lines) if start is None else start + 1
+    while i < len(lines):
+        m = re.match(r"( *)- `([a-z_]+)`: (.*)", lines[i])
+        if not m:
+            if out:
+                break
+            i += 1
+            continue
+        body, j = [m.group(3)], i + 1
+        while j < len(lines) and lines[j].startswith(" " * (len(m.group(1)) + 1)) and lines[j].strip() \
+                and not re.match(r" *- `", lines[j]):
+            body.append(lines[j].strip())
+            j += 1
+        text = " ".join(body).rstrip(";").rstrip()
+        text = text[0].upper() + text[1:] + ("" if text.endswith(".") else ".")
+        out[f"{prefix}-{m.group(2)}"] = Term(f"{prefix}-{m.group(2)}", m.group(2).replace("_", " "), escape(text),
+                                            f"{rel}:{i + 1}")
+        i = j
+    return out
+
+
+def _coverage_terms(root: Path) -> dict[str, Term]:
+    """The outcomes of an assess coverage row, as ``prompts/assess.md`` asks for them."""
+    rel = "prompts/assess.md"
+    try:
+        lines = (root / rel).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    at = next((i for i, ln in enumerate(lines) if "`coverage`: exactly one row per criterion" in ln), None)
+    if at is None:
+        return {}
+    para = []
+    for ln in lines[at:]:
+        if not ln.strip() or (para and re.match(r"\d+\. ", ln)):
+            break
+        para.append(ln.strip())
+    text = " ".join(para)
+    out: dict[str, Term] = {}
+    for m in re.finditer(r"`(findings|no_issue|not_applicable)` \(([^)]*)\)", text):
+        desc = m.group(2).replace("`", "")
+        out[f"cov-{m.group(1)}"] = Term(
+            f"cov-{m.group(1)}", m.group(1).replace("_", " "),
+            escape(f"A coverage row's outcome for one criterion of the shard ({desc}). Each shard gives exactly one "
+                   "row per criterion it assessed."), f"{rel}:{at + 1}")
+    return out
+
+
+def run_log_terms(root: Path) -> dict[str, Term]:
+    """The words the page's Run log uses beyond the review's own vocabulary: the registry types, the review
+    inputs, the coverage outcomes, the refine actions, the anchor states, a draft, the shard marker and an
+    external research question. Each is the prompt's or the code's own text where one defines the word, else
+    a sentence that says what the named code does."""
+    terms: dict[str, Term] = {}
+    terms.update(_bullets(root, "prompts/understand.md", "4. `registry`:", "reg"))
+    terms.update(_bullets(root, "prompts/refine.md", "## Revision rules", "rev"))
+    terms.update(_coverage_terms(root))
+    und = "prompts/understand.md"
+    terms["review-input"] = Term("review-input", "review input found", escape(
+        "Comments, review notes or claims of fixes by other people that the document contains (for example a change "
+        "log entry saying an issue was fixed, or a reviewer's remark), each as one short sentence with its location. "
+        "Treated as claims to check, not as facts."), _src(root, und, "`review_inputs_found`: comments"))
+    anchor = "agent/sit_review_agent/ingest/anchor.py"
+    terms["anchor-resolved"] = Term("anchor-resolved", "resolved", escape(
+        "The verbatim quote was found in the canonical text of the cited page and the pages next to it, narrowed to "
+        "the cited section and its neighbours: an exact match on the normalised text first, else a close match "
+        "(partial ratio at or above the run's fuzzy threshold)."), _src(root, anchor, 'status = "unresolved"'))
+    terms["anchor-repaired"] = Term("anchor-repaired", "repaired", escape(
+        "The quote first failed, and the one repair call's new quote for it was found by the same rules."),
+        _src(root, anchor, 'status = "unresolved"'))
+    terms["anchor-unresolved"] = Term("anchor-unresolved", "unresolved", escape(
+        "The quote was not found in its window by those rules (the reasons name why, such as not_found). A finding "
+        "with no anchor that resolves moves to the unresolved list as Unverified."),
+        _src(root, anchor, 'status = "unresolved"'))
+    terms["run-draft"] = Term("run-draft", "draft, unverified", escape(
+        "An item as a model call wrote it, before refine and verify: it has not been checked against the page text "
+        "or merged with the other shards' findings, so its ID, rank and severity can change and it can be "
+        "withdrawn."), _src(root, "agent/sit_review_agent/progress.py", "and unverified (it has not been through"))
+    terms["run-shard"] = Term("run-shard", "n/N (shard marker)", escape(
+        "Assess shard n of the run's N shards: the criterion groups of config/agent.yaml assess.shards, one model "
+        "call each, run side by side in stage 1. Each criterion is in exactly one group."),
+        _src(root, "config/agent.yaml", "# shards: criterion groups"))
+    terms["q-external"] = Term("q-external", "needs external research", escape(
+        "Set only when the document alone cannot settle the question: a product's documented capability or limit, "
+        "the text of a standard or regulation the design relies on, published performance or failure behaviour of "
+        "a named component, or a recognised test method. Other questions are answered from the document."),
+        _src(root, "prompts/plan.md", "Set `needs_external: true` only when"))
+    return terms
+
+
+def term_text(term: Term) -> dict[str, Any]:
+    """A term for a page that inserts text only: its label, its definition as plain paragraphs (tags dropped,
+    entities decoded) and its source."""
+    paras = [p for p in re.split(r"</p>\s*<p>|</?p>", term.html) if p.strip()] or [term.html]
+    return {"label": term.label, "paras": [_html.unescape(re.sub(r"<[^>]+>", "", p)).replace("`", "").strip()
+                                           for p in paras], "src": term.src}
 
 
 ID_FAMILIES: dict[str, tuple[str, str]] = {
