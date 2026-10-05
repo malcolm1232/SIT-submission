@@ -222,10 +222,20 @@
       var p = t.closest(".doc-page"), l = p && p.querySelector(".x-pdf");
       return l ? strip(l.cloneNode(true)) : null;
     }
+    // the rebuilt table rows (or the table note) the server put beside a passage, for the passage ``t``
+    function rowsFor(page, t) {
+      var out = [], all = page.querySelectorAll(".doc-rows > .doc-row");
+      for (var i = 0; i < all.length; i++)
+        if (t.id && (" " + all[i].getAttribute("data-marks") + " ").indexOf(" " + t.id + " ") >= 0) out.push(all[i]);
+      return out;
+    }
     function preview(t) {
       var box = el("div", "x-pop-in"), page = t.closest(".doc-page");
       if (page) {
-        box.appendChild(el("div", "x-pop-kicker", page.getAttribute("data-label")));
+        var head = el("div", "x-pop-head"), rows = rowsFor(page, t);
+        for (var k = 0; k < rows.length; k++) head.appendChild(strip(rows[k].cloneNode(true)));
+        head.appendChild(el("div", "x-pop-kicker", page.getAttribute("data-label")));
+        box.appendChild(head);
         var pre = t.closest("pre") || page.querySelector("pre"), r = document.createRange(), q = el("div", "x-pop-doc");
         if (t.tagName === "MARK" || t.classList.contains("doc-sec")) {
           r.setStart(pre, 0); r.setEndBefore(t); var before = r.toString();
@@ -273,7 +283,8 @@
       }
       else { pop.style.top = "8px"; pop.style.maxHeight = (above - 8) + "px"; }
       var m = pop.querySelector(".x-pop-doc mark, .x-pop-doc b");      // a passage: its quote in view
-      if (m) pop.scrollTop = Math.max(0, m.offsetTop - 96);
+      var hd = pop.querySelector(".x-pop-head");
+      if (m) pop.scrollTop = Math.max(0, m.offsetTop - (hd ? hd.offsetHeight : 0) - 56);
     }
     function arm(a) {
       if (a === shown) return;
@@ -358,6 +369,13 @@
       for (var i = 0; i < stale.length; i++) stale[i].classList.remove("x-hit", "x-opener");
       var here = c.querySelector("[data-x-here]") || (c.hasAttribute && c.hasAttribute("data-x-here") ? c : null);
       if (here) { here.removeAttribute("data-x-here"); if (here !== c) here.classList.add("x-hit"); }
+      var rws = c.querySelector(":scope > .doc-rows");
+      if (rws) {                                   // only the target's own rebuilt row stays, above the page text
+        var keep = b.classList.contains("doc-page") ? rowsFor(b, t) : [], kids = rws.querySelectorAll(".doc-row");
+        for (var j = 0; j < kids.length; j++)
+          if (keep.indexOf(b.querySelectorAll(".doc-rows > .doc-row")[j]) < 0) kids[j].parentNode.removeChild(kids[j]);
+        if (!rws.querySelector(".doc-row")) rws.parentNode.removeChild(rws);
+      }
       var h = c.querySelector(":scope > h3, :scope > .doc-page-head");
       if (h && b.tagName !== "TR") h.parentNode.removeChild(h);
       c.classList.remove("x-hit");

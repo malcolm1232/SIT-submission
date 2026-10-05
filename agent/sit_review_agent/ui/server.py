@@ -416,7 +416,8 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, REVIEW_NO_MD if (rd / "report.json").is_file() else REVIEW_NOT_YET)
         pdf = rundata.reviewed_pdf(rd, state.repo_root)
         try:
-            html = export.review_fragment(rd, pdf_href=f"/runs/{rd.name}/doc.pdf" if pdf is not None else None)
+            html = export.review_fragment(rd, pdf_href=f"/runs/{rd.name}/doc.pdf" if pdf is not None else None,
+                                          pdf=pdf)
         except (OSError, AttributeError, KeyError, TypeError, ValueError) as exc:
             return _err(422, f"{REVIEW_UNREADABLE} ({type(exc).__name__}: {exc}).")
         return Response(html, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
@@ -489,7 +490,7 @@ def build_app(state: UIState) -> Starlette:
             return Response(export.export_zip(rd, replayed=replayed, pdf=pdf), media_type="application/zip",
                             headers={"Content-Disposition": f'attachment; filename="{export.bundle_name(rd.name)}"'})
         # beside the page on this server the PDF is the run's own doc.pdf route
-        html = export.export_html(rd, replayed=replayed, pdf_href="doc.pdf" if pdf is not None else None)
+        html = export.export_html(rd, replayed=replayed, pdf_href="doc.pdf" if pdf is not None else None, pdf=pdf)
         return Response(html, media_type="text/html; charset=utf-8",
                         headers={"Content-Disposition": f'inline; filename="{export.export_name(rd.name)}"'})
 
@@ -528,7 +529,9 @@ def build_app(state: UIState) -> Starlette:
         except ValueError:
             return _err(400, "Expected a JSON body with the address.")
         to = str((body or {}).get("to") or "")
-        html = export.export_html(rd, replayed=rundata.summary(rd)["replayed"])
+        # the file travels alone: no PDF link, but its table rows are rebuilt from the PDF the run vouches for
+        html = export.export_html(rd, replayed=rundata.summary(rd)["replayed"],
+                                  pdf=rundata.reviewed_pdf(rd, state.repo_root))
         info = rundata.summary(rd)
         attachments = [(export.export_name(rd.name), html.encode("utf-8"), "text", "html"),
                        (f"{rd.name}_report.md", (rd / "report.md").read_bytes(), "text", "markdown")]

@@ -32,6 +32,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from sit_review_agent.ui import tablerows
 from sit_review_agent.ui.rundata import read_json
 
 #: The run's own identifier families (``models.py`` id patterns, plus the research-question ids of the
@@ -443,8 +444,15 @@ ID_FAMILIES: dict[str, tuple[str, str]] = {
 class Index:
     """Every target of the export's links, from the run's data, and the linker that uses it."""
 
-    def __init__(self, run_dir: Path, report: dict[str, Any], *, root: Path, pdf_href: str | None) -> None:
+    def __init__(self, run_dir: Path, report: dict[str, Any], *, root: Path, pdf_href: str | None,
+                 pdf: Path | None = None) -> None:
         self.run_dir, self.report, self.pdf_href = run_dir, report if isinstance(report, dict) else {}, pdf_href
+        #: the reviewed PDF, only when the run vouches for it (its hash matches the manifest); its tables rebuild
+        #: the rows the extracted text runs together (:mod:`.tablerows`)
+        self.pdf = pdf
+        self._placed: dict[int, list[tablerows.Row]] = {}
+        self.chrome: list[tablerows.Chrome] = []
+        self.coverage: list[tuple[str, int | None, bool, str]] = []
         r = self.report
         self.docs = load_docs(run_dir, r)
         self.doc = self.docs[0] if self.docs else None
@@ -494,10 +502,52 @@ class Index:
                   if ident in [str(x) for x in (e.get("doc_anchor") or {}).get("requirement_ids") or []]]
         if by_ref or by_req:
             href = f"#{(by_ref or by_req)[0]}"
-        elif self.doc is not None and (span := self.doc.definition_line(ident)) is not None:
-            href = self.doc.mark(span)
+        elif self.doc is not None and (line := self.doc.definition_line(ident)) is not None:
+            href = self.doc.mark(self._definition(ident, line))
         self.doc_ids[ident] = href or ""
         return href
+
+    # -------------------------------------------------------------- table rows (.tablerows)
+
+    def rows_on(self, page: int) -> list[tablerows.Row]:
+        """The PDF's table rows on ``page`` of the document under review, each placed in its extracted text."""
+        if page in self._placed:
+            return self._placed[page]
+        d = self.doc
+        rows = tablerows.pdf_rows(self.pdf).get(page, []) if d is not None else []
+        pr = d.page_range(page) if d is not None else None
+        keys = [r.key for r in rows]
+        for r in rows:
+            if pr is not None and r.span is None:
+                r.span = tablerows.place(r, d.text, d.norm, d.nmap, pr, keys)
+        self._placed[page] = rows
+        return rows
+
+    def _definition(self, ident: str, line: tuple[int, int]) -> tuple[int, int]:
+        """The span a document id's link marks: its whole table row when the PDF gives the row, else its line;
+        what the export says beside it is recorded in :attr:`chrome`, how it was found in :attr:`coverage`."""
+        d = self.doc
+        page = d.page_of(line[0])
+        pr = d.page_range(page) if page is not None else None
+        row = next((r for r in self.rows_on(page) if r.key == ident), None) if page is not None else None
+        if row is not None and row.span is not None and row.span[0] <= line[0] < row.span[1]:
+            self.chrome.append(tablerows.Chrome(row.span, page, row=row))
+            self.coverage.append((ident, page, True, "none"))
+            return row.span
+        if row is not None:                               # the PDF's row, its lines not found: the line only
+            self.chrome.append(tablerows.Chrome(line, page, row=row))
+            self.coverage.append((ident, page, True, "row from the PDF, only the id's line marked"))
+            return line
+        if pr is not None and (trow := tablerows.text_row(d.text, line, ident, page)) is not None:
+            self.chrome.append(tablerows.Chrome(line, page, row=trow))
+            self.coverage.append((ident, page, False, "text-only row (single line between id lines)"))
+            return line
+        if pr is not None and tablerows.is_table_line(d.text, line, ident, pr):
+            self.chrome.append(tablerows.Chrome(line, page, note=True))
+            self.coverage.append((ident, page, False, "table note (row not rebuilt)"))
+            return line
+        self.coverage.append((ident, page, False, "not a table line"))
+        return line
 
     def _abbreviations(self) -> dict[str, tuple[str, str]]:
         """Abbreviations the document defines as "Long Name (ABBR)": the shortest run of words before the bracket

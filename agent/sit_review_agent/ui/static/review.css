@@ -157,6 +157,15 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
   padding: 0 8px; border-radius: var(--r-pill); background: var(--hit-bg); box-shadow: 0 0 0 2px var(--hit-ring);
   font-weight: 600; font-size: 12.5px; color: var(--fg); }
 .doc-page.x-hit { background: var(--bg-surface); box-shadow: 0 0 0 2px var(--hit-ring); }
+/* a table row the extracted text runs together, rebuilt from the PDF (ui/tablerows.py): chrome, labelled */
+.doc-rows { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 0; }
+.doc-row { padding: 8px 12px 7px; border-radius: var(--r-sm); background: var(--bg-subtle);
+  border-left: 3px solid var(--hit-ring); }
+.doc-row p { margin: 0; max-width: none; }
+.doc-row-text { font-size: 14px; line-height: 21px; color: var(--fg); }
+.doc-row-label { margin-top: 3px !important; font-size: 12px; line-height: 17px; color: var(--fg-muted); }
+.doc-row-note { border-left-color: var(--border-control); }
+.doc-row-note .doc-row-label { margin-top: 0 !important; font-size: 13px; line-height: 19px; color: var(--fg-2); }
 
 /* the preview of a link's target and the way back */
 .x-pop { position: fixed; z-index: 50; max-height: 60vh; overflow-y: auto; overscroll-behavior: contain; background: var(--bg-surface);
@@ -165,9 +174,10 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .x-pop p, .x-pop li { max-width: none; }
 .x-pop .x-entry { border: 0; padding: 0; margin: 0; background: none; }
 .x-pop article, .x-pop li { list-style: none; }
-.x-pop-kicker { position: sticky; top: -12px; z-index: 1; margin: -12px -14px 8px; padding: 10px 14px 7px;
-  background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--fg-muted); }
+.x-pop-head { position: sticky; top: -12px; z-index: 1; margin: -12px -14px 8px; padding: 10px 14px 7px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); }
+.x-pop-head .doc-row { margin: 0 0 8px; }
+.x-pop-kicker { font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--fg-muted); }
 .x-pop-title { font-weight: 600; margin-bottom: 8px; }
 .x-pop-doc { white-space: pre-wrap; color: var(--fg-2); }
 .x-pop-doc mark { background: var(--mark-bg); color: var(--mark-fg); }
@@ -228,6 +238,8 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .x-pane-body > .x-table { margin: 0; }
 .x-pane-body > .doc-page { margin: 0; border: 0; background: none; }
 .x-pane-body > .doc-page pre.doc-text { padding: 0; font-size: 13.5px; line-height: 21px; }
+.x-pane-body > .doc-page > .doc-rows { position: sticky; top: -16px; z-index: 1; margin: -16px -20px 12px;
+  padding: 14px 20px 12px; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle); }
 .x-pane-body .x-hit { box-shadow: 0 0 0 2px var(--hit-ring); }
 .x-pane-body .doc-sec.x-hit { box-shadow: none; }   /* a section start: its label's own ring, not a second one round the line */
 .x-pane-body li.x-hit, .x-pane-body tr.x-hit > td { background: none; box-shadow: none; }
