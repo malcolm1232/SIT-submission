@@ -1265,8 +1265,9 @@ async function setupOutputs(info) {
   $("out-md").href = base + "/report.md";
   $("out-json").href = base + "/report.json";
   $("out-download-label").textContent = "Download review (zip" + (out.export ? ", " + out.export.size : "") + ")";
-  $("out-download-help").textContent = "A zip of one review page with a sidebar, whose one script only shows and hides sections, " +
-    "the eight parts as separate files, report.md and report.json, nothing loaded from the network" +
+  $("out-download-help").textContent = "A zip of one cross-linked review page with a sidebar, whose one script only shows and " +
+    "hides sections and previews links, the reviewed PDF its page references open, report.md and report.json, nothing " +
+    "loaded from the network" +
     (info.replayed ? ", stamped replayed evidence" : "") +
     (out.export && out.export.has_chat ? ", the chat transcript after the review, marked as not part of it." : ".");
   $("out-line").hidden = false;

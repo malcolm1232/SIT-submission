@@ -21,10 +21,10 @@ Routes (design note section 9, W2)::
     GET  /runs/<id>/coverage        the ``dra coverage`` map as JSON
     GET  /runs/<id>/explain/<FND>   the ``dra explain`` text
     GET  /runs/<id>/doc.pdf         the reviewed PDF, only if its SHA-256 matches the manifest
-    GET  /runs/<id>/export.html     the review as one self-contained HTML page with a sidebar of its eight
-                                    parts (``?download=1`` saves the bundle, as export.zip does)
-    GET  /runs/<id>/export.zip      the bundle: index.html (that page), the eight parts, report.md, report.json
-    GET  /runs/<id>/export/<part>   one part as a standalone file (``01_summary.html`` ... ``08_traceability.html``)
+    GET  /runs/<id>/export.html     the review as one self-contained, cross-linked HTML page with a sidebar of
+                                    its eight parts (``?download=1`` saves the bundle, as export.zip does)
+    GET  /runs/<id>/export.zip      the bundle: index.html (that page), document.pdf (the reviewed PDF, when its
+                                    hash matches the manifest), report.md, report.json
     GET  /runs/<id>/report.md       the run's report.md, as a download
     GET  /runs/<id>/report.json     the run's report.json, as a download
     GET  /runs/<id>/outputs         the bundle the Download saves (name, file count, size), whether Email is
@@ -413,24 +413,18 @@ def build_app(state: UIState) -> Starlette:
                             headers={"Content-Disposition": f'inline; filename="{safe_name(pdf.name)}"'})
 
     async def run_export(request: Request) -> Response:
-        """``export.html`` (the sidebar page), ``export.html?download=1`` and ``export.zip`` (the bundle),
-        ``export/<part>.html`` (one standalone part, or ``export/index.html``, the page beside them)."""
+        """``export.html`` (the page), ``export.html?download=1`` and ``export.zip`` (the bundle: the page, the
+        reviewed PDF when its hash matches the manifest, report.md and report.json)."""
         rd = run_dir_of(request)
         if rd is None or not (rd / "report.md").is_file():
             return _err(404, "This run has no report.md to export.")
         replayed = rundata.summary(rd)["replayed"]
-        part = request.path_params.get("part")
-        if part is not None:
-            try:
-                html = export.export_part(rd, part, replayed=replayed)
-            except KeyError:
-                return _err(404, "No such part of the export.")
-            return Response(html, media_type="text/html; charset=utf-8",
-                            headers={"Content-Disposition": f'inline; filename="{rd.name}_{part}"'})
+        pdf = rundata.reviewed_pdf(rd, state.repo_root)
         if request.url.path.endswith(".zip") or request.query_params.get("download") == "1":
-            return Response(export.export_zip(rd, replayed=replayed), media_type="application/zip",
+            return Response(export.export_zip(rd, replayed=replayed, pdf=pdf), media_type="application/zip",
                             headers={"Content-Disposition": f'attachment; filename="{export.bundle_name(rd.name)}"'})
-        html = export.export_html(rd, replayed=replayed, part_links="export/")
+        # beside the page on this server the PDF is the run's own doc.pdf route
+        html = export.export_html(rd, replayed=replayed, pdf_href="doc.pdf" if pdf is not None else None)
         return Response(html, media_type="text/html; charset=utf-8",
                         headers={"Content-Disposition": f'inline; filename="{export.export_name(rd.name)}"'})
 
@@ -450,9 +444,10 @@ def build_app(state: UIState) -> Starlette:
         exp = None
         if (rd / "report.md").is_file():
             # The size of the bundle the Download control saves (export.html?download=1), built as run_export builds it.
-            size = len(export.export_zip(rd, replayed=rundata.summary(rd)["replayed"]))
+            pdf = rundata.reviewed_pdf(rd, state.repo_root)
+            size = len(export.export_zip(rd, replayed=rundata.summary(rd)["replayed"], pdf=pdf))
             exp = {"size": f"{max(1, round(size / 1024))} KB", "has_chat": chat.log_path(rd).is_file(),
-                   "name": export.bundle_name(rd.name), "files": len(export.bundle_names(rd))}
+                   "name": export.bundle_name(rd.name), "files": len(export.bundle_names(rd, pdf))}
         return _json({"export": exp, "email": mail.status(state.smtp, state.smtp_detail),
                       "share": share.share_info(bind_host=state.bind_host, port=state.port, run_id=rd.name,
                                                 ui_args=state.ui_args, lan_ip=state.lan_ip)})
@@ -532,7 +527,6 @@ def build_app(state: UIState) -> Starlette:
         Route("/runs/{run_id}/doc.pdf", run_pdf),
         Route("/runs/{run_id}/export.html", run_export),
         Route("/runs/{run_id}/export.zip", run_export),
-        Route("/runs/{run_id}/export/{part}", run_export),
         Route("/runs/{run_id}/report.md", raw_file("report.md", "text/markdown; charset=utf-8")),
         Route("/runs/{run_id}/report.json", raw_file("report.json", "application/json")),
         Route("/runs/{run_id}/outputs", run_outputs),

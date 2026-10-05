@@ -1,7 +1,8 @@
-"""The export bundle (decision #43, 2026-10-04): the single page with a sidebar of eight parts, the eight
-standalone part files cut from the same rendered report, and the zip that holds them with ``report.md`` and
-``report.json``. Offline on the committed run ``docs/live_runs/ui_flow_1``; the browser tests run in
-Chromium where Playwright has it."""
+"""The export bundle (decision #43, 2026-10-04; cross-linked 5 Oct 2026): the single page with a sidebar of eight
+parts and a Reference part added by the export, and the zip that holds it with the reviewed PDF (when the run
+vouches for it), ``report.md`` and ``report.json``. The part files are gone: a part file had no sidebar, and a
+reader took the jump to one for the sidebar closing. Offline on the committed run ``docs/live_runs/ui_flow_1``;
+the browser tests run in Chromium where Playwright has it."""
 
 from __future__ import annotations
 
@@ -41,8 +42,9 @@ def sections(html: str) -> list[tuple[str, str, str]]:
     return SEC_RE.findall(html)
 
 
-def zip_of(rd: Path) -> dict[str, bytes]:
-    with zipfile.ZipFile(io.BytesIO(export.export_zip(rd, replayed=False, exported_at="2026-10-04T04:00:00Z"))) as z:
+def zip_of(rd: Path, pdf: Path | None = None) -> dict[str, bytes]:
+    with zipfile.ZipFile(io.BytesIO(export.export_zip(rd, replayed=False, exported_at="2026-10-04T04:00:00Z",
+                                                      pdf=pdf))) as z:
         return {n: z.read(n) for n in z.namelist()}
 
 
@@ -57,30 +59,6 @@ def test_the_cut_report_joined_is_the_rendered_report(flow_runs: Path) -> None:
     assert all(s.html.startswith("<h2>") and s.html.count("<h2>") == 1 for s in secs)
 
 
-def test_the_eight_parts_together_are_the_full_page_section_for_section(flow_runs: Path) -> None:
-    rd = flow_runs / "ui_flow_1"
-    files = zip_of(rd)
-    full = files[export.INDEX_NAME].decode("utf-8")
-    full_secs = sections(full)
-    assert len(full_secs) == len(export.split_report((rd / "report.md").read_text(encoding="utf-8"))[1])
-    got: list[tuple[str, str, str]] = []
-    chat = f'<div class="sec" data-g="8" id="s-chat">{export.chat_section(rd)}</div>'
-    assert export.CHAT_HEADING in chat and full.count(chat) == 1
-    chats = []
-    for gi, name in enumerate(export.PART_NAMES):
-        part = files[name].decode("utf-8")
-        mine = sections(part)
-        assert all(g == str(gi + 1) for g, _, _ in mine), name
-        got.extend(mine)
-        chats.append(part.count(chat))
-        # the title and the verdict line are on top of every part, as on the page
-        assert part.split('<div class="pre">', 1)[1].split("</div>", 1)[0] == \
-            full.split('<div class="pre">', 1)[1].split("</div>", 1)[0]
-    order = [sid for _, sid, _ in full_secs]
-    assert sorted(got, key=lambda s: order.index(s[1])) == full_secs   # each section once, byte for byte
-    assert chats == [0] * 7 + [1]                                      # the chat transcript is in Traceability
-
-
 # ------------------------------------------------------------------ D2: every heading in exactly one group
 
 
@@ -89,9 +67,7 @@ def test_the_group_map_names_each_renderer_heading_once() -> None:
     assert len(named) == len(set(named))
     rendered = {h for key, h in SECTION_ORDER if key not in ("header", "delta")}
     assert rendered <= set(named)                                     # every fixed heading of render.py is placed
-    assert export.PART_NAMES == ("01_summary.html", "02_strengths.html", "03_risks.html", "04_gaps.html",
-                                 "05_ambiguities.html", "06_what_to_do.html", "07_open_items.html",
-                                 "08_traceability.html")
+    assert not hasattr(export, "PART_NAMES") and not hasattr(export, "export_part")   # no part files any more
 
 
 def test_a_heading_outside_the_map_joins_the_nearest_group_before_it() -> None:
@@ -114,69 +90,72 @@ def test_a_heading_outside_the_map_joins_the_nearest_group_before_it() -> None:
 
 def test_the_sidebar_lists_every_heading_once_under_its_group(flow_runs: Path) -> None:
     rd = flow_runs / "ui_flow_1"
-    html = export.export_html(rd, replayed=False, part_links="export/")
+    html = export.export_html(rd, replayed=False, pdf_href="doc.pdf")
     nav = html.split('<nav class="toc"', 1)[1].split("</nav>", 1)[0]
     _, secs = export.split_report((rd / "report.md").read_text(encoding="utf-8"))
     listed = re.findall(r'<li><a href="#([^"]+)" data-g="(\d)">', nav)
-    assert listed == [(s.sid, str(s.group + 1)) for s in sorted(secs, key=lambda s: s.group)] + [("s-chat", "8")]
+    refs = re.findall(r'<section class="sec x-ref" data-g="9" id="([^"]+)">', html)
+    assert refs[:2] == ["r-howto", "r-registry"] or refs[:1] == ["r-howto"]
+    assert listed == [(s.sid, str(s.group + 1)) for s in sorted(secs, key=lambda s: s.group)] + [("s-chat", "8")] \
+        + [(r, "9") for r in refs]
     labels = re.findall(r'<span class="label">([^<]+)</span>', nav)
-    assert labels == ["All sections", *(label for _, label, _ in export.GROUPS)]
-    assert re.findall(r'class="toc-file" href="([^"]+)"', nav) == [f"export/{n}" for n in export.PART_NAMES]
-    assert 'class="toc-file"' not in export.export_html(rd, replayed=False)      # a file sent alone links to no part
+    assert labels == ["All sections", *(label for _, label, _ in export.GROUPS), export.REF_LABEL]
+    for page in (html, export.export_html(rd, replayed=False)):
+        assert "this section only" not in page and "toc-file" not in page    # a part link read as the sidebar closing
 
 
 # ------------------------------------------------------------------ D3: the zip and the routes
 
 
-def test_the_zip_holds_exactly_the_eleven_files(flow_runs: Path) -> None:
+def test_the_zip_holds_the_page_the_pdf_when_vouched_for_and_the_run_files(flow_runs: Path, tmp_path: Path) -> None:
     rd = flow_runs / "ui_flow_1"
     files = zip_of(rd)
-    assert list(files) == ["index.html", *export.PART_NAMES, "report.md", "report.json"]
+    assert list(files) == ["index.html", "report.md", "report.json"] == export.bundle_names(rd)
     assert files["report.md"] == (FLOW / "report.md").read_bytes()
     assert files["report.json"] == (FLOW / "report.json").read_bytes()
     index = files["index.html"].decode("utf-8")
-    assert re.findall(r'class="toc-file" href="([^"]+)"', index) == list(export.PART_NAMES)   # beside it
-    for name in export.PART_NAMES:
-        assert f'<a href="{export.INDEX_NAME}">the full review</a>' in files[name].decode("utf-8")
+    assert "document.pdf" not in index                       # no PDF beside it: no link to one
+    pdf = tmp_path / "reviewed.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stand-in\n")
+    files = zip_of(rd, pdf)
+    assert list(files) == ["index.html", export.PDF_NAME, "report.md", "report.json"] == export.bundle_names(rd, pdf)
+    assert files[export.PDF_NAME] == pdf.read_bytes()
+    index = files["index.html"].decode("utf-8")
+    if 'class="doc-page"' in index:                          # the run has its extracted text: pages link the PDF
+        assert re.search(r'class="x-pdf" href="document\.pdf#page=\d+"', index)
 
 
-def test_the_routes_serve_the_page_the_bundle_and_each_part(flow_runs: Path) -> None:
+def test_the_routes_serve_the_page_and_the_bundle_and_no_part(flow_runs: Path) -> None:
     client = TestClient(build_app(make_state(flow_runs)))
     page = client.get("/runs/ui_flow_1/export.html")
     assert page.status_code == 200 and page.headers["content-disposition"].startswith("inline")
-    assert '<nav class="toc"' in page.text and 'href="export/03_risks.html"' in page.text
+    assert '<nav class="toc"' in page.text and "this section only" not in page.text
     for url in ("/runs/ui_flow_1/export.zip", "/runs/ui_flow_1/export.html?download=1"):
         res = client.get(url)
         assert res.status_code == 200 and res.headers["content-type"] == "application/zip"
         assert res.headers["content-disposition"] == 'attachment; filename="ui_flow_1_review.zip"'
         with zipfile.ZipFile(io.BytesIO(res.content)) as z:
-            assert len(z.namelist()) == 11
-    risks = client.get("/runs/ui_flow_1/export/03_risks.html")
-    assert risks.status_code == 200 and risks.headers["content-type"].startswith("text/html")
-    assert [h for h in parse(risks.text).texts("h2")] == ["Risks"]
-    index = client.get("/runs/ui_flow_1/export/index.html")
-    assert index.status_code == 200 and 'class="toc-file" href="03_risks.html"' in index.text
-    for bad in ("09_more.html", "report.json", "03_risks.htm", "index.htm"):
+            assert z.namelist()[0] == "index.html" and z.namelist()[-2:] == ["report.md", "report.json"]
+    for bad in ("01_summary.html", "03_risks.html", "index.html"):
         assert client.get(f"/runs/ui_flow_1/export/{bad}").status_code == 404, bad
     assert client.get("/runs/nope/export.zip").status_code == 404
     (flow_runs / "ui_flow_1" / "report.md").unlink()
     assert client.get("/runs/ui_flow_1/export.zip").status_code == 404
-    assert client.get("/runs/ui_flow_1/export/01_summary.html").status_code == 404
 
 
-# ------------------------------------------------------------------ D4: the finding text, part by part
+# ------------------------------------------------------------------ D4: the finding text, section by section
 
 
-def test_each_finding_is_in_exactly_one_part_with_its_report_json_text(flow_runs: Path) -> None:
+def test_each_finding_is_in_exactly_one_section_with_its_report_json_text(flow_runs: Path) -> None:
     rd = flow_runs / "ui_flow_1"
-    files = zip_of(rd)
+    html = export.export_html(rd, replayed=False)
     report = json.loads((rd / "report.json").read_text(encoding="utf-8"))
-    parts = {n: parse(files[n].decode("utf-8")) for n in export.PART_NAMES}
+    secs = {sid: parse(body) for _, sid, body in sections(html) if not sid.startswith(("r-", "doc"))}
     for f in report["findings"]:
         head = f"{f['id']} {one_line(f['title'])}"
-        where = [n for n, doc in parts.items() if head in doc.texts("h3")]
+        where = [sid for sid, doc in secs.items() if head in doc.texts("h3")]
         assert len(where) == 1, (f["id"], where)
-        assert one_line(f["statement"]) in parts[where[0]].texts("p"), f["id"]
+        assert one_line(f["statement"]) in secs[where[0]].texts("p"), f["id"]
 
 
 # ------------------------------------------------------------------ D5: in a browser, with and without script
@@ -187,8 +166,9 @@ def test_the_sidebar_in_a_browser_and_every_section_without_script(browser_page)
     _, secs = export.split_report((runs / "ui_flow_1" / "report.md").read_text(encoding="utf-8"))
     url = base + "/runs/ui_flow_1/export.html"
     pg.goto(url)
+    n_ref = pg.locator(".sec.x-ref").count()
     visible = pg.locator(".sec:visible")
-    assert visible.count() == len(secs) + 1                              # All sections, the chat included
+    assert visible.count() == len(secs) + 1 + n_ref                      # All sections, the chat and the reference
     assert pg.locator(".toc-item.active .label").inner_text() == "All sections"
     pg.click(".toc-item[data-g='3']")
     wait_active(pg, "3")
@@ -205,22 +185,16 @@ def test_the_sidebar_in_a_browser_and_every_section_without_script(browser_page)
     assert pg.locator("#s-evidence-register").is_visible() and pg.locator("#s-risks").is_hidden()
     pg.click(".toc-item[data-g='all']")
     wait_active(pg, "all")
-    assert visible.count() == len(secs) + 1
+    assert visible.count() == len(secs) + 1 + n_ref
     pg.goto(url + "#g4")                                                # a same-page hash: the route runs on hashchange
     wait_active(pg, "4")
     assert [one_line(t) for t in pg.locator(".sec:visible h2").all_inner_texts()] == ["Gaps"]
-    with ctx.expect_page() as tab:                                      # "this section only" opens the part's file
-        pg.click(".toc-file[href='export/04_gaps.html']", modifiers=["Meta"])
-    # The new tab can be handed over still on about:blank, whose load has already fired; wait for the part
-    # file itself to load (seen under load as "execution context was destroyed" mid-read).
-    tab.value.wait_for_url(base + "/runs/ui_flow_1/export/04_gaps.html")
-    assert [one_line(t) for t in tab.value.locator("h2").all_inner_texts()] == ["Gaps"]
-    tab.value.close()
-    # without script: nothing is hidden and every section and the chat transcript show
+    assert pg.locator(".toc-file").count() == 0                         # no "this section only" link
+    # without script: nothing is hidden and every section, the chat transcript and the reference show
     noscript = ctx.browser.new_context(java_script_enabled=False)
     p2 = noscript.new_page()
     p2.goto(url)
-    assert p2.locator(".sec").count() == len(secs) + 1
-    assert p2.locator(".sec:visible").count() == len(secs) + 1
+    assert p2.locator(".sec").count() == len(secs) + 1 + n_ref
+    assert p2.locator(".sec:visible").count() == len(secs) + 1 + n_ref
     assert p2.locator(".toc-item.active").count() == 0
     noscript.close()
