@@ -170,7 +170,8 @@ NAV_JS = r"""(function () {
   function go(t) {
     var sec = t.closest(".sec"), g = sec && sec.getAttribute("data-g");
     if (g && (sec.hidden || (cur !== "all" && cur !== g))) show(g, false);
-    t.scrollIntoView({ block: t.tagName === "MARK" ? "center" : "start" });
+    if (t.tagName === "MARK") window.scrollTo(0, window.scrollY + t.getBoundingClientRect().top - window.innerHeight / 3);
+    else t.scrollIntoView({ block: "start" });
     hit(t);
   }
   function backVis() { if (back) back.hidden = !(st().depth > 0); }
