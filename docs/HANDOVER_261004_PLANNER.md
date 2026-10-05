@@ -1,3 +1,4 @@
+SUPERSEDED by docs/HANDOVER_261005_PLANNER.md on 05 Oct 2026.
 # SIT planner - handover, written 04 Oct 2026 10:45 +08 by the "SIT FABLE on the Mac, evening of 3 Oct" session
 
 START HERE. This file is self-contained: a new session needs nothing else to continue.
