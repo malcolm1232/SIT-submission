@@ -209,6 +209,7 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .x-pane-head { padding: 16px 20px 14px; border-bottom: 1px solid var(--border-subtle); }
 .x-pane-kicker { font-family: var(--mono); font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-bottom: 4px; }
 .x-pane-title { margin: 0; padding: 0; border: 0; font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.005em; outline: none; }
+.x-pane-title:focus-visible { box-shadow: none; }   /* where the pane puts the focus, not a control: no ring */
 .x-pane-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
 .x-pane-show { height: 30px; padding: 0 12px; border-radius: var(--r-pill); border: 1px solid var(--border-control);
   background: var(--bg-surface); color: var(--fg); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }

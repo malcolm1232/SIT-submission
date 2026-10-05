@@ -448,7 +448,8 @@ def _howto(idx: Index) -> str:
             term = t[k]
             body = term.html if term.html.startswith("<p>") else f"<p>{term.html}</p>"
             out.append(_entry(f"g-{k}", escape(term.label), body, term.src,
-                              "x-term-entry x-wide" if k in ("scoring", "confidence") else "x-term-entry"))
+                              "x-term-entry x-wide" if k in ("scoring", "confidence") else "x-term-entry",
+                              kicker="How to read this review"))
         out.append("</div>")
     if idx.abbrs:
         out.append('<h3 class="x-group">Abbreviations the document defines</h3><div class="x-grid">')
