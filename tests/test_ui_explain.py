@@ -218,7 +218,7 @@ def lines(name: str) -> list[str]:
 
 #: Facts no fixture stream fills, and why: the refine answers of the three fixtures pass the rules at once, so no
 #: rule repair call is recorded (test_the_refine_repair_counts_and_a_lower_bound_cost_fill_in feeds one).
-NEVER_IN_FIXTURES = {"refine_kept", "refine_retry"}
+NEVER_IN_FIXTURES = {"refine_kept", "refine_retry", "research_left"}   # research_left: a --no-tools run
 
 
 def test_no_entry_ever_shows_an_empty_value_record_by_record(page) -> None:
@@ -273,6 +273,57 @@ def test_the_refine_repair_counts_and_a_lower_bound_cost_fill_in(page) -> None:
     }""", [evs[:i + 1], retry])
     assert "54 revisions passed and were kept, 1 went to the repair call." in out[0]
     assert "The model cost is at least $7.37:" in out[1]
+
+
+def _research_off(ev: dict, detail: str) -> dict:
+    """``ev`` (a research_stopped record) as ``phases/research.py`` ``_doc_only`` writes it for ``detail``."""
+    return {**ev, "fields": {"code": "tool_failure", "detail": detail, "answered": 0, "questions": 6,
+                             "tool_calls": 0, "ledger_entries": 0}}
+
+
+@pytest.mark.parametrize("no_tools", [True, None])
+def test_research_with_no_tool_gateway_is_skipped_never_a_tool_failure(page, no_tools) -> None:
+    """Owner's run ui-261005-125426-adaa (--no-tools): the record files "no tool gateway" under the
+    tool_failure code with detail no_tools; the research row and its Why say document only, with the
+    questions left to the document, and are not drawn as a failure. A run started elsewhere (no launch.json,
+    ``no_tools`` unknown) names no flag it cannot know."""
+    pg, base, _runs = page
+    pg.goto(base + "/")
+    pg.wait_for_function("window.SIT !== undefined")
+    evs = [json.loads(ln) for ln in lines("progress.jsonl") if ln.strip()]
+    i = next(k for k, e in enumerate(evs) if e["type"] == "research_stopped")
+    evs[i] = _research_off(evs[i], "no_tools")
+    out = pg.evaluate("""([evs, noTools, upTo]) => {
+        const m = SIT.newRunModel(); m.noTools = noTools;
+        for (const ev of evs.slice(0, upTo)) SIT.applyEvent(m, ev);
+        const why = SIT.explainText(m, "research");
+        for (const ev of evs.slice(upTo)) SIT.applyEvent(m, ev);
+        const t = m.tracks.get("research");
+        return [t.status, t.text, why];
+    }""", [evs, no_tools, i + 1])
+    flag = "--no-tools" if no_tools else "no tool server in use"
+    assert out[0] == "skipped", out                                    # kept through its phase_done
+    assert out[1] == f"document only ({flag}): 6 question(s) left to the document", out[1]
+    assert "Research did not run" in out[2] and "6 outside questions are left to the document" in out[2]
+    assert "tool failure" not in out[1] + out[2]
+
+
+def test_a_real_tool_failure_keeps_its_failure_wording_and_reason(page) -> None:
+    pg, base, _runs = page
+    pg.goto(base + "/")
+    pg.wait_for_function("window.SIT !== undefined")
+    evs = [json.loads(ln) for ln in lines("progress.jsonl") if ln.strip()]
+    i = next(k for k, e in enumerate(evs) if e["type"] == "research_stopped")
+    evs[i] = _research_off(evs[i], "tools_unavailable")
+    out = pg.evaluate("""(evs) => {
+        const m = SIT.newRunModel(); m.noTools = false;
+        for (const ev of evs) SIT.applyEvent(m, ev);
+        const t = m.tracks.get("research");
+        return [t.status, t.text, SIT.explainText(m, "research")];
+    }""", evs)
+    assert out[0] == "done"
+    assert out[1] == "tool failure, tools unavailable: 0 of 6 question(s) answered, 0 tool call(s)", out[1]
+    assert "Research stopped (tool failure, tools unavailable) with 0 of " in out[2]
 
 
 def test_the_panel_follows_the_run_from_assess_to_refine_to_finished(page) -> None:

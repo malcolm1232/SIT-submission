@@ -37,12 +37,16 @@ class LaunchSpec:
     no_tools: bool = False
     #: The pasted link the document was downloaded from (``ui.fetch``); kept in ``ui/launch.json`` only.
     source_url: str | None = None
+    #: ``--deadline`` in seconds, set only when the form's deadline differs from the profile's own.
+    deadline_s: int | None = None
 
     def args(self) -> list[str]:
         """The arguments after ``dra``, exactly as a CLI user would type them."""
         out = ["review", str(self.document)]
         if self.profile:
             out += ["--profile", self.profile]
+        if self.deadline_s is not None:
+            out += ["--deadline", str(self.deadline_s)]
         if self.v1 is not None:
             out += ["--v1", str(self.v1)]
         if self.no_tools:
@@ -115,7 +119,8 @@ class Launcher:
             "args": [portable_arg(a, self.repo_root) for a in spec.args()], "started_at": started,
             "pid": getattr(proc, "pid", None), "document": portable_path(spec.document, runs_dir),
             "document_name": spec.document.name, "v1": portable_path(spec.v1, runs_dir) if spec.v1 else None,
-            "profile": spec.profile, "no_tools": spec.no_tools, "source_url": spec.source_url}, indent=1),
+            "profile": spec.profile, "deadline_s": spec.deadline_s, "no_tools": spec.no_tools,
+            "source_url": spec.source_url}, indent=1),
             encoding="utf-8")
         item = Launched(spec.run_id, proc, display, started)
         self.runs[spec.run_id] = item

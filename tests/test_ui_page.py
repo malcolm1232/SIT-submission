@@ -128,7 +128,9 @@ def test_a_replayed_run_is_stamped_and_never_drawn_as_live(page) -> None:
     assert pg.locator("#replay-stamp").inner_text() == "replayed evidence"
     assert pg.locator(".pill.running").count() == 0 and pg.locator("#top-action button").count() == 0
     t = tracks(pg)
-    assert all(t[k][0] == "done" for k in ("ingest", "understand", "plan", "research", "refine", "verify", "report"))
+    assert all(t[k][0] == "done" for k in ("ingest", "understand", "plan", "refine", "verify", "report"))
+    # The rehearsal ran document-only: research had no tool gateway, which the page shows as skipped, not failed.
+    assert t["research"][0] == "skipped" and t["research"][1].startswith("document only (no tool server in use): ")
     assert sorted(k for k in t if k.startswith("assess ")) == ["assess 1/4", "assess 2/4", "assess 3/4", "assess 4/4"]
     # Fed record by record through the page's reducer, a track is never "running": in flight means "replayed".
     seen = pg.evaluate("(evs) => { const m = SIT.newRunModel(); const st = new Set(); for (const ev of evs) { "
@@ -496,3 +498,61 @@ def test_the_open_runs_row_stays_in_view_beside_the_logs_panel(page) -> None:
     assert len(m["lines"]) >= 3, m
     assert m["lines"][0][0] >= m["top"] and m["lines"][-1][1] <= m["bottom"], m
     assert m["slot"][0] <= m["top"] and m["bottom"] <= m["slot"][1], m
+
+
+# ------------------------------------------------------------------ 5 Oct 2026: the Review form, an early exit
+
+
+def test_the_deadline_field_and_a_missing_key_on_the_review_form(page, monkeypatch) -> None:
+    """The deadline is set in minutes, starts at the profile's own and reaches the shown command as
+    ``--deadline <s>`` only when changed; with tools on and SIT_MCP_API_KEY unset, the form says so beside the
+    Tools control with the export hint and Start stays off until Document only is ticked."""
+    from sit_review_agent.config import ConfigOverrides, load_config
+
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    pg, base, _runs, state = page
+    sr = load_config(None, ConfigOverrides(profile="demo")).stop_rules
+    state.profiles = [{"name": "demo", "label": "demo", "deadline_s": sr.deadline_seconds,
+                       "stage_limits_s": sr.stage_limits_s.as_dict(), "effort": "medium"}]
+    state.stop_rules = {"demo": sr}
+    state.tools = [{"name": "mcp-internet-search", "enabled": True}]
+    pg.goto(base + "/")
+    pg.wait_for_selector("#deadline-min")
+    pg.wait_for_function("document.getElementById('profile-help').textContent.startsWith('Stage 1 ends by 07:21')")
+    assert pg.input_value("#deadline-min") == "15"
+    assert "--deadline" not in pg.locator("#cmd-preview").inner_text()
+    warn = pg.locator("#key-warn")
+    assert warn.is_visible() and "SIT_MCP_API_KEY is not set" in warn.inner_text()
+    assert "export SIT_MCP_API_KEY=<key>" in warn.inner_text()
+    pg.set_input_files("#doc-input", files=[{"name": "d.pdf", "mimeType": "application/pdf", "buffer": b"%PDF"}])
+    assert pg.locator("#start-btn").is_disabled()
+    pg.check("#no-tools")
+    assert warn.is_hidden() and pg.locator("#start-btn").is_enabled()
+    pg.fill("#deadline-min", "9")
+    assert "--profile demo --deadline 540 --no-tools" in pg.locator("#cmd-preview").inner_text()
+    pg.wait_for_function("document.getElementById('profile-help').textContent.includes('research ends by 01:21')")
+    help_text = pg.locator("#profile-help").inner_text()
+    assert help_text.startswith("Stage 1 ends by 04:24, refine by 07:45, verdict by 08:49")
+    pg.fill("#deadline-min", "1")
+    assert pg.locator("#start-btn").is_disabled() and "from 2 to 120" in pg.locator("#deadline-help").inner_text()
+    pg.fill("#deadline-min", "15")
+    assert "--deadline" not in pg.locator("#cmd-preview").inner_text() and pg.locator("#start-btn").is_enabled()
+
+
+def test_a_run_that_died_before_its_first_event_shows_what_it_printed(page) -> None:
+    """The owner saw only "it's not running" for ui-261005-125221-0958: the process exited 2 with a clear
+    message in ui/console.txt and no event. The run view shows that message, no empty timeline."""
+    pg, base, runs, _state = page
+    rd = runs / "died"
+    (rd / "ui").mkdir(parents=True)
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "died", "display": "dra review x.pdf --run-id died",
+                                                       "args": [], "document_name": "x.pdf"}), encoding="utf-8")
+    msg = "error: SIT_MCP_API_KEY is not set ... or pass --no-tools for a document-only review. No model call was made"
+    (rd / "ui" / "console.txt").write_text(msg + "\n", encoding="utf-8")
+    pg.goto(base + "/?run=died")
+    pg.wait_for_selector("#run-console")
+    assert pg.locator("#run-console .console-text").inner_text() == msg
+    assert "The process ended before its first event." in pg.locator("#run-console .console-head").inner_text()
+    assert "runs/died/ui/console.txt" in pg.locator("#run-console").inner_text()
+    assert pg.locator(".run-wrap").is_hidden() and pg.locator("#top-meta").is_hidden()
+    assert pg.locator(".notice", has_text="no progress.jsonl").count() == 0

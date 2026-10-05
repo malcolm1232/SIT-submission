@@ -355,7 +355,10 @@ def test_the_rail_shows_the_stream_state_and_the_recorded_servers_and_never_prob
         # A chip fills the form with the file and never starts a run (no POST below).
         page.click(".starter")
         page.wait_for_function("document.querySelector('#doc-chosen').textContent === 'payments_design_v1.pdf'")
-        assert page.locator("#start-btn").is_enabled()
+        # The key is unset here, so a run with tools could not start: Start stays off until Document only is ticked.
+        assert page.locator("#start-btn").is_disabled() and page.locator("#key-warn").is_visible()
+        page.check("#no-tools")
+        assert page.locator("#start-btn").is_enabled() and page.locator("#key-warn").is_hidden()
         assert "review runs/<new run>/ui/input/payments_design_v1.pdf " in page.locator("#cmd-preview").inner_text()
         assert page.locator(".starter").get_attribute("aria-pressed") == "true"
         page.goto(base + f"/?run={REHEARSAL.name}")

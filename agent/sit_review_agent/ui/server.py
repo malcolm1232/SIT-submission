@@ -5,6 +5,7 @@ Routes (design note section 9, W2)::
     GET  /                          the page (``/?run=<id>`` opens a run)
     GET  /static/<file>             index.html, tokens.css, app.css, app.js
     GET  /meta                      profiles, tools, backend, version, config file names, whether runs can start here
+    GET  /limits                    the stage limits and warnings a run would get at ``?profile=&deadline_s=``
     GET  /tools                     per server: enabled, the last recorded warm-up and its time, tool count
     POST /tools/probe               the preflight warm-up of the enabled servers, on demand (never on page load)
     GET  /runs                      run directories under --runs-dir, newest first (a running row carries its
@@ -61,6 +62,10 @@ from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+#: The Review form's deadline field, in seconds: from 2 minutes (one model attempt and the reserves of the
+#: smallest profile do not fit below it) to 2 hours (twice the default profile's 3600 s).
+DEADLINE_MIN_S = 120
+DEADLINE_MAX_S = 7200
 FINDING_ID_RE = r"^FND-\d+$"
 
 
@@ -125,6 +130,26 @@ class UIState:
     last_probe: dict[str, Any] | None = None
     #: The sample documents of ``config/ui.yaml`` ``documents:`` (:func:`load_documents`): the Review page's chips.
     documents: list[dict[str, Any]] = field(default_factory=list)
+    #: Each profile's ``StopRulesConfig`` by name ("" is the default), for ``GET /limits``: the stage limits
+    #: and warnings the runtime would give a run at another deadline, computed by the runtime's own functions.
+    stop_rules: dict[str, Any] = field(default_factory=dict)
+
+
+def tools_key_missing(state: UIState) -> str | None:
+    """Why a run with tools would exit before its first model call, or ``None``: an enabled MCP server
+    and no ``auth_env`` key in this server's environment (the child inherits it; ``orchestrator.
+    _run_check_tool_key`` refuses the same case with exit 2). Names the variable, never its value."""
+    servers = [t["name"] for t in state.tools if t.get("enabled")]
+    if not servers or os.environ.get(state.auth_env, "").strip():
+        return None
+    return (f"{state.auth_env} is not set in this server's environment, and the enabled tool servers "
+            f"({', '.join(servers)}) need it, so a run with tools would exit before its first model call.")
+
+
+def tools_key_fix(state: UIState) -> str:
+    """What to do about :func:`tools_key_missing`, said after it."""
+    return (f"Tick Document only (--no-tools), or stop this server, run export {state.auth_env}=<key> in its shell "
+            "and start dra ui again. The page never reads the key.")
 
 
 def _json(data: Any, status: int = 200) -> JSONResponse:
@@ -153,6 +178,7 @@ def build_app(state: UIState) -> Starlette:
                       "ui_args": list(state.ui_args),
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
                       "link_max_mb": fetch.MAX_BYTES // (1024 * 1024),
+                      "deadline_bounds_s": [DEADLINE_MIN_S, DEADLINE_MAX_S],
                       # What Stop does, stated from the code: SIGINT is the CLI's Ctrl-C path (errors.ExitCode.SIGINT).
                       "stop_exit_code": int(ExitCode.SIGINT),
                       "chat": {"model": chat.MODEL, "effort": chat.EFFORT, "max_calls": chat.MAX_CALLS,
@@ -164,7 +190,7 @@ def build_app(state: UIState) -> Starlette:
     async def tools_get(request: Request) -> Response:
         out = rundata.tools_status(state.runs_dir, state.tools)
         out.update(auth_env=state.auth_env, key_present=bool(os.environ.get(state.auth_env, "").strip()),
-                   probe=state.last_probe)
+                   key_missing=tools_key_missing(state), probe=state.last_probe)
         return _json(out)
 
     async def tools_probe(request: Request) -> Response:
@@ -179,6 +205,31 @@ def build_app(state: UIState) -> Starlette:
                              "that starts dra ui, then probe again. The page never reads the key.")
         state.last_probe = await state.probe()
         return _json(state.last_probe)
+
+    async def limits(request: Request) -> Response:
+        """What a run of ``profile`` at ``deadline_s`` would be held to, from the runtime's own functions
+        (``llm.runtime.effective_stage_limits`` and ``deadline_warnings``), so the form never re-derives them."""
+        from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
+
+        sr = state.stop_rules.get(request.query_params.get("profile") or "")
+        if sr is None:
+            return _err(404, "No such profile.")
+        d = parse_deadline(request.query_params.get("deadline_s"))
+        if isinstance(d, str):
+            return _err(400, d)
+        if d is not None:
+            sr = sr.model_copy(update={"deadline_seconds": d})
+        lim, note = effective_stage_limits(sr)
+        active = "deadline" in sr.active
+        warnings = deadline_warnings(sr)
+        if note is not None and warnings[:1] == [note]:
+            warnings = warnings[1:]              # the scaling note is "note"; "warnings" are the rest
+        return _json({"deadline_s": sr.deadline_seconds, "stage_limits_s": lim, "scaled": note is not None,
+                      "note": note, "warnings": warnings,
+                      # research's own deadline rule keeps both reserves (phases/research.py)
+                      "research_end_s": (sr.deadline_seconds - sr.report_reserve_seconds - sr.refine_reserve_seconds)
+                      if active else None,
+                      "report_reserve_s": sr.report_reserve_seconds, "refine_reserve_s": sr.refine_reserve_seconds})
 
     async def documents_list(request: Request) -> Response:
         """The sample documents offered as chips on the Review page: a chip fills the form with the file and
@@ -221,6 +272,14 @@ def build_app(state: UIState) -> Starlette:
         if profile is not None and profile not in {p["name"] for p in state.profiles if p["name"]}:
             return _err(400, f"Unknown profile {profile!r}.")
         no_tools = str(form.get("no_tools") or "") in ("1", "true", "on")
+        deadline_s = parse_deadline(form.get("deadline_s"))
+        if isinstance(deadline_s, str):
+            return _err(400, deadline_s)
+        own = next((p.get("deadline_s") for p in state.profiles if p["name"] == (profile or "")), None)
+        if deadline_s is not None and deadline_s == own:
+            deadline_s = None                    # the profile's own deadline: no --deadline on the command line
+        if not no_tools and (missing := tools_key_missing(state)):
+            return _err(409, f"{missing} {tools_key_fix(state)}")
         run_id = str(form.get("run_id") or "").strip() or new_run_id()
         if not rundata.RUN_ID_RE.match(run_id) or ".." in run_id:
             return _err(400, "The run ID may hold letters, digits, dot, dash and underscore only, and must start "
@@ -250,7 +309,7 @@ def build_app(state: UIState) -> Starlette:
             v1_path = v1_dir / prev_name
             v1_path.write_bytes(await prev.read())
         spec = LaunchSpec(run_id=run_id, document=doc_path, profile=profile, v1=v1_path, no_tools=no_tools,
-                          source_url=link or None)
+                          source_url=link or None, deadline_s=deadline_s)
         launched = state.launcher.start(spec, run_dir)
         return _json({"run_id": run_id, "command": launched.display}, 201)
 
@@ -260,6 +319,12 @@ def build_app(state: UIState) -> Starlette:
             return _err(404, "No such run.")
         info = rundata.summary(rd, process_alive=alive(rd.name))
         info["exit_code"] = state.launcher.exit_code(rd.name)
+        if info.get("console") is not None:
+            from sit_review_agent.tools.cassette import Redactor
+
+            # The child's own words; the key is never printed by the CLI, and is redacted here all the same.
+            redact = Redactor.from_env((state.auth_env, "ANTHROPIC_API_KEY"))
+            info["console"]["lines"] = [redact.text(ln) for ln in info["console"]["lines"]]
         info["chat"] = chat.budget(rd)
         return _json(info)
 
@@ -451,6 +516,7 @@ def build_app(state: UIState) -> Starlette:
     routes = [
         Route("/", index),
         Route("/meta", meta),
+        Route("/limits", limits, methods=["GET"]),
         Route("/tools", tools_get, methods=["GET"]),
         Route("/tools/probe", tools_probe, methods=["POST"]),
         Route("/documents", documents_list, methods=["GET"]),
@@ -481,6 +547,24 @@ def build_app(state: UIState) -> Starlette:
     return app
 
 
+def parse_deadline(raw: Any) -> int | str | None:
+    """The form's ``deadline_s``: ``None`` when absent or empty, a whole number of seconds within
+    :data:`DEADLINE_MIN_S` and :data:`DEADLINE_MAX_S`, else the message to refuse it with."""
+    text = str(raw or "").strip() if raw is None or isinstance(raw, str) else None
+    if text is None:
+        return "The deadline must be a number of seconds."
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except ValueError:
+        return "The deadline must be a whole number of seconds."
+    if not DEADLINE_MIN_S <= value <= DEADLINE_MAX_S:
+        return (f"The deadline must be from {DEADLINE_MIN_S} to {DEADLINE_MAX_S} seconds "
+                f"({DEADLINE_MIN_S // 60} to {DEADLINE_MAX_S // 60} minutes).")
+    return value
+
+
 # ------------------------------------------------------------------ building the state from config
 
 
@@ -495,7 +579,9 @@ def _git_commit(repo_root: Path) -> str | None:
     return out.stdout.strip() or None if out.returncode == 0 else None
 
 
-def _profiles(config_path: Path | None) -> list[dict[str, Any]]:
+def _profiles(config_path: Path | None, stop_rules: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """One row per loadable profile for the page; ``stop_rules``, when given, is filled with each one's
+    ``StopRulesConfig`` by name."""
     from sit_review_agent.config import ConfigOverrides, load_config
 
     names: list[str | None] = [None]
@@ -510,6 +596,8 @@ def _profiles(config_path: Path | None) -> list[dict[str, Any]]:
             continue
         sr = cfg.stop_rules
         lim = sr.stage_limits_s
+        if stop_rules is not None:
+            stop_rules[n or ""] = sr
         out.append({"name": n or "", "label": n or "default", "deadline_s": sr.deadline_seconds,
                     "stage_limits_s": {"stage_1_end": lim.stage_1_end, "refine_end": lim.refine_end,
                                        "verdict_end": lim.verdict_end},
@@ -538,9 +626,11 @@ def build_state(*, runs_dir: Path | None, config_path: Path | None = None,
         files.append(str((Path(cfg.config_root) / "ui.yaml").relative_to(root)))
     except ValueError:
         files.append(str(Path(cfg.config_root) / "ui.yaml"))
+    stop_rules: dict[str, Any] = {}
+    profiles = _profiles(config_path, stop_rules)
     return UIState(runs_dir=rd, repo_root=root, launcher=launcher or Launcher(repo_root=root),
                    chat_client=chat_client or chat.ClaudeCodeChatClient.from_config(cfg),
-                   can_launch=can_launch, launch_note=note, profiles=_profiles(config_path), tools=tools,
+                   can_launch=can_launch, launch_note=note, profiles=profiles, stop_rules=stop_rules, tools=tools,
                    commit=_git_commit(root), smtp=smtp, smtp_detail=smtp_detail, url_policy=cfg.url_policy,
                    backend=cfg.agent.llm.backend, model=cfg.agent.model, config_files=files,
                    auth_env=cfg.tools.auth_env, probe=probe_with(cfg),

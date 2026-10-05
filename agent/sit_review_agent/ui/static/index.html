@@ -77,8 +77,14 @@
           <div class="help num" id="profile-help"></div>
         </div>
         <div class="field">
+          <label for="deadline-min">Deadline (minutes)</label>
+          <input class="input num" id="deadline-min" name="deadline_min" type="number" step="0.5" inputmode="decimal" autocomplete="off">
+          <div class="help" id="deadline-help"></div>
+        </div>
+        <div class="field">
           <span class="label">Tools</span>
           <label class="check"><input type="checkbox" id="no-tools" name="no_tools" value="1"><span>Document only (<span class="mono">--no-tools</span>)</span></label>
+          <div class="key-warn" id="key-warn" role="alert" hidden></div>
           <div class="help" id="tools-help"></div>
         </div>
         <div class="field">
@@ -238,7 +244,8 @@
        "else": {"text": "{tools_offered} tools are offered from the enabled servers; after each round the stop rules decide whether another round is worth it.",
                 "else": "After each round the stop rules decide whether another round is worth it."}},
       "The assess shards never see this evidence: they start at once, and waiting for research would not fit the slot, so refine applies it to the merged findings instead and the evidence is attached by the one call that has read it, never by a shard that did not (decision #37).",
-      {"text": "Research stopped ({research_stop}) with {answered} of {research_questions} questions answered and {ledger_entries} entries in the ledger."}
+      {"text": "Research did not run: this review is document only, with no tool server in use, so its {research_left} outside questions are left to the document and reported as validation needs.",
+       "else": {"text": "Research stopped ({research_stop}) with {answered} of {research_questions} questions answered and {ledger_entries} entries in the ledger."}}
     ],
     "src": "agent/sit_review_agent/phases/research.py; agent/sit_review_agent/stop_rules.py; agent/sit_review_agent/state/evidence_ledger.py; decision #37"
   },

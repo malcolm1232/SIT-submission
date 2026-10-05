@@ -193,13 +193,25 @@ ul { padding-left: 18px; margin: 0; }
 .field label, .field .label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
 .field label.btn { display: inline-flex; margin: 0; }
 .field .help { font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-top: 6px; }
-.field-row { display: grid; grid-template-columns: 220px minmax(0, 1fr) 240px; gap: 20px; }
+/* two by two: profile and its deadline, then the tools control (and a missing key beside it) and the run ID */
+.field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 28px; }
+/* a run with tools that cannot start: the missing key, beside the Tools control, before Start is pressed */
+.key-warn { margin-top: 6px; padding: 8px 10px; border-radius: var(--radius-ctl); background: var(--amber-soft); color: var(--amber);
+  font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+.key-warn .fix { color: var(--fg); }
+.key-warn .mono { font-size: 11.5px; }
 .field-row .select, .field-row .input { width: 100%; min-width: 0; }
 /* the tools checkbox: the control and its label on ONE line that never wraps, the help text on its own line below */
 .check, .field label.check { display: flex; align-items: center; gap: 8px; min-height: 32px; white-space: nowrap; font-size: 13.5px; font-weight: 400; margin: 0; }
 .check input { width: 15px; height: 15px; margin: 0; accent-color: var(--action); }
 .start-row { display: flex; align-items: center; gap: 14px; margin-top: 6px; }
 .cmd { margin-top: 12px; font-family: var(--mono); font-size: 12px; color: var(--fg-muted); word-break: break-all; }
+/* a run that ended before its first event: the process's own console output (ui/console.txt) */
+.console-box { margin-top: 14px; border: 1px solid var(--red-border); border-radius: var(--r-lg); background: var(--red-soft); padding: 12px 14px; }
+.console-head { font-size: 13px; line-height: 18px; color: var(--fg); }
+.console-head b { color: var(--red); font-weight: 600; }
+.console-text { margin: 10px 0 0; font-family: var(--mono); font-size: 12px; line-height: 18px; color: var(--fg); white-space: pre-wrap;
+  overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
 table.grid { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.grid th { text-align: left; font-weight: 500; color: var(--fg-muted); padding: 0 12px 8px 0; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
 table.grid td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }

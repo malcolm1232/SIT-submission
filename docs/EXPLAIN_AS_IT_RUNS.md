@@ -33,7 +33,7 @@ The times below are rehearsal 1 on the lab's 30-page sample with tools (`docs/li
 
 What is on the page while it runs, and what each thing means (`agent/sit_review_agent/ui/static/app.js`, decision #44):
 - The head clock is the run clock of the last recorded event plus the wall seconds since that event arrived, ticking once a second, and it says so in its label; it never estimates completion and shows no percentage (`ui/static/app.js` header comment and `clock-label`, decision #44 (B)).
-- The axis under it runs from 0 to the deadline, with the recorded limits as markers: stage 1 by 265 s, refine by 465 s, verdict by 530 s, deadline 540 s (`config/profiles/demo.yaml` `stage_limits_s`); the markers come from the `run_started` record, not from the page (`ui/static/app.js` `limitMarks`).
+- The axis under it runs from 0 to the deadline, with the recorded limits as markers: stage 1 by 441 s, refine by 775 s, verdict by 883 s, deadline 900 s (`config/profiles/demo.yaml` `stage_limits_s`); the markers come from the `run_started` record, not from the page (`ui/static/app.js` `limitMarks`).
 - Each stage row expands to its model calls; each shard row shows its drafted finding titles as they arrive, with severity and kind but no other model text, labelled draft (decision #44 (C), `ui/events.py` `shard_drafted`, `draft_item`).
 - A limit that fires is written under the axis in plain words with the counts kept (`ui/static/app.js` `noteLimit`).
 - The Logs panel in the rail tails `progress.log` through a read-only route (decision #44 (D), `ui/static/app.js` "The Logs panel").
@@ -135,11 +135,12 @@ Say:
 ## 3. The limits, and what ending early means
 
 The brief sets no time limit for the live run (decision #34; brief p.9 section 5.4 names the three parts and no duration).
-The 540 s deadline is a project assumption, a configurable safety net kept until SIT answers the slot-length question (decision #34, `config/profiles/demo.yaml` comment on `deadline_seconds`).
-Why limits at all: in a live demo a run with no end is worse than a run that ends with a disclosed gap, so each stage has an absolute end on the run clock: stage 1 by 265 s, refine by 465 s, the verdict call by 530 s (`config/profiles/demo.yaml` `stage_limits_s`).
+The demo deadline is 900 s since 2026-10-05, the owner's word after a 540 s run lost its refine pass; it is a configurable value, not a product limit, still unmeasured at 900 s (decisions #34 and #47, `config/profiles/demo.yaml` comment on `deadline_seconds`).
+Why limits at all: in a live demo a run with no end is worse than a run that ends with a disclosed gap, so each stage has an absolute end on the run clock: stage 1 by 441 s, refine by 775 s, the verdict call by 883 s (`config/profiles/demo.yaml` `stage_limits_s`).
 They are absolute seconds, not fractions of the deadline, because a model call's thinking is a fixed cost, about 105 s per assess shard at medium (`config/stop_rules.yaml` comment on `stage_limits_s`).
 The limit is enforced inside each model call, as its attempt timeout, so one slow call cannot take the report with it (`llm/runtime.py` `RunDeadline`).
-`--deadline N` changes them: at or below 530 s or above 540 s the three limits scale by N / 540 and the run says so first, for example 900 s gives 441, 775 and 883 s (`config/profiles/demo.yaml` comment, `llm/runtime.py` `effective_stage_limits`).
+`--deadline N`, or the Deadline field on the Review form, changes them: at or below 883 s or above 900 s the three limits scale by N / 900 and the run says so first, for example 540 s gives 264, 465 and 529 s (`config/profiles/demo.yaml` comment, `llm/runtime.py` `effective_stage_limits`).
+The two reserves do not scale, so at 540 s research's own deadline rule ends it by 81 s on the run clock, and the form says so before the run starts (`ui/server.py` `GET /limits`).
 Stage 1 also has a 30 s grace after its limit, after which members still running are stopped and disclosed (`orchestrator.py` `stage1_grace_s`).
 Before stage 1 and before refine the orchestrator checks the caps, and a cap that fires jumps to verify, so a report is always written (`orchestrator.py` `_cap`, `_skip_on_cap`; `states.py` `STAGE_ON_CAP`).
 

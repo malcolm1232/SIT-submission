@@ -78,6 +78,29 @@ def tail_log(path: Path, *, after: int = 0, tail: int = LOG_TAIL) -> dict[str, A
             "tail": tail}
 
 
+#: The most of ``ui/console.txt`` a run page shows for a run that wrote no event: its last lines and bytes.
+CONSOLE_TAIL_LINES = 40
+CONSOLE_TAIL_BYTES = 16 * 1024
+
+
+def console_tail(run_dir: Path) -> dict[str, Any] | None:
+    """The end of ``ui/console.txt`` (the launched child's stdout and stderr), or ``None`` without one: the
+    last :data:`CONSOLE_TAIL_LINES` lines of its last :data:`CONSOLE_TAIL_BYTES`, the last line kept even
+    without its newline (the process has ended), and whether earlier output was left out."""
+    path = run_dir / UI_DIR / "console.txt"
+    if not path.is_file():
+        return None
+    size = path.stat().st_size
+    with path.open("rb") as fh:
+        fh.seek(max(0, size - CONSOLE_TAIL_BYTES))
+        data = fh.read()
+    lines = data.decode("utf-8", "replace").splitlines()
+    if size > CONSOLE_TAIL_BYTES and lines:
+        lines = lines[1:]                    # the first line read may start mid-line
+    cut = size > CONSOLE_TAIL_BYTES or len(lines) > CONSOLE_TAIL_LINES
+    return {"file": f"{UI_DIR}/console.txt", "lines": lines[-CONSOLE_TAIL_LINES:], "truncated": cut, "bytes": size}
+
+
 def is_run_dir(p: Path) -> bool:
     return p.is_dir() and any((p / n).is_file() for n in ("report.json", "progress.jsonl", "manifest.json")) \
         or (p / UI_DIR / "launch.json").is_file()
@@ -180,6 +203,10 @@ def summary(run_dir: Path, *, process_alive: bool = False) -> dict[str, Any]:
         doc = events.under_review(started)
         row["document"] = doc.get("title") or (launch or {}).get("document_name")
         row["pages"] = doc.get("pages")
+    # A run that ended before its first event (a usage error, a missing key) left only its console output:
+    # the run page shows the process's own message instead of an empty timeline.
+    row["console"] = console_tail(run_dir) if not row["has_events"] and row["status"] != "running" else None
+    row["launched_here"] = launch is not None
     return row
 
 

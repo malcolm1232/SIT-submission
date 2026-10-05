@@ -30,8 +30,8 @@ FIXTURE_EVENTS = Path(__file__).parent / "fixtures" / "ui" / "progress.jsonl"
 RUN_FILES = ("report.json", "manifest.json", "anchors.json", "ledger.json", "state.json", "effective_config.json")
 PROFILES = [{"name": "", "label": "default", "deadline_s": 3600,
              "stage_limits_s": {"stage_1_end": 2820, "refine_end": 3420, "verdict_end": 3540}, "effort": "high"},
-            {"name": "demo", "label": "demo", "deadline_s": 540,
-             "stage_limits_s": {"stage_1_end": 265, "refine_end": 465, "verdict_end": 530}, "effort": "medium"}]
+            {"name": "demo", "label": "demo", "deadline_s": 900,
+             "stage_limits_s": {"stage_1_end": 441, "refine_end": 775, "verdict_end": 883}, "effort": "medium"}]
 
 
 class FakeProc:
@@ -234,7 +234,8 @@ def test_start_launches_dra_review_as_a_subprocess(tmp_path: Path) -> None:
     assert info["status"] == "running" and info["argv"] == res.json()["command"]
 
 
-def test_a_run_id_given_on_the_form_names_the_run_directory(tmp_path: Path) -> None:
+def test_a_run_id_given_on_the_form_names_the_run_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIT_MCP_API_KEY", "k-test")             # a tools-on run may start
     popen = FakePopen()
     client = TestClient(build_app(make_state(tmp_path, popen=popen)))
     res = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}, data={"run_id": "ui_flow_1"})
@@ -250,7 +251,8 @@ def test_a_run_id_given_on_the_form_names_the_run_directory(tmp_path: Path) -> N
     assert sorted(p.name for p in tmp_path.iterdir()) == ["ui_flow_1"]
 
 
-def test_stop_sends_sigint_to_the_child(tmp_path: Path) -> None:
+def test_stop_sends_sigint_to_the_child(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SIT_MCP_API_KEY", "k-test")             # a tools-on run may start
     popen = FakePopen()
     client = TestClient(build_app(make_state(tmp_path, popen=popen)))
     run_id = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}).json()["run_id"]
@@ -566,3 +568,103 @@ def test_the_sample_documents_come_from_ui_yaml_and_missing_files_are_left_out(t
     assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
     assert res.content == pdf.read_bytes()
     assert client.get("/documents/doc-2").status_code == 404
+
+
+# ------------------------------------------------------------------ 5 Oct 2026: deadline field, missing key, early exit
+
+
+def test_a_deadline_from_the_form_reaches_the_command_only_when_it_differs(tmp_path: Path) -> None:
+    """The Review form's deadline (minutes on the page, whole seconds on the wire): ``--deadline`` is added
+    after ``--profile`` only when it differs from the profile's own; out of bounds or not a number is refused."""
+    popen = FakePopen()
+    state = make_state(tmp_path, popen=popen)
+    client = TestClient(build_app(state))
+    pdf = {"document": ("d.pdf", b"%PDF", "application/pdf")}
+    res = client.post("/runs", files=pdf, data={"profile": "demo", "no_tools": "1", "deadline_s": "540",
+                                                "run_id": "short"})
+    assert res.status_code == 201, res.text
+    assert popen.procs[0].argv[-7:] == ["--profile", "demo", "--deadline", "540", "--no-tools", "--run-id", "short"]
+    assert "--profile demo --deadline 540 --no-tools" in res.json()["command"]
+    assert json.loads((tmp_path / "short" / "ui" / "launch.json").read_text(encoding="utf-8"))["deadline_s"] == 540
+    popen.procs[0].code = 0
+    same = client.post("/runs", files=pdf, data={"profile": "demo", "no_tools": "1", "deadline_s": "900",
+                                                 "run_id": "own"})
+    # the demo profile's own 900 s: no flag at all
+    assert same.status_code == 201 and "--deadline" not in popen.procs[1].argv
+    popen.procs[1].code = 0
+    for bad in ("119", "7201", "9.5", "abc", "-60"):
+        r = client.post("/runs", files=pdf, data={"profile": "demo", "no_tools": "1", "deadline_s": bad})
+        assert r.status_code == 400 and "deadline" in r.json()["error"], bad
+    assert len(popen.procs) == 2
+
+
+def test_meta_states_the_deadline_bounds(tmp_path: Path) -> None:
+    from sit_review_agent.ui.server import DEADLINE_MAX_S, DEADLINE_MIN_S
+
+    meta = TestClient(build_app(make_state(tmp_path))).get("/meta").json()
+    assert meta["deadline_bounds_s"] == [DEADLINE_MIN_S, DEADLINE_MAX_S] == [120, 7200]
+
+
+def test_the_limits_route_reads_the_runtimes_own_scaling() -> None:
+    """GET /limits answers from llm.runtime for the shipped demo profile (900 s, USER_DECISIONS #47): its own
+    deadline is unscaled; 540 s scales to 264 / 465 / 529 s and research's deadline rule, keeping both reserves,
+    ends research by 81 s, which the form states."""
+    from sit_review_agent.ui.server import build_state
+
+    state = build_state(runs_dir=None, chat_client=NoChat(), launcher=Launcher(repo_root=REPO, popen=FakePopen()))
+    client = TestClient(build_app(state))
+    own = client.get("/limits?profile=demo").json()
+    assert own["deadline_s"] == 900 and own["scaled"] is False and own["note"] is None and own["warnings"] == []
+    assert own["stage_limits_s"] == {"stage_1_end": 441, "refine_end": 775, "verdict_end": 883}
+    assert own["research_end_s"] == 441
+    short = client.get("/limits?profile=demo&deadline_s=540").json()
+    assert short["stage_limits_s"] == {"stage_1_end": 264, "refine_end": 465, "verdict_end": 529}
+    assert short["scaled"] is True and "scaled by 540/900" in short["note"] and short["warnings"] == []
+    assert short["research_end_s"] == 81 and (short["report_reserve_s"], short["refine_reserve_s"]) == (125, 334)
+    assert client.get("/limits?profile=nope").status_code == 404
+    assert client.get("/limits?profile=demo&deadline_s=5").status_code == 400
+
+
+def test_a_tools_on_run_without_the_key_is_refused_before_anything_is_written(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The owner's attempt ui-261005-125221-0958: tools on, no SIT_MCP_API_KEY in the server's environment, so
+    the child exited 2 before any model call. The server now says so first, names the export, never a value."""
+    monkeypatch.delenv("SIT_MCP_API_KEY", raising=False)
+    popen = FakePopen()
+    client = TestClient(build_app(make_state(tmp_path, popen=popen)))
+    tools = client.get("/tools").json()
+    assert tools["key_present"] is False and "SIT_MCP_API_KEY is not set" in tools["key_missing"]
+    res = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}, data={"profile": "demo"})
+    assert res.status_code == 409 and "export SIT_MCP_API_KEY=<key>" in res.json()["error"]
+    assert "Document only (--no-tools)" in res.json()["error"]
+    assert popen.procs == [] and list(tmp_path.iterdir()) == []
+    ok = client.post("/runs", files={"document": ("d.pdf", b"%PDF", "application/pdf")}, data={"no_tools": "1"})
+    assert ok.status_code == 201                                       # document only needs no key
+    monkeypatch.setenv("SIT_MCP_API_KEY", "k-secret-value")
+    assert client.get("/tools").json()["key_missing"] is None
+    assert "k-secret-value" not in json.dumps(client.get("/tools").json())
+
+
+def test_a_run_that_died_before_its_first_event_shows_its_own_console_output(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A launched run with no progress.jsonl and an ended process: the summary carries the end of
+    ui/console.txt (the process's own message), with any key value redacted; a live run carries none."""
+    monkeypatch.setenv("SIT_MCP_API_KEY", "k-secret-value")
+    rd = tmp_path / "died"
+    (rd / "ui").mkdir(parents=True)
+    (rd / "ui" / "launch.json").write_text(json.dumps({"run_id": "died", "display": "dra review x.pdf"}),
+                                           encoding="utf-8")
+    msg = ("error: SIT_MCP_API_KEY is not set, and the enabled MCP tool servers (mcp-internet-search) need it. "
+           "Set it (export SIT_MCP_API_KEY=<key>; the value is never logged), or pass --no-tools")
+    (rd / "ui" / "console.txt").write_text("leak k-secret-value\n" + msg + "\n", encoding="utf-8")
+    info = TestClient(build_app(make_state(tmp_path))).get("/runs/died").json()
+    assert info["status"] == "ended" and info["has_events"] is False and info["launched_here"] is True
+    assert info["console"]["file"] == "ui/console.txt" and info["console"]["lines"][-1] == msg
+    assert "k-secret-value" not in json.dumps(info)
+    # A long console keeps its end, and says that the start was left out.
+    (rd / "ui" / "console.txt").write_text("".join(f"line {i}\n" for i in range(5000)), encoding="utf-8")
+    tail = rundata.console_tail(rd)
+    assert tail is not None and tail["truncated"] and tail["lines"][-1] == "line 4999"
+    assert len(tail["lines"]) == rundata.CONSOLE_TAIL_LINES
+    # Running (no event yet): no console block, the stream is followed instead.
+    assert rundata.summary(rd, process_alive=True)["console"] is None

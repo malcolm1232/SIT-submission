@@ -230,19 +230,54 @@ async function showDrop() {
   let doc = null;
   $("link-max").textContent = meta.link_max_mb;
   const link = () => { const v = $("doc-link").value.trim(); return httpsLink(v) ? v : null; };
+  // The deadline field is in minutes; the command and the server take whole seconds within GET /meta deadline_bounds_s.
+  const dl = $("deadline-min");
+  const [dmin, dmax] = meta.deadline_bounds_s;
+  dl.min = String(dmin / 60); dl.max = String(dmax / 60);
+  const profileOf = () => meta.profiles.find((x) => x.name === sel.value) || null;
+  const resetDeadline = () => { const p = profileOf(); dl.value = p ? String(p.deadline_s / 60) : ""; };
+  // Whole seconds, null for an empty field (the profile's own deadline), NaN for a value outside the bounds.
+  const deadlineS = () => { if (dl.value.trim() === "") return null; const sec = Math.round(Number(dl.value) * 60); return Number.isFinite(sec) && sec >= dmin && sec <= dmax ? sec : NaN; };
+  // --deadline only when the field differs from the profile's own deadline (the server drops it otherwise too).
+  const deadlineArg = () => { const p = profileOf(), d = deadlineS(); return d !== null && !Number.isNaN(d) && (!p || d !== p.deadline_s) ? d : null; };
+  const keyMissing = () => !$("no-tools").checked && S.tools && S.tools.key_missing ? S.tools.key_missing : null;
+  let limitsAsk = 0;
+  const showLimits = async () => {
+    const p = profileOf(), d = deadlineS(), mine = ++limitsAsk;
+    const help = $("profile-help"), dhelp = $("deadline-help");
+    const say = (lim, dd) => "Stage 1 ends by " + clock(lim.stage_1_end) + ", refine by " + clock(lim.refine_end) + ", verdict by " + clock(lim.verdict_end) + ", deadline " + clock(dd) + ".";
+    if (Number.isNaN(d)) { help.textContent = ""; dhelp.className = "help error"; dhelp.textContent = "Give a number of minutes from " + intl(dmin / 60) + " to " + intl(dmax / 60) + "."; return; }
+    dhelp.className = "help";
+    if (!p || d === null) { help.textContent = ""; dhelp.textContent = p ? "Empty: the " + p.label + " profile's own deadline." : ""; if (p && d === null) help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
+    dhelp.textContent = d === p.deadline_s ? "The " + p.label + " profile's own deadline." : "Passed as --deadline " + d + "; the profile's own is " + dur(p.deadline_s) + ".";
+    if (d === p.deadline_s) { help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
+    help.textContent = "Reading the limits for " + clock(d) + " from the server.";
+    try {
+      const L = await api("/limits?profile=" + encodeURIComponent(p.name) + "&deadline_s=" + d);
+      if (mine !== limitsAsk) return;
+      const parts = [say(L.stage_limits_s, L.deadline_s) + (L.scaled ? " Scaled from the profile's limits; the run says so first." : "")];
+      if (typeof L.research_end_s === "number" && L.research_end_s < L.stage_limits_s.stage_1_end) parts.push("Research's own deadline rule keeps the profile's reserves (" + intl(L.report_reserve_s) + " s for verify and report, " + intl(L.refine_reserve_s) + " s for refine), so research ends by " + clock(Math.max(0, L.research_end_s)) + ".");
+      for (const w of L.warnings) parts.push(sentence(w) + ".");
+      help.textContent = parts.join(" ");
+    } catch (err) { if (mine === limitsAsk) help.textContent = "The limits for this deadline could not be read: " + err.message; }
+  };
   const refresh = () => {
-    const p = meta.profiles.find((x) => x.name === sel.value);
-    $("profile-help").textContent = p ? "Stage 1 ends by " + clock(p.stage_limits_s.stage_1_end) + ", refine by " + clock(p.stage_limits_s.refine_end) + ", verdict by " + clock(p.stage_limits_s.verdict_end) + ", deadline " + clock(p.deadline_s) + "." : "";
     const prev = $("prev-input").files[0];
     const rid = $("run-id").value.trim() || "<new run>";
     const source = doc ? doc.name : (link() ? linkName(link()) : null);
     const parts = ["dra", "review", source ? "runs/" + rid + "/ui/input/" + source : "<document>"];
     if (sel.value) parts.push("--profile", sel.value);
+    if (deadlineArg() !== null) parts.push("--deadline", String(deadlineArg()));
     if (prev) parts.push("--v1", "runs/" + rid + "/ui/input/previous/" + prev.name);
     if ($("no-tools").checked) parts.push("--no-tools");
     parts.push("--run-id", rid);
     $("cmd-preview").textContent = parts.join(" ");
-    $("start-btn").disabled = !(doc || link()) || !meta.can_launch;
+    const missing = keyMissing();
+    const warn = $("key-warn");
+    warn.hidden = !missing;
+    clear(warn);
+    if (missing) warn.append(missing + " ", h("span", { class: "fix" }, "Tick Document only, or stop this server and start it again from a shell that ran ", h("span", { class: "mono", text: "export " + S.tools.auth_env + "=<key>" }), "."));
+    $("start-btn").disabled = !(doc || link()) || !meta.can_launch || !!missing || Number.isNaN(deadlineS());
     $("link-error").hidden = !$("doc-link").value.trim() || !!link();
     const c = $("doc-chosen");
     c.hidden = !doc && !link();
@@ -253,7 +288,8 @@ async function showDrop() {
   $("doc-link").addEventListener("input", () => { if ($("doc-link").value.trim()) { doc = null; $("doc-input").value = ""; } refresh(); });
   $("doc-input").addEventListener("change", (e) => choose(e.target.files[0]));
   $("prev-input").addEventListener("change", () => { const f = $("prev-input").files[0]; $("prev-chosen").textContent = f ? f.name : "No file chosen"; $("prev-chosen").classList.toggle("muted", !f); refresh(); });
-  sel.addEventListener("change", () => { S.profile = sel.value; $("top-profile").value = sel.value; refresh(); });
+  sel.addEventListener("change", () => { S.profile = sel.value; $("top-profile").value = sel.value; resetDeadline(); showLimits(); refresh(); });
+  dl.addEventListener("input", () => { showLimits(); refresh(); });
   $("no-tools").addEventListener("change", refresh);
   $("run-id").addEventListener("input", refresh);
   const dz = $("dropzone");
@@ -278,6 +314,7 @@ async function showDrop() {
     fd.append("profile", sel.value);
     if ($("run-id").value.trim()) fd.append("run_id", $("run-id").value.trim());
     if ($("no-tools").checked) fd.append("no_tools", "1");
+    if (deadlineArg() !== null) fd.append("deadline_s", String(deadlineArg()));
     $("start-btn").disabled = true;
     $("start-error").hidden = true;
     if (!doc) $("start-note").textContent = "Fetching the PDF from the link, then starting the review.";
@@ -289,6 +326,8 @@ async function showDrop() {
       $("start-note").textContent = meta.can_launch ? startNote : meta.launch_note; refresh();
     }
   });
+  resetDeadline();
+  showLimits();
   refresh();
   // The sample documents of config/ui.yaml as chips: a chip fetches the file from this server and fills the form
   // with it (the same path as a drop); it never submits. The run starts only with the Start review button.
@@ -459,6 +498,8 @@ function newRunModel() {
   return { limits: null, deadline: null, profile: null, mode: null, replay: false, resumed: false, shardCount: null, lastT: 0,
     tracks: new Map(), byCall: new Map(), drafts: [], seen: new Set(), events: [], finished: null, error: null, verdict: null,
     stopRule: null, doc: null, runId: null,
+    // Whether the run was launched with --no-tools (ui/launch.json, set by showRun); null for a run started elsewhere.
+    noTools: null,
     // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
     limitNotes: [], draftedByCall: new Map(),
     // The track rows the reader expanded to their calls; kept across repaints.
@@ -532,7 +573,7 @@ function applyEvent(m, ev) {
     case "phase_started": { const t = track(m, ev.phase); if (t.status !== "cut") t.status = inFlight(m); if (t.start === null) t.start = now; break; }
     case "phase_done": {
       const t = track(m, ev.phase);
-      if (t.status !== "cut" && t.status !== "failed") t.status = "done";
+      if (t.status !== "cut" && t.status !== "failed" && !t.docOnly) t.status = "done";
       t.end = now; if (t.start === null) t.start = now - (f.seconds || 0);
       if (f.stopped_at_limit) {
         t.strong = null; t.text = "stopped at the stage limit";
@@ -547,7 +588,16 @@ function applyEvent(m, ev) {
       break;
     }
     case "research_started": { const t = track(m, "research"); t.strong = null; t.text = intl(f.questions) + " question(s) to research"; break; }
-    case "research_stopped": { const t = track(m, "research"); t.strong = null; t.text = words(f.code) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + intl(f.tool_calls) + " tool call(s)"; break; }
+    case "research_stopped": {
+      const t = track(m, "research");
+      if (researchWasOff(f)) {
+        // No tool gateway at all (phases/research.py _doc_only "no_tools"): research was never attempted, so nothing failed.
+        // Its disclosure ID stays on the stage's disclosure line (t.disclose, from research_doc_only).
+        t.status = "skipped"; t.skippedAt = now; t.docOnly = true; t.strong = null;
+        t.text = "document only (" + (m.noTools ? "--no-tools" : "no tool server in use") + "): " + intl(f.questions) + " question(s) left to the document";
+      } else { t.strong = null; t.text = researchStopWords(f) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + intl(f.tool_calls) + " tool call(s)"; }
+      break;
+    }
     case "phase_skipped": { const t = track(m, ev.phase); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
     case "research_skipped": { const t = track(m, "research"); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
     case "research_doc_only": {
@@ -689,6 +739,11 @@ function recordFacts(m, ev, f) {
   }
 }
 
+// research_stopped with detail "no_tools": the run had no tool gateway (--no-tools, or every server off), which the
+// record files under the tool_failure code; every other stop keeps its code and its reason.
+function researchWasOff(f) { return !!f && f.code === "tool_failure" && f.detail === "no_tools"; }
+function researchStopWords(f) { return words(f.code) + (f.detail && f.detail !== f.code ? ", " + words(f.detail) : ""); }
+
 function clk(s) { return typeof s === "number" ? clock(s) : null; }
 function listWords(xs) { return xs.length > 1 ? xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1] : xs.join(""); }
 function shardTracks(m) { return [...m.tracks.values()].filter((t) => t.key.startsWith("assess ")); }
@@ -717,7 +772,8 @@ const FACTS = {
   tools_offered: (m) => field(m.x.research, "tools"),
   servers: (m) => (m.x.servers.length ? listWords(m.x.servers) : null),
   tool_calls: (m) => field(m.x.researchStop, "tool_calls") ?? m.x.toolCalls,
-  research_stop: (m) => (m.x.researchStop ? words(m.x.researchStop.code) : null),
+  research_stop: (m) => (m.x.researchStop && !researchWasOff(m.x.researchStop) ? researchStopWords(m.x.researchStop) : null),
+  research_left: (m) => (researchWasOff(m.x.researchStop) ? field(m.x.researchStop, "questions") : null),
   answered: (m) => field(m.x.researchStop, "answered"),
   ledger_entries: (m) => field(m.x.researchStop, "ledger_entries"),
   refine_kept: (m) => field(m.x.retry, "kept"),
@@ -1118,12 +1174,24 @@ function finishedText(m, end) {
   return "The event stream ended.";
 }
 
+// A run that ended before its first event: the process's own words from ui/console.txt (rundata.console_tail), shown
+// as they were printed, with the command that started it. Usually a usage error such as a missing key.
+function consoleBlock(info) {
+  const c = info.console;
+  const code = info.exit_code !== null && info.exit_code !== undefined ? ", exit " + info.exit_code : "";
+  return h("div", { class: "console-box", id: "run-console" },
+    h("div", { class: "console-head" }, h("b", { text: "The process ended before its first event" + code + "." }),
+      " What it printed, from ", h("span", { class: "mono", text: "runs/" + info.run_id + "/" + c.file }), c.truncated ? " (the end of it)" : "", ":"),
+    h("pre", { class: "console-text", text: c.lines.join("\n") || "(nothing)" }));
+}
+
 function showRun(info, tabs) {
   closeStream();
   const app = clear($("app"));
   app.className = "surface wide";
   app.append(tpl("tpl-run"));
   const m = newRunModel();
+  m.noTools = typeof info.no_tools === "boolean" ? info.no_tools : null;
   S.model = m;
   S.stop = null;
   S.lastAt = null;
@@ -1134,7 +1202,12 @@ function showRun(info, tabs) {
   // A run just started has no progress.jsonl until the child's first event: the stream is opened anyway and
   // the server follows the file from the moment it appears. Only a run that ended without one has no timeline.
   if (!info.has_events && info.status !== "running") {
-    $("legend").after(h("p", { class: "notice", text: "This run directory has no progress.jsonl (it was recorded before the structured event stream), so there is no timeline to show." }));
+    $("finished-bar").after(info.console ? consoleBlock(info) : h("p", { class: "notice", text: info.launched_here
+      ? "This run wrote no progress.jsonl and no console output, so there is no timeline to show."
+      : "This run directory has no progress.jsonl (it was recorded before the structured event stream), so there is no timeline to show." }));
+    // Nothing will arrive, so no empty stage rows, "first records fill this in" or 00:00 head clock are drawn.
+    app.querySelector(".run-wrap").hidden = true;
+    $("top-meta").hidden = true;
     return;
   }
   const es = new EventSource("/runs/" + encodeURIComponent(info.run_id) + "/events");
@@ -1164,6 +1237,7 @@ function showRun(info, tabs) {
     if (!bar) return;
     clear(bar).hidden = false;
     bar.append(finishedText(m, end));
+    if (fresh.console && !$("run-console")) { $("finished-bar").after(consoleBlock(fresh)); if (!fresh.has_events) app.querySelector(".run-wrap").hidden = true; }
     if (fresh.has_report && !tabs) bar.append(h("button", { class: "btn primary", type: "button", text: "Open the review", onclick: () => go(info.run_id) }));
   });
 }
