@@ -170,7 +170,7 @@ def test_ids_without_a_target_stay_plain_and_known_ones_link_by_data(tmp_path: P
     }
     md = ("# Design review: X\n\n## Gaps\n\n### FND-001 t\n\ns\n\n"
           "## Fitness for purpose\n\nFND-001 and FND-999 and EV-001 and EV-777 and DEG-001. FR-1, FR-2, P1 and P7. "
-          "Section 3 and Section 9 and p.3 §3: \"Checks run in order before any query.\"\n")
+          "Section 3 and Section 9 and Sections 3 and 9 and p.3 §3: \"Checks run in order before any query.\"\n")
     rd = _run(tmp_path, md, report, PAGES, [{"section_id": "3", "heading": "Gateway", "char_start": sec_start,
                                              "char_end": len(PAGES), "page_start": 3}])
     page = export.export_html(rd, replayed=False)
@@ -181,8 +181,8 @@ def test_ids_without_a_target_stay_plain_and_known_ones_link_by_data(tmp_path: P
         assert re.search(rf">[^<]*\b{plain}\b", main) and f">{plain}</a>" not in main, plain
     assert 'href="#AD-001"' in main and '>FR-1</a>' in main                  # by the registry's doc_ref
     assert '>P1</a>' in main and 'href="#AD-001"' in main                    # by the registry's requirement_ids
-    assert re.search(r'href="#doc-s3"[^>]*>3</a>', main)                     # Section 3 opens the section
-    assert ">9</a>" not in main                                              # Section 9 is not in the document
+    assert re.search(r'href="#doc-s3"[^>]*>Section 3</a>', main)             # one section: the whole phrase links
+    assert "Section 9" in main and ">9</a>" not in main and ">Section 9</a>" not in main   # not in the document
     assert re.search(r'href="#doc-q\d+"[^>]*>p\.3 §3</a>', main)             # the quoted passage, marked
     assert text_of(main) == text_of(export.review_html(md))
     w = walk(page)

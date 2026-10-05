@@ -265,7 +265,7 @@ def confidence_entry(root: Path) -> Term:
         f"(<code>{escape(vprompt)}</code>); code clamps it to 0 to 1 (<code>{escape(vclamp)}</code>). When no model "
         f"verdict is available, the verdict is derived by rule with a fixed confidence of 0.5 (<code>{escape(rule)}"
         "</code>).</p>"
-        "<p>The word in brackets is a band code derives from the number: <b>high</b> at 0.80 or more, "
+        "<p>The word in brackets is a band that code derives from the number: <b>high</b> at 0.80 or more, "
         f"<b>medium</b> at 0.50 or more, <b>low</b> below 0.50 (<code>{escape(band)}</code>).</p>")
     return Term("confidence", "Confidence (and its band)", body, f"{sysmd}; {band}")
 
@@ -287,7 +287,7 @@ def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, T
         _src(root, "agent/sit_review_agent/models.py", "NOT_ASSESSED = "))
     terms["confidence"] = confidence_entry(root)
     terms["rank"] = Term("rank", "Rank", escape(
-        "The finding's place in the review's order, 1 first. Assess ranks the merged findings by severity "
+        "The finding's place in the review's order; rank 1 comes first. Assess ranks the merged findings by severity "
         "(critical first; a strength, which has none, last), then by confidence; the refine call may re-rank them."),
         _src(root, "agent/sit_review_agent/phases/assess.py", "Ranks 1..n by severity"))
     cfg = read_json(run_dir / "effective_config.json") or {}
@@ -544,6 +544,10 @@ class Index:
                     self.count("section", False)
                     return n.group(0)
                 return self.a(href, n.group(0), "x-loc", "section", self._sec_title(n.group(0)))
+            if re.fullmatch(r"\d+(?:\.\d+)*", body):               # one section: the whole phrase is the link
+                href = self.section_href(body)
+                if href is not None:
+                    return keep(self.a(href, f"{word} {body}", "x-loc", "section", self._sec_title(body)))
             return keep(word + " " + re.sub(r"\d+(?:\.\d+)*", one, body))
 
         def bare_sec(m: re.Match[str]) -> str:

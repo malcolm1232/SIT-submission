@@ -739,12 +739,12 @@ def _doc_text(idx: Index, pdf_href: str | None) -> str:
     out: list[str] = []
     for d in idx.docs:
         segs = d.segments()
-        pdf = (f"The PDF travels with this page: each page links to its page of {escape(pdf_href)}."
+        pdf = (f"The PDF travels with this page: each page below links to the same page of {escape(pdf_href)}."
                if pdf_href and d is idx.doc else
                "The PDF is not part of this file; the text below is what the review read.")
         out.append(_ref_head(f"{d.prefix}-text", f"The reviewed document: {d.title}" if d is idx.doc else
                              f"Document {d.doc_id}: {d.title}",
-                             f"Not part of the review: {escape(d.doc_id)} as the review read it, the text "
+                             f"Not part of the review: the text of {escape(d.doc_id)} as the review read it, "
                              "extracted from the PDF (figures and images are not in it), page by page. Each "
                              "passage the review quotes is highlighted; page and section references in the review "
                              f"open here. {pdf}"))
@@ -868,7 +868,7 @@ class _Run:
 
     def index_page(self) -> str:
         note = ("The review below is this run's report.md as dra review wrote it, shown as HTML. Its identifiers, "
-                "page and section references are links; the Reference part after it is "
+                "page and section references are links; the Reference part that follows was "
                 f'<a href="#r-howto">{ADDED}</a> and is not part of the review. report.md and report.json are the '
                 "review's own files.")
         return (f'{self.head()}<body id="top"><div class="layout">{self.nav()}<div class="wrap">'
