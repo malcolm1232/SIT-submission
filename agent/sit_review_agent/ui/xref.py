@@ -267,8 +267,69 @@ def confidence_entry(root: Path) -> Term:
         f"verdict is available, the verdict is derived by rule with a fixed confidence of 0.5 (<code>{escape(rule)}"
         "</code>).</p>"
         "<p>The word in brackets is a band that code derives from the number: <b>high</b> at 0.80 or more, "
-        f"<b>medium</b> at 0.50 or more, <b>low</b> below 0.50 (<code>{escape(band)}</code>).</p>")
+        f"<b>medium</b> at 0.50 or more, <b>low</b> below 0.50 (<code>{escape(band)}</code>).</p>"
+        '<p>How it sits beside severity, rank and disposition: <a class="xref" href="#g-scoring">How findings are '
+        "scored</a>.</p>")
     return Term("confidence", "Confidence (and its band)", body, f"{sysmd}; {band}")
+
+
+def scoring_entry(root: Path) -> Term:
+    """How a finding's four facts are set: severity, confidence and its band, rank and disposition, what each is,
+    whether the model or code sets it and where, each statement with the line it comes from."""
+    def c(rel: str, needle: str, span: int = 0) -> str:
+        return f"<code>{escape(_src(root, rel, needle, span))}</code>"
+    sysmd, refine, report = "prompts/system.md", "prompts/refine.md", "agent/sit_review_agent/phases/report.py"
+    body = (
+        "<p>Each finding carries four facts, shown as its chips. None of them is a score computed from the others, "
+        "and none is an estimate made by this page.</p>"
+        "<p><b>Severity</b> is the expected impact if the design is built as written: critical, high, medium or low "
+        f"(a strength has none) ({c(sysmd, '## Severity (')}). The model sets it: the assess call drafts it under "
+        "that standard, and the refine call may correct it, but a change of severity without a reason is not "
+        f"applied ({c(refine, 'A change of severity or disposition needs a')}).</p>"
+        "<p><b>Confidence</b> is a number from 0 to 1, the model's own estimate of the probability that the finding "
+        f"is correct and material ({c(sysmd, '## Confidence (')}). The assess call gives it; code only clamps it to "
+        "0 to 1 and refine does not change it. The word beside it (high, medium or low) is a band code derives from "
+        f"the number ({c('agent/sit_review_agent/report/render.py', 'def confidence_band', 2)}); "
+        "\"Confidence (and its band)\" below has the details.</p>"
+        "<p><b>Rank</b> is the finding's place in the review's order, 1 first. Code ranks the merged findings by "
+        "severity, critical first and a strength last, then by confidence "
+        f"({c('agent/sit_review_agent/phases/assess.py', 'def rank_by_severity', 7)}); the refine call then gives "
+        f"each kept finding its final rank, 1, 2, 3 with no gaps ({c(refine, '- `keep`: the finding stays.', 5)}).</p>"
+        "<p><b>Disposition</b> is what should happen next: refinement now, needs investigation, needs prototyping, "
+        f"needs testing, governance decision or no change ({c(sysmd, '## Disposition (')}). The model sets it in "
+        "assess and may change it in refine with a reason. Code then lists every finding whose disposition is "
+        "needs investigation, needs prototyping, needs testing or governance decision among the unresolved items, "
+        f"with its owner and next step ({c(report, 'if f.disposition in NON_REFINEMENT_DISPOSITIONS', 3)}"
+        f"; {c('agent/sit_review_agent/models.py', 'NON_REFINEMENT_DISPOSITIONS: frozenset', 3)}).</p>")
+    return Term("scoring", "How findings are scored", body, _src(root, sysmd, "## Severity ("))
+
+
+def count_terms(root: Path) -> dict[str, Term]:
+    """The words of the counts on top of the review that the review standard does not already define (a severity and
+    a strength are the ``sev-`` and ``kind-strength`` entries): a finding, an area checked with no issue, an
+    unresolved item and a limitation."""
+    report = "agent/sit_review_agent/phases/report.py"
+    return {
+        "count-findings": Term("count-findings", "findings", escape(
+            "Every finding in this run's report.json, strengths included: one judgement of the review about the "
+            "design (a strength, risk, gap, ambiguity, unresolved assumption or validation need), with its place in "
+            "the document and its evidence. The severities count only the findings that are not strengths."),
+            _src(root, "prompts/system.md", "## Finding kinds")),
+        "count-sound": Term("count-sound", "areas checked, no issue", escape(
+            "A sound area (SA-nnn): a part of the design within an assessment's criteria that needs no change, with "
+            "the sections, why it is sound (tied to an objective or requirement) and where in the document. The "
+            "review lists them under Areas where no change is needed."),
+            _src(root, "prompts/assess.md", "`sound_areas`: parts of the design")),
+        "count-unresolved": Term("count-unresolved", "unresolved", escape(
+            "An open item written by code, never by the model: each point verify could not confirm, then one item "
+            "per finding whose disposition is needs investigation, needs prototyping, needs testing or governance "
+            "decision, with its owner and next step. Listed under Unresolved issues and next steps."),
+            _src(root, report, "unresolved items and limitations are written by code")),
+        "count-limitations": Term("count-limitations", "limitations", escape(
+            "One line per degradation (DEG-nnn) of this run, written by code: every limit reached, call ended early, "
+            "failed tool or unverified finding is stated in the report rather than hidden. Listed under Evidence "
+            "limitations."), _src(root, report, "finding; one limitation per degradation")),
+    }
 
 
 def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, Term]:
@@ -286,6 +347,7 @@ def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, T
     terms["verdict-not_assessed"] = Term("verdict-not_assessed", "not assessed", escape(
         "Set by code only, when the run produced no assessment: no judgement of the design."),
         _src(root, "agent/sit_review_agent/models.py", "NOT_ASSESSED = "))
+    terms["scoring"] = scoring_entry(root)
     terms["confidence"] = confidence_entry(root)
     terms["rank"] = Term("rank", "Rank", escape(
         "The finding's place in the review's order; rank 1 comes first. Assess ranks the merged findings by severity "
@@ -310,6 +372,7 @@ def vocabulary(root: Path, run_dir: Path, report: dict[str, Any]) -> dict[str, T
     for k, (label, text) in ID_FAMILIES.items():
         terms[f"id-{k}"] = Term(f"id-{k}", f"{k}-nnn: {label}", escape(text), "agent/sit_review_agent/models.py")
     terms.update(run_log_terms(root))
+    terms.update(count_terms(root))
     return terms
 
 
@@ -362,7 +425,9 @@ def _coverage_terms(root: Path) -> dict[str, Term]:
     text = " ".join(para)
     out: dict[str, Term] = {}
     for m in re.finditer(r"`(findings|no_issue|not_applicable)` \(([^)]*)\)", text):
-        desc = m.group(2).replace("`", "")
+        # the prompt's words to the model ("say why") as a reader reads them ("the note says why")
+        desc = re.sub(r"\bsay (why|what[^;]*?)(?: in note)?$", r"the note says \1", m.group(2).replace("`", ""))
+        desc = re.sub(r"^with ", "findings were raised, with ", desc)
         out[f"cov-{m.group(1)}"] = Term(
             f"cov-{m.group(1)}", m.group(1).replace("_", " "),
             escape(f"A coverage row's outcome for one criterion of the shard ({desc}). Each shard gives exactly one "
