@@ -30,7 +30,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_payments_v1_low | payments_orchestration | FULL | low | 241 | 152.1 | completed_degraded | 20 | 4.62 | 0 | 3.73/4.59/5.30 | 5.15/5.10/5.36 |
 | d_payments_v1_high | payments_orchestration | FULL | high | 509 | 265.4 | completed_degraded | 23 | 1.36 (lb) | 0 | 5.15/5.10/5.36 | 4.36/5.01/5.33 |
 | d_hospital_v1_2 | hospital_scheduling | FULL | medium | 480 | 265.2 | completed_degraded | 25 | 5.05 (lb) | 0 | 4.36/5.01/5.33 | 4.35/5.13/5.42 |
-| d_consent_v2_1 (resumed) | consent_service | FULL | medium | 183 | 229.2 | crashed in report (rc=4) | - | 7.79 | - | 4.24/5.32/5.52 | 8.26/6.25/5.82 |
+| d_consent_v2_1 (resumed) | consent_service | FULL | medium | 183 | 229.2 | crashed in report (rc=4; StageCrash, INV-04 invariant; not scored) | - | 7.79 (manifest total after resume) | - | 4.24/5.32/5.52 | 8.26/6.25/5.82 |
 
 ## Scores
 
