@@ -569,6 +569,8 @@ button.pill { border: 0; margin: 0; font-family: inherit; cursor: pointer; }
 @media (max-width: 1395px) {
   .run-wrap { grid-template-columns: minmax(0, 1fr); }
   .run-wrap.panel-open > .feed { display: block; }
+  /* the drawer covers the right side: the funnel's control goes before its title, where it stays in reach */
+  .fhead { flex-direction: row-reverse; justify-content: flex-end; }
   /* align-self back to stretch: start (the sticky column's) would size the fixed drawer to its content instead */
   .stage-panel { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 3; width: min(480px, calc(100vw - var(--navrail-w) - 56px));
     align-self: stretch; max-height: none; border-radius: 0; border-width: 0 0 0 1px; box-shadow: var(--shadow-lg); }
