@@ -14,15 +14,15 @@ eight parts of :data:`GROUPS`. The page carries a sidebar of the parts and one f
 (:data:`NAV_JS`) that shows one part at a time; without script every section shows.
 
 Cross-links (5 Oct 2026): every identifier a cold reader cannot resolve is a link (:mod:`.xref`): finding,
-evidence, limitation, sound-area, research-question and registry ids, the document's own requirement and
-principle ids, page and section references, ``[doc:...]`` anchors, the confidence number and the review's
-vocabulary. The linking only wraps text that is there, so the review's words are unchanged; the targets the
-review itself does not hold are in a reference part after the review, labelled as added by the export (how to
-read the review, the decision registry, the evidence ledger, and the reviewed document's extracted text with
-every quoted passage marked, so a reference resolves inside the one file even when it travels alone). The
-zip (:func:`export_zip`) holds the page as ``index.html``, the reviewed PDF as :data:`PDF_NAME` when the run
-can vouch for it (its SHA-256 matches the manifest), ``report.md`` and ``report.json``; each page of the
-document text then links to its page of the PDF.
+evidence, limitation, sound-area, research-question and registry ids, the document's own requirement and principle
+ids, page and section references, ``[doc:...]`` anchors, the confidence number and the review's vocabulary. The
+linking only wraps text that is there, so the review's words are unchanged; the targets the review itself does not
+hold are in a reference part after the review, labelled as reference material, not part of the review's text (how
+to read the review, the decision registry, the evidence ledger, and the reviewed document's extracted text with
+every quoted passage marked, so a reference resolves inside the one file even when it travels alone). The zip
+(:func:`export_zip`) holds the page as ``index.html``, the reviewed PDF as :data:`PDF_NAME` when the run can vouch
+for it (its SHA-256 matches the manifest), ``report.md`` and ``report.json``; each page of the document text then
+links to its page of the PDF.
 """
 
 from __future__ import annotations
@@ -47,7 +47,9 @@ CHAT_HEADING = "Reading-aid chat transcript (not part of the review)"
 REPLAY_STAMP = "replayed evidence"
 REPLAY_NOTE = ("This run was produced by dra replay from recorded model and tool calls; nothing was fetched or "
                "judged anew.")
-ADDED = "added by the export"
+#: The badge on each reference section: true in the exported page and in the app's Review tab alike.
+ADDED = "reference material - not part of the review's text"
+REF_GROUP_LABEL = "Reference material"
 PDF_NAME = "document.pdf"
 
 
@@ -60,10 +62,11 @@ def _md() -> MarkdownIt:
 @lru_cache(maxsize=1)
 def _css() -> str:
     """``tokens.css`` without its ``@font-face`` (the page's vendored serif is a file beside it; the export
-    loads nothing, so it falls back to the system serif of the same stack), then ``export.css``."""
+    loads nothing, so it falls back to the system serif of the same stack), then ``review.css`` (the review
+    document, which the app's Review tab loads too) and ``export.css`` (the page around it)."""
     tokens = (STATIC_DIR / "tokens.css").read_text(encoding="utf-8")
     tokens = re.sub(r"@font-face\s*\{[^}]*\}\s*", "", tokens)
-    return "\n".join((tokens, (STATIC_DIR / "export.css").read_text(encoding="utf-8")))
+    return "\n".join((tokens, *((STATIC_DIR / n).read_text(encoding="utf-8") for n in ("review.css", "export.css"))))
 
 
 def export_name(run_id: str) -> str:
@@ -141,375 +144,12 @@ INDEX_NAME = "index.html"
 CHAT_NAV_LABEL = "Chat transcript (not part of the review)"
 HEADINGS = dict(SECTION_ORDER)
 
-#: The page's one script. It hides and shows the sections already in the page, follows the in-page links with
-#: a history entry each (so Back returns to the place the reader left, scroll position included, and a visible
-#: "Back to where I was" does the same), marks the target, previews a link's target on hover, and marks the
-#: section in view in the sidebar. Without script every section shows and every link is a plain anchor.
-NAV_JS = r"""(function () {
-  var root = document.documentElement; root.classList.add("js");
-  var secs = document.querySelectorAll(".sec"), items = document.querySelectorAll(".toc-item");
-  var heads = document.querySelectorAll(".toc-heads a"), back = document.querySelector(".x-back"), cur = "all";
-  try { history.scrollRestoration = "manual"; } catch (x) {}
-  function st() { var s = history.state; return s && typeof s === "object" ? s : {}; }
-  function put(s, url) { try { history.replaceState(s, "", url === undefined ? location.href : url); } catch (x) {} }
-  function save() { var s = {}, o = st(); for (var k in o) s[k] = o[k]; s.y = window.scrollY; s.g = cur; put(s); }
-  function show(g, top) {
-    cur = g;
-    for (var i = 0; i < secs.length; i++) secs[i].hidden = g !== "all" && secs[i].getAttribute("data-g") !== g;
-    for (var j = 0; j < items.length; j++) items[j].classList.toggle("active", items[j].getAttribute("data-g") === g);
-    if (top) window.scrollTo(0, 0);
-    spy();
-  }
-  function hit(t) {
-    var old = document.querySelectorAll(".x-hit");
-    for (var i = 0; i < old.length; i++) old[i].classList.remove("x-hit");
-    var b = t.closest("article, li, tr, .x-entry, mark, .doc-page") || t;
-    if (t.classList.contains("doc-sec") || t.classList.contains("doc-page")) b = t;
-    b.classList.add("x-hit");
-  }
-  function go(t) {
-    var sec = t.closest(".sec"), g = sec && sec.getAttribute("data-g");
-    if (g && (sec.hidden || (cur !== "all" && cur !== g))) show(g, false);
-    var y = window.scrollY + t.getBoundingClientRect().top - window.innerHeight / 3;
-    if (t.tagName === "MARK") window.scrollTo(0, y);
-    else t.scrollIntoView({ block: "start" });
-    hit(t);
-  }
-  function backVis() { if (back) back.hidden = !(st().depth > 0); }
-  function route() {
-    var h = location.hash, m = /^#g(\d)$/.exec(h), s = st();
-    var t = h.length > 1 && !m ? document.getElementById(decodeURIComponent(h.slice(1))) : null;
-    if (m) show(m[1], typeof s.y !== "number");
-    else if (typeof s.g === "string") show(s.g, false);
-    else if (!t) show("all", false);
-    if (typeof s.y === "number") { window.scrollTo(0, s.y); if (t) hit(t); }
-    else if (t) go(t);
-    backVis();
-  }
-  document.querySelector(".toc").addEventListener("click", function (e) {
-    var a = e.target.closest("a[data-g]");
-    if (!a) return;
-    var g = a.getAttribute("data-g");
-    if (!a.classList.contains("toc-item")) { save(); show(g, false); return; }
-    e.preventDefault();
-    show(g, true);
-    put(st(), g === "all" ? location.pathname + location.search : "#g" + g);
-  });
-  // a cross-link opens its target in the side pane and the main column does not move; a modified click, a wheel-button
-  // click, the sidebar and the header's own links keep their plain anchor behaviour
-  document.addEventListener("click", function (e) {
-    if (e.button !== 0) return;
-    var a = e.target.closest ? e.target.closest("a[href^='#']") : null;
-    if (a && a.classList.contains("x-back")) { e.preventDefault(); history.back(); return; }
-    if (!a) {
-      if (paneOpen() && !(e.target.closest && e.target.closest(".x-pane, .x-pop, .toc"))) closePane();
-      return;
-    }
-    if (a.closest(".toc") || a.closest(".exp-head") || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    var id = decodeURIComponent(a.getAttribute("href").slice(1));
-    if (!id || !document.getElementById(id)) return;
-    e.preventDefault();
-    openPane(id, a);
-  });
-  function jump(id) {                                  // move the main column to a target, with a way back
-    var t = document.getElementById(id);
-    if (!t) return;
-    var d = st().depth || 0;
-    save();
-    try { history.pushState({ depth: d + 1 }, "", "#" + id); } catch (x) {}
-    go(t);
-    backVis();
-  }
-  window.addEventListener("popstate", function (e) {
-    var s = e.state;
-    if (s && typeof s.pane === "number" && s.stack) { adopt(s); return; }
-    if (paneOpen()) {                                  // Back past the pane's first entry: close it, main stays put
-      closed();
-      if (after) { var f = after; after = null; f(); }
-      return;
-    }
-    route();
-  });
-  window.addEventListener("hashchange", function () { if (!paneOpen()) route(); });
-  // the section in view, marked in the sidebar
-  var ticking = false;
-  function spy() {
-    var best = null;
-    for (var i = 0; i < secs.length; i++) {
-      if (secs[i].hidden) continue;
-      if (secs[i].getBoundingClientRect().top <= 96) best = secs[i]; else if (best) break;
-    }
-    if (!best) for (var k = 0; k < secs.length; k++) if (!secs[k].hidden) { best = secs[k]; break; }
-    var on = null;
-    for (var j = 0; j < heads.length; j++) {
-      var is = !!best && heads[j].getAttribute("href") === "#" + best.id;
-      heads[j].classList.toggle("cur", is);
-      if (is) on = heads[j];
-    }
-    var box = document.querySelector(".toc-inner");     // keep the marked heading in the rail's view
-    if (on && box && box.scrollHeight > box.clientHeight &&
-        (on.offsetTop < box.scrollTop + 48 || on.offsetTop > box.scrollTop + box.clientHeight - 48))
-      box.scrollTop = on.offsetTop - box.clientHeight / 2;
-  }
-  window.addEventListener("scroll", function () {
-    if (!ticking) { ticking = true; window.requestAnimationFrame(function () { ticking = false; spy(); }); }
-  }, { passive: true });
-  // the preview of a link's target, on hover or keyboard focus
-  var pop = document.createElement("div"), timer = 0, shown = null;
-  pop.className = "x-pop"; pop.hidden = true; pop.setAttribute("role", "tooltip");
-  document.body.appendChild(pop);
-  function strip(n) {
-    var all = n.querySelectorAll("[id]");
-    for (var i = 0; i < all.length; i++) all[i].removeAttribute("id");
-    if (n.removeAttribute) n.removeAttribute("id");
-    return n;
-  }
-  function el(tag, cls, text) {
-    var n = document.createElement(tag);
-    if (cls) n.className = cls;
-    if (text) n.textContent = text;
-    return n;
-  }
-  function pdfOf(t) {
-    var p = t.closest(".doc-page"), l = p && p.querySelector(".x-pdf");
-    return l ? strip(l.cloneNode(true)) : null;
-  }
-  function preview(t) {
-    var box = el("div", "x-pop-in"), page = t.closest(".doc-page");
-    if (page) {
-      box.appendChild(el("div", "x-pop-kicker", page.getAttribute("data-label")));
-      var pre = t.closest("pre") || page.querySelector("pre"), r = document.createRange(), q = el("div", "x-pop-doc");
-      if (t.tagName === "MARK" || t.classList.contains("doc-sec")) {
-        r.setStart(pre, 0); r.setEndBefore(t); var before = r.toString();
-        r.setStartAfter(t); r.setEnd(pre, pre.childNodes.length); var after = r.toString();
-        q.appendChild(document.createTextNode(before));               // the whole page, scrolled to the quote
-        if (t.tagName === "MARK") q.appendChild(el("mark", "", t.textContent));
-        else q.appendChild(el("b", "", t.getAttribute("data-label") + "\n"));
-        q.appendChild(document.createTextNode(after));
-      } else {
-        q.textContent = pre.textContent;
-      }
-      box.appendChild(q);
-      var pdf = pdfOf(t); if (pdf) box.appendChild(pdf);
-    } else if (t.tagName === "ARTICLE") {
-      var h = t.querySelector("h3"), meta = t.querySelector(".x-meta"), p = t.querySelector(":scope > p");
-      if (h) box.appendChild(strip(el("div", "x-pop-title", h.textContent)));
-      if (meta) box.appendChild(strip(meta.cloneNode(true)));
-      if (p) box.appendChild(strip(p.cloneNode(true)));
-    } else if (t.tagName === "TR") {
-      var cells = t.querySelectorAll("td"), dl = el("div", "x-pop-row"), hs = t.closest("table").querySelectorAll("th");
-      for (var i = 0; i < cells.length; i++) {
-        var line = el("div");
-        line.appendChild(el("span", "x-pop-k", (hs[i] ? hs[i].textContent : "") + " "));
-        line.appendChild(strip(cells[i].cloneNode(true)));
-        dl.appendChild(line);
-      }
-      box.appendChild(dl);
-    } else {
-      box.appendChild(strip(t.cloneNode(true)));
-    }
-    return box;
-  }
-  function hide() { clearTimeout(timer); pop.hidden = true; shown = null; }
-  function place(a) {
-    var r = a.getBoundingClientRect(), w = Math.min(460, window.innerWidth - 32), vh = window.innerHeight;
-    pop.style.width = w + "px";
-    pop.style.left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16)) + "px";
-    pop.style.maxHeight = "";
-    pop.hidden = false;
-    var h = pop.offsetHeight, below = r.bottom + 4, above = r.top - 4;
-    if (below + h <= vh - 8) pop.style.top = below + "px";           // under the link, 4 px from it
-    else if (above - h >= 8) pop.style.top = (above - h) + "px";      // flipped above it
-    else if (vh - 8 - below >= above - 8) {
-      pop.style.top = below + "px"; pop.style.maxHeight = (vh - 8 - below) + "px";
-    }
-    else { pop.style.top = "8px"; pop.style.maxHeight = (above - 8) + "px"; }
-    var m = pop.querySelector(".x-pop-doc mark, .x-pop-doc b");      // a passage: its quote in view
-    if (m) pop.scrollTop = Math.max(0, m.offsetTop - 96);
-  }
-  function arm(a) {
-    if (a === shown) return;
-    clearTimeout(timer);
-    timer = setTimeout(function () {
-      var id = decodeURIComponent(a.getAttribute("href").slice(1)), t = id && document.getElementById(id);
-      if (!t) return;
-      pop.textContent = ""; pop.appendChild(preview(t)); shown = a; place(a);
-    }, 220);
-  }
-  var canHover = !window.matchMedia || window.matchMedia("(hover: hover)").matches;
-  function inPop(e) { return !!(e.target.closest && e.target.closest(".x-pop")); }
-  function link(e) {
-    var a = e.target.closest ? e.target.closest("a.xref, a.chip") : null;
-    return a && !a.closest(".x-pop") ? a : null;
-  }
-  if (canHover) {
-    document.addEventListener("mouseover", function (e) {
-      var a = link(e);
-      if (a) arm(a);
-      else if (inPop(e)) clearTimeout(timer);                        // on the card: it stays open
-      else { clearTimeout(timer); if (shown && !pop.contains(document.activeElement)) timer = setTimeout(hide, 250); }
-    });
-  }
-  document.addEventListener("focusin", function (e) {
-    var a = link(e);
-    if (a) arm(a); else if (!inPop(e)) hide();
-  });
-  document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape") return;
-    if (!pop.hidden) { hide(); return; }
-    if (paneOpen()) { e.preventDefault(); closePane(); }
-  });
-  // ---- the side pane: the target's own content, copied from the page with its ids stripped
-  var pane = document.querySelector(".x-pane"), pbody = null, ptitle = null, pkick = null, pcrumb = null;
-  var pprev = null, pnext = null, pshow = null, ppdf = null, stack = [], at = -1, depth = 0, opener = null;
-  var after = null, gen = 0;
-  if (pane) {
-    pbody = pane.querySelector(".x-pane-body"); ptitle = pane.querySelector(".x-pane-title");
-    pkick = pane.querySelector(".x-pane-kicker"); pcrumb = pane.querySelector(".x-pane-crumb");
-    pprev = pane.querySelector(".x-pane-prev"); pnext = pane.querySelector(".x-pane-next");
-    pshow = pane.querySelector(".x-pane-show"); ppdf = pane.querySelector(".x-pane-pdf");
-    pprev.addEventListener("click", function () { history.back(); });
-    pnext.addEventListener("click", function () { history.forward(); });
-    pane.querySelector(".x-pane-close").addEventListener("click", function () { closePane(); });
-    pshow.addEventListener("click", function () {
-      var id = stack[at];
-      after = function () { jump(id); };
-      closePane();
-    });
-    pcrumb.addEventListener("click", function (e) {
-      var b = e.target.closest("button[data-i]");
-      if (b) { var i = +b.getAttribute("data-i"); if (i !== at) history.go(i - at); }
-    });
-  }
-  function paneOpen() { return !!pane && !pane.hidden; }
-  function block(t) {
-    return t.closest(".doc-page") || t.closest("article.finding, .x-entry, li, tr") || t;
-  }
-  function copy(t, b) {
-    t.setAttribute("data-x-here", "");
-    var c;
-    if (b.tagName === "TR") {
-      var table = b.closest("table"), head = table.querySelector("thead");
-      var tb = document.createElement("table"), body = document.createElement("tbody");
-      if (head) tb.appendChild(head.cloneNode(true));
-      body.appendChild(b.cloneNode(true)); tb.appendChild(body);
-      c = el("div", "x-table"); c.appendChild(tb);
-    } else {
-      c = b.cloneNode(true);
-    }
-    t.removeAttribute("data-x-here");
-    var stale = c.querySelectorAll(".x-hit, .x-opener");
-    for (var i = 0; i < stale.length; i++) stale[i].classList.remove("x-hit", "x-opener");
-    var here = c.querySelector("[data-x-here]") || (c.hasAttribute && c.hasAttribute("data-x-here") ? c : null);
-    if (here) { here.removeAttribute("data-x-here"); if (here !== c) here.classList.add("x-hit"); }
-    var h = c.querySelector(":scope > h3, :scope > .doc-page-head");
-    if (h && b.tagName !== "TR") h.parentNode.removeChild(h);
-    c.classList.remove("x-hit");
-    return strip(c);
-  }
-  function label(id, t, b) {
-    var m = /^(?:reg-)?((?:FND|EV|DEG|AD|SA|RQ)-\d+)$/.exec(id);
-    if (m) return m[1];
-    if (b.classList.contains("doc-page")) {
-      if (t.classList.contains("doc-sec")) return t.getAttribute("data-label").split(" ")[0];
-      return "p." + (/-p(\d+)$/.exec(b.id) || ["", "?"])[1];
-    }
-    var h = b.querySelector("h3");
-    var s = (h ? h.textContent : b.textContent).replace(/\s+/g, " ").trim();
-    return s.length > 22 ? s.slice(0, 21) + "\u2026" : s;
-  }
-  function title(id, t, b) {
-    var s;
-    if (b.classList.contains("doc-page")) {
-      s = t.classList.contains("doc-sec") ? t.getAttribute("data-label")
-        : b.querySelector(".doc-page-head span").textContent;
-    } else if (b.tagName === "ARTICLE") {
-      var f = b.querySelector("h3 .x-fid"), h3 = b.querySelector("h3");
-      s = h3.textContent.slice(f ? f.textContent.length : 0);
-    } else if (b.classList.contains("x-ev-entry") && b.querySelector(".x-q")) {
-      s = b.querySelector(".x-q").textContent;                       // an evidence item: its excerpt
-    } else {
-      var h = b.querySelector("h3");
-      s = h ? h.textContent : b.textContent;
-    }
-    s = s.replace(/\s+/g, " ").trim();
-    return s.length > 140 ? s.slice(0, 138) + "\u2026" : s;
-  }
-  function draw() {
-    var id = stack[at], t = document.getElementById(id), b = block(t), c = copy(t, b);
-    pbody.textContent = "";
-    if (b.classList.contains("x-ev-entry")) {                        // its excerpt is the title: not twice
-      var q = c.querySelector(":scope > .x-q");
-      if (q) q.parentNode.removeChild(q);
-    }
-    pbody.appendChild(c);
-    pkick.textContent = label(id, t, b);
-    ptitle.textContent = title(id, t, b);
-    pcrumb.textContent = "";
-    for (var i = 0; i < stack.length; i++) {
-      var ti = document.getElementById(stack[i]);
-      if (i) pcrumb.appendChild(el("span", "x-crumb-sep", "\u203a"));
-      var cb = el("button", i === at ? "x-crumb cur" : "x-crumb", label(stack[i], ti, block(ti)));
-      cb.type = "button"; cb.setAttribute("data-i", String(i));
-      if (i === at) cb.setAttribute("aria-current", "location");
-      pcrumb.appendChild(cb);
-    }
-    pcrumb.hidden = stack.length < 2;
-    pprev.disabled = at <= 0;
-    pnext.disabled = at >= stack.length - 1;
-    var pdf = b.classList.contains("doc-page") ? b.querySelector(".x-pdf") : null;
-    ppdf.hidden = !pdf;
-    if (pdf) { ppdf.href = pdf.getAttribute("href"); ppdf.textContent = pdf.textContent; }
-    pbody.scrollTop = 0;
-    var hit = c.querySelector(".x-hit");
-    if (hit && b.classList.contains("doc-page")) pbody.scrollTop = Math.max(0, hit.offsetTop - pbody.clientHeight / 3);
-  }
-  function mark(a) {
-    if (opener) opener.classList.remove("x-opener");
-    opener = a && !a.closest(".x-pane") ? a : opener;
-    if (opener) opener.classList.add("x-opener");
-  }
-  function openPane(id, a) {
-    if (!pane) { jump(id); return; }
-    hide();
-    var fresh = !paneOpen();
-    if (fresh || !a.closest(".x-pane")) { gen += 1; stack = [id]; at = 0; }
-    else { stack = stack.slice(0, at + 1); stack.push(id); at += 1; }
-    if (fresh) { save(); depth = 0; }
-    depth += 1;
-    try { history.pushState({ pane: at, stack: stack.slice(), gen: gen, d: depth }, ""); } catch (x) {}
-    mark(a);
-    pane.hidden = false;
-    root.classList.add("pane-open");
-    draw();
-    if (fresh || !a.closest(".x-pane")) ptitle.focus({ preventScroll: true });
-  }
-  function adopt(s) {
-    // the same chain keeps the entries ahead of this one, so the pane's Forward still has somewhere to go
-    var same = s.gen === gen && stack.length > s.pane && stack[s.pane] === s.stack[s.pane];
-    if (!same) stack = s.stack.slice();
-    at = s.pane; gen = s.gen; depth = s.d || 1;
-    if (!paneOpen()) { pane.hidden = false; root.classList.add("pane-open"); }
-    draw();
-  }
-  function closed() {
-    pane.hidden = true;
-    root.classList.remove("pane-open");
-    stack = []; at = -1; depth = 0;
-    var o = opener;
-    if (opener) opener.classList.remove("x-opener");
-    opener = null;
-    if (o) o.focus({ preventScroll: true });
-  }
-  function closePane() {
-    if (!paneOpen()) return;
-    var s = st();
-    if (typeof s.pane === "number" && depth > 0) history.go(-depth);   // its popstate closes the pane
-    else { closed(); if (after) { var f = after; after = null; f(); } }
-  }
-  window.addEventListener("scroll", function () { if (shown) { pop.hidden = true; shown = null; } }, { passive: true });
-  route();
-})();"""
+#: The page's one script, ``static/xnav.js``: the run's Review tab in ``dra ui`` loads the same file, so the export
+#: and the tab cannot drift apart. It hides and shows the sections already in the page, follows the in-page links with
+#: a history entry each (so Back returns to the place the reader left, scroll position included, and a visible "Back
+#: to where I was" does the same), opens a link's target in the side pane, previews a link's target on hover, and
+#: marks the section in view in the sidebar. Without script every section shows and every link is a plain anchor.
+NAV_JS = (STATIC_DIR / "xnav.js").read_text(encoding="utf-8").rstrip("\n")
 
 
 #: The side pane the script fills with a link's target (hidden, and unused, without script).
@@ -757,7 +397,7 @@ def _verdict_para(html: str, idx: Index) -> str:
     return re.sub(r"<p><strong>([A-Z][a-z ]+)</strong>", lab, html, count=1)
 
 
-# ------------------------------------------------------------------ the reference part (added by the export)
+# ------------------------------------------------------------------ the reference part (reference material)
 
 
 def _entry(eid: str, title: str, body: str, src: str | None = None, cls: str = "") -> str:
@@ -938,9 +578,9 @@ def _doc_text(idx: Index, pdf_href: str | None) -> str:
     out: list[str] = []
     for d in idx.docs:
         segs = d.segments()
-        pdf = (f"The PDF travels with this page: each page below links to the same page of {escape(pdf_href)}."
-               if pdf_href and d is idx.doc else
-               "The PDF is not part of this file; the text below is what the review read.")
+        # the same words wherever the page is shown (the zip, the server's export.html, the app's Review tab)
+        pdf = ("Each page below links to the same page of the reviewed PDF." if pdf_href and d is idx.doc else
+               "The PDF is not linked from here; the text below is what the review read.")
         out.append(_ref_head(f"{d.prefix}-text", f"The reviewed document: {d.title}" if d is idx.doc else
                              f"Document {d.doc_id}: {d.title}",
                              f"Not part of the review: the text of {escape(d.doc_id)} as the review read it, "
@@ -966,7 +606,8 @@ def _doc_text(idx: Index, pdf_href: str | None) -> str:
 class _Run:
     """The export of one run: the header, the cut and linked report, the chat and the reference part."""
 
-    def __init__(self, run_dir: Path, *, replayed: bool, exported_at: str | None, pdf_href: str | None) -> None:
+    def __init__(self, run_dir: Path, *, replayed: bool, exported_at: str | None, pdf_href: str | None,
+                 with_chat: bool = True) -> None:
         report_md = (run_dir / "report.md").read_text(encoding="utf-8")
         report = read_json(run_dir / "report.json") or {}
         report = report if isinstance(report, dict) else {}
@@ -978,7 +619,7 @@ class _Run:
         self.stamp = (f'<div class="stamp"><span class="pill">{escape(REPLAY_STAMP)}</span> {escape(REPLAY_NOTE)}'
                       "</div>" if replayed else "")
         preamble, self.sections = split_report(report_md)
-        self.chat = chat_section(run_dir)
+        self.chat = chat_section(run_dir) if with_chat else ""
         self.chat_group = len(GROUPS) - 1
         self.index = idx = Index(run_dir, report, root=repo_root(), pdf_href=pdf_href)
         # 1. structure: cards, chips, ids (no text changes)
@@ -1016,7 +657,7 @@ class _Run:
 
     def head(self) -> str:
         return ("<!doctype html>\n"
-                '<html lang="en" class="export-doc"><head><meta charset="utf-8">'
+                '<html lang="en" class="export-doc rv"><head><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width, initial-scale=1">'
                 '<meta name="color-scheme" content="light dark">'
                 f"<title>{escape('Design review: ' + self.title)}</title>"
@@ -1026,32 +667,49 @@ class _Run:
         return (f'<header class="exp-head"><div class="brand">SIT design review</div>'
                 f'<div class="meta">{escape(self.meta)}</div>{self.stamp}<p class="note">{note}</p></header>')
 
+    def report(self, tag: str = "main") -> str:
+        """The preamble and every section: the review's own words, linked."""
+        return (f'<{tag} class="report">\n<div class="pre">{self.preamble}</div>'
+                + "".join(f'<section class="sec" data-g="{s.group + 1}" id="{s.sid}">{s.html}</section>'
+                          for s in self.sections) + f"</{tag}>")
+
+    def reference(self) -> str:
+        return f'<div class="x-reference">{"".join(self.ref)}</div>'
+
     def body(self) -> str:
         """The preamble, then every section, then the chat section, then the reference part."""
-        out = [f'<main class="report">\n<div class="pre">{self.preamble}</div>']
-        for s in self.sections:
-            out.append(f'<section class="sec" data-g="{s.group + 1}" id="{s.sid}">{s.html}</section>')
-        out.append("</main>")
-        if self.chat:
-            out.append(f'<div class="sec" data-g="{self.chat_group + 1}" id="s-chat">{self.chat}</div>')
-        out.append(f'<div class="x-reference">{"".join(self.ref)}</div>')
-        return "".join(out)
+        chat_part = (f'<div class="sec" data-g="{self.chat_group + 1}" id="s-chat">{self.chat}</div>' if self.chat
+                     else "")
+        return self.report() + chat_part + self.reference()
 
-    def nav(self) -> str:
-        out = ['<nav class="toc" aria-label="Parts of the review"><div class="toc-inner">'
-               '<div class="toc-brand">SIT review<span class="ai">.</span></div>'
-               '<div class="toc-group">Parts</div>'
-               '<a class="toc-item" href="#top" data-g="all"><span class="num"></span>'
-               '<span class="label">All sections</span></a>']
+    def fragment(self) -> str:
+        """The review as the run's Review tab in ``dra ui`` shows it: the same report and reference part as
+        :meth:`body` (the chat has its own panel there), a slim table of contents of the same parts, the way back
+        and the side pane; no script (the tab runs ``static/xnav.js``, this page's own) and no header (the app
+        has its own)."""
+        return (f'<div class="rv" id="rv"><div class="rv-grid"><div class="rv-doc">{self.report("div")}'
+                f"{self.reference()}</div>{self.nav(slim=True)}</div>"
+                f'<a class="x-back" href="#" hidden>Back to where I was</a>{PANE_HTML}</div>')
+
+    def nav(self, *, slim: bool = False) -> str:
+        """The sidebar of the parts, each with its headings. ``slim``: the app's in-tab table of contents, every
+        section shown at once, so no brand, no "All sections" and no entry for a part without a section."""
+        out = ['<nav class="toc" aria-label="Parts of the review"><div class="toc-inner">']
+        if not slim:
+            out.append('<div class="toc-brand">SIT review<span class="ai">.</span></div>'
+                       '<div class="toc-group">Parts</div>'
+                       '<a class="toc-item" href="#top" data-g="all"><span class="num"></span>'
+                       '<span class="label">All sections</span></a>')
         for gi, (_, label, _) in enumerate(GROUPS):
             mine = [(s.sid, s.heading) for s in self.sections if s.group == gi]
             if self.chat and gi == self.chat_group:
                 mine.append(("s-chat", CHAT_NAV_LABEL))
-            out.append(self._nav_entry(gi, label, mine))
+            if mine or not slim:
+                out.append(self._nav_entry(gi, label, mine))
         refs = [(sid, title) for sid, title in re.findall(r'<section class="sec x-ref" data-g="\d+" id="([^"]+)">'
                                                           r"<h2>(.*?) <span", "".join(self.ref))]
         if refs:
-            out.append(f'<div class="toc-group">{escape(ADDED.capitalize())}</div>')
+            out.append(f'<div class="toc-group">{escape(REF_GROUP_LABEL)}</div>')
             out.append(self._nav_entry(REF_GROUP, REF_LABEL, refs))
         out.append("</div></nav>")
         return "".join(out)
@@ -1067,9 +725,9 @@ class _Run:
 
     def index_page(self) -> str:
         note = ("The review below is this run's report.md as dra review wrote it, shown as HTML. Its identifiers, "
-                "page and section references are links; the Reference part that follows was "
-                f'<a href="#r-howto">{ADDED}</a> and is not part of the review. report.md and report.json are the '
-                "review's own files.")
+                "page and section references are links; the <a href=\"#r-howto\">Reference part</a> that follows is "
+                "reference material and not part of the review's text. report.md and report.json are the review's "
+                "own files.")
         return (f'{self.head()}<body id="top"><div class="layout">{self.nav()}<div class="wrap">'
                 f"{self.header(note)}{self.body()}</div></div>"
                 '<a class="x-back" href="#" hidden>Back to where I was</a>'
@@ -1084,6 +742,14 @@ def export_html(run_dir: Path, *, replayed: bool, exported_at: str | None = None
     and section references then resolve to the document text inside it. Raises ``FileNotFoundError`` when the
     run has no ``report.md``."""
     return _Run(run_dir, replayed=replayed, exported_at=exported_at, pdf_href=pdf_href).index_page()
+
+
+def review_fragment(run_dir: Path, *, pdf_href: str | None) -> str:
+    """The run's Review tab in ``dra ui`` (:meth:`_Run.fragment`): the same renderer and linker as
+    :func:`export_html`, so the tab and the export say the same words with the same links. ``pdf_href`` is the
+    app's own ``/runs/<id>/doc.pdf`` (or ``None`` when the run cannot vouch for its PDF). Raises
+    ``FileNotFoundError`` when the run has no ``report.md``."""
+    return _Run(run_dir, replayed=False, exported_at=None, pdf_href=pdf_href, with_chat=False).fragment()
 
 
 def link_counts(run_dir: Path, *, pdf_href: str | None = None) -> dict[str, list[int]]:

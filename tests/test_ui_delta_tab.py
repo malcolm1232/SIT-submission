@@ -131,7 +131,7 @@ def page(delta_run: tuple[Path, dict[str, str]], tmp_path_factory: pytest.TempPa
 
 def _open(pg: Any, base: str, run_id: str, tab: str) -> None:
     pg.goto(base + f"/?run={run_id}&tab={tab}")
-    pg.wait_for_selector("#review > div")
+    pg.wait_for_selector("#review > *")
 
 
 def test_the_page_shows_a_disabled_delta_tab_without_a_previous_version(page) -> None:

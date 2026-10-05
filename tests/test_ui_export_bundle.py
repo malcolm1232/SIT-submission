@@ -1,5 +1,5 @@
 """The export bundle (decision #43, 2026-10-04; cross-linked 5 Oct 2026): the single page with a sidebar of eight
-parts and a Reference part added by the export, and the zip that holds it with the reviewed PDF (when the run
+parts and a Reference part of reference material, and the zip that holds it with the reviewed PDF (when the run
 vouches for it), ``report.md`` and ``report.json``. The part files are gone: a part file had no sidebar, and a
 reader took the jump to one for the sidebar closing. Offline on the committed run ``docs/live_runs/ui_flow_1``;
 the browser tests run in Chromium where Playwright has it."""

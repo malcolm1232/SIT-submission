@@ -29,6 +29,9 @@ SERVERS = [{"name": "mcp-internet-search", "enabled": True}, {"name": "mcp-resea
 HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 JS = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
 CSS = (STATIC_DIR / "app.css").read_text(encoding="utf-8")
+#: The review document's sheet and script, shared with the export (ui/export.py inlines them).
+REVIEW_CSS = (STATIC_DIR / "review.css").read_text(encoding="utf-8")
+XNAV = (STATIC_DIR / "xnav.js").read_text(encoding="utf-8")
 TOKENS = (STATIC_DIR / "tokens.css").read_text(encoding="utf-8")
 
 #: Numeric literals app.js may hold. None is shown as a value: each formats or slices one.
@@ -133,7 +136,7 @@ def test_the_chat_panel_is_labelled_a_reading_aid() -> None:
 
 
 def test_chat_text_never_enters_the_review_column() -> None:
-    for fn in ("reviewBody", "deltaBody", "coverageBody", "evidenceBody", "expanded", "findingList"):
+    for fn in ("reviewDoc", "deltaBody", "coverageBody", "evidenceBody", "expanded"):
         body = _code_only(JS).split(f"function {fn}(", 1)[1].split("\nfunction ", 1)[0]
         assert not re.search(r"\bturns?\b|chat", body), fn
 
@@ -142,7 +145,8 @@ def test_chat_text_never_enters_the_review_column() -> None:
 
 
 def test_no_decorative_animation() -> None:
-    assert "@keyframes" not in CSS and "animation" not in CSS
+    assert "@keyframes" not in CSS + REVIEW_CSS and "animation" not in CSS + REVIEW_CSS
+    assert "transition" not in REVIEW_CSS and ".animate(" not in XNAV and "smooth" not in XNAV + REVIEW_CSS
     for decl in re.findall(r"transition:\s*([^;]+);", CSS):
         for part in decl.split(","):
             prop, dur = part.split()
@@ -152,19 +156,25 @@ def test_no_decorative_animation() -> None:
 
 def test_no_colour_outside_the_token_sheet() -> None:
     hexes = re.compile(r"#[0-9a-fA-F]{3,8}\b")
-    assert not hexes.findall(CSS) and not hexes.findall(JS)
+    assert not hexes.findall(CSS) and not hexes.findall(JS) and not hexes.findall(REVIEW_CSS + XNAV)
     assert not hexes.findall(re.sub(r'href="[^"]*"', "", HTML))
-    assert not re.search(r"\brgba?\(|\bhsla?\(|\boklch\(", CSS + JS + HTML)
+    assert not re.search(r"\brgba?\(|\bhsla?\(|\boklch\(", CSS + JS + HTML + REVIEW_CSS + XNAV)
     assert len(hexes.findall(TOKENS)) >= 20
 
 
 def test_nothing_is_loaded_from_the_network() -> None:
-    for text in (HTML, JS, CSS, TOKENS):
+    for text in (HTML, JS, CSS, TOKENS, REVIEW_CSS, XNAV):
         assert "http://" not in text and "https://" not in text and "//cdn" not in text
 
 
 def test_data_is_inserted_as_text_only() -> None:
-    assert "innerHTML" not in JS and "insertAdjacentHTML" not in JS and "document.write" not in JS
+    for js in (JS, XNAV):
+        assert "innerHTML" not in js and "insertAdjacentHTML" not in js and "document.write" not in js
+    # One markup path, the Review tab: the server's own rendering of the review (export.review_fragment: every model
+    # word escaped, no script; tests/test_ui_review_tab.py), parsed as an inert document and adopted, never written.
+    assert JS.count("DOMParser") == 1 and "DOMParser" not in XNAV
+    body = JS.split("async function reviewDoc(", 1)[1].split("\nfunction ", 1)[0]
+    assert "new DOMParser().parseFromString(await res.text()" in body and '"/review.html"' in body
 
 
 # ------------------------------------------------------------------ the page in a browser
@@ -256,33 +266,22 @@ def test_the_page_in_a_browser(served) -> None:
         assert page.locator("#replay-stamp").count() == 0
         assert page.evaluate(MOTION) == 0
 
-        # The review: titles and statements as report.json has them; the counts are list lengths.
+        # The review: drawn from report.md (tests/test_ui_review_tab.py); this run directory holds report.json and no
+        # report.md, as an older run does, and the tab says so instead of drawing anything else.
+        from sit_review_agent.ui.server import REVIEW_NO_MD
+
         page.goto(base + f"/?run={REHEARSAL.name}")
-        page.wait_for_selector(".frow")
-        rows = {r.get_attribute("data-fid"): r.locator(".title").inner_text() for r in page.locator(".frow").all()}
-        assert rows == {f["id"]: f["title"] for f in report["findings"]}
-        for f in report["findings"][:5]:
-            page.click(f'.frow[data-fid="{f["id"]}"]')
-            # The row's click handler adds the expanded block after it in one task; wait for that before reading it.
-            page.wait_for_function("(id) => document.querySelector("
-                                   "'.frow[data-fid=\"' + id + '\"] + .expanded .statement') !== null", arg=f["id"])
-            got = page.locator(f'.frow[data-fid="{f["id"]}"] + .expanded .statement').inner_text()
-            assert got == f["statement"]
-            quotes = page.locator(f'.frow[data-fid="{f["id"]}"] + .expanded .quote').all_inner_texts()
-            assert quotes == [f"“{a['quote']}”" for a in f["doc_anchors"]]
-        counts = page.locator(".counts span").all_inner_texts()
-        assert counts[0] == f"{len(report['findings'])} findings"
-        assert f"{len(report['unresolved'])} unresolved" in counts
-        conf = page.locator(".verdict .conf").inner_text()
-        assert conf.startswith(f"confidence {report['verdict']['confidence']:.2f}")
+        page.wait_for_selector("#review .review-missing")
+        assert page.locator("#review .review-missing").inner_text() == REVIEW_NO_MD
+        assert page.locator("#top-doc").inner_text() == next(
+            (d for d in report["metadata"]["documents"] if d.get("role") == "under_review"),
+            report["metadata"]["documents"][0])["title"]
         assert page.locator("#chat-label").inner_text() == "reading aid, not the review"
         assert page.locator("#chat-budget").inner_text().startswith("0 of 20 calls used")
         delta = page.locator(".tab", has_text="Delta")                 # no previous version: Delta is drawn disabled
         assert delta.count() == 1 and delta.get_attribute("aria-disabled") == "true"
         assert delta.get_attribute("title") == "No previous version was given for this run"
         assert page.locator("#tab-note").inner_text() == "Delta is off: no previous version was given for this run."
-        link = page.locator(".expanded a[href*='doc.pdf#page=']").first.get_attribute("href")
-        assert re.search(r"/doc\.pdf#page=\d+$", link)
         assert page.evaluate(MOTION) == 0
         browser.close()
     assert all(u.startswith(base) for u in requests), [u for u in requests if not u.startswith(base)]

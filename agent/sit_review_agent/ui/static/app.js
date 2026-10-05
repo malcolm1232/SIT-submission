@@ -251,19 +251,21 @@ async function showDrop() {
     const say = (lim, dd) => "Stage 1 ends by " + clock(lim.stage_1_end) + ", refine by " + clock(lim.refine_end) + ", verdict by " + clock(lim.verdict_end) + ", deadline " + clock(dd) + ".";
     if (Number.isNaN(d)) { help.textContent = ""; dhelp.className = "help error"; dhelp.textContent = "Give a number of minutes from " + intl(dmin / 60) + " to " + intl(dmax / 60) + "."; return; }
     dhelp.className = "help";
-    if (!p || d === null) { help.textContent = ""; dhelp.textContent = p ? "Empty: the " + p.label + " profile's own deadline." : ""; if (p && d === null) help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
-    dhelp.textContent = d === p.deadline_s ? "The " + p.label + " profile's own deadline." : "Passed as --deadline " + d + "; the profile's own is " + dur(p.deadline_s) + ".";
-    if (d === p.deadline_s) { help.textContent = say(p.stage_limits_s, p.deadline_s); return; }
-    help.textContent = "Reading the limits for " + clock(d) + " from the server.";
+    if (!p) { help.textContent = ""; dhelp.textContent = ""; return; }
+    // At the profile's own deadline (the field empty or equal to it) the run gets no --deadline, so the server is asked
+    // without one and applies no scaling; it still states research's end and the warnings, at every deadline.
+    const own = d === null || d === p.deadline_s;
+    dhelp.textContent = d === null ? "Empty: the " + p.label + " profile's own deadline." : (own ? "The " + p.label + " profile's own deadline." : "Passed as --deadline " + d + "; the profile's own is " + dur(p.deadline_s) + ".");
+    help.textContent = own ? say(p.stage_limits_s, p.deadline_s) : "Reading the limits for " + clock(d) + " from the server.";
     try {
-      const L = await api("/limits?profile=" + encodeURIComponent(p.name) + "&deadline_s=" + d);
+      const L = await api("/limits?profile=" + encodeURIComponent(p.name) + (own ? "" : "&deadline_s=" + d));
       if (mine !== limitsAsk) return;
       const parts = [say(L.stage_limits_s, L.deadline_s)];
       if (L.scaled) parts.push("Scaled from the profile's, with the reserves (" + intl(L.report_reserve_s) + " s for verify and verdict, " + intl(L.refine_reserve_s) + " s for refine); the run says so first.");
       if (typeof L.research_end_s === "number") parts.push("Research ends by " + clock(L.research_end_s) + ".");
       for (const w of L.warnings) parts.push(sentence(w) + ".");
       help.textContent = parts.join(" ");
-    } catch (err) { if (mine === limitsAsk) help.textContent = "The limits for this deadline could not be read: " + err.message; }
+    } catch (err) { if (mine === limitsAsk) help.textContent = (own ? say(p.stage_limits_s, p.deadline_s) + " " : "") + "The limits for this deadline could not be read: " + err.message; }
   };
   const refresh = () => {
     const prev = $("prev-input").files[0];
@@ -1757,8 +1759,8 @@ async function setupOutputs(info) {
   $("out-md").href = base + "/report.md";
   $("out-json").href = base + "/report.json";
   $("out-download-label").textContent = "Download review (zip" + (out.export ? ", " + out.export.size : "") + ")";
-  $("out-download-help").textContent = "A zip of one cross-linked review page with a sidebar, whose one script only shows and " +
-    "hides sections and previews links, the reviewed PDF its page references open, report.md and report.json, nothing " +
+  $("out-download-help").textContent = "A zip of one cross-linked review page with a sidebar, whose one script shows and hides " +
+    "sections, previews links and opens them in a side pane, the reviewed PDF its page references open, report.md and report.json, nothing " +
     "loaded from the network" +
     (info.replayed ? ", stamped replayed evidence" : "") +
     (out.export && out.export.has_chat ? ", the chat transcript after the review, marked as not part of it." : ".");
@@ -1800,11 +1802,6 @@ async function setupOutputs(info) {
 }
 
 // ------------------------------------------------------------------ the review
-
-function sevPill(f) {
-  const s = f.kind === "strength" ? "strength" : f.severity;
-  return s ? h("span", { class: "pill " + s, text: s }) : h("span", { class: "pill", text: words(f.kind) });
-}
 
 function pdfLink(P, a) {
   const label = "p." + a.page + " §" + a.section_ref;
@@ -1867,73 +1864,31 @@ function expanded(P, f) {
   return box;
 }
 
-function findingList(P, list) {
-  const wrap = h("div", { class: "flist" });
-  for (const f of list) {
-    let box = null;
-    const row = h("button", { class: "frow", type: "button", "data-fid": f.id, "aria-expanded": "false" },
-      h("div", { class: "rank num", text: f.rank }), h("div", { class: "fid", text: f.id }), h("div", {}, sevPill(f)),
-      h("div", { class: "title", text: f.title }), h("div", { class: "disp", text: words(f.disposition) }),
-      h("div", { class: "conf num", text: conf(f.confidence) }));
-    row.addEventListener("click", () => {
-      if (box) { box.remove(); box = null; row.classList.remove("open"); row.setAttribute("aria-expanded", "false"); return; }
-      box = expanded(P, f); row.after(box); row.classList.add("open"); row.setAttribute("aria-expanded", "true");
-    });
-    wrap.append(row);
+// The Review tab is the review as the export draws it (GET /runs/<id>/review.html, ui/export.py review_fragment): the
+// same renderer, the same links and the same reference part, run by the export's own script (static/xnav.js) with the
+// app's router left in charge of history. The server builds the fragment from report.md and report.json with every
+// model word escaped and no script in it; it is parsed as an inert document and adopted, never written as markup here.
+async function reviewDoc(runId) {
+  const res = await fetch("/runs/" + encodeURIComponent(runId) + "/review.html");
+  if (!res.ok) {
+    let why = null;
+    try { why = (await res.json()).error; } catch (e) { why = null; }
+    return { el: h("p", { class: "review-missing", text: why || "The review could not be read (HTTP " + res.status + ")." }), wire: () => null };
   }
-  return wrap;
+  const parsed = new DOMParser().parseFromString(await res.text(), "text/html");
+  const box = document.adoptNode(parsed.getElementById("rv"));
+  return { el: box, wire: () => window.sitXnav(box, { history: false, column: ".rv-doc", top: () => reviewTop(box), more: (id) => reviewMore(runId, id) }) };
 }
 
-function openFinding(fid) {
-  const row = document.querySelector('.frow[data-fid="' + fid + '"]');
-  if (!row) return;
-  if (row.getAttribute("aria-expanded") !== "true") row.click();
-  row.scrollIntoView({ block: "center" });
-}
+// The height of the app's sticky chrome above the review (the topbar, and the table of contents when it is a strip on
+// top): app.css states it as --rv-top, so the scroll positions and the section marker read the same number as the CSS.
+function reviewTop(box) { return parseFloat(getComputedStyle(box).getPropertyValue("--rv-top")) || 0; }
 
-function idsNotIn(ids, text) {
-  const missing = (ids || []).filter((id) => !String(text || "").includes(id));
-  return missing.length ? h("b", { style: "font-weight:500", text: missing.join(", ") + " " }) : null;
-}
-
-function reviewBody(P) {
-  const R = P.report, D = P.derived, v = R.verdict || {};
-  const box = h("div", {});
-  const vline = h("div", { class: "verdict" }, h("span", { class: "label", text: sentence(v.label) }),
-    h("span", { class: "conf num", text: "confidence " + conf(v.confidence) + (D.verdict_band ? ", " + D.verdict_band : "") + ((v.conditions || []).length ? " · " + intl(v.conditions.length) + " condition" + (v.conditions.length === 1 ? "" : "s") : "") }));
-  if (D.previous_verdict) vline.append(h("span", { class: "prev num", text: "previous version (" + D.previous_verdict.run_id + "): " + words(D.previous_verdict.label) + " · " + conf(D.previous_verdict.confidence) }));
-  box.append(vline);
-  const c = D.counts;
-  const cs = h("div", { class: "counts num" });
-  for (const [n, label] of [[c.findings, "findings"], [c.critical, "critical"], [c.high, "high"], [c.medium, "medium"], [c.low, "low"], [c.strengths, "strengths"], [c.sound_areas, "areas checked, no issue"], [c.unresolved, "unresolved"], [c.limitations, "limitations"]]) {
-    cs.append(h("span", {}, h("b", { text: n }), " " + label));
-  }
-  box.append(cs, h("p", { class: "rationale", text: v.rationale || "" }));
-  if ((v.conditions || []).length) {
-    box.append(h("h3", { text: "Conditions" }), h("ul", { class: "plain small" }, v.conditions.map((x) => h("li", {}, x.text + ((x.finding_ids || []).length ? " (" + x.finding_ids.join(", ") + ")" : "")))));
-  }
-  if (v.what_would_change_it) box.append(h("p", { class: "rationale muted" }, h("b", { style: "font-weight:500;color:var(--fg)", text: "What would change it." }), " " + v.what_would_change_it));
-  if ((v.per_objective || []).length) {
-    // The objective's own text, as intent_summary.objectives records it under the same ref; the ref alone otherwise.
-    const texts = new Map((((R.intent_summary || {}).objectives) || []).map((o) => [o.ref, o.text]));
-    box.append(h("table", { class: "grid obj", style: "margin:18px 0 0" },
-      h("thead", {}, h("tr", {}, h("th", { text: "Objective" }), h("th", { text: "Verdict" }), h("th", { text: "Findings" }))),
-      h("tbody", {}, v.per_objective.map((o) => h("tr", {}, h("td", { class: "obj", title: texts.get(o.objective_ref) || o.objective_ref }, h("b", { style: "font-weight:500", text: o.objective_ref }), texts.has(o.objective_ref) ? " " + texts.get(o.objective_ref) : ""), h("td", { text: words(o.label) }), h("td", { class: "ids", text: (o.finding_ids || []).join(", ") || "–" }))))));
-  }
-  const all = [...(R.findings || [])].sort((a, b) => a.rank - b.rank);
-  const issues = all.filter((f) => f.kind !== "strength"), strengths = all.filter((f) => f.kind === "strength");
-  box.append(h("div", { class: "sec" }, h("h2", {}, "Findings ", h("span", { class: "n num", text: issues.length + " issues, ordered by rank" })), findingList(P, issues)));
-  if (strengths.length) box.append(h("div", { class: "sec" }, h("h2", {}, "Strengths ", h("span", { class: "n num", text: String(strengths.length) })), findingList(P, strengths)));
-  if ((R.sound_areas || []).length) {
-    box.append(h("div", { class: "sec" }, h("h2", {}, "Checked, no issue ", h("span", { class: "n num", text: String(R.sound_areas.length) })),
-      h("ul", { class: "plain small" }, R.sound_areas.map((s) => h("li", {}, h("b", { style: "font-weight:500", text: s.id }), " " + (s.section_refs || []).map((x) => "§" + x).join(", ") + " · " + s.why_sound)))));
-  }
-  box.append(h("div", { class: "sec two" },
-    h("div", {}, h("h2", {}, "Unresolved issues ", h("span", { class: "n num", text: String((R.unresolved || []).length) + ((R.unresolved || []).every((u) => u.next_step) && (R.unresolved || []).length ? ", each with an owner" : "") })),
-      h("ul", { class: "plain small" }, (R.unresolved || []).map((u) => h("li", {}, idsNotIn(u.finding_ids, u.text), u.text + (u.next_step ? " · " + u.next_step.owner + ": " + u.next_step.action : ""))))),
-    h("div", {}, h("h2", {}, "Evidence limitations ", h("span", { class: "n num", text: String((R.limitations || []).length) })),
-      h("ul", { class: "plain small" }, (R.limitations || []).map((l) => h("li", {}, idsNotIn(l.degradation_ids, l.text), l.text))))));
-  return box;
+// One more action in the pane where another tab of this run shows more than the pane: a coverage criterion's outcome
+// per section is the Coverage tab's grid.
+function reviewMore(runId, id) {
+  if (id.startsWith("g-crit-")) return { href: "/?run=" + encodeURIComponent(runId) + "&tab=coverage", label: "Open in the Coverage tab" };
+  return null;
 }
 
 // The Delta tab (design note section 7), keyed on the prior review's IDs: one row per prior finding with
@@ -2045,7 +2000,8 @@ async function showReview(info, tab) {
   bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
   renderTabs(tabList, deltaOn ? "" : "Delta is off: " + deltaReason.charAt(0).toLowerCase() + deltaReason.slice(1) + ".");
   const main = $("review");
-  if (current === "review") main.append(reviewBody(P));
+  let rdoc = null;
+  if (current === "review") { rdoc = await reviewDoc(info.run_id); main.append(rdoc.el); }
   else if (current === "delta") main.append(deltaOn ? deltaBody(P) : deltaOff(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
@@ -2053,6 +2009,8 @@ async function showReview(info, tab) {
   renderRailTools();
   await setupOutputs(info);
   await setupChat(info);
+  // the review's script last: the head above it is complete, so a link opened in its own tab lands where it stays
+  if (rdoc) rdoc.wire();
 }
 
 // ------------------------------------------------------------------ the ask: a reading aid, not the review
@@ -2061,8 +2019,10 @@ function budgetLine(b) {
   return b.calls_used + " of " + b.max_calls + " calls used · " + money(b.cost_usd) + " of " + money(b.max_cost_usd) + (b.calls_with_unknown_cost ? " (" + b.calls_with_unknown_cost + " call(s) with unknown cost)" : "") + " · " + b.model + ", effort " + b.effort + " · logged to " + b.log + " · outside the evaluated agent and its manifest";
 }
 
+// A citation the Review tab holds is a link to it: the review's own script opens it in the side pane.
 function citeEl(id) {
-  if (/^FND-\d+$/.test(id)) return h("a", { class: "cite", href: "#", text: id, onclick: (e) => { e.preventDefault(); openFinding(id); } });
+  const t = document.getElementById(id), rv = $("rv");
+  if (t && rv && rv.contains(t)) return h("a", { class: "cite xref", href: "#" + id, text: id });
   return h("span", { class: "cite", text: id });
 }
 
@@ -2176,4 +2136,11 @@ async function route() {
 // The run model and its reducer, reachable by tests that feed a recorded stream through the page.
 window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf };
 window.addEventListener("popstate", route);
+document.addEventListener("click", (e) => {
+  const a = e.target.closest ? e.target.closest("a.x-pane-more") : null;
+  if (!a || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  history.pushState(null, "", a.getAttribute("href"));
+  route();
+});
 route();

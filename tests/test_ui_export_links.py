@@ -260,7 +260,30 @@ def _y(pg) -> float:
     return pg.evaluate("window.scrollY")
 
 
-def test_a_link_opens_its_target_in_the_side_pane_and_the_main_column_does_not_move(chromium, flow: Path) -> None:
+def _top(link) -> float:
+    return link.evaluate("e => e.getBoundingClientRect().top")
+
+
+#: The right end of every line of the review on screen against the open pane's left edge.
+BESIDE = """() => {
+  const col = document.querySelector('main.report'), pane = document.querySelector('.x-pane');
+  const w = document.createTreeWalker(col, NodeFilter.SHOW_TEXT), r = document.createRange();
+  let text = 0;
+  for (let n; (n = w.nextNode());) {
+    if (!n.data.trim()) continue;
+    r.selectNodeContents(n);
+    const clip = n.parentElement.closest('.x-table');                 // a wide table scrolls inside its own box
+    const edge = clip ? clip.getBoundingClientRect().right : Infinity;
+    for (const b of r.getClientRects()) {
+      if (b.width && b.bottom > 0 && b.top < innerHeight) text = Math.max(text, Math.min(b.right, edge));
+    }
+  }
+  return { text, pane: pane.getBoundingClientRect().left };
+}"""
+
+
+def test_a_link_opens_its_target_in_the_side_pane_beside_the_text_and_the_link_keeps_its_place(chromium,
+                                                                                               flow: Path) -> None:
     pg, ctx, f = chromium
     report = json.loads((flow / "report.json").read_text(encoding="utf-8"))
     mid = report["findings"][len(report["findings"]) // 2]["id"]
@@ -272,13 +295,15 @@ def test_a_link_opens_its_target_in_the_side_pane_and_the_main_column_does_not_m
         if link.count() == 0:
             continue
         seen += 1
-        link.scroll_into_view_if_needed()
+        link.evaluate("e => e.scrollIntoView({ block: 'center' })")
         pg.wait_for_timeout(50)
-        y0 = _y(pg)
+        t0 = _top(link)
         href = link.get_attribute("href")
         link.click()
         pg.wait_for_selector(".x-pane:not([hidden])")
-        assert _y(pg) == y0, name                                     # the main column did not move
+        assert abs(_top(link) - t0) < 1, name                         # the clicked link kept its place
+        m = pg.evaluate(BESIDE)
+        assert 0 < m["text"] <= m["pane"], (name, m)                  # at 1280 no line runs under the pane
         kicker = pg.locator(".x-pane-kicker").inner_text()
         if kind == "id":
             assert kicker == href[1:].removeprefix("reg-"), (name, kicker, href)
@@ -293,15 +318,16 @@ def test_a_link_opens_its_target_in_the_side_pane_and_the_main_column_does_not_m
         assert pg.evaluate("h => document.querySelector('main a.x-opener').getAttribute('href') === h", href)
         pg.keyboard.press("Escape")
         pg.wait_for_selector(".x-pane", state="hidden")
-        assert _y(pg) == y0, name
+        assert abs(_top(link) - t0) < 1, name
         assert pg.evaluate("h => document.activeElement.getAttribute('href') === h", href), name   # focus came back
     assert seen >= 8
     # a chain inside the pane: its own back and forward, the breadcrumb, Esc, and the main column never moves
     link = pg.locator("main a.x-ev").first
-    link.scroll_into_view_if_needed()
-    y0 = _y(pg)
+    link.evaluate("e => e.scrollIntoView({ block: 'center' })")
+    t0 = _top(link)
     link.click()
     pg.wait_for_selector(".x-pane:not([hidden])")
+    y1 = _y(pg)                                                      # steps inside the pane never move the main column
     first = pg.locator(".x-pane-kicker").inner_text()
     inner = pg.locator(".x-pane-body a.xref").first
     inner.click()
@@ -313,16 +339,18 @@ def test_a_link_opens_its_target_in_the_side_pane_and_the_main_column_does_not_m
     pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent !== k", arg=first)
     pg.go_back()                                                     # the browser's Back steps back in the pane
     pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent === k", arg=first)
+    assert _y(pg) == y1
     pg.go_back()                                                     # and then closes it
     pg.wait_for_selector(".x-pane", state="hidden")
-    assert _y(pg) == y0
+    assert abs(_top(link) - t0) < 1
+    y0 = _y(pg)
     assert pg.url == f.as_uri()                                      # still on the page
     # a click on the main column outside a link closes the pane
     link.click()
     pg.wait_for_selector(".x-pane:not([hidden])")
     pg.mouse.click(300, 400)
     pg.wait_for_selector(".x-pane", state="hidden")
-    assert _y(pg) == y0
+    assert abs(_top(link) - t0) < 1
     # "Show in the report" moves the main column to the target, and "Back to where I was" returns
     link.click()
     pg.wait_for_selector(".x-pane:not([hidden])")

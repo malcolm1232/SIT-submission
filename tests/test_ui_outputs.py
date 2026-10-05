@@ -143,7 +143,22 @@ def test_the_export_is_self_contained_with_one_fixed_script_and_no_external_reso
 
 
 def test_the_export_stylesheet_keeps_the_page_rules() -> None:
-    css = (export.STATIC_DIR / "export.css").read_text(encoding="utf-8")
+    for name in ("export.css", "review.css"):          # the page around the review, and the review document
+        css = (export.STATIC_DIR / name).read_text(encoding="utf-8")
+        _page_rules(css)
+    # the review document's element rules are scoped, so the app's Review tab can load the sheet beside app.css
+    review = (export.STATIC_DIR / "review.css").read_text(encoding="utf-8")
+    bare = [ln for ln in review.splitlines() if re.match(r"\s*(h[1-6]|p|ul|li|a|table|th|td|tr|code|b|strong)\b", ln)]
+    assert bare == []
+
+
+def _page_rules(css: str) -> None:
+    # balanced braces: a stray "}" would make the browser drop the rule after it (in the export, the next sheet's first)
+    depth = 0
+    for ch in re.sub(r"/\*.*?\*/", "", css, flags=re.S):
+        depth += {"{": 1, "}": -1}.get(ch, 0)
+        assert depth >= 0
+    assert depth == 0
     assert not re.findall(r"#[0-9a-fA-F]{3,8}\b", css) and not re.search(r"\brgba?\(|\bhsla?\(", css)
     assert "animation" not in css and "transition" not in css and "@keyframes" not in css
     assert "http" not in css and "url(" not in css and "@import" not in css
@@ -714,7 +729,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
 
     pg, ctx, base, runs, fake, state = browser_page
     pg.goto(base + "/?run=ui_flow_1")
-    pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#rv .report")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     heads = pg.locator("#outputs h3").all_inner_texts()
     assert heads == ["Download", "Email", "Share"]
@@ -723,7 +738,8 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     assert out["name"] == "ui_flow_1_review.zip"
     assert pg.locator("#out-download").inner_text() == f"Download review (zip, {out['size']})"
     help_text = pg.locator("#out-download-help").inner_text()
-    assert help_text.startswith("A zip of one cross-linked review page with a sidebar, whose one script only shows")
+    assert help_text.startswith("A zip of one cross-linked review page with a sidebar, whose one script shows and "
+                                "hides")
     assert "the reviewed PDF its page references open, report.md and report.json" in help_text
     with pg.expect_download() as dl:
         pg.click("#out-download")
@@ -773,7 +789,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     assert pg.locator("#share-text").inner_text() == share.LOOPBACK_TEXT
     state.bind_host, state.lan_ip = "0.0.0.0", lambda: "192.168.1.23"
     pg.reload()
-    pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#rv .report")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     pg.click("#share-btn")
     wait_open(pg, "share")
@@ -784,7 +800,7 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
 
     del os.environ[mail.PASSWORD_ENV]
     pg.goto(base + "/?run=no_mail")
-    pg.wait_for_selector(".frow")
+    pg.wait_for_selector("#rv .report")
     pg.wait_for_selector("#outputs", state="visible")   # filled by GET /outputs after the review renders
     pg.click("#email-btn")
     wait_open(pg, "email")
