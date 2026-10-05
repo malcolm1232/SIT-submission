@@ -192,6 +192,28 @@ def test_a_tab_is_drawn_by_the_reviews_linker_with_the_review_kept_beside_it(run
     assert client.get(f"/runs/{RUN}/review.html?view=nope").status_code == 400
 
 
+def test_a_document_excerpt_links_its_references_and_an_outside_one_keeps_its_own(tmp_path: Path) -> None:
+    """In the Evidence tab a passage of the reviewed document links its section references, as the review's own
+    quotes do; an outside source's excerpt names that source's sections, so its "§3" stays plain text."""
+    from test_ui_export_links import PAGES, _run
+    report = {"metadata": {"documents": [{"doc_id": "DOC-x", "role": "under_review", "title": "X",
+                                          "text_path": "text/DOC-x.pages.txt"}]},
+              "findings": [{"id": "FND-001", "title": "t", "kind": "gap", "severity": "low", "rank": 1,
+                            "evidence": [{"evidence_id": "EV-001", "supports_claim": True}]}],
+              "evidence_ledger": [
+                  {"evidence_id": "EV-001", "source_type": "doc", "excerpt": "Checks run in order, see §3.",
+                   "url_or_citation": "doc:DOC-x#p3/s3", "derived_from": []},
+                  {"evidence_id": "EV-002", "source_type": "external", "excerpt": "The standard's §3 says so.",
+                   "url_or_citation": "https://example.org/std", "title": "A standard", "derived_from": []}]}
+    rd = _run(tmp_path / "runs", "# Design review: X\n\n## Gaps\n\n### FND-001 t\n", report, PAGES,
+              [{"section_id": "3", "heading": "Gateway", "char_start": PAGES.index("3. Gateway")}])
+    frag = export.review_fragment(rd, pdf_href=None, view="evidence")
+    rows = dict(re.findall(r'<tr class="ev-row"><td><a [^>]*href="#(EV-\d+)"[^>]*>.*?</a></td>(.*?)</tr>', frag))
+    assert re.search(r'<a class="xref x-loc" href="#doc-s3"[^>]*>§3</a>', rows["EV-001"])
+    assert "§3" in rows["EV-002"] and "#doc-s3" not in rows["EV-002"]
+    assert "FND-001</a> (supports)" in rows["EV-001"]
+
+
 def test_the_coverage_tab_says_what_the_grid_and_each_code_mean_from_their_sources(runs: Path) -> None:  # noqa: F811
     frag = export.review_fragment(runs / RUN, pdf_href=None, view="coverage")
     html = frag.split('<div class="cv-intro">', 1)[1].split('<div class="x-table cv-grid">', 1)[0]
