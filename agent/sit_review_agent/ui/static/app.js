@@ -1999,7 +1999,8 @@ async function showReview(info, tab) {
   bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
   renderTabs(tabList, deltaOn ? "" : "Delta is off: " + deltaReason.charAt(0).toLowerCase() + deltaReason.slice(1) + ".");
   const main = $("review");
-  if (current === "review") { const doc = await reviewDoc(info.run_id); main.append(doc.el); doc.wire(); }
+  let rdoc = null;
+  if (current === "review") { rdoc = await reviewDoc(info.run_id); main.append(rdoc.el); }
   else if (current === "delta") main.append(deltaOn ? deltaBody(P) : deltaOff(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
@@ -2007,6 +2008,8 @@ async function showReview(info, tab) {
   renderRailTools();
   await setupOutputs(info);
   await setupChat(info);
+  // the review's script last: the head above it is complete, so a link opened in its own tab lands where it stays
+  if (rdoc) rdoc.wire();
 }
 
 // ------------------------------------------------------------------ the ask: a reading aid, not the review
