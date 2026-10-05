@@ -91,13 +91,25 @@ def allowed_urls(ledger_entries: Iterable[Mapping[str, Any]], document_texts: It
     return out
 
 
+def quote_urls_in_excerpt(quote: str, excerpt: str) -> bool:
+    """True when every URL or DOI of ``quote`` is, in exact case, a URL of ``excerpt`` or the start
+    of one (a quote that ends partway through a URL). :func:`quote_in_excerpt` folds case, which is
+    right for prose but not for a URL, whose path is case-sensitive: a quote whose URL differs from
+    its excerpt's only in letter case carries a URL the source does not have."""
+    have = _urls_in(excerpt)
+    return all(any(h.startswith(u) for h in have) for u in _urls_in(quote))
+
+
 def quote_backed_by_excerpt(quote: str, excerpt: str, allowed: set[str]) -> bool:
     """True when a doc or external citation's ``quote`` is ledger text whose URLs are all backed:
-    it occurs in its ledger ``excerpt`` (:func:`quote_in_excerpt`) and every URL of that excerpt is
-    in ``allowed`` (:func:`allowed_urls`). INV-05's URL scan skips such a quote, so a quote that ends
-    partway through a backed URL (a verbatim cut, never a URL of its own) does not fail the run; the
-    report phase never rewrites a quote that occurs in its excerpt either (``report._redact``)."""
-    return bool(excerpt) and quote_in_excerpt(quote, excerpt) and _urls_in(excerpt) <= allowed
+    it occurs in its ledger ``excerpt`` (:func:`quote_in_excerpt`), each of its URLs is an
+    exact-case URL of that excerpt or the start of one (:func:`quote_urls_in_excerpt`), and every
+    URL of that excerpt is in ``allowed`` (:func:`allowed_urls`). INV-05's URL scan skips such a
+    quote, so a quote that ends partway through a backed URL (a verbatim cut, never a URL of its
+    own) does not fail the run; the report phase never rewrites a quote that occurs in its excerpt
+    either (``report._redact``), so a kept quote with a case-changed URL is scanned and fails closed."""
+    return bool(excerpt) and quote_in_excerpt(quote, excerpt) and quote_urls_in_excerpt(quote, excerpt) \
+        and _urls_in(excerpt) <= allowed
 
 
 def _report_text(node: Any, allowed: set[str], excerpts: Mapping[str, str]) -> Iterator[str]:

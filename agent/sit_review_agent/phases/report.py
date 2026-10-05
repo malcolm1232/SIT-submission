@@ -342,8 +342,11 @@ def _verbatim_quote(node: dict[str, Any], excerpts: Mapping[str, str]) -> bool:
     resolves it in the canonical text) or a doc or external citation whose quote occurs in its
     ledger excerpt (verify copied or checked it; INV-05 compares the two). INV-05's URL scan skips
     such a quote only when every URL of its excerpt is allowed
-    (:func:`~sit_review_agent.invariants.quote_backed_by_excerpt`); a kept quote whose excerpt holds an
-    unbacked URL (a model's anchor quote recorded as the excerpt) fails the run closed, by design."""
+    (:func:`~sit_review_agent.invariants.quote_backed_by_excerpt`) and each URL of the quote is an
+    exact-case URL of the excerpt or the start of one; a kept quote whose excerpt holds an unbacked
+    URL (a model's anchor quote recorded as the excerpt) or whose URL differs from the excerpt's only
+    in letter case fails the run closed, by design: rewriting it here would hide the URL behind a
+    quote that no longer matches its excerpt, and INV-05 names the URL instead."""
     if "section_ref" in node and "doc_id" in node:
         return True
     if node.get("source_type") in ("doc", "external"):

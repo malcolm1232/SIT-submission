@@ -85,3 +85,13 @@ Two findings of the verifier, from its probes (scripted fake model answers, no l
 - `tests/robustness`: 161 passed.
 - Load before each run: 5-minute average 4.7 to 6.0, free memory 42 to 48 percent.
 - Not pushed; the verifier re-checks.
+
+### Follow-up: a URL whose letter case changed in a quote
+
+- The verifier's probe: a refine revision quotes the document's URL passage with the URL path as `/STATS/Peak-Weeks` (the document has `/stats/peak-weeks`). `quote_in_excerpt` folds case, so verify kept the quote, `_redact` left it, INV-05's URL scan skipped it, and report.json carried a URL the document does not have. At 280c4b4 the same input failed closed.
+- New `invariants.quote_urls_in_excerpt(quote, excerpt)`: every URL or DOI of the quote is, in exact case, a URL of the excerpt or the start of one (the cut-URL case). `quote_backed_by_excerpt` now requires it as well; prose outside URLs stays case-insensitive.
+- `_redact` keeps its rule (a quote in its excerpt is never rewritten) and its docstring now names the case. Making it strict too was tried: the URL is then rewritten to the link-removed text and the run fails on `quote not in the ledger excerpt`, which hides the URL instead of naming it. Kept-and-scanned is what makes INV-05 name it.
+- Tests: `tests/test_adversarial_invariants.py::test_inv05_url_case_change_in_a_quote_fails_closed` (end to end: fail-closed in the report phase, no report.json, the only problem is INV-05 naming `https://rooms.campus.example/STATS/Peak-Weeks`); `tests/test_invariants.py::test_inv05_quote_urls_must_match_their_excerpt_in_exact_case` (whole and cut URL in matching case pass with case-folded prose; the same with a path case change fails; `check_INV_05` names the URL). The existing backed and cut-URL tests still pass.
+- Mutation: URL match made case-insensitive: 2 failed (both new tests); restored, `cmp` identical.
+- Not covered: `URL_RE` matches only a lowercase `http`/`https` scheme, so `HTTPS://...` anywhere in report text is not seen as a URL by the redaction or by INV-05. Not seen in any run.
+- Gates: ruff All checks passed; full suite 1995 passed, 1 skipped, 2 xfailed; selftest passed; `make smoke` exit 0; leakage grep PASS; PROMPTS.lock up to date; `tests/robustness` 161 passed. One full-suite run had a single failure in `tests/test_ui_export_bundle.py::test_the_sidebar_in_a_browser_and_every_section_without_script` (unrelated; passed 6 of 6 alone and on the rerun; it reads `all_inner_texts()` and `is_visible()` right after clicks without waiting, a likely race under load).

@@ -268,6 +268,38 @@ async def test_inv05_quote_cut_inside_a_document_url_is_kept(tmp_path: Path) -> 
     assert next(r for r in check_all(report, rd.root) if r.inv_id == "INV-05").passed
 
 
+async def test_inv05_url_case_change_in_a_quote_fails_closed(tmp_path: Path) -> None:
+    """A refine revision quotes a URL passage of the document with the URL's path in another letter
+    case. The quote matches its excerpt after case folding, so verify keeps it and the report never
+    rewrites it; but the URL it carries is not the document's (a URL's path is case-sensitive), so
+    ``quote_backed_by_excerpt`` does not exempt it and the run ends fail-closed with INV-05 naming
+    the URL; no report.json holds it."""
+    pdf = tmp_path / "design.pages.txt"
+    line = "4.1 Load. Peak exam-week days generate about 5,000 bookings, each with one reminder."
+    pdf.write_text(PDF.read_text(encoding="utf-8").replace(line, f"{line} {URL_PASSAGE}"), encoding="utf-8")
+    changed = URL_PASSAGE.replace("/stats/peak-weeks", "/STATS/Peak-Weeks")
+    bad_url = DOC_URL.replace("/stats/peak-weeks", "/STATS/Peak-Weeks")
+    title = "Peak-day reminder volume is not tested"
+
+    def shard(p: dict[str, Any]) -> None:
+        f = next(f for f in p["findings"] if f["title"] == title)
+        f["doc_anchors"].append({**f["doc_anchors"][0], "quote": URL_PASSAGE})
+        f["evidence"].append({"evidence_id": "NEW-2", "source_type": "doc", "quote": URL_PASSAGE,
+                              "supports_claim": True, "derived_from": []})
+
+    def refine(ledger: list[dict[str, Any]], answer: dict[str, Any]) -> None:
+        ev = next(e["evidence_id"] for e in ledger if DOC_URL in (e.get("excerpt") or ""))
+        answer["revisions"][0]["added_evidence"].append(
+            {"evidence_id": ev, "source_type": "doc", "quote": changed, "supports_claim": True, "derived_from": []})
+
+    out, rd = await run(tmp_path, shard, pdf=pdf, revise=refine)
+    assert not rd.report_json.exists()
+    assert rd.failure.is_file()
+    failure = json.loads(rd.failure.read_text(encoding="utf-8"))
+    assert failure["phase"] == "report"
+    assert failure["problems"] == [f"INV-05: URL/DOI in report text not in the ledger: {bad_url}"]
+
+
 async def test_inv05_made_up_url_in_a_made_up_anchor_never_reaches_the_report(tmp_path: Path) -> None:
     """A doc citation whose quote is not in the document is recorded with the finding's first anchor
     quote as its ledger excerpt (``doc_entry``); when that anchor is made up too, the excerpt is

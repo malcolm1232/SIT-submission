@@ -97,6 +97,32 @@ def test_inv05_quote_cut_inside_a_url_passes_only_when_the_excerpt_urls_are_back
     assert "URL/DOI in report text not in the ledger: https://made-up.example/x" in problems
 
 
+def test_inv05_quote_urls_must_match_their_excerpt_in_exact_case(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """Prose in a quote is matched case-insensitively, a URL is not: a quote's URL (whole or cut
+    partway) must be an exact-case URL of its excerpt or the start of one. The same quote with the
+    URL's path in another case is in the excerpt after case folding, but is not exempt from the scan."""
+    excerpt = f"Weekly counts are published at {DOC_URL} for planning."
+    cut = DOC_URL[: DOC_URL.index("/stats") + 4]
+    allowed = {DOC_URL}
+    for q in (f"WEEKLY counts are published at {cut}", f"weekly counts are published at {DOC_URL}"):
+        assert inv.quote_urls_in_excerpt(q, excerpt) and inv.quote_backed_by_excerpt(q, excerpt, allowed)
+    for q in (f"Weekly counts are published at {cut.replace('/sta', '/STA')}",
+              f"Weekly counts are published at {DOC_URL.replace('peak-weeks', 'Peak-Weeks')}"):
+        assert inv.quote_in_excerpt(q, excerpt)                         # case folded, prose rule
+        assert not inv.quote_urls_in_excerpt(q, excerpt)
+        assert not inv.quote_backed_by_excerpt(q, excerpt, allowed)
+    r = copy.deepcopy(review_dict)
+    ledger = next(e for e in r["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] += f" {excerpt}"
+    cite = next(e for f in r["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
+    bad = DOC_URL.replace("/stats/", "/Stats/")
+    cite["quote"] = f"Weekly counts are published at {bad}"
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {bad}"]
+
+
 def test_inv07_requires_disclosure(review_dict: dict[str, Any]) -> None:
     bad = copy.deepcopy(review_dict)
     bad["stop_reason"] = {"code": "deadline", "group": "cap", "detail": None}
