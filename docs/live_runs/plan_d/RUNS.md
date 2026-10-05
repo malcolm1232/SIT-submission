@@ -30,6 +30,7 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_payments_v1_low | payments_orchestration | FULL | low | 241 | 152.1 | completed_degraded | 20 | 4.62 | 0 | 3.73/4.59/5.30 | 5.15/5.10/5.36 |
 | d_payments_v1_high | payments_orchestration | FULL | high | 509 | 265.4 | completed_degraded | 23 | 1.36 (lb) | 0 | 5.15/5.10/5.36 | 4.36/5.01/5.33 |
 | d_hospital_v1_2 | hospital_scheduling | FULL | medium | 480 | 265.2 | completed_degraded | 25 | 5.05 (lb) | 0 | 4.36/5.01/5.33 | 4.35/5.13/5.42 |
+| d_consent_v2_1 (resumed) | consent_service | FULL | medium | 183 | 229.2 | crashed in report (rc=4) | - | 7.79 | - | 4.24/5.32/5.52 | 8.26/6.25/5.82 |
 
 ## Scores
 
@@ -53,3 +54,5 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_payments_v1_low | payments_orchestration | 11/14 (0.786) | 0.786 | 0.733 strict / 0.933 adj | 0.783 | 0.750 | 0 of 15 | 3.51 | 170 | 5.15/5.10/5.36 | 5.93/5.91/5.69 |
 | d_payments_v1_high | payments_orchestration | 12/14 (0.857) | 0.857 | 0.545 strict / 0.818 adj | 0.867 | 1.000 | 0 of 22 | 5.34 | 197 | 4.36/5.01/5.33 | 6.82/6.34/5.85 |
 | d_hospital_v1_2 | hospital_scheduling | 12/14 (0.857) | 0.929 | 0.571 strict / 0.762 adj | 0.850 | 0.750 | 0 of 21 | 4.68 | 213 | 4.35/5.13/5.42 | 4.83/5.63/5.64 |
+| d_lakehouse_v2_1 (rescore, cap 24) | research_lakehouse | 7/9 (0.778) | 0.889 | 0.111 strict / 0.254 adj | 0.952 | 1.000 | 0 of 63 | 11.33 | 94 | 4.24/5.32/5.52 | 4.09/5.04/5.39 |
+| d_iot_v2_1 (rescore, cap 24) | iot_fleet | 7/8 (0.875) | 0.875 | 0.121 strict / 0.224 adj | 0.968 | 1.000 | 1 of 58 | 5.00 | 51 | 4.09/5.04/5.39 | 9.01/6.03/5.72 |
