@@ -17,7 +17,7 @@ min_independent_sources: 2
 # = ~16 min of model time; refine (unmeasured, re-emits every finding, likely ~5-9 min) and research
 # (up to 4 iterations and 30 tool calls, ~10 min) bring a full run to ~35-40 min, and one retried
 # assess-sized call adds ~9 min. 60 min covers that with ~25 % margin and still bounds a stuck run
-# (llm.timeout_s 1800 x 5 attempts would otherwise be 2.5 h). The demo runs at 540 s through
+# (llm.timeout_s 1800 x 5 attempts would otherwise be 2.5 h). The demo runs at 900 s through
 # config/profiles/demo.yaml, not this default.
 report_reserve_seconds: 180        # kept for verify + report: the deadline rule fires this long before the
                                    # deadline, and every model attempt before verify ends by then (LLM-05).

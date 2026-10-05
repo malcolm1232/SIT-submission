@@ -2,14 +2,14 @@
 # Deep-merged over config/agent.yaml and config/stop_rules.yaml (config/profiles/README.md); the
 # pinned lines of those files are unchanged. Decided by the coordinator on 2026-10-02 (owner-delegated).
 #
-# MEASURED: on 2026-10-03, before the concurrent stage 1, assess was cut at its limit and the run said "not
-# assessed" (docs/live_runs/demo_profile_measure_1/); on 2026-10-04 the six-shard design ended at 508.5 s
-# (docs/live_runs/sit_sample_ui_2/). 540 s stays a configurable assumption: the brief sets no time limit
-# (USER_DECISIONS #34), and a longer slot is one --deadline away. Still UNMEASURED: a second run at medium.
+# MEASURED at the former 540 s deadline: on 2026-10-03 assess was cut and the run said "not assessed"
+# (docs/live_runs/demo_profile_measure_1/); on 2026-10-04 the six-shard design ended at 508.5 s (docs/live_runs/
+# sit_sample_ui_2/); on 2026-10-05 a document-only run lost its refine pass at 465 s, so the deadline is 900 s
+# since then (USER_DECISIONS #47, superseding the 540 s assumption of #34). Still UNMEASURED: a run at 900 s.
 #
 # Why not `high` (USER_DECISIONS #1 allows high but asks that spend be justified): at high the model
 # calls alone took ~16 min in the measured run (understand 158 s, plan 158 s, assess ~520 s, verify
-# 33 s, report 88 s; no research, refine skipped), three times the 9-minute slot. Medium is the model's
+# 33 s, report 88 s; no research, refine skipped), three times the former 9-minute slot. Medium is the model's
 # own default on Opus 5.5; research only reads and summarises tool results, so it runs at low.
 # Per-stage effort costs no prompt cache on the claude_code backend: every call forks a fresh CLI
 # session and the shared prefix was re-written on every phase anyway (HANDOVER §8, "Cache"); on the
@@ -24,21 +24,21 @@ agent:
     report: medium
 
 stop_rules:
-  deadline_seconds: 540   # 9 minutes: one minute of margin in the 10-minute live run (runbook §5)
-  # 540 s is a project ASSUMPTION (audit U4): the lab brief sets no live-run time limit; kept as a safety net until SIT answers (USER_DECISIONS #34).
-  # Reserves (robustness LLM-05; see config/stop_rules.yaml), sized for the concurrent design (docs/design/
-  # latency_and_demo_design.md section 5); the defaults (180 s and 600 s) are sized from `high`. UNMEASURED:
-  report_reserve_seconds: 75    # verify (~5 s, code) + the verdict call (~52 s predicted at medium) + render
-  refine_reserve_seconds: 200   # refine in revision form, ~175 s predicted at medium (renamed from
+  deadline_seconds: 900   # 15 minutes (USER_DECISIONS #47, the owner on 2026-10-05: "longer than 9 mins")
+  # The lab brief sets no live-run time limit (#34); 900 s is the owner's choice, still UNMEASURED. Reserves
+  # (robustness LLM-05; see config/stop_rules.yaml): the 540 s values (75 s, 200 s, latency_and_demo_design.md
+  # section 5) scaled with the stage limits by 900/540; the defaults (180 s and 600 s) are sized from `high`:
+  report_reserve_seconds: 125   # verify (~5 s, code) + the verdict call (~52 s predicted at medium) + render
+  refine_reserve_seconds: 334   # refine in revision form, ~175 s predicted at medium (renamed from
                                 # assess_reserve_seconds 2026-10-03, latency redesign W0)
-  # They match the stage limits below: stage_1_end = 540 - 75 - 200 = 265, refine_end = 540 - 75 = 465. The
-  # runtime bounds each model call by its stage limit (llm/runtime.py, W1); a --deadline at or below 530 s
-  # or above 540 s scales the three limits by deadline / (refine_end + report_reserve_seconds) = deadline / 540
-  # and says so first (--deadline 300: 147 / 258 / 294 s; --deadline 900: 441 / 775 / 883 s).
-  # stage_limits_s: design section 4, the run clock at 540 s. Absolute seconds, not a fraction of the
-  # deadline (the thinking block per call is fixed, about 105 s per assess shard at medium), so this
-  # profile sets its own three values; see config/stop_rules.yaml for the rule.
-  stage_limits_s:
-    stage_1_end: 265            # understand, plan, research and the six assess shards end by here
-    refine_end: 465             # refine ends by here, else the merged findings ordered by severity stand
-    verdict_end: 530            # the verdict call ends by here, else the rule-based verdict
+  # They match the limits below: stage_1_end = 900 - 125 - 334 = 441, refine_end = 900 - 125 = 775. Each model
+  # call is bounded by its stage limit (llm/runtime.py, W1); a --deadline at or below 883 s or above 900 s scales
+  # the three limits by deadline / (refine_end + report_reserve_seconds) = deadline / 900, said first (--deadline
+  # 540: 264 / 465 / 529 s). The reserves are NOT scaled: at --deadline 540 research's own deadline rule ends it
+  # by 540 - 125 - 334 = 81 s on the run clock, so a 9-minute run with tools gets no research (it began at ~136 s).
+  # stage_limits_s: design section 4's 265 / 465 / 530 s at 540 s, scaled by 900/540 as llm/runtime.py
+  # effective_stage_limits computes it. Absolute seconds, not a fraction of the deadline (the thinking block per
+  stage_limits_s:               # call is fixed); see config/stop_rules.yaml for the rule
+    stage_1_end: 441            # understand, plan, research and the six assess shards end by here
+    refine_end: 775             # refine ends by here, else the merged findings ordered by severity stand
+    verdict_end: 883            # the verdict call ends by here, else the rule-based verdict

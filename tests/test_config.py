@@ -182,7 +182,7 @@ def test_refine_reserve_replaces_assess_reserve() -> None:
     cfg = load_config()
     assert cfg.stop_rules.refine_reserve_seconds == 600 and cfg.stop_rules.report_reserve_seconds == 180
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (demo.refine_reserve_seconds, demo.report_reserve_seconds) == (200, 75)
+    assert (demo.refine_reserve_seconds, demo.report_reserve_seconds) == (334, 125)   # USER_DECISIONS #47
     assert not hasattr(cfg.stop_rules, "assess_reserve_seconds")
 
 
@@ -205,8 +205,9 @@ def test_the_old_reserve_key_is_an_error_that_names_the_new_key(tmp_path: Path, 
 
 
 def test_stage_limits_are_absolute_seconds_per_profile() -> None:
-    """Design section 4: stage 1 ends by 265 s, refine by 465 s, the verdict call by 530 s on the 540 s
-    demo profile. The base file keeps the same shape at 3600 s."""
+    """Design section 4: stage 1 ends by 265 s, refine by 465 s, the verdict call by 530 s on a 540 s run;
+    the demo profile holds them scaled by 900/540 to 441 / 775 / 883 s since its deadline became 900 s
+    (USER_DECISIONS #47), with reserves that keep the same split. The base file keeps the shape at 3600 s."""
     base = load_config().stop_rules
     assert (base.stage_limits_s.stage_1_end, base.stage_limits_s.refine_end, base.stage_limits_s.verdict_end) \
         == (2820, 3420, 3540)
@@ -215,8 +216,11 @@ def test_stage_limits_are_absolute_seconds_per_profile() -> None:
     assert base.stage_limits_s.refine_end == base.deadline_seconds - base.report_reserve_seconds
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
     assert (demo.stage_limits_s.stage_1_end, demo.stage_limits_s.refine_end, demo.stage_limits_s.verdict_end) \
-        == (265, 465, 530)
-    assert demo.stage_limits_s.as_dict() == {"stage_1_end": 265, "refine_end": 465, "verdict_end": 530}
+        == (441, 775, 883)
+    assert demo.stage_limits_s.as_dict() == {"stage_1_end": 441, "refine_end": 775, "verdict_end": 883}
+    assert demo.stage_limits_s.stage_1_end == demo.deadline_seconds - demo.report_reserve_seconds \
+        - demo.refine_reserve_seconds
+    assert demo.stage_limits_s.refine_end == demo.deadline_seconds - demo.report_reserve_seconds
     text = (config_dir() / "stop_rules.yaml").read_text(encoding="utf-8")
     assert "stage_limits_s:" in text and "not a fraction of the deadline" in text
 

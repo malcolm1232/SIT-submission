@@ -121,8 +121,8 @@ COVERAGE: dict[str, Coverage] = {
                  "budget): exit 3 once, resumable, with the partial run record a stage crash writes "
                  "(report.partial.md naming each shard and its error, failure.json naming it), then resume "
                  "completes", schedule=True),
-    "LLM-05": _o("the first assess call (nth 0: shard 0, launched first) hangs once. Demo profile (540 s): the attempt "
-                 "is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed "
+    "LLM-05": _o("the first assess call (nth 0: shard 0, launched first) hangs once. Demo profile (900 s): the attempt "
+                 "is cut at stage_limits_s.stage_1_end (441 s) and not retried; the cut is a disclosed "
                  "budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other "
                  "shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit 0, run "
                  "within the deadline; default deadline: the full 1800 s timeout, then the retry succeeds",

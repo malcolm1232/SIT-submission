@@ -208,8 +208,20 @@ def test_phase_budgets_keep_the_reserves() -> None:
         d.attempt_timeout(A, 1800)                                   # 5 s left: no attempt is started
 
 
-#: The demo profile's stage limits (design section 4) as the runtime reads them.
+#: The stage limits design section 4 set for the 540 s demo run, on which the scaling rules were built; the
+#: demo profile held them until 2026-10-05 (``demo_540``).
 DEMO_LIMITS = {"stage_1_end": 265.0, "refine_end": 465.0, "verdict_end": 530.0}
+#: The shipped demo profile's limits since its deadline became 900 s (USER_DECISIONS #47): DEMO_LIMITS x 900/540.
+DEMO_900_LIMITS = {"stage_1_end": 441.0, "refine_end": 775.0, "verdict_end": 883.0}
+
+
+def demo_540(sr: Any) -> Any:
+    """The demo profile's stop rules as they were until 2026-10-05 (540 s, reserves 75 s and 200 s, limits
+    265 / 465 / 530 s): the fixture of the scaling tests below, independent of the shipped deadline."""
+    from sit_review_agent.config import StageLimits
+
+    return sr.model_copy(update={"deadline_seconds": 540, "report_reserve_seconds": 75, "refine_reserve_seconds": 200,
+                                 "stage_limits_s": StageLimits(stage_1_end=265, refine_end=465, verdict_end=530)})
 
 
 def staged(t: float = 0.0, *, deadline_s: float = 540, limits: dict[str, float] | None = None
@@ -255,10 +267,10 @@ def test_a_stage_limit_cut_names_the_limit() -> None:
 def test_build_runtime_reads_the_stage_limits(base: EffectiveConfig) -> None:
     demo = load_config(overrides=ConfigOverrides(profile="demo"))
     lim = build_runtime(demo, lambda: 0.0)
-    assert lim.deadline is not None and lim.deadline.stage_limits == DEMO_LIMITS
-    assert lim.deadline.attempt_timeout(A, 1800) == (265, True)
-    assert lim.deadline.attempt_timeout(PhaseName.REFINE, 1800) == (465, True)
-    assert lim.deadline.attempt_timeout(PhaseName.REPORT, 1800) == (530, True)
+    assert lim.deadline is not None and lim.deadline.stage_limits == DEMO_900_LIMITS
+    assert lim.deadline.attempt_timeout(A, 1800) == (441, True)
+    assert lim.deadline.attempt_timeout(PhaseName.REFINE, 1800) == (775, True)
+    assert lim.deadline.attempt_timeout(PhaseName.REPORT, 1800) == (883, True)
     dflt = build_runtime(base, lambda: 0.0)
     assert dflt.deadline is not None and dflt.deadline.stage_limits == {"stage_1_end": 2820, "refine_end": 3420,
                                                                          "verdict_end": 3540}
@@ -268,10 +280,10 @@ def test_a_deadline_below_the_stage_limits_scales_them_and_says_so(base: Effecti
     """Runbook §4.2: `--profile demo --deadline 300` must still produce findings (design section 7
     verifier check), so the limits are scaled to the deadline, not refused. The scale is the
     deadline over the run length the limits were set for (``refine_end`` + the verify and verdict
-    reserve: 465 + 75 = 540 s on the demo profile)."""
+    reserve: 465 + 75 = 540 s on the former demo profile, ``demo_540``)."""
     from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
 
-    demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    demo = demo_540(load_config(overrides=ConfigOverrides(profile="demo")).stop_rules)
     rules = demo.model_copy(update={"deadline_seconds": 300, "report_reserve_seconds": 75})
     limits, note = effective_stage_limits(rules)
     assert limits == {"stage_1_end": 147, "refine_end": 258, "verdict_end": 294}
@@ -296,10 +308,10 @@ def test_a_deadline_above_the_planned_run_scales_the_limits_up_and_says_so(base:
     """Runbook §5: `--profile demo --deadline 900` must give the stages the added 360 s. Before
     2026-10-03 the limits only scaled down, so a longer deadline kept 265 / 465 / 530 s and the
     extra time idled after the verdict limit. The ratio is the scale-down one, deadline / planned
-    (planned = refine_end + report reserve = 540 s on the demo profile, 3600 s on the default)."""
+    (planned = refine_end + report reserve = 540 s on the former demo profile, 3600 s on the default)."""
     from sit_review_agent.llm.runtime import deadline_warnings, effective_stage_limits
 
-    demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
+    demo = demo_540(load_config(overrides=ConfigOverrides(profile="demo")).stop_rules)
     at = lambda s: demo.model_copy(update={"deadline_seconds": s})  # noqa: E731
     # 540 s, the profile's own deadline: unchanged and quiet.
     same, quiet = effective_stage_limits(at(540))
@@ -354,10 +366,15 @@ async def test_anthropic_announces_its_bound(tmp_path: Path, base: EffectiveConf
 
 
 def test_demo_reserves_match_its_stage_limits() -> None:
-    """Design section 5: the demo profile keeps 200 s for refine and 75 s for verify and the verdict,
-    the same split its stage limits encode (265 = 540 - 75 - 200, 465 = 540 - 75)."""
+    """Design section 5: the demo profile keeps a reserve for refine and one for verify and the verdict,
+    the same split its stage limits encode: 441 = 900 - 125 - 334, 775 = 900 - 125 since 2026-10-05
+    (USER_DECISIONS #47; 265 = 540 - 75 - 200 before). Off by one, the runtime would rescale the profile's
+    own deadline (planned = refine_end + report reserve), so the identity is pinned."""
+    from sit_review_agent.llm.runtime import effective_stage_limits
+
     sr = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (sr.refine_reserve_seconds, sr.report_reserve_seconds) == (200, 75)
+    assert (sr.refine_reserve_seconds, sr.report_reserve_seconds) == (334, 125)
+    assert effective_stage_limits(sr) == (DEMO_900_LIMITS, None)
     lim = sr.stage_limits_s
     assert lim.stage_1_end == sr.deadline_seconds - sr.report_reserve_seconds - sr.refine_reserve_seconds
     assert lim.refine_end == sr.deadline_seconds - sr.report_reserve_seconds
@@ -375,15 +392,15 @@ def test_default_deadline_and_demo_profile(base: EffectiveConfig) -> None:
     assert (sr.deadline_seconds, sr.report_reserve_seconds, sr.refine_reserve_seconds) == (3600, 180, 600)
     assert "deadline" in sr.active and base.agent.llm.timeout_s == 1800
     demo = load_config(overrides=ConfigOverrides(profile="demo"))
-    assert demo.stop_rules.deadline_seconds == 540
+    assert demo.stop_rules.deadline_seconds == 900                      # USER_DECISIONS #47
     e = demo.agent.effort
     assert (e.plan, e.research, e.assess, e.refine, e.verify, e.report) == ("medium", "low", "medium", "medium",
                                                                             "medium", "medium")
-    assert demo.stop_rules.report_reserve_seconds + demo.stop_rules.refine_reserve_seconds < 540
+    assert demo.stop_rules.report_reserve_seconds + demo.stop_rules.refine_reserve_seconds < 900
     text = (config_dir() / "profiles" / "demo.yaml").read_text(encoding="utf-8")
     assert "UNMEASURED" in text and "USER_DECISIONS #1" in text and "forks" in text
     lim = build_runtime(demo, lambda: 0.0)
-    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (265, True)   # stage 1 limit
+    assert lim.deadline is not None and lim.deadline.attempt_timeout(A, 1800) == (441, True)   # stage 1 limit
 
 
 async def test_claude_code_attempt_is_cut_at_the_deadline_and_not_retried(tmp_path: Path,
@@ -577,7 +594,7 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
 
     assert deadline_warnings(base.stop_rules) == []
     demo = load_config(overrides=ConfigOverrides(profile="demo")).stop_rules
-    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (540, 75, 200)
+    assert (demo.deadline_seconds, demo.report_reserve_seconds, demo.refine_reserve_seconds) == (900, 125, 334)
     assert deadline_warnings(demo) == []
     # A deadline below the stage limits is announced first (the limits are scaled), then the reserves.
     short = deadline_warnings(rules(deadline_seconds=300))
@@ -586,10 +603,14 @@ def test_a_deadline_that_does_not_fit_its_reserves_is_announced(base: EffectiveC
     assert "s for refine" in short[1] and "for assess" not in short[1]          # the reserve is refine's
     none = deadline_warnings(rules(deadline_seconds=185))
     assert len(none) == 2 and "no model call can run before verify" in none[1] and "not assessed" in none[1]
-    # The runbook's rerun: the limits are scaled and the demo reserves (75 s + 200 s) still leave research 25 s.
+    # The former 540 s demo reserves (75 s + 200 s) left research 25 s at 300 s: only the scaling was announced.
+    old = demo_540(demo).model_copy(update={"deadline_seconds": 300})
+    assert deadline_warnings(old) == [effective_stage_limits(old)[1]]
+    assert "scaled by 300/540 to 147 / 258 / 294 s" in deadline_warnings(old)[0]
+    # The 900 s profile's reserves (125 s + 334 s) leave none at 300 s: the scaling, then the lost research.
     demo_short = deadline_warnings(demo.model_copy(update={"deadline_seconds": 300}))
-    assert demo_short == [effective_stage_limits(demo.model_copy(update={"deadline_seconds": 300}))[1]]
-    assert "scaled by 300/540 to 147 / 258 / 294 s" in demo_short[0]
+    assert len(demo_short) == 2 and "scaled by 300/900 to 147 / 258 / 294 s" in demo_short[0]
+    assert "leaves research no time" in demo_short[1]
     assert deadline_warnings(rules(deadline_seconds=300, active=["budget_tool_calls"])) == []
 
 

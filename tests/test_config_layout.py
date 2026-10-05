@@ -60,17 +60,17 @@ def test_demo_profile_lines_named_by_the_runbook() -> None:
     config/profiles/demo.yaml lines 19-24 and 27, and §5 quotes its deadline and reserves."""
     lines = (config_dir() / "profiles" / "demo.yaml").read_text(encoding="utf-8").splitlines()
     want = {19: "    plan:", 20: "    research:", 21: "    assess:", 22: "    refine:", 23: "    verify:",
-            24: "    report:", 27: "  deadline_seconds: 540"}
+            24: "    report:", 27: "  deadline_seconds: 900"}
     for lineno, prefix in want.items():
         assert lines[lineno - 1].startswith(prefix), f"demo.yaml:{lineno} is {lines[lineno - 1]!r}"
     text = "\n".join(lines)
-    assert "report_reserve_seconds: 75" in text and "refine_reserve_seconds: 200" in text
+    assert "report_reserve_seconds: 125" in text and "refine_reserve_seconds: 334" in text
     runbook = RUNBOOK.read_text(encoding="utf-8")
     for needle in ("--profile demo`. Updated SIT design", "research starts when understand and plan are both done "
-                   "and is cut at 265 s", "Refine is cut at 465 s", "verify and verdict 75 s",
+                   "and is cut at 441 s", "Refine is cut at 775 s", "verify and verdict 125 s",
                    "`config/profiles/demo.yaml` lines 19-24"):
         assert needle in runbook, needle
-    assert "--deadline 540" not in runbook            # the demo deadline comes from the profile
+    assert "--deadline 900" not in runbook            # the demo deadline comes from the profile
 
 
 def test_runbook_source_paths_exist() -> None:

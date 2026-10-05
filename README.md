@@ -36,7 +36,7 @@ The commands below assume the virtualenv is active (`. .venv/bin/activate`) or a
 
 | Command | What it does |
 |---|---|
-| `sit-review review <pdf> --profile demo` | A full review with research through the MCP servers, on the 540 s demo profile; writes `runs/<run_id>/report.md`, `report.json` and every log |
+| `sit-review review <pdf> --profile demo` | A full review with research through the MCP servers, on the 900 s demo profile; writes `runs/<run_id>/report.md`, `report.json` and every log |
 | `sit-review review <pdf> --profile demo --no-tools` | The same review document-only, with no MCP key needed |
 | `sit-review review <pdf> --profile demo --previous runs/<v1_run>` | Re-assess an updated document against the frozen review of its previous version |
 | `dra preflight --profile demo --warm` | Checks the keys by name, the model and each enabled MCP server, and warms the servers before a run |
@@ -57,7 +57,7 @@ A run writes everything under `runs/`, which git ignores; a run worth keeping is
 | File or variable | What it sets |
 |---|---|
 | `config/agent.yaml` | Model, effort per stage, output cap, LLM backend, the six assess shards, phases on or off, transport, run root |
-| `config/profiles/` | Named overlays chosen with `--profile`; `demo.yaml` sets the 540 s deadline, the three stage limits and `medium` effort |
+| `config/profiles/` | Named overlays chosen with `--profile`; `demo.yaml` sets the 900 s deadline, the three stage limits and `medium` effort |
 | `config/stop_rules.yaml` | The active stop rules, deadline, stage limits, tool-call and research-iteration budgets, reserves |
 | `config/tools.yaml` | The four SIT MCP servers (two enabled), the auth header, timeouts and the idle-session rule |
 | `config/criteria.yaml`, `config/url_policy.yaml`, `config/persona.yaml`, `config/endpoints.yaml` | The eleven review criteria, the URL policy, the reviewer persona and the server endpoints |

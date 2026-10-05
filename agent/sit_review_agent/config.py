@@ -235,9 +235,9 @@ RENAMED_STOP_RULE_KEYS: dict[str, str] = {"assess_reserve_seconds": "refine_rese
 class StageLimits(_Cfg):
     """``stop_rules.stage_limits_s``: the run-clock second by which each stage of the concurrent
     design must have ended (design section 4: stage 1 by 265 s, refine by 465 s, the verdict call by
-    530 s on the 540 s demo profile). Absolute seconds per profile, not a fraction of the deadline:
-    the thinking block of a model call is a fixed cost (about 105 s for an assess shard at
-    ``medium``), so the limits do not scale with ``deadline_seconds``; a profile that changes the
+    530 s on a 540 s run; 441 / 775 / 883 s on the 900 s demo profile). Absolute seconds per profile,
+    not a fraction of the deadline: the thinking block of a model call is a fixed cost (about 105 s for
+    an assess shard at ``medium``), so the limits do not scale with ``deadline_seconds``; a profile that changes the
     deadline sets its own. Readers: W1 (``llm/runtime.py``) and W2 (``orchestrator.py``)."""
 
     stage_1_end: int = Field(ge=1, description="understand, plan, research and every assess shard end by here")

@@ -550,10 +550,10 @@ def check_llm11(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
 
 
 def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
-    """The first assess call (nth 0: shard 1, launched first) hangs once. Demo profile (540 s): the
-    attempt is cut at stage_limits_s.stage_1_end (265 s) and not retried; the cut is a disclosed
-    budget_or_deadline_hit degradation naming the shard; its criteria are not assessed; the other
-    shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit
+    """The first assess call (nth 0: shard 1, launched first) hangs once. Demo profile (900 s since
+    2026-10-05, USER_DECISIONS #47): the attempt is cut at stage_limits_s.stage_1_end (441 s) and not
+    retried; the cut is a disclosed budget_or_deadline_hit degradation naming the shard; its criteria are
+    not assessed; the other shards' findings survive and the verdict is assessed: a salvaged, disclosed report, exit
     0, within the deadline. Default deadline (3600 s): the hang costs llm.timeout_s (1800 s), the
     retry succeeds, findings as in the control. Scheduling clock: the hang must not move the clock
     for the shards that run beside it."""
@@ -563,7 +563,7 @@ def check_llm05(recs: list[RunRecord], tmp: Path, control: RunRecord) -> Metric:
     r = ok(demo)
     cfg = demo.config.stop_rules
     limit = cfg.stage_limits_s.stage_1_end
-    assert cfg.deadline_seconds == 540 and demo.virtual_s <= cfg.deadline_seconds + 30, demo.virtual_s
+    assert cfg.deadline_seconds == 900 and demo.virtual_s <= cfg.deadline_seconds + 30, demo.virtual_s
     fault = [e for e in llm_calls(demo, "assess") if e.get("fault")]
     assert len(fault) == 1 and fault[0]["outcome"] == "LLMDeadlineError" and fault[0]["shard"] == 1
     assert len(shard_calls(demo, 1)) == 1                                        # cut, never retried
@@ -1230,7 +1230,7 @@ CASES: list[Case] = [
                     sc("LLM-09-empty", patches={"assess": _empty})], check_llm09),
     Case("LLM-05", [sc("LLM-05-demo", faults="LLM-05", overrides={"profile": "demo"}, clock="scheduling"),
                     sc("LLM-05-default", faults="LLM-05", clock="scheduling")], check_llm05,
-         notes="demo profile (540 s): shard 1 cut and disclosed, the other shards' findings kept; "
+         notes="demo profile (900 s): shard 1 cut and disclosed, the other shards' findings kept; "
                "default deadline: full timeout, then retry; scheduling clock"),
     Case("LLM-10", [lambda tmp: Scenario(id="LLM-10", doc=long_design_pages(tmp / "long_150.pages.txt"),
                                          agent={"llm": _llm(context_window_tokens=150_000)})], check_llm10,

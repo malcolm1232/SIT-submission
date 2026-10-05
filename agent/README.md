@@ -237,7 +237,8 @@ enum and constant in `models.py`, `config.py` (and the YAML keys), `states.py`, 
       `deadline_warnings`, `phases/research._ResearchRun` (still research's extra reserve until W1 reads the
       limits below); tests `test_runtime_policies.py`, `test_research_phase.py`, `test_cli_kruns.py`.
     - `stop_rules.yaml` `stage_limits_s` (`config.StageLimits`: `stage_1_end`, `refine_end`, `verdict_end`),
-      absolute run-clock seconds per profile: 265 / 465 / 530 on the 540 s demo profile (design section 4),
+      absolute run-clock seconds per profile: 441 / 775 / 883 on the 900 s demo profile (design section 4 set
+      265 / 465 / 530 for 540 s; scaled by 900/540 on 2026-10-05, `docs/USER_DECISIONS.md` #47),
       2820 / 3420 / 3540 in the base file (3600 - 180 - 600, 3600 - 180, 3600 - 60). The thinking block per
       call is fixed, so the limits are not a fraction of the deadline. Validation at load: increasing, and
       `verdict_end` below the `deadline_seconds` of the file or profile that results (a profile that lowers the
@@ -413,7 +414,7 @@ identity.
   verdict is reported when the assess answer is truncated twice at the output cap (LLM-07) and when the
   model declines the assess call twice (LLM-06), each with its own reason. `not_assessed` is set by
   code only: the model's output schema offers `fit`, `fit_with_conditions` and `not_fit`
-  (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (540 s).
+  (`llm.outputs.AssessedVerdictLabel`). A cut refine keeps the assess findings. Default deadline 3600 s; the demo uses `--profile demo` (900 s).
 - **A deadline that does not fit its reserves is announced.** `--deadline` and a profile each set one
   side of the sum, so the pair can be inconsistent (`--deadline 300` against the default 180 s + 600 s).
   The run then prints `WARN deadline 300 s leaves research no time ...` (or `... no model call can run

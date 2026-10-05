@@ -3,6 +3,7 @@
 Written 2026-10-03 for the owner, from `docs/DEMO_DAY_RUNBOOK.md` (the procedure), `docs/ARCHITECTURE.md` §13 (the walkthrough) and the measurement notes cited on each number.
 The runbook is the procedure and wins on any conflict; this file is the clock and the words.
 The session is assumed to be about 40 minutes with a 10-minute live run inside it; the lab brief states no time limit (`docs/USER_DECISIONS.md` #34), so ask SIT for the slot length beforehand and shrink the walkthrough first if it is shorter.
+Since 2026-10-05 the demo deadline is 900 s, not 540 s (`docs/USER_DECISIONS.md` #47): the session clock below still plans for a run that ends near its measured 382 to 428 s, and a run that uses its full 900 s ends at S+24:30, which pushes every later block back by up to 5.5 minutes, so re-plan the blocks once SIT names the slot.
 The brief names three parts: "a walkthrough of the agent design, a live execution using a design artefact provided by SIT, and an on-the-spot modification exercise" (lab p.9 §5.4), and the agent must "take an updated version of the design artefact as inputs for it to re-assess" (lab p.3 §1.5).
 Clock times are session time, `S+mm:ss`, from the moment the evaluators say go; run times are the agent's own clock, `run 0:00` at Start review.
 Each block gives the clock, what to open, the one sentence to say, and the fallback.
@@ -14,7 +15,7 @@ Each block gives the clock, what to open, the one sentence to say, and the fallb
 | Full run, document only, demo profile | 382.3 s, $5.74 | `docs/live_runs/rehearsal_concurrent_1/MEASUREMENT.md`, `docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` comparison table |
 | Full run with tools on the lab's own sample | 428.0 s, $5.54, 112.0 s of slack | `docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Result" |
 | First draft finding on the console | 71 s (first DRAFT line of any kind 34 s); the runbook plans for about 125 s | `docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Shards"; `docs/DEMO_DAY_RUNBOOK.md` §5 |
-| Stage limits and deadline | stage 1 by 265 s, refine by 465 s, verdict call by 530 s, deadline 540 s | `config/profiles/demo.yaml` lines 27 and 42-44; runbook §5 |
+| Stage limits and deadline | stage 1 by 441 s, refine by 775 s, verdict call by 883 s, deadline 900 s (not yet measured at 900 s) | `config/profiles/demo.yaml` lines 27 and 42-44; runbook §5 |
 | MCP cold starts | 34.4 s search, 29.3 s browser, 39.5 s research, 70.1 s document intelligence; 0.04 s warm | `research/robustness/mcp_probe_findings.md` "Latency" |
 | `make smoke` | about 10 s offline | runbook header and §1 |
 | Live modification targets | at most 3 min for config, 5 min for code | runbook §1 |
@@ -58,7 +59,7 @@ Does: start the stopwatch; say the plan: eight minutes of design, a ten-minute l
 | 01:32 | `agent/sit_review_agent/states.py`, then `dra states` | Five stages, and the same graph printed from the code. |
 | 02:04 | `agent/sit_review_agent/orchestrator.py` `_stage_1` | Understand, plan and six assess shards start together; research waits for the first two. |
 | 02:36 | `config/agent.yaml` `assess.shards` | Six criterion groups, and a criterion added live becomes its own shard, a parallel call, not wall time. |
-| 03:08 | `config/profiles/demo.yaml` | 540 s, three stage limits and two reserves, enforced inside each model call in `llm/runtime.py`. |
+| 03:08 | `config/profiles/demo.yaml` | 900 s, three stage limits and two reserves, enforced inside each model call in `llm/runtime.py`. |
 | 03:40 | `docs/live_runs/QUALITY_COMPARISON.md` | 3,372 s down to 382 s, 11 of 14 to 13 of 14 planted flaws, one document and one run per arm. |
 | 04:12 | `agent/sit_review_agent/llm/gateway.py`, `llm/backend.py` | One gateway protocol, two backends, and the CLI backend needs no API key. |
 | 04:44 | `agent/sit_review_agent/tools/gateway.py`, `tools/policy.py` | The tool layer stack, the URL policy and the argument sanitiser. |
@@ -81,19 +82,19 @@ Does: look at the title page and revision history; if it is an updated SIT desig
 Does: choose profile `demo`, leave tools on, press Start review at about S+09:30 (run 0:00); the page shows the equivalent command.
 Window 2: type `dra replay runs/demo_backup_sit_v1` and leave it unstarted (runbook §5).
 Says: "The agent never saw this file; the page is the same `dra review` subprocess, so nothing here is outside the evaluated agent."
-S+09:30 to S+13:55 (run 0:00 to 4:25, stage 1), points at the shard tracks: "Design content and research are kept apart; the six assessors read only the document and their own criteria, so they do not wait for the plan."
+S+09:30 to S+16:51 (run 0:00 to 7:21, stage 1), points at the shard tracks: "Design content and research are kept apart; the six assessors read only the document and their own criteria, so they do not wait for the plan."
 Point at the head clock: it ticks each second from the recorded run clock, with the stage limits drawn on one axis; a stage row clicked open shows its model calls and the titles drafted so far, and the rail's Logs panel shows the same lines as the terminal (`docs/USER_DECISIONS.md` #44).
 If the run must be stopped, Stop asks for a second click and says what it does: SIGINT, exit 130, `state.json` kept, no report, `dra resume <run_id>` continues it.
 S+10:41 to S+11:35 (run 71 s to about 125 s): the first draft finding arrives in the right column under the amber "draft, unverified" pill, and the rail's Runs entry shows the stage and the run clock; say "IDs, ranks and severities can still change in refine."
 While research runs, name its stop reason when it shows; on the lab sample it stopped after one of four iterations (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md` "Tools").
-S+13:55 to S+17:15 (run 265 to 465 s, merge and refine): "The deadline is enforced inside each model call, so one slow call cannot take the report with it."
-S+15:52 to S+16:38 (run 382 to 428 s, the two measured runs): the review appears; it must appear by S+18:30 (run 540 s) at the latest.
+S+16:51 to S+22:25 (run 441 to 775 s at the latest, merge and refine; earlier when stage 1 ends early): "The deadline is enforced inside each model call, so one slow call cannot take the report with it."
+S+15:52 to S+16:38 (run 382 to 428 s, the two measured runs): the review appears; it must appear by S+24:30 (run 900 s) at the latest.
 Opens: the verdict, its confidence and the counts strip; says "the verdict and confidence come first, every finding below carries its quote and page."
 Opens: one finding expanded, then the Coverage tab, the same map as `dra coverage`, including "checked, no issue".
 Opens: the chat, labelled "reading aid, not the review"; ask "Which finding has the most evidence?" and point at the verified citations.
 Says: "The chat reads only the finished review, its citations are checked by the server, and it is capped at 20 calls."
 Closes on the limitations section: degraded tools, unresolved anchors, and any cut stage.
-If it fails: see the fallback block; the trigger is no draft finding by run 265 s (S+13:55).
+If it fails: see the fallback block; the trigger is no draft finding by run 441 s (S+16:51).
 
 ## S+19:00 to S+27:00: the re-assessment of their updated artefact
 
@@ -120,11 +121,11 @@ Then show it: the new value is in the next run's `effective_config.json` and man
 |---|---|---|---|
 | A new criterion | `config/criteria.yaml`, append at the end | Six lines: `id`, `question`, `lab_ref`, `kinds`, `applies_to`, `research_hints`; it forms its own seventh shard (`config/agent.yaml` `assess.shards`) | Yes; a seventh shard's run time is not measured |
 | A severity weight | none exists in the agent: severity is a closed enum the model assigns | Nearest knob: `config/agent.yaml` line 91 `report.min_severity: medium` moves low findings to the appendix | Yes; say plainly that there is no weight to change |
-| The effort level | `config/profiles/demo.yaml` lines 19-24 (the profile overrides `config/agent.yaml` lines 4-9) | e.g. line 21 `assess: high` | Yes; `high` measured 780.3 s, past the 540 s deadline (`docs/live_runs/QUALITY_COMPARISON.md`) |
+| The effort level | `config/profiles/demo.yaml` lines 19-24 (the profile overrides `config/agent.yaml` lines 4-9) | e.g. line 21 `assess: high` | Yes; `high` measured 780.3 s, past the former 540 s deadline and 119.7 s inside the current 900 s (`docs/live_runs/QUALITY_COMPARISON.md`) |
 | A disabled tool | `config/tools.yaml` line 6 (search) or 9 (research), or no edit: `--disable-tool mcp-internet-search` | `enabled: false` | Yes; the report header lists the disabled tool |
-| The deadline | `config/profiles/demo.yaml` line 27, or `--deadline N` on the command line | e.g. `deadline_seconds: 300` | Yes; at or below 530 s the three stage limits scale down and above 540 s they scale up, announced (300 s gives 147 / 258 / 294 s, 900 s gives 441 / 775 / 883 s; runbook §4, not rehearsed) |
+| The deadline | `config/profiles/demo.yaml` line 27, or `--deadline N` on the command line | e.g. `deadline_seconds: 300` | Yes; at or below 883 s the three stage limits scale down and above 900 s they scale up, announced (540 s gives 264 / 465 / 529 s, 1200 s gives 588 / 1033 / 1177 s; runbook §4, not rehearsed); the reserves do not scale, so at 540 s research ends by run 81 s |
 
-A longer deadline lengthens the stages in proportion: above 540 s the runtime scales the three limits by the deadline over 540 s and announces it (`agent/sit_review_agent/llm/runtime.py` `effective_stage_limits`), so lines 42-44 of the profile need no edit.
+A longer deadline lengthens the stages in proportion: above 900 s the runtime scales the three limits by the deadline over 900 s and announces it (`agent/sit_review_agent/llm/runtime.py` `effective_stage_limits`), so lines 42-44 of the profile need no edit.
 Code changes offered only if time allows: the "two sources agree" stop rule, about 8 lines appended to `agent/sit_review_agent/stop_rules.py`, at most 5 minutes (runbook §4.2 row 2b).
 Declined live, with the sentence to say:
 "Another provider is a new gateway and a new evaluation, so I will show you the seam in `llm/backend.py` instead of changing it under you." (ADR-001)
@@ -141,7 +142,7 @@ Does: offer the Download button for their copy, a zip of the review as one sideb
 
 ## The fallback, any time
 
-Rule: no draft finding by run 265 s (runbook §5), or no review by run 540 s, or no network at all.
+Rule: no draft finding by run 441 s (runbook §5), or no review by run 900 s, or no network at all.
 Does: press Enter on the typed `dra replay runs/demo_backup_sit_v1` in Window 2, then walk `dra explain` and `dra coverage` on it while the live run finishes.
 Says, exactly: "The live run is late, so while it finishes I am showing a recorded run of the SIT sample, replayed offline; it is stamped replayed evidence and it is not a review of your document."
 A partial live review is shown first, with its disclosed cuts, and the replay only for depth (runbook §5).

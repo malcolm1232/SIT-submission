@@ -400,15 +400,15 @@ def effective_stage_limits(stop_rules: Any) -> tuple[dict[str, float], str | Non
     at or below ``verdict_end`` (``--profile demo --deadline 300``, runbook §4.2) is applied after
     the file check, so the limits would end past the deadline. They are then SCALED, not refused: the
     three limits are multiplied by ``deadline / planned``, where ``planned`` is the run length the
-    limits were set for, ``refine_end + report_reserve_seconds`` (465 + 75 = 540 s on the demo
+    limits were set for, ``refine_end + report_reserve_seconds`` (775 + 125 = 900 s on the demo
     profile, 3420 + 180 = 3600 s on the default; ``config/stop_rules.yaml`` derives them that way).
     Scaling keeps every stage, and stage 1 keeps the largest share, which is where findings come
     from (salvaged at the cut), so a short rerun still reports findings (design section 7 verifier
     check). Refusing would end the rerun the runbook relies on before it starts.
 
-    A ``--deadline`` ABOVE ``planned`` (``--profile demo --deadline 900``, runbook §5) scales the
-    three limits UP by the same ``deadline / planned`` (441 / 775 / 883 s at 900 s on the demo
-    profile), announced the same way, so the time the user added on purpose reaches the stages
+    A ``--deadline`` ABOVE ``planned`` (``--profile demo --deadline 1200``) scales the three limits
+    UP by the same ``deadline / planned`` (588 / 1033 / 1177 s at 1200 s on the demo profile),
+    announced the same way, so the time the user added on purpose reaches the stages
     instead of idling after ``verdict_end``. Scaling up multiplies every gap by the same factor
     above 1, so ``refine_end`` still leaves at least ``report_reserve_seconds`` before the deadline
     and ``verdict_end`` at least the profile's render margin (``planned - verdict_end``); the tests

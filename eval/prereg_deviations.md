@@ -395,3 +395,21 @@ already happened (none had for entries made before the freeze).
 - **Scored runs before the change:** none on the held-out items; the plan D scores of the eight synthetic documents
   are exploratory (`frozen: false`, no key `scored_run_ready`, ruling #26) and are reported in
   `docs/COMPARISON_PLAN_D.md`.
+
+## 15. 2026-10-05: the demo profile, which is the evaluated agent, runs to 900 s instead of 540 s
+
+- **Fields:** none of `eval/prereg.yaml` is edited. `agent_under_test.effort_per_stage.profile: demo` still names the
+  evaluated agent; the comment beside it ("deadline 540 s") and the pilot-checkpoint text that calls 540 s the demo
+  slot keep their old wording until the file is next revised, and this entry supersedes them.
+- **Old text:** `config/profiles/demo.yaml` `deadline_seconds: 540`, reserves 75 s and 200 s, stage limits 265 / 465 /
+  530 s.
+- **New text:** `deadline_seconds: 900`, reserves 125 s and 334 s, stage limits 441 / 775 / 883 s (the old limits
+  scaled by 900/540 by `llm/runtime.py` `effective_stage_limits`). The agent's effort, prompts and phases are
+  unchanged, but its configuration hash (`agent_under_test.config_sha256`) changes with the file.
+- **Reason:** the owner's document-only demo run of 2026-10-05 lost its refine pass to the 465 s limit; his word,
+  5 Oct 2026 21:15: "longer than 9 mins" (`docs/USER_DECISIONS.md` #47).
+- **Decided by:** the owner (#47). Which deadline the next evaluation runs use is open for the planner: runs
+  comparable with plan D need the old clock, and `--deadline 540` alone does not give it (the reserves stay 125 s and
+  334 s, so research would end by run time 81 s; #47).
+- **Scored runs before the change:** none confirmatory (`frozen: false`). The plan D runs (entries 13 and 14) were
+  made before this change, with the profile as it was then.

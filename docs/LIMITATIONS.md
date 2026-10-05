@@ -22,7 +22,8 @@ The browser-automation server is disabled because it keeps one browser session s
 
 ### Time and cost
 
-The 540 s deadline of the demo profile is a project assumption, because the lab brief states no time limit for the live run; it is a configurable safety net, not a product limit (`docs/USER_DECISIONS.md` #34, `config/profiles/demo.yaml`).
+The 900 s deadline of the demo profile is the owner's choice of 2026-10-05, not yet measured, because the lab brief states no time limit for the live run; it is a configurable value, not a product limit (`docs/USER_DECISIONS.md` #34 and #47, `config/profiles/demo.yaml`).
+A shorter `--deadline` scales the stage limits but not the two reserves, so at 540 s or below a run with tools gets little or no research (`config/profiles/demo.yaml` comment).
 Every cost in this repository is the Claude Code CLI's estimate, not a billed amount (`docs/BUDGET.md` basis note, `docs/live_runs/QUALITY_COMPARISON.md` "Caveats").
 A model call cut by a limit is logged with unknown usage, so the cost of such a run is a lower bound and is labelled as one (`docs/USER_DECISIONS.md` #28, `docs/ARCHITECTURE.md` §6).
 The cost with working search was measured once, on the rehearsal of 4 October 2026: $7.37 recorded, a lower bound because two calls ended early, about $8.86 with an estimate for them (`docs/live_runs/sit_sample_ui_2/MEASUREMENT.md`, `docs/EXPLAIN_AS_IT_RUNS.md`).
