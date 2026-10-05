@@ -37,3 +37,8 @@ robustness: 161 passed.
 No live model run and no rerun of a recorded run; the edges are shown on fixtures and the scripted selftest pipeline only.
 A made-up URL in an inference ledger excerpt is still not scanned by INV-05 (unchanged, not in scope).
 Anchor quotes are never redacted, so an anchor that is not a run of the document and holds a disallowed URL still fails closed.
+
+## Verifier (fresh context, 5 Oct 2026)
+
+Verified with probes P1 to P5 and an E3 mutation (killed); one leak fixed in 4b85b5a: two document URLs on adjacent lines joined into a third allowed URL that reached report.json and report.md, now never joined (`test_inv05_two_document_urls_on_adjacent_lines_never_join_into_a_third`); gates 2024 passed, 1 skipped, 2 xfailed.
+Residual, not fixed: a URL at a line end still joins the next line's first word ("https://a.example/xfor" allowed), and `quote_in_document` checks a quote URL as a prefix of any document URL, not the one at the quote's position.
