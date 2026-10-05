@@ -227,12 +227,132 @@ def test_the_confidence_entry_states_the_code_and_cites_it_at_the_right_lines(fl
 
 # ------------------------------------------------------------------ L4: in a browser, from the file itself
 
+FAMILIES = (  # (name, selector of a link in the review, how the pane's kicker names the target)
+    ("finding", "main a.x-fnd", "id"), ("evidence", "main a.x-ev", "id"), ("limitation", "main a.x-deg", "id"),
+    ("registry", "main a.x-ad", "id"), ("sound area", "main a.x-sa", "id"), ("question", "main a.x-rq", "id"),
+    ("document id", "main a.x-docid", "any"), ("page ref", "main li.x-where a.x-loc", "doc"),
+    ("section ref", "main a.x-loc[href*='-s']", "doc"), ("doc anchor", "main a.x-cite", "doc"),
+    ("confidence", "main a.chip.conf", "term"), ("glossary chip", "main a.chip.disp", "term"),
+)
 
-def test_following_a_link_and_coming_back_in_a_browser(flow: Path, tmp_path: Path) -> None:
+
+@pytest.fixture
+def chromium(flow: Path, tmp_path: Path):
     sync_api = pytest.importorskip("playwright.sync_api")
     f = tmp_path / "index.html"
     f.write_text(export.export_html(flow, replayed=False), encoding="utf-8")
+    with sync_api.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as exc:  # noqa: BLE001 - Chromium not installed here
+            pytest.skip(f"Chromium not available: {exc}")
+        ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+        pg = ctx.new_page()
+        errors: list[str] = []
+        pg.on("pageerror", lambda e: errors.append(str(e)))
+        pg.goto(f.as_uri())
+        yield pg, ctx, f
+        assert errors == []
+        browser.close()
+
+
+def _y(pg) -> float:
+    return pg.evaluate("window.scrollY")
+
+
+def test_a_link_opens_its_target_in_the_side_pane_and_the_main_column_does_not_move(chromium, flow: Path) -> None:
+    pg, ctx, f = chromium
     report = json.loads((flow / "report.json").read_text(encoding="utf-8"))
+    mid = report["findings"][len(report["findings"]) // 2]["id"]
+    pg.evaluate("id => window.scrollTo(0, document.getElementById(id).getBoundingClientRect().top + scrollY - 80)", mid)
+    pg.wait_for_timeout(100)
+    seen = 0
+    for name, sel, kind in FAMILIES:
+        link = pg.locator(sel).first
+        if link.count() == 0:
+            continue
+        seen += 1
+        link.scroll_into_view_if_needed()
+        pg.wait_for_timeout(50)
+        y0 = _y(pg)
+        href = link.get_attribute("href")
+        link.click()
+        pg.wait_for_selector(".x-pane:not([hidden])")
+        assert _y(pg) == y0, name                                     # the main column did not move
+        kicker = pg.locator(".x-pane-kicker").inner_text()
+        if kind == "id":
+            assert kicker == href[1:].removeprefix("reg-"), (name, kicker, href)
+        elif kind == "doc":
+            assert re.fullmatch(r"(p\.\d+|§[\d.]+)", kicker), (name, kicker)
+        elif kind == "term":
+            want = pg.evaluate("h => document.getElementById(h).querySelector('h3').textContent", href[1:])
+            assert pg.locator(".x-pane-title").inner_text() == want.strip(), name
+        assert pg.evaluate("() => document.querySelector('.x-pane-body').textContent.trim().length") > 0, name
+        ids = pg.evaluate("() => [...document.querySelectorAll('[id]')].map(e => e.id)")
+        assert len(ids) == len(set(ids)), name                       # the pane's copy carries no id
+        assert pg.evaluate("h => document.querySelector('main a.x-opener').getAttribute('href') === h", href)
+        pg.keyboard.press("Escape")
+        pg.wait_for_selector(".x-pane", state="hidden")
+        assert _y(pg) == y0, name
+        assert pg.evaluate("h => document.activeElement.getAttribute('href') === h", href), name   # focus came back
+    assert seen >= 8
+    # a chain inside the pane: its own back and forward, the breadcrumb, Esc, and the main column never moves
+    link = pg.locator("main a.x-ev").first
+    link.scroll_into_view_if_needed()
+    y0 = _y(pg)
+    link.click()
+    pg.wait_for_selector(".x-pane:not([hidden])")
+    first = pg.locator(".x-pane-kicker").inner_text()
+    inner = pg.locator(".x-pane-body a.xref").first
+    inner.click()
+    pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent !== k", arg=first)
+    assert pg.locator(".x-pane-crumb .x-crumb").count() == 2 and pg.locator(".x-pane-crumb").is_visible()
+    pg.click(".x-pane-prev")
+    pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent === k", arg=first)
+    pg.click(".x-pane-next")
+    pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent !== k", arg=first)
+    pg.go_back()                                                     # the browser's Back steps back in the pane
+    pg.wait_for_function("k => document.querySelector('.x-pane-kicker').textContent === k", arg=first)
+    pg.go_back()                                                     # and then closes it
+    pg.wait_for_selector(".x-pane", state="hidden")
+    assert _y(pg) == y0
+    assert pg.url == f.as_uri()                                      # still on the page
+    # a click on the main column outside a link closes the pane
+    link.click()
+    pg.wait_for_selector(".x-pane:not([hidden])")
+    pg.mouse.click(300, 400)
+    pg.wait_for_selector(".x-pane", state="hidden")
+    assert _y(pg) == y0
+    # "Show in the report" moves the main column to the target, and "Back to where I was" returns
+    link.click()
+    pg.wait_for_selector(".x-pane:not([hidden])")
+    pg.click(".x-pane-show")
+    pg.wait_for_selector(".x-pane", state="hidden")
+    pg.wait_for_function("h => location.hash === h", arg=link.get_attribute("href"))
+    assert _y(pg) != y0 and pg.locator(".x-back").is_visible()
+    pg.click(".x-back")
+    pg.wait_for_function("y => Math.abs(window.scrollY - y) < 1", arg=y0)
+    # a modified click still opens the anchor in a new tab; the href is a real in-page anchor
+    with ctx.expect_page() as tab:
+        link.click(modifiers=["ControlOrMeta"])
+    tab.value.wait_for_load_state()
+    assert tab.value.url.endswith(link.get_attribute("href"))
+    assert pg.locator(".x-pane").is_hidden()
+
+
+def test_the_hover_card_stays_open_on_the_way_to_it_and_scrolls_on_its_own(tmp_path: Path) -> None:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    filler = "".join(f"Line {n} of the requirements text, kept long enough to wrap once or twice.\n" for n in range(80))
+    pages = (f"[[PAGE 1]]\nTitle page\n[[PAGE 2]]\n2. Requirements\n{filler}"
+             "The gateway checks run in order before any store query.\n" + filler)
+    report = {"metadata": {"documents": [{"doc_id": "DOC-x", "role": "under_review", "title": "X",
+                                          "text_path": "text/DOC-x.pages.txt"}]}}
+    md = "# Design review: X\n\n## Gaps\n\n" + "Words of the review.\n\n" * 12 + \
+        '- Where: p.2 §2: "The gateway checks run in order before any store query."\n\n' + "More words.\n\n" * 40
+    rd = _run(tmp_path, md, report, pages, [{"section_id": "2", "heading": "Requirements", "char_start": 0,
+                                             "char_end": len(pages), "page_start": 2}])
+    f = tmp_path / "hover.html"
+    f.write_text(export.export_html(rd, replayed=False), encoding="utf-8")
     with sync_api.sync_playwright() as p:
         try:
             browser = p.chromium.launch()
@@ -240,26 +360,28 @@ def test_following_a_link_and_coming_back_in_a_browser(flow: Path, tmp_path: Pat
             pytest.skip(f"Chromium not available: {exc}")
         pg = browser.new_page(viewport={"width": 1280, "height": 800})
         pg.goto(f.as_uri())
-        fid = report["findings"][-1]["id"]
-        link = pg.locator(f"main a.x-fnd[href='#{fid}']").first
-        if link.count() == 0:
-            link = pg.locator("main a.x-fnd").first
-        link.scroll_into_view_if_needed()
-        y0 = pg.evaluate("window.scrollY")
-        href = link.get_attribute("href")
-        link.click()
-        pg.wait_for_function("h => location.hash === h", arg=href)
-        assert pg.locator(".x-back").is_visible()
-        top = pg.evaluate("h => document.getElementById(h.slice(1)).getBoundingClientRect().top", href)
-        assert 0 <= top < 200                                   # the card is at the top of the view
-        assert pg.evaluate("h => document.getElementById(h.slice(1)).classList.contains('x-hit')", href)
-        pg.click(".x-back")                                     # the visible way back
-        pg.wait_for_function("y => Math.abs(window.scrollY - y) < 3", arg=y0)
-        assert pg.locator(".x-back").is_hidden()
-        link.click()
-        pg.wait_for_function("h => location.hash === h", arg=href)
-        pg.go_back()                                            # and the browser's own Back
-        pg.wait_for_function("y => Math.abs(window.scrollY - y) < 3", arg=y0)
-        pg.go_forward()
-        pg.wait_for_function("h => location.hash === h", arg=href)
+        link = pg.locator("main a.x-loc").first
+        _hover_card(pg, link)
         browser.close()
+
+
+def _hover_card(pg, link) -> None:
+    link.scroll_into_view_if_needed()
+    pg.wait_for_timeout(50)
+    box = link.bounding_box()
+    pg.mouse.move(box["x"] + 5, box["y"] + box["height"] / 2)
+    pg.wait_for_selector(".x-pop:not([hidden])")
+    card = pg.locator(".x-pop").bounding_box()
+    pg.mouse.move(card["x"] + 30, card["y"] + card["height"] / 2, steps=15)   # across the gap, in steps
+    pg.wait_for_timeout(600)
+    assert pg.locator(".x-pop").is_visible()                         # still open with the pointer on it
+    y0 = _y(pg)
+    top0 = pg.evaluate("document.querySelector('.x-pop').scrollTop")
+    room = pg.evaluate("(() => { const p = document.querySelector('.x-pop');"
+                       " return p.scrollHeight - p.clientHeight; })()")
+    assert room > 0                                                  # the whole page is in it: it scrolls
+    pg.mouse.wheel(0, -300 if top0 > 0 else 300)
+    pg.wait_for_function("t => document.querySelector('.x-pop').scrollTop !== t", arg=top0)
+    assert _y(pg) == y0 and pg.locator(".x-pop").is_visible()       # the page behind did not scroll
+    pg.mouse.move(2, 2, steps=5)
+    pg.wait_for_selector(".x-pop", state="hidden")
