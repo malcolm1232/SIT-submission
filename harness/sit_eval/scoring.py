@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
+import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -25,6 +27,7 @@ from sit_eval.matcher import Matcher, MatcherSettings, MatchResult, finding_view
 from sit_eval.metrics import compute_metrics
 from sit_eval.paths import SCHEMAS_DIR
 from sit_eval.usage import usage_completeness
+from sit_review_agent.phases._model_calls import REFINE_FALLBACK_IMPACT
 
 SCORES_SCHEMA_VERSION = "1.0"
 #: The agent's code-set verdict of a run that produced no assessment (spec VerdictLabel).
@@ -80,6 +83,40 @@ def check_condition(flag: str | None, manifest: dict[str, Any] | None,
 
 def _verdict_label(rin: ReviewInput) -> str | None:
     return (rin.data.get("verdict") or {}).get("label")
+
+
+#: The repair call's outcome as ``repair_impact`` / the repair ``_disclose`` event word it (agent phases/refine.py).
+_REPAIR_HOW = (re.compile(r"by the one repair call, which (.+?) with \d+ revision\(s\) for them"),
+               re.compile(r"the one repair call, asked for those only, (.+)$"))
+_REPAIR_OK = "returned in full"
+_REFINE_DECLINED = "the model declined the refine call"
+
+
+def refine_fallback_events(review: dict[str, Any]) -> list[str]:
+    """The event texts of the degradations in ``review`` (``research_log.degradations``) that record a refine
+    fallback or a failed refine repair, in report order. A fallback is recorded by the agent with the impact
+    ``REFINE_FALLBACK_IMPACT`` (revisions not applicable, deadline cut, truncated twice, a stop rule that skipped
+    refine), by a refine call the model declined twice, or by a repair call that did not return in full (the
+    first answer's kept revisions applied, the rest unrefined). A repair that returned in full and a model
+    fallback (another model served the call) are not refine fallbacks."""
+    degs = ((review.get("research_log") or {}).get("degradations")) or []
+    events = []
+    for d in degs:
+        if not isinstance(d, dict) or d.get("type") == "model_fallback":
+            continue
+        event, impact = str(d.get("event") or ""), str(d.get("impact") or "")
+        hows = [m.group(1).strip() for rx, text in zip(_REPAIR_HOW, (impact, event), strict=True)
+                if (m := rx.search(text))]
+        if (REFINE_FALLBACK_IMPACT in impact or event.startswith(_REFINE_DECLINED)
+                or any(h != _REPAIR_OK for h in hows)):
+            events.append(event)
+    return events
+
+
+def refine_fallback_warning(run_id: str, events: list[str]) -> str:
+    more = f" (and {len(events) - 1} more)" if len(events) > 1 else ""
+    return (f"run {run_id} recorded a refine fallback{more}: {events[0][:120]}; its refine phase did not apply the "
+            "model's revisions as a whole, so these scores are partly the fallback's, not the refined agent's")
 
 
 def file_sha256(path: Path) -> str:
@@ -283,13 +320,18 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
         warnings.append(PLUMBING_NOTE)
     if _verdict_label(rin) == NOT_ASSESSED:
         warnings.append(NOT_ASSESSED_NOTE)
+    fallback_events = refine_fallback_events(rin.data)
+    if fallback_events:
+        line = refine_fallback_warning(rin.data["metadata"]["run_id"], fallback_events)
+        print(f"sit-eval score: WARNING: {line}", file=sys.stderr)
+        warnings.append(line)
     # usage completeness (SIT FABLE ruling #28): the loader read it; a ReviewInput built without it is read here
     usage = rin.usage if rin.usage is not None else usage_completeness(
         rin.manifest if rin.manifest is not None else rin.data.get("run_manifest"), rin.run_dir)
     warnings += usage_mod.warnings_for(usage)
     doc = docin.document
     doc_text = doc.text
-    base = _base(rin, key, key_path, docin, version, opts, prereg, prompts_info)
+    base = _base(rin, key, key_path, docin, version, opts, prereg, prompts_info, fallback_events)
     if runner is None:
         raise ValueError("a judge runner is required")
     matcher = Matcher(runner, MatcherSettings(granularity=opts.granularity, candidate_rule=opts.candidate_rule,
@@ -331,7 +373,7 @@ async def score_review(*, rin: ReviewInput, key: dict[str, Any], key_path: Path,
 
 
 def _base(rin: ReviewInput, key: dict[str, Any], key_path: Path, docin: DocInput, version: str, opts: ScoreOptions,
-          prereg: dict[str, Any], prompts_info: dict[str, Any]) -> dict[str, Any]:
+          prereg: dict[str, Any], prompts_info: dict[str, Any], fallback_events: list[str]) -> dict[str, Any]:
     rm = rin.data.get("run_manifest") or {}
     return {
         "schema_version": SCORES_SCHEMA_VERSION, "kind": "sit_eval.scores",
@@ -341,6 +383,7 @@ def _base(rin: ReviewInput, key: dict[str, Any], key_path: Path, docin: DocInput
             "review_id": rin.data["metadata"]["review_id"], "run_id": rin.data["metadata"]["run_id"],
             "review_mode": rin.data["metadata"]["review_mode"],
             "verdict_label": _verdict_label(rin),
+            "refine_fallback_recorded": bool(fallback_events), "refine_fallback_events": fallback_events,
             "condition": opts.condition if opts.condition is not None else rm.get("condition"),
             "split": rm.get("split"),
             "key_path": str(key_path), "key_sha256": file_sha256(key_path), "item_id": key["item"]["item_id"],
