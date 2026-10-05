@@ -325,7 +325,7 @@ NAV_JS = r"""(function () {
     }
     else { pop.style.top = "8px"; pop.style.maxHeight = (above - 8) + "px"; }
     var m = pop.querySelector(".x-pop-doc mark, .x-pop-doc b");      // a passage: its quote in view
-    if (m) pop.scrollTop = Math.max(0, m.offsetTop - 64);
+    if (m) pop.scrollTop = Math.max(0, m.offsetTop - 96);
   }
   function arm(a) {
     if (a === shown) return;
@@ -438,6 +438,10 @@ NAV_JS = r"""(function () {
   function draw() {
     var id = stack[at], t = document.getElementById(id), b = block(t), c = copy(t, b);
     pbody.textContent = "";
+    if (b.classList.contains("x-ev-entry")) {                        // its excerpt is the title: not twice
+      var q = c.querySelector(":scope > .x-q");
+      if (q) q.parentNode.removeChild(q);
+    }
     pbody.appendChild(c);
     pkick.textContent = label(id, t, b);
     ptitle.textContent = title(id, t, b);

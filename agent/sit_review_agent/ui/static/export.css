@@ -178,11 +178,14 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .x-pop p, .x-pop li { max-width: none; }
 .x-pop .x-entry { border: 0; padding: 0; margin: 0; background: none; }
 .x-pop article, .x-pop li { list-style: none; }
-.x-pop-kicker { font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--fg-muted); margin-bottom: 6px; }
+.x-pop-kicker { position: sticky; top: -12px; z-index: 1; margin: -12px -14px 8px; padding: 10px 14px 7px;
+  background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--mono); font-size: 11px; line-height: 16px; color: var(--fg-muted); }
 .x-pop-title { font-weight: 600; margin-bottom: 8px; }
 .x-pop-doc { white-space: pre-wrap; color: var(--fg-2); }
 .x-pop-doc mark { background: var(--mark-bg); color: var(--mark-fg); }
-.x-pop .x-pdf { display: inline-block; margin-top: 8px; }
+.x-pop .x-pdf { position: sticky; bottom: -12px; display: block; margin: 10px -14px -12px; padding: 8px 14px 10px;
+  background: var(--bg-surface); border-top: 1px solid var(--border-subtle); }
 .x-pop-row > div { margin-bottom: 2px; }
 .x-pop-k { color: var(--fg-muted); font-size: 12px; }
 .x-pop ul.x-meta { margin-bottom: 8px; }
