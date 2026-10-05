@@ -80,8 +80,10 @@ def _urls_in(text: str) -> set[str]:
 
 
 #: A URL or DOI that runs to the end of a line, then that line break (E2: a PDF extraction breaks a
-#: long URL across two lines, at a character of the URL or with a break hyphen it added).
-_URL_AT_LINE_END = re.compile(rf"({URL_RE.pattern})[ \t]*\r?\n[ \t]*(?=\S)", re.IGNORECASE)
+#: long URL across two lines, at a character of the URL or with a break hyphen it added). A next line
+#: that starts with a URL or DOI is never joined: two links on adjacent lines are not one broken link.
+_URL_AT_LINE_END = re.compile(rf"({URL_RE.pattern})[ \t]*\r?\n[ \t]*(?=\S)(?!https?://|10\.\d{{4,9}}/)",
+                              re.IGNORECASE)
 
 
 def _broken_urls(text: str) -> set[str]:

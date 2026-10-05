@@ -174,6 +174,22 @@ def test_inv05_url_the_document_breaks_across_lines_is_backed(review_dict: dict[
         "URL/DOI in report text not in the ledger: https://rooms.campus.example/stats/peak-days."]
 
 
+@pytest.mark.parametrize("second", ["https://b.example/y", "HTTP://b.example/y", "10.1234/abcd"])
+def test_inv05_two_document_urls_on_adjacent_lines_never_join_into_a_third(
+        review_dict: dict[str, Any], booking_pages: str, second: str) -> None:
+    """E2 guard: a URL at a line end followed by a line that starts with another URL or DOI is two
+    links, never one broken link; their concatenation is a URL the document does not hold, so a
+    finding that cites it fails INV-05 (and the report redacts it), while each URL stays backed."""
+    first = "https://a.example/x"
+    pages = booking_pages + f"\nSources: {first}\n{second} for planning.\n"
+    allowed = inv.allowed_urls([], [pages])
+    assert {first, second} <= allowed and f"{first}{second}" not in allowed
+    r = copy.deepcopy(review_dict)
+    r["findings"][0]["statement"] += f" Counts are at {first}{second} weekly."
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {first}{second}"]
+
+
 def test_report_redaction_covers_a_url_inside_a_quote_inv05_does_not_exempt(
         review_dict: dict[str, Any], booking_pages: str) -> None:
     """E3: a doc quote that occurs in its excerpt only after case folding carries a URL the document
