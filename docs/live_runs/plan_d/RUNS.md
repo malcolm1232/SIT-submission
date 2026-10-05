@@ -56,3 +56,4 @@ Loads are the 1-, 5- and 15-minute averages.
 | d_hospital_v1_2 | hospital_scheduling | 12/14 (0.857) | 0.929 | 0.571 strict / 0.762 adj | 0.850 | 0.750 | 0 of 21 | 4.68 | 213 | 4.35/5.13/5.42 | 4.83/5.63/5.64 |
 | d_lakehouse_v2_1 (rescore, cap 24) | research_lakehouse | 7/9 (0.778) | 0.889 | 0.111 strict / 0.254 adj | 0.952 | 1.000 | 0 of 63 | 11.33 | 94 | 4.24/5.32/5.52 | 4.09/5.04/5.39 |
 | d_iot_v2_1 (rescore, cap 24) | iot_fleet | 7/8 (0.875) | 0.875 | 0.121 strict / 0.224 adj | 0.968 | 1.000 | 1 of 58 | 5.00 | 51 | 4.09/5.04/5.39 | 9.01/6.03/5.72 |
+| d_payments_v1_2 | payments_orchestration | 14/14 (1.000) | 1.000 | 0.667 strict / 0.857 adj | 1.000 | 1.000 | 0 of 21 | 4.98 | 204 | 4.14/4.57/4.05 | 9.57/8.01/5.69 |
