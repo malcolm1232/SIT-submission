@@ -90,6 +90,8 @@ _REPAIR_HOW = (re.compile(r"by the one repair call, which (.+?) with \d+ revisio
                re.compile(r"the one repair call, asked for those only, (.+)$"))
 _REPAIR_OK = "returned in full"
 _REFINE_DECLINED = "the model declined the refine call"
+#: The impact of a status-only repair: the refine answer was complete and rule-clean, every revision stood.
+_ALL_KEPT = re.compile(r"^(\d+) of \1 refine revisions \(one per merged finding\) were applied from the first answer")
 
 
 def refine_fallback_events(review: dict[str, Any]) -> list[str]:
@@ -97,8 +99,9 @@ def refine_fallback_events(review: dict[str, Any]) -> list[str]:
     fallback or a failed refine repair, in report order. A fallback is recorded by the agent with the impact
     ``REFINE_FALLBACK_IMPACT`` (revisions not applicable, deadline cut, truncated twice, a stop rule that skipped
     refine), by a refine call the model declined twice, or by a repair call that did not return in full (the
-    first answer's kept revisions applied, the rest unrefined). A repair that returned in full and a model
-    fallback (another model served the call) are not refine fallbacks."""
+    first answer's kept revisions applied, the rest unrefined). A repair that returned in full, a status-only
+    repair (all N of N revisions applied from the first answer; only prior-finding statuses were asked for) and
+    a model fallback (another model served the call) are not refine fallbacks."""
     degs = ((review.get("research_log") or {}).get("degradations")) or []
     events = []
     for d in degs:
@@ -107,8 +110,9 @@ def refine_fallback_events(review: dict[str, Any]) -> list[str]:
         event, impact = str(d.get("event") or ""), str(d.get("impact") or "")
         hows = [m.group(1).strip() for rx, text in zip(_REPAIR_HOW, (impact, event), strict=True)
                 if (m := rx.search(text))]
+        all_kept = _ALL_KEPT.match(impact) is not None
         if (REFINE_FALLBACK_IMPACT in impact or event.startswith(_REFINE_DECLINED)
-                or any(h != _REPAIR_OK for h in hows)):
+                or (not all_kept and any(h != _REPAIR_OK for h in hows))):
             events.append(event)
     return events
 

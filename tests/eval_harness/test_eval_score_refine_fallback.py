@@ -112,3 +112,24 @@ def test_refine_fallback_events_unit():
     assert refine_fallback_events({"research_log": {"degradations": [REPAIR_RETURNED, MODEL_FALLBACK]}}) == []
     both = {"research_log": {"degradations": [INVALID, REPAIR_RETURNED, DECLINED]}}
     assert refine_fallback_events(both) == [INVALID["event"], DECLINED["event"]]
+
+
+STATUS_ONLY = {"id": "DEG-001", "type": "other",
+               "event": "the refine answer left out the status of 2 prior finding(s) of the previous review; the one "
+                        "repair call, asked for those only, failed (LLMUnavailableError)",
+               "impact": "55 of 55 refine revisions (one per merged finding) were applied from the first answer; "
+                         "the status of 2 prior finding(s) was not recorded"}
+
+
+@pytest.mark.parametrize("ending", ["failed (LLMUnavailableError)", "was cut by the stage limit",
+                                    "did not match the output schema"])
+def test_status_only_repair_is_not_a_refine_fallback(tmp_path: Path, capsys: pytest.CaptureFixture[str],
+                                                     ending: str):
+    """A complete, rule-clean refine answer that left out prior-finding statuses keeps every revision from the
+    first answer; its one status-only repair failing is not a refine fallback."""
+    deg = dict(STATUS_ONLY, event=STATUS_ONLY["event"].replace("failed (LLMUnavailableError)", ending))
+    scores = _score(tmp_path, [deg])
+    assert "refine fallback" not in capsys.readouterr().err
+    assert scores["inputs"]["refine_fallback_recorded"] is False
+    assert scores["inputs"]["refine_fallback_events"] == []
+    assert refine_fallback_events({"research_log": {"degradations": [deg, REPAIR_FAILED]}}) == [REPAIR_FAILED["event"]]
