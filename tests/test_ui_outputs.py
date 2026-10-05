@@ -131,11 +131,8 @@ def test_the_export_is_self_contained_with_one_fixed_script_and_no_external_reso
     doc = parse(html)
     tags = {t for t, _ in doc.tags}
     assert "link" not in tags and "img" not in tags and "iframe" not in tags
-    # the one script is the sidebar's own (decision #43), never model text; the part files have none
+    # the one script is the sidebar's own (decision #43), never model text
     assert [t for t, _ in doc.tags].count("script") == 1 and f"<script>{export.NAV_JS}</script>" in html
-    for gi in range(len(export.GROUPS)):
-        part = export.export_part(flow_runs / "ui_flow_1", export.PART_NAMES[gi], replayed=False)
-        assert "script" not in {t for t, _ in parse(part).tags}
     for _, attrs in doc.tags:
         assert "src" not in attrs and not any(k.startswith("on") for k in attrs)
     assert "@import" not in html and "url(" not in html
@@ -169,9 +166,9 @@ def test_model_text_cannot_inject_markup_or_load_an_image(tmp_path: Path) -> Non
 def test_the_chat_transcript_is_appended_apart_and_only_when_it_exists(flow_runs: Path, tmp_path: Path) -> None:
     html = export.export_html(flow_runs / "ui_flow_1", replayed=False)
     rows = [json.loads(ln) for ln in (FLOW / "ui" / "chat.jsonl").read_text(encoding="utf-8").splitlines()]
-    doc = parse(html)
     assert export.CHAT_HEADING == "Reading-aid chat transcript (not part of the review)"
-    assert doc.texts("h2")[-1] == export.CHAT_HEADING
+    review_h2 = parse(html.split('<div class="x-reference">', 1)[0]).texts("h2")
+    assert review_h2[-1] == export.CHAT_HEADING           # after the review, before the Reference part
     transcript = html.split(export.CHAT_HEADING, 1)[1]
     review = html.split(export.CHAT_HEADING, 1)[0]
     said = set(parse(transcript).texts("p"))
@@ -325,7 +322,12 @@ def test_outputs_reports_the_bundle_the_download_saves(flow_runs: Path) -> None:
     res = client.get("/runs/ui_flow_1/export.html?download=1")
     assert res.status_code == 200 and f'filename="{out["name"]}"' in res.headers["content-disposition"]
     assert out["name"] == "ui_flow_1_review.zip"
-    assert out["files"] == len(export.bundle_names(flow_runs / "ui_flow_1")) == 11
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(res.content)) as z:
+        names = z.namelist()
+    assert out["files"] == len(names) and names[0] == export.INDEX_NAME and names[-2:] == ["report.md", "report.json"]
     kb = int(out["size"].removesuffix(" KB"))
     assert abs(kb * 1024 - len(res.content)) <= 1024   # the zip, not the single page (only the export stamp differs)
 
@@ -718,18 +720,18 @@ def test_the_three_actions_in_a_browser(browser_page) -> None:
     assert heads == ["Download", "Email", "Share"]
     # 1. Download: the bundle saves under its name, its size on the label; "Open it in a new tab" shows the same review.
     out = json.loads(pg.evaluate("fetch('/runs/ui_flow_1/outputs').then(r => r.text())"))["export"]
-    assert out["name"] == "ui_flow_1_review.zip" and out["files"] == len(export.bundle_names(runs / "ui_flow_1"))
+    assert out["name"] == "ui_flow_1_review.zip"
     assert pg.locator("#out-download").inner_text() == f"Download review (zip, {out['size']})"
     help_text = pg.locator("#out-download-help").inner_text()
-    assert help_text.startswith("A zip of one review page with a sidebar, whose one script only shows and hides")
-    assert "the eight parts as separate files, report.md and report.json" in help_text
+    assert help_text.startswith("A zip of one cross-linked review page with a sidebar, whose one script only shows")
+    assert "the reviewed PDF its page references open, report.md and report.json" in help_text
     with pg.expect_download() as dl:
         pg.click("#out-download")
     assert dl.value.suggested_filename == "ui_flow_1_review.zip"     # the bundle (decision #43)
     import zipfile
 
     with zipfile.ZipFile(dl.value.path()) as z:
-        assert z.namelist() == export.bundle_names(runs / "ui_flow_1")
+        assert len(z.namelist()) == out["files"] and z.namelist()[0] == export.INDEX_NAME
         saved = z.read(export.INDEX_NAME).decode("utf-8")
     assert export.CHAT_HEADING in saved and saved.count("<script") == 1
     with pg.expect_download() as md:
