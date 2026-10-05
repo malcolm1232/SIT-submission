@@ -273,3 +273,228 @@ async def test_client_reports_no_result(tmp_path: Path) -> None:
     reply = await chat.ClaudeCodeChatClient(runner=runner).ask(system="S", prompt="P", schema={}, cwd=tmp_path,
                                                                max_budget_usd=None)
     assert reply.data is None and "no result" in (reply.error or "")
+
+
+# ------------------------------------------------------------------ the answer, streamed (6 Oct 2026)
+
+
+class StreamingFake(FakeChat):
+    """A fake that passes the answer on in pieces through ``on_partial`` before it returns, as the real client does
+    from the CLI's stream; no model is called."""
+
+    def __init__(self, *answers: dict[str, Any] | None, pieces: int = 4, **kw: Any) -> None:
+        super().__init__(*answers, **kw)
+        self.pieces = pieces
+
+    async def ask(self, **kw: Any) -> chat.ChatReply:
+        data = self.answers[0] if self.answers else None
+        on_partial = kw.get("on_partial")
+        if data is not None and on_partial is not None:
+            text = data["answer"]
+            for i in range(1, self.pieces + 1):
+                on_partial(text[: len(text) * i // self.pieces])
+        return await super().ask(**kw)
+
+
+def sse(body: str) -> list[tuple[str, Any]]:
+    out = []
+    for frame in body.split("\n\n"):
+        kind = next((ln[7:] for ln in frame.splitlines() if ln.startswith("event: ")), None)
+        data = "".join(ln[6:] for ln in frame.splitlines() if ln.startswith("data: "))
+        if kind and data:
+            out.append((kind, json.loads(data)))
+    return out
+
+
+def test_partial_field_reads_the_answer_as_far_as_the_json_has_streamed() -> None:
+    whole = json.dumps({"supported": True, "cited_other_ids": [{"answer": "nested, not the root's"}],
+                        "answer": 'FND-005 says "no" \\ é \U0001f600 end', "cited_finding_ids": ["FND-005"]})
+    want = json.loads(whole)["answer"]
+    seen = [chat.partial_field(whole[:i], "answer") for i in range(len(whole) + 1)]
+    assert seen[-1] == want
+    grown = [s for s in seen if s is not None]
+    assert grown and all(want.startswith(s) for s in grown)                 # never a character the answer lacks
+    assert all(a == b or b.startswith(a) for a, b in zip(grown, grown[1:], strict=False))   # it only grows
+    assert chat.partial_field('{"answer', "answer") is None and chat.partial_field('{"answer": "', "answer") == ""
+
+
+def stream_lines(data: dict[str, Any], chunk: int = 7) -> list[str]:
+    """The CLI's stream-json for one answer: the StructuredOutput block's input_json_delta in chunks, then the
+    result event (the shape tests/fixtures/stream records)."""
+    text = json.dumps(data)
+    ev = [{"type": "system", "subtype": "init"},
+          {"type": "stream_event", "event": {"type": "message_start", "message": {"usage": {"input_tokens": 9}}}},
+          {"type": "stream_event", "event": {"type": "content_block_start", "index": 0,
+                                             "content_block": {"type": "tool_use", "name": "StructuredOutput"}}}]
+    ev += [{"type": "stream_event", "event": {"type": "content_block_delta", "index": 0, "delta": {
+        "type": "input_json_delta", "partial_json": text[i:i + chunk]}}} for i in range(0, len(text), chunk)]
+    ev += [{"type": "stream_event", "event": {"type": "content_block_stop", "index": 0}}]
+    lines = [json.dumps(e) for e in ev]
+    return lines + [stream_result(data).splitlines()[1]]
+
+
+async def test_the_client_passes_the_answer_on_as_the_cli_streams_it(tmp_path: Path) -> None:
+    data = answer("FND-005 is the gap the review ranks first, because the design leaves the quota unstated.")
+
+    async def runner(argv: list[str], stdin: str, env: dict[str, str], cwd: Path, timeout_s: float, *,
+                     on_line: Any = None) -> CompletedRun:
+        lines = stream_lines(data)
+        for ln in lines:
+            on_line(ln)
+        return CompletedRun(0, "\n".join(lines) + "\n", "")
+
+    got: list[str] = []
+    reply = await chat.ClaudeCodeChatClient(runner=runner).ask(system="S", prompt="P", schema=chat.ANSWER_SCHEMA,
+                                                               cwd=tmp_path, max_budget_usd=1.0,
+                                                               on_partial=got.append)
+    assert reply.data == data and reply.cost_usd == 0.12 and reply.error is None
+    assert len(got) > 5 and got[-1] == data["answer"]                       # in pieces, ending with the whole
+    assert all(b.startswith(a) and b != a for a, b in zip(got, got[1:], strict=False))
+
+
+def test_the_streamed_route_sends_the_text_then_the_turn_post_chat_gives(run: Path) -> None:
+    text = "Because of FND-005, which the review ranks first."
+    streamed = client_for(run, StreamingFake(answer(text), pieces=4)).post(
+        "/runs/rehearsal_concurrent_1/chat/stream", json={"question": "Why?"})
+    assert streamed.status_code == 200 and streamed.headers["content-type"].startswith("text/event-stream")
+    events = sse(streamed.text)
+    kinds = [k for k, _ in events]
+    assert kinds == ["partial"] * 4 + ["done"]
+    assert [d["answer"] for k, d in events if k == "partial"][-1] == text
+    done = events[-1][1]
+    assert done["turn"]["rendered_as"] == "answer" and done["turn"]["answer"] == text
+    assert done["turn"]["citations"] == ["FND-005"] and done["budget"]["calls_used"] == 1
+    plain = client_for(run, FakeChat(answer(text))).post("/runs/rehearsal_concurrent_1/chat",
+                                                         json={"question": "Why?"}).json()["turn"]
+    rows = chat.history(run)
+    assert len(rows) == 2 and set(rows[0]) == set(rows[1]) == set(plain)    # the transcript line is as before
+    skip = {"at", "duration_s"}
+    assert {k: v for k, v in rows[0].items() if k not in skip} == {k: v for k, v in rows[1].items() if k not in skip}
+
+
+def test_the_streamed_route_says_an_unsupported_answer_and_a_failure_as_post_chat_does(run: Path) -> None:
+    c = client_for(run, StreamingFake(answer("Probably fine.", fnd=[], supported=False), None, cost=None))
+    one = sse(c.post("/runs/rehearsal_concurrent_1/chat/stream", json={"question": "q"}).text)
+    assert one[-1][0] == "done" and one[-1][1]["turn"]["rendered_as"] == "unsupported"
+    assert one[-1][1]["turn"]["answer"] == ""                               # the streamed words are not the answer
+    two = sse(c.post("/runs/rehearsal_concurrent_1/chat/stream", json={"question": "q"}).text)
+    assert two == [("done", two[0][1])] and two[0][1]["turn"]["rendered_as"] == "error"
+
+
+def test_the_cap_holds_on_the_streamed_route_though_the_page_shows_no_money(run: Path) -> None:
+    fake = StreamingFake(answer(), answer(), cost=chat.MAX_COST_USD)
+    c = client_for(run, fake)
+    assert sse(c.post("/runs/rehearsal_concurrent_1/chat/stream", json={"question": "q"}).text)[-1][0] == "done"
+    res = c.post("/runs/rehearsal_concurrent_1/chat/stream", json={"question": "q"})
+    assert res.status_code == 429 and "cap" in res.json()["error"] and "$" not in res.json()["error"]
+    assert len(fake.calls) == 1                                             # the cost cap, counted on the server
+    assert c.post("/runs/rehearsal_concurrent_1/chat/stream", json={"question": ""}).status_code == 400
+
+
+async def test_a_call_the_reader_stops_is_logged_and_counted(run: Path) -> None:
+    import asyncio
+
+    started = asyncio.Event()
+
+    class Hangs:
+        async def ask(self, **kw: Any) -> chat.ChatReply:
+            kw["on_partial"]("Half an ans")
+            started.set()
+            await asyncio.sleep(3600)
+            raise AssertionError("not reached")
+
+    task = asyncio.create_task(chat.ask(run, "q", Hangs(), running=False, on_partial=lambda t: None))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    rows = chat.history(run)
+    assert len(rows) == 1 and rows[0]["error"] == chat.STOPPED_ERROR and rows[0]["counted"] is True
+    assert rows[0]["rendered_as"] == "error" and rows[0]["answer"] == "" and rows[0]["cost_usd"] is None
+    b = chat.budget(run)
+    assert b["calls_used"] == 1 and b["calls_with_unknown_cost"] == 1
+
+
+class Gated:
+    """A fake that streams a few words, then waits until the test lets it finish (no model call)."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.go, self.cancelled = threading.Event(), threading.Event()
+
+    async def ask(self, **kw: Any) -> chat.ChatReply:
+        import asyncio
+
+        kw["on_partial"]("Because of")
+        try:
+            while not self.go.is_set():
+                await asyncio.sleep(0.01)
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        return chat.ChatReply(answer(), None, 0.2, chat.MODEL, 1.0)
+
+
+async def test_stop_ends_the_call_and_returns_the_turn_it_logs(run: Path) -> None:
+    import asyncio
+
+    fake, stop = Gated(), asyncio.Event()
+    task = asyncio.create_task(chat.ask(run, "q", fake, running=False, stop=stop, on_partial=lambda t: None))
+    while not chat.log_path(run).parent.is_dir() or fake.cancelled.is_set():
+        await asyncio.sleep(0.01)
+    await asyncio.sleep(0.05)
+    stop.set()
+    res = await task
+    assert res["stopped"] is True and fake.cancelled.is_set()            # the call itself was ended
+    assert res["turn"] == chat.history(run)[-1] and res["turn"]["error"] == chat.STOPPED_ERROR
+    assert res["budget"]["calls_used"] == 1
+
+
+def test_the_stop_route_ends_the_streamed_answer_with_the_logged_turn(run: Path) -> None:
+    """Through a real server (the test client buffers a whole response, so it cannot show a stream in flight): the
+    first words arrive, a second question is refused while this one is written, Stop ends the call, and the stream's
+    last event is the turn as it is logged."""
+    import threading
+    import time
+
+    import httpx
+    import uvicorn
+
+    from test_ui_outputs import _free_port
+
+    fake = Gated()
+    state = UIState(runs_dir=run.parent.resolve(), repo_root=REPO, launcher=Launcher(repo_root=REPO),
+                    chat_client=fake, profiles=[], tools=[])
+    port = _free_port()
+    srv = uvicorn.Server(uvicorn.Config(build_app(state), host="127.0.0.1", port=port, log_level="warning"))
+    th = threading.Thread(target=srv.run, daemon=True)
+    th.start()
+    for _ in range(200):
+        if srv.started:
+            break
+        time.sleep(0.05)
+    base = f"http://127.0.0.1:{port}/runs/rehearsal_concurrent_1/chat"
+    try:
+        with httpx.Client(timeout=20) as other:
+            assert other.post(base + "/stop").status_code == 409                       # nothing to stop yet
+            events: list[tuple[str, Any]] = []
+            with httpx.Client(timeout=20) as c, c.stream("POST", base + "/stream", json={"question": "q"}) as res:
+                buf = ""
+                for chunk in res.iter_text():
+                    buf += chunk
+                    while "\n\n" in buf:
+                        frame, buf = buf.split("\n\n", 1)
+                        got = sse(frame + "\n\n")
+                        events += got
+                        if got and got[0][0] == "partial":
+                            assert other.post(base + "/stream", json={"question": "again"}).status_code == 409
+                            assert other.post(base + "/stop").json() == {"stopping": True}
+    finally:
+        fake.go.set()
+        srv.should_exit = True
+        th.join(timeout=5)
+    assert [k for k, _ in events] == ["partial", "stopped"]
+    turn = events[-1][1]["turn"]
+    assert turn["error"] == chat.STOPPED_ERROR and turn == chat.history(run)[-1] and fake.cancelled.is_set()
+    assert events[-1][1]["budget"]["calls_used"] == 1

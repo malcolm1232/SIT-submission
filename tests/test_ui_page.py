@@ -490,7 +490,10 @@ def test_the_open_runs_row_stays_in_view_beside_the_logs_panel(page) -> None:
                          "document.querySelectorAll('#rail-tools .rail-tool').length === 4")
     last = pg.locator("#rail-runs .rail-run").last.get_attribute("data-run")   # the row furthest down the list
     pg.goto(base + f"/?run={last}")
-    pg.wait_for_function(f"document.querySelector('#rail-runs .rail-run.active').dataset.run === {last!r}")
+    # The rail is drawn once the page's first reads return (/meta, then /runs): until then it has no row, and a
+    # predicate that reads the row's dataset unguarded threw on that null (Playwright does not retry a predicate
+    # that throws), which is how this test failed when the machine was busy and the reads came late.
+    pg.wait_for_function(f"document.querySelector('#rail-runs .rail-run.active')?.dataset.run === {last!r}")
     pg.wait_for_function("document.querySelectorAll('#rail-log .rail-logline').length === 60")
     # the default view at 1440x900 holds both, with no scroll of the rail: the open run's row ...
     m = pg.evaluate(RUN_ROW_BOXES)

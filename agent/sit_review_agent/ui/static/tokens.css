@@ -24,6 +24,7 @@
   --navrail-active-bg:#FAF9F7; --navrail-active-fg:#16161A; --navrail-w:248px;
   --navrail-rule:rgba(255,255,255,.07); --navrail-row:rgba(255,255,255,.06);
   --navrail-note-bg:rgba(255,255,255,.04); --navrail-note-border:rgba(255,255,255,.06);
+  --navrail-scroll:rgba(255,255,255,.18); --navrail-scroll-hover:rgba(255,255,255,.32);
   --shadow-sm:0 1px 2px rgba(22,22,26,.04);
   --shadow:0 1px 2px rgba(22,22,26,.04), 0 1px 3px rgba(22,22,26,.05);
   --shadow-lg:0 12px 32px -12px rgba(22,22,26,.14), 0 4px 10px -4px rgba(22,22,26,.08);

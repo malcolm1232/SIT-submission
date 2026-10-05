@@ -456,7 +456,7 @@ function showSettings() {
     } else if (/\/tools\.yaml$/.test(name)) {
       app.append(block(name, kv([["servers", h("span", {}, meta.tools.map((t) => [h("span", { class: "pill " + (t.enabled ? "done" : "waiting"), text: t.name + (t.enabled ? "" : " (off)") }), " "]))], ["key", "read from " + meta.auth_env + " in the server's environment; never shown"]])));
     } else if (/\/ui\.yaml$/.test(name)) {
-      app.append(block(name, kv([["ask the review", meta.chat.model + ", effort " + meta.chat.effort + ", at most " + intl(meta.chat.max_calls) + " asks or " + money(meta.chat.max_cost_usd) + " per run"], ["email", "SMTP settings for the Email action; the password comes from the environment"]])));
+      app.append(block(name, kv([["ask the review", meta.chat.model + ", effort " + meta.chat.effort + ", at most " + intl(meta.chat.max_calls) + " asks per run, under a spending cap the server enforces"], ["email", "SMTP settings for the Email action; the password comes from the environment"]])));
     } else if (/\/url_policy\.yaml$/.test(name)) {
       app.append(block(name, kv([["pasted link", "https only, public hosts, at most " + intl(meta.link_max_mb) + " MB"]])));
     } else if (/\/stop_rules\.yaml$/.test(name)) {
@@ -482,7 +482,7 @@ function showDeveloper() {
     h("dt", { text: "command" }), h("dd", {}, h("div", { class: "cmd", style: "margin:0", text: open.argv || "not recorded (no ui/launch.json and no manifest argv)" })),
     h("dt", { text: "directory" }), h("dd", {}, h("span", { class: "mono", text: meta.runs_dir + "/" + open.run_id })),
     h("dt", { text: "replay" }), h("dd", {}, h("span", { class: "mono", text: "dra replay " + meta.runs_dir_name + "/" + open.run_id })))));
-  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/coverage · GET /runs/<id>/stage/<name> · GET /runs/<id>/funnel · GET /runs/<id>/glossary · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat, POST /tools/probe, each only on a button." })));
+  app.append(h("div", { class: "cfg" }, h("h2", { text: "Routes this page reads" }), h("div", { class: "notice", text: "GET /meta · GET /runs · GET /runs/<id> · GET /runs/<id>/events (SSE) · GET /runs/<id>/log · GET /runs/<id>/report · GET /runs/<id>/review.html · GET /runs/<id>/coverage · GET /runs/<id>/stage/<name> · GET /runs/<id>/funnel · GET /runs/<id>/glossary · GET /runs/<id>/outputs · GET /runs/<id>/chat · GET /tools · GET /documents. Writes: POST /runs, POST /runs/<id>/stop, POST /runs/<id>/email, POST /runs/<id>/chat/stream, POST /tools/probe, each only on a button." })));
 }
 
 // ------------------------------------------------------------------ the run, from the event stream
@@ -1590,12 +1590,9 @@ function renderAxis(m) {
     (live && next ? " · next limit: " + next[0] + " " + clock(next[1]) : "") + (live ? " · the cursor adds the seconds since the last event; the markers are the record's limits" : "");
 }
 
-function renderTabs(tabs, note) {
+function renderTabs(tabs) {
   const t = clear($("top-tabs"));
-  // A tab with ``off`` is drawn disabled (aria-disabled, class ``off``) but still opens, so its reason can be read.
-  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : "") + (tab.off ? " off" : ""), type: "button", "aria-disabled": tab.off ? "true" : null, title: tab.title || null, onclick: tab.go, text: tab.label }));
-  const n = $("tab-note");
-  if (n) n.textContent = note || "";
+  for (const tab of tabs || []) t.append(h("button", { class: "tab" + (tab.on ? " on" : ""), type: "button", "aria-current": tab.on ? "page" : null, title: tab.title || null, onclick: tab.go, text: tab.label }));
 }
 
 function runTop(info, m, tabs) {
@@ -1764,7 +1761,7 @@ async function setupOutputs(info) {
     "loaded from the network" +
     (info.replayed ? ", stamped replayed evidence" : "") +
     (out.export && out.export.has_chat ? ", the chat transcript after the review, marked as not part of it." : ".");
-  $("out-line").hidden = false;
+  setupDownload();
   const to = $("email-to"), send = $("email-send"), help = $("email-help"), result = $("email-result");
   const e = out.email;
   const ready = () => { send.disabled = !e.enabled || !ADDRESS.test(to.value.trim()); };
@@ -1799,6 +1796,36 @@ async function setupOutputs(info) {
   $("share-line").hidden = !(s.url || s.restart);
   $("share-text").textContent = s.text;
   $("outputs").hidden = false;
+}
+
+// What the download holds, and its files one by one: a popover under the Download control. It opens while the pointer
+// is on the control or the popover, and while the keyboard focus is in them (the zip's link is described by its text);
+// the chevron keeps it open until it is pressed again, Escape or a click elsewhere closes it.
+function setupDownload() {
+  const box = $("dl"), pop = $("dl-pop"), more = $("dl-more");
+  let pinned = false, hovered = false, focused = false;
+  const paint = () => {
+    const open = pinned || hovered || focused;
+    pop.hidden = !open;
+    more.setAttribute("aria-expanded", String(open));
+  };
+  // the popover is inside the control's box (with a bridge over the gap, app.css .dl-pop::before), so the pointer
+  // moving from the button to its links never leaves the box
+  box.addEventListener("mouseenter", () => { hovered = true; paint(); });
+  box.addEventListener("mouseleave", () => { hovered = false; paint(); });
+  box.addEventListener("focusin", () => { focused = true; paint(); });
+  box.addEventListener("focusout", (e) => { if (!box.contains(e.relatedTarget)) { focused = false; pinned = false; paint(); } });
+  more.addEventListener("click", () => { pinned = !pinned; if (!pinned) { hovered = false; focused = false; } paint(); });
+  box.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || pop.hidden) return;
+    e.stopPropagation();
+    pinned = false; hovered = false; focused = false; paint();
+  });
+  const outside = (e) => {
+    if (!box.isConnected) { document.removeEventListener("click", outside); return; }   // the review was left
+    if (pinned && !box.contains(e.target)) { pinned = false; paint(); }
+  };
+  document.addEventListener("click", outside);
 }
 
 // ------------------------------------------------------------------ the review
@@ -1868,16 +1895,33 @@ function expanded(P, f) {
 // same renderer, the same links and the same reference part, run by the export's own script (static/xnav.js) with the
 // app's router left in charge of history. The server builds the fragment from report.md and report.json with every
 // model word escaped and no script in it; it is parsed as an inert document and adopted, never written as markup here.
-async function reviewDoc(runId) {
-  const res = await fetch("/runs/" + encodeURIComponent(runId) + "/review.html");
+// The other tabs of the run (Coverage, Evidence, Delta) are the same fragment with that tab's body (?view=), the review
+// document kept hidden beside it: their ids and references are linked by the same linker and open in the same pane.
+async function reviewDoc(runId, view) {
+  const res = await fetch("/runs/" + encodeURIComponent(runId) + "/review.html" + (view && view !== "review" ? "?view=" + view : ""));
   if (!res.ok) {
     let why = null;
     try { why = (await res.json()).error; } catch (e) { why = null; }
-    return { el: h("p", { class: "review-missing", text: why || "The review could not be read (HTTP " + res.status + ")." }), wire: () => null };
+    return { ok: false, el: h("p", { class: "review-missing", text: why || "The review could not be read (HTTP " + res.status + ")." }), wire: () => null };
   }
   const parsed = new DOMParser().parseFromString(await res.text(), "text/html");
   const box = document.adoptNode(parsed.getElementById("rv"));
-  return { el: box, wire: () => window.sitXnav(box, { history: false, column: ".rv-doc", top: () => reviewTop(box), more: (id) => reviewMore(runId, id) }) };
+  return { ok: true, el: box, wire: () => { paneClear(box); return window.sitXnav(box, { history: false, column: ".rv-doc", top: () => reviewTop(box), more: (id) => reviewMore(runId, id, view) }); } };
+}
+
+// The side pane starts under the run's head and its tabs, so it never covers the Download, Email and Share controls or
+// the tabs; once they have scrolled away it reaches up to the topbar. The edge is the tab row's, read on scroll and
+// on resize; the listeners go with the review.
+function paneClear(box) {
+  const set = () => {
+    if (!box.isConnected) { window.removeEventListener("scroll", set); window.removeEventListener("resize", set); return; }
+    const row = document.querySelector("#app .tabrow"), css = getComputedStyle(box);
+    const top = parseFloat(css.getPropertyValue("--rv-top")) || 0, gap = parseFloat(css.getPropertyValue("--pane-gap")) || 0;
+    box.style.setProperty("--pane-top", Math.max(top, Math.ceil(row ? row.getBoundingClientRect().bottom + gap : 0)) + "px");
+  };
+  window.addEventListener("scroll", set, { passive: true });
+  window.addEventListener("resize", set);
+  set();
 }
 
 // The height of the app's sticky chrome above the review (the topbar, and the table of contents when it is a strip on
@@ -1886,7 +1930,8 @@ function reviewTop(box) { return parseFloat(getComputedStyle(box).getPropertyVal
 
 // One more action in the pane where another tab of this run shows more than the pane: a coverage criterion's outcome
 // per section is the Coverage tab's grid.
-function reviewMore(runId, id) {
+function reviewMore(runId, id, view) {
+  if (view && view !== "review") return id.startsWith("cv-") ? null : { href: "/?run=" + encodeURIComponent(runId) + "#" + encodeURIComponent(id), label: "Show in the review" };
   if (id.startsWith("g-crit-")) return { href: "/?run=" + encodeURIComponent(runId) + "&tab=coverage", label: "Open in the Coverage tab" };
   return null;
 }
@@ -1941,16 +1986,27 @@ function deltaBody(P) {
   return box;
 }
 
+// What the Delta tab is, said where a run has none (it stays a tab that opens, so the words can be read).
+const DELTA_WHAT = "Delta is the re-assessment of this document against an earlier version of it: each finding of the earlier review is marked resolved, partially addressed, still open, or new.";
+
 function deltaOff(P) {
-  return h("div", {}, h("p", { class: "delta-off muted", text: P.derived.delta.reason + "." }));
+  const reason = (P.derived.delta && P.derived.delta.reason) || NO_DELTA;
+  return h("section", { class: "delta-off", "aria-labelledby": "delta-off-title" },
+    h("h2", { id: "delta-off-title", text: "Delta: this version against an earlier one" }),
+    h("p", { text: DELTA_WHAT }),
+    h("p", {}, reason + ", so there is nothing to compare. To get one, start a review of this document on the ",
+      h("a", { href: "/", text: "Review page", onclick: (e) => { e.preventDefault(); goPage("review"); } }),
+      " with the earlier version in ", h("b", { text: "Previous version (optional)" }), "."));
 }
 
+// Coverage and Evidence for a run whose review document cannot be drawn (no report.md): report.json and the coverage
+// map as plain text. A run with report.md gets both tabs from the server (reviewtabs.py), linked like the review.
 async function coverageBody(runId) {
   const cm = await api("/runs/" + encodeURIComponent(runId) + "/coverage");
   const box = h("div", { class: "sec" }, h("h2", { text: "Coverage: criteria by section" }));
   const head = h("tr", {}, h("th", { text: "Section" }), cm.criteria.map((c) => h("th", { class: "mono", text: c })));
   const body = h("tbody", {}, cm.rows.map((r) => h("tr", {}, h("td", {}, h("b", { style: "font-weight:500", text: r.section }), " " + (r.heading || "")), cm.criteria.map((c) => h("td", { class: "mono", text: (r.cells || {})[c] || "" })))));
-  box.append(h("table", { class: "grid", style: "margin-top:8px" }, h("thead", {}, head), body));
+  box.append(h("div", { class: "scroll-x" }, h("table", { class: "grid", style: "margin-top:8px" }, h("thead", {}, head), body)));
   box.append(h("h3", { text: "Outcome per criterion" }), h("ul", { class: "plain small" }, cm.criteria.map((c) => h("li", {}, h("span", { class: "mono", text: c }), " " + words(cm.outcomes[c]) + ((cm.criterion_findings[c] || []).length ? ": " + cm.criterion_findings[c].join(", ") : "") + (cm.notes[c] ? " · " + cm.notes[c] : "")))));
   return box;
 }
@@ -1958,7 +2014,7 @@ async function coverageBody(runId) {
 function evidenceBody(P) {
   const led = P.report.evidence_ledger || [];
   return h("div", { class: "sec" }, h("h2", {}, "Evidence register ", h("span", { class: "n num", text: String(led.length) })),
-    h("table", { class: "grid", style: "margin-top:8px" }, h("thead", {}, h("tr", {}, h("th", { text: "ID" }), h("th", { text: "Source" }), h("th", { text: "Citation" }), h("th", { text: "Excerpt" }))),
+    h("table", { class: "grid ev-plain", style: "margin-top:8px" }, h("thead", {}, h("tr", {}, h("th", { text: "ID" }), h("th", { text: "Source" }), h("th", { text: "Citation" }), h("th", { text: "Excerpt" }))),
       h("tbody", {}, led.map((e) => h("tr", {}, h("td", { text: e.evidence_id }), h("td", { text: words(e.source_type) + (e.authority ? " (" + e.authority + ")" : "") }),
         h("td", { text: e.url_or_citation }), h("td", { text: (e.excerpt || "") + ((e.derived_from || []).length ? " (derived from " + e.derived_from.join(", ") + ")" : "") }))))));
 }
@@ -1971,16 +2027,15 @@ async function showReview(info, tab) {
   const P = await api("/runs/" + encodeURIComponent(info.run_id) + "/report");
   const R = P.report;
   const doc = (R.metadata.documents || []).find((d) => d.role === "under_review") || (R.metadata.documents || [])[0] || {};
-  // The Delta tab is always drawn: live when the server's delta view is available, else shown disabled with
-  // its reason (no silent absence); it still opens, so the reason can be read on the tab itself.
+  // The Delta tab is always drawn and always opens: with the server's delta view when the run has one, else with what
+  // Delta is and how to get one (no silent absence, and no tab that looks broken).
   const D = P.derived.delta || {};
   const deltaOn = !!D.available;
-  const deltaReason = deltaOn ? null : (D.reason || NO_DELTA);
-  const tabs = [{ key: "review", label: "Review" }, { key: "delta", label: "Delta", off: !deltaOn, title: deltaReason }];
+  const tabs = [{ key: "review", label: "Review" }, { key: "delta", label: "Delta", title: deltaOn ? null : DELTA_WHAT + " This run has none." }];
   tabs.push({ key: "coverage", label: "Coverage" }, { key: "evidence", label: "Evidence" });
   if (info.has_events) tabs.push({ key: "log", label: "Run log" });
   const current = tabs.some((t) => t.key === tab) ? tab : "review";
-  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, off: t.off, title: t.title, go: () => go(info.run_id, t.key) }));
+  const tabList = tabs.map((t) => ({ label: t.label, on: t.key === current, title: t.title, go: () => go(info.run_id, t.key) }));
   if (current === "log") { showRun(info, tabList); return; }
   const app = clear($("app"));
   app.className = "surface wide";
@@ -1998,10 +2053,16 @@ async function showReview(info, tab) {
   if (s.commit) bits.push(String(s.commit).slice(0, 7));
   if (s.replayed) bits.push(h("span", { class: "pill replayed", id: "replay-stamp", text: "replayed evidence" }));
   bits.forEach((b, i) => { if (i) sub.append(" · "); sub.append(b); });
-  renderTabs(tabList, deltaOn ? "" : "Delta is off: " + deltaReason.charAt(0).toLowerCase() + deltaReason.slice(1) + ".");
+  renderTabs(tabList);
   const main = $("review");
-  let rdoc = null;
-  if (current === "review") { rdoc = await reviewDoc(info.run_id); main.append(rdoc.el); }
+  const rdoc = await reviewDoc(info.run_id, current);
+  if (rdoc.ok) {
+    main.append(rdoc.el);
+    // the counts on top, from the fragment: in the run head, above the tabs, on every tab of the review
+    const strip = rdoc.el.querySelector(".x-counts");
+    if (strip) { $("run-counts").append(strip); $("run-counts").hidden = false; }
+    if (current === "delta") rdoc.el.querySelector(".rv-view").append(deltaOn ? deltaBody(P) : deltaOff(P));
+  } else if (current === "review") main.append(rdoc.el);
   else if (current === "delta") main.append(deltaOn ? deltaBody(P) : deltaOff(P));
   else if (current === "coverage") main.append(await coverageBody(info.run_id));
   else if (current === "evidence") main.append(evidenceBody(P));
@@ -2010,13 +2071,14 @@ async function showReview(info, tab) {
   await setupOutputs(info);
   await setupChat(info);
   // the review's script last: the head above it is complete, so a link opened in its own tab lands where it stays
-  if (rdoc) rdoc.wire();
+  rdoc.wire();
 }
 
 // ------------------------------------------------------------------ the ask: a reading aid, not the review
 
+// The chat's line under the composer: the calls, never the money (the spending cap is the server's, chat.py).
 function budgetLine(b) {
-  return b.calls_used + " of " + b.max_calls + " calls used · " + money(b.cost_usd) + " of " + money(b.max_cost_usd) + (b.calls_with_unknown_cost ? " (" + b.calls_with_unknown_cost + " call(s) with unknown cost)" : "") + " · " + b.model + ", effort " + b.effort + " · logged to " + b.log + " · outside the evaluated agent and its manifest";
+  return b.calls_used + " of " + b.max_calls + " asks used · " + b.model + ", effort " + b.effort + " · logged to " + b.log + " · outside the evaluated agent and its manifest";
 }
 
 // A citation the Review tab holds is a link to it: the review's own script opens it in the side pane.
@@ -2026,8 +2088,19 @@ function citeEl(id) {
   return h("span", { class: "cite", text: id });
 }
 
+// The question as the log has it, with the server's time; a question still being answered has no time yet (the page
+// reads no clock of its own), and its logged turn replaces it.
+function askedEl(question, at) {
+  return h("div", { class: "turn" }, h("div", { class: "who", text: at ? "You · " + at.slice(11, 16) + " UTC" : "You" }), h("div", { class: "q", text: question }));
+}
+
+// The assistant's line over an answer: one model call and its seconds; no cost (the page shows no money).
+function answerWho(t) {
+  return "Review assistant · 1 model call, " + (typeof t.duration_s === "number" ? t.duration_s.toFixed(1) + " s" : "–");
+}
+
 function turnEls(t) {
-  const out = [h("div", { class: "turn" }, h("div", { class: "who", text: "You · " + (t.at || "").slice(11, 16) + " UTC" }), h("div", { class: "q", text: t.question }))];
+  const out = [askedEl(t.question, t.at)];
   const a = h("div", { class: "a" });
   if (t.rendered_as === "answer") {
     a.append(h("p", { class: "answer", text: t.answer }), h("div", { class: "cites" }, (t.citations || []).map(citeEl)));
@@ -2036,22 +2109,57 @@ function turnEls(t) {
     a.append(h("p", { class: "unsupported", text: "The review does not answer this." }));
     const why = [t.unsupported_reason, (t.dropped || []).length ? "dropped, not in this run: " + t.dropped.join(", ") : null].filter(Boolean).join("; ");
     if (why) a.append(h("div", { class: "foot", text: why.charAt(0).toUpperCase() + why.slice(1) + "." }));
+  } else if (t.error === S.meta.chat.stopped_error) {
+    a.append(h("p", { class: "stopped", text: S.meta.chat.stopped_text }));
   } else {
     a.append(h("p", { class: "error", text: "The call failed: " + (t.error || "unknown error") + "." }));
   }
-  const cost = typeof t.cost_usd === "number" ? ", " + money(t.cost_usd) : ", cost unknown";
-  out.push(h("div", { class: "turn" }, h("div", { class: "who", text: "Review assistant · 1 model call, " + (typeof t.duration_s === "number" ? t.duration_s.toFixed(1) + " s" : "–") + cost }), a));
+  out.push(h("div", { class: "turn" }, h("div", { class: "who", text: answerWho(t) }), a));
   return out;
+}
+
+// One question, its answer streamed (POST /runs/<id>/chat/stream, server-sent events as the run page's own stream
+// is): `partial` frames carry the answer's text so far, then one `done` (the turn as POST /chat answers it),
+// `stopped` (the turn as it is logged after Stop), `refused` or `error`.
+async function askStream(runId, question, onPartial) {
+  const res = await fetch("/runs/" + encodeURIComponent(runId) + "/chat/stream", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+  if (!res.ok) {
+    let body = null;
+    try { body = await res.json(); } catch (e) { body = null; }
+    return { kind: "refused", data: { error: (body && body.error) || "HTTP " + res.status, status: res.status } };
+  }
+  const reader = res.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    for (let i = buf.indexOf("\n\n"); i >= 0; i = buf.indexOf("\n\n")) {
+      const frame = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      let kind = "message", data = "";
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) kind = line.slice("event: ".length);
+        else if (line.startsWith("data: ")) data += line.slice("data: ".length);
+      }
+      if (!data) continue;
+      const d = JSON.parse(data);
+      if (kind === "partial") onPartial(d.answer);
+      else return { kind, data: d };
+    }
+  }
+  return { kind: "error", data: { error: "the answer stream ended before the answer was complete" } };
 }
 
 async function setupChat(info) {
   const runId = info.run_id;
   const data = await api("/runs/" + encodeURIComponent(runId) + "/chat");
   const turns = $("chat-turns");
-  for (const t of data.turns) turns.append(...turnEls(t));
+  const drawTurns = (list) => { clear(turns); for (const t of list) turns.append(...turnEls(t)); };
+  drawTurns(data.turns);
   const cap = S.meta.chat;
-  $("chat-hint").textContent = "Trimmed to this review · " + intl(cap.max_calls) + " asks or " + money(cap.max_cost_usd) + " per run";
-  const input = $("chat-input"), send = $("chat-send"), err = $("chat-error"), ready = $("chat-ready");
+  $("chat-hint").textContent = "Trimmed to this review · at most " + intl(cap.max_calls) + " asks per run";
+  const input = $("chat-input"), send = $("chat-send"), stop = $("chat-stop"), err = $("chat-error"), ready = $("chat-ready");
   const setBudget = (b, running, hasReport) => {
     $("chat-budget").textContent = budgetLine(b);
     const off = running ? "The chat is off while the run is in progress." : (!hasReport ? "This run has no report.json, so there is nothing to ask about." : (b.stopped ? "The chat cap for this run is reached." : null));
@@ -2061,17 +2169,48 @@ async function setupChat(info) {
     err.hidden = !off; err.textContent = off || "";
   };
   setBudget(data.budget, data.running, data.has_report);
+  // While an answer streams: the question and the text so far as a turn of their own, Stop in the place of Ask.
+  const streaming = (on) => { send.hidden = on; stop.hidden = !on; stop.disabled = false; input.disabled = on; if (on) stop.focus(); };
   const submit = async () => {
     const q = input.value.trim();
     if (!q || send.disabled) return;
-    send.disabled = true; input.disabled = true; err.hidden = true;
+    err.hidden = true;
+    const live = h("p", { class: "answer streaming", "aria-live": "off" });
+    const who = h("div", { class: "who", text: "Review assistant · writing the answer…" });
+    const pending = [askedEl(q, null), h("div", { class: "turn pending", "aria-busy": "true" }, who, h("div", { class: "a" }, live))];
+    turns.append(...pending);
+    // the answer in view above the composer while it is written, unless the reader has scrolled away from it (the
+    // margin kept clear under it is the turn's own scroll-margin-bottom, app.css)
+    const follow = (force) => {
+      const r = pending[1].getBoundingClientRect(), clear = parseFloat(getComputedStyle(pending[1]).scrollMarginBottom) || 0;
+      if (force || (r.top < innerHeight && r.bottom > innerHeight - clear)) pending[1].scrollIntoView({ block: "end" });
+    };
+    streaming(true);
+    follow(true);
+    // Stop asks the server to end the call; the stream then brings the stopped turn as it is logged
+    const onStop = () => { stop.disabled = true; who.textContent = "Review assistant · stopping…"; api("/runs/" + encodeURIComponent(runId) + "/chat/stop", { method: "POST" }).catch(() => {}); };
+    stop.addEventListener("click", onStop);
+    let r;
     try {
-      const r = await api("/runs/" + encodeURIComponent(runId) + "/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: q }) });
-      turns.append(...turnEls(r.turn));
-      input.value = "";
-      setBudget(r.budget, false, true);
+      r = await askStream(runId, q, (text) => { live.textContent = text; follow(false); });
     } catch (e) {
-      err.hidden = false; err.textContent = e.message; send.disabled = false; input.disabled = false;
+      r = { kind: "error", data: { error: e.message } };
+    }
+    stop.removeEventListener("click", onStop);
+    streaming(false);
+    if (r.kind === "done" || r.kind === "stopped") {
+      for (const el of pending) el.remove();
+      turns.append(...turnEls(r.data.turn));
+      input.value = "";
+      setBudget(r.data.budget, false, true);
+    } else {
+      for (const el of pending) el.remove();
+      // a call that ran is logged even when its stream broke: the turns and the count as the log has them, then why
+      const d = await api("/runs/" + encodeURIComponent(runId) + "/chat");
+      drawTurns(d.turns);
+      setBudget(d.budget, d.running, d.has_report);
+      err.hidden = false;
+      err.textContent = r.kind === "refused" ? r.data.error : "The answer could not be read: " + r.data.error + ".";
     }
   };
   $("chat-form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });

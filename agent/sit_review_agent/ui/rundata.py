@@ -370,18 +370,25 @@ def _anchor_rows(run_dir: Path) -> dict[str, list[dict[str, Any]]]:
     return by_owner
 
 
-def counts(report: dict[str, Any]) -> dict[str, int]:
-    """The counts strip: every number is a length of a list in ``report.json``."""
-    findings = report.get("findings") or []
+def count_lists(report: dict[str, Any]) -> dict[str, list[Any]]:
+    """The items each number of the counts strip counts, from the lists of ``report.json``: every finding, the
+    findings that are not strengths by severity, the strengths, the sound areas, the unresolved items and the
+    limitations. The run view lists exactly these under each number (``ui.reviewtabs``)."""
+    findings = [f for f in report.get("findings") or [] if isinstance(f, dict)]
     issues = [f for f in findings if f.get("kind") != "strength"]
-    out = {"findings": len(findings)}
+    out: dict[str, list[Any]] = {"findings": findings}
     for s in SEVERITIES:
-        out[s] = sum(1 for f in issues if f.get("severity") == s)
-    out["strengths"] = sum(1 for f in findings if f.get("kind") == "strength")
-    out["sound_areas"] = len(report.get("sound_areas") or [])
-    out["unresolved"] = len(report.get("unresolved") or [])
-    out["limitations"] = len(report.get("limitations") or [])
+        out[s] = [f for f in issues if f.get("severity") == s]
+    out["strengths"] = [f for f in findings if f.get("kind") == "strength"]
+    out["sound_areas"] = list(report.get("sound_areas") or [])
+    out["unresolved"] = list(report.get("unresolved") or [])
+    out["limitations"] = list(report.get("limitations") or [])
     return out
+
+
+def counts(report: dict[str, Any]) -> dict[str, int]:
+    """The counts strip: every number is the length of one of :func:`count_lists`."""
+    return {k: len(v) for k, v in count_lists(report).items()}
 
 
 def _new_row(f: dict[str, Any]) -> dict[str, Any]:

@@ -219,6 +219,7 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
 .x-pane-head { padding: 16px 20px 14px; border-bottom: 1px solid var(--border-subtle); }
 .x-pane-kicker { font-family: var(--mono); font-size: 12px; line-height: 16px; color: var(--fg-muted); margin-bottom: 4px; }
 .x-pane-title { margin: 0; padding: 0; border: 0; font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.005em; outline: none; }
+.x-pane-title:focus-visible { box-shadow: none; }   /* where the pane puts the focus, not a control: no ring */
 .x-pane-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 12px; }
 .x-pane-show { height: 30px; padding: 0 12px; border-radius: var(--r-pill); border: 1px solid var(--border-control);
   background: var(--bg-surface); color: var(--fg); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
@@ -268,3 +269,99 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
   #s-fitness-for-purpose td:first-child { min-width: 160px; }
   .x-back { right: 16px; bottom: 16px; }
 }
+
+/* ---------- 6 Oct 2026: the counts on top, the sub-labels, the chips that open their meaning, the run view's tabs ---------- */
+/* a paragraph that only labels the list or table under it ("Objectives:", "Conditions:"): set as that list's label,
+   at the document's body size and heading weight, closer to its list than to the text above */
+:where(.rv) p.x-sub { margin: 22px 0 6px; font-weight: 600; color: var(--fg); }
+:where(.rv) p.x-sub + ul, :where(.rv) p.x-sub + ol { margin-top: 0; }
+:where(.rv) p.x-sub + .x-table { margin-top: 4px; }
+
+/* a chip that opens what it means (confidence, disposition) carries a small "i", so it reads as a control */
+:where(.rv) a.chip.conf::after, :where(.rv) a.chip.disp:not(.disp-also)::after {
+  content: "i"; flex: none; box-sizing: border-box; width: 13px; height: 13px; margin: 0 -3px 0 1px; border: 1px solid currentColor;
+  border-radius: 50%; font-family: var(--serif); font-size: 10px; line-height: 11px; font-weight: 400; font-style: normal;
+  text-align: center; opacity: .55; }
+:where(.rv) a.chip.conf:hover::after, :where(.rv) a.chip.disp:hover::after, :where(.rv) a.chip:focus-visible::after { opacity: 1; }
+:where(.rv) a.chip { cursor: pointer; }
+
+/* the counts on top: each number and its words open the list it counts, the "?" the word's meaning */
+/* no rule between the counts: where the row wraps, a rule would start the next line */
+.x-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; line-height: 20px;
+  font-variant-numeric: tabular-nums; }
+.x-count { display: inline-flex; align-items: center; }
+.x-counts a { color: var(--fg-2); text-decoration: none; }
+.x-counts a.x-count-n { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px;
+  border-radius: var(--r-pill); white-space: nowrap; }
+.x-count:first-child a.x-count-n { margin-left: -6px; }
+.x-counts a.x-count-n b { color: var(--fg); font-weight: 600; }
+.x-count[data-zero] a.x-count-n, .x-count[data-zero] a.x-count-n b { color: var(--fg-muted); font-weight: 500; }
+.x-counts a.x-count-q { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin: 0 2px 0 0;
+  border-radius: 50%; border: 1px solid var(--border-control); font-size: 10.5px; font-weight: 600; line-height: 1; color: var(--fg-muted); }
+.x-counts a.x-count-n:hover { background: var(--bg-hover); color: var(--fg); }
+.x-counts a.x-count-q:hover { border-color: var(--fg-muted); color: var(--fg); background: var(--bg-hover); }
+.x-counts a:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.x-counts a.x-opener { background: var(--hit-bg); box-shadow: 0 0 0 2px var(--hit-ring); }
+.x-count[data-count="critical"] .x-count-n::before, .x-count[data-count="high"] .x-count-n::before,
+.x-count[data-count="medium"] .x-count-n::before, .x-count[data-count="low"] .x-count-n::before,
+.x-count[data-count="strengths"] .x-count-n::before { content: ""; width: 7px; height: 7px; border-radius: 50%; }
+.x-count[data-zero] .x-count-n::before { opacity: .45; }
+.x-count[data-count="critical"] .x-count-n::before { background: var(--sev-critical-bg); }
+.x-count[data-count="high"] .x-count-n::before { background: var(--sev-high-fg); }
+.x-count[data-count="medium"] .x-count-n::before { background: var(--sev-medium-fg); }
+.x-count[data-count="low"] .x-count-n::before { background: var(--sev-low-fg); }
+.x-count[data-count="strengths"] .x-count-n::before { background: var(--strength-fg); }
+.exp-head .x-counts { margin-top: 12px; }
+
+/* a list of items in an entry (the counts' lists, a coverage cell's findings): id and title as one link, then chips */
+.x-rows { list-style: none; padding: 0; margin: 8px 0 0; }
+:where(.rv) .x-rows > li.x-row { margin: 0; padding: 8px 0; border-top: 1px solid var(--border-subtle); max-width: none; }
+.x-rows > li.x-row:first-child { border-top: 0; padding-top: 4px; }
+.x-row-link { display: inline; }
+.x-rid { font-family: var(--mono); font-size: 12px; color: var(--fg-muted); margin-right: 2px; white-space: nowrap; }
+.x-row-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+:where(.rv) .x-row-chips .chip { min-height: 20px; padding: 0 8px; font-size: 11.5px; line-height: 18px; }
+.x-row-text { display: block; margin-top: 4px; color: var(--fg-2); }
+.x-def { color: var(--fg-2); }
+.x-def > .x-lbl { display: block; line-height: 18px; margin-bottom: 2px; }
+.x-nw { white-space: nowrap; }
+.x-none { color: var(--fg-muted); font-style: normal; }
+.x-count-entry > h3 { font-size: 15px; }
+
+/* the run view's other tabs (the app's Coverage and Evidence): their own heading, then the grid */
+:where(.rv) .x-tab > h2:first-child, :where(.rv) .delta-off > h2:first-child { margin-top: 26px; padding-top: 0; border-top: 0; }
+.x-tab > h2 .x-n { color: var(--fg-muted); font-weight: 400; font-size: 15px; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.delta-off p { max-width: 70ch; color: var(--fg-2); }
+.cv-intro p { max-width: 80ch; color: var(--fg-2); }
+.cv-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 12px; margin: 14px 0 6px; }
+.cv-legend > div { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: 12px 16px 8px; }
+:where(.rv) .cv-legend h3 { margin: 0 0 8px; font-size: 13px; line-height: 18px; }
+.cv-legend dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0 0 8px; font-size: 13px; line-height: 20px; }
+.cv-legend dt { font-weight: 600; color: var(--fg); white-space: nowrap; }
+.cv-legend dt code { font-size: 12.5px; }
+.cv-legend dd { margin: 0; color: var(--fg-2); }
+.cv-grid table { font-size: 12.5px; }
+.cv-grid th { white-space: nowrap; }
+.cv-grid thead th { font-family: var(--mono); font-size: 11.5px; font-weight: 500; }
+.cv-grid thead th:first-child { font-family: inherit; font-size: 12px; }
+.cv-grid thead th a { color: var(--fg-muted); }
+.cv-grid tbody th { position: sticky; left: 0; z-index: 1; background: var(--bg-surface); text-align: left; font-weight: 500; vertical-align: top;
+  font-size: 13px; color: var(--fg); padding: 9px 14px; border-bottom: 1px solid var(--border-subtle); white-space: normal;
+  min-width: 190px; box-shadow: 1px 0 0 var(--border-subtle); }
+.cv-grid thead th:first-child { position: sticky; left: 0; z-index: 2; box-shadow: 1px 0 0 var(--border-subtle); }
+.cv-grid td { font-family: var(--mono); font-size: 12px; padding: 9px 12px; white-space: nowrap; }
+.cv-grid td.cv-ok, .cv-grid td.cv-none { color: var(--fg-muted); }
+.cv-grid td.cv-none { color: var(--fg-disabled); }
+.cv-grid td.cv-hit a { font-weight: 600; }
+.cv-grid td:last-child { font-family: inherit; white-space: normal; min-width: 120px; }
+.cv-out { white-space: nowrap; }
+/* the evidence register: the whole row is its ID's link (a stretched link), the links inside it stay their own */
+.ev-grid tr.ev-row { position: relative; }
+.ev-grid tr.ev-row:hover > td { background: var(--bg-hover); }
+.ev-grid a.x-rowlink::after { content: ""; position: absolute; inset: 0; }
+.ev-grid a.x-rowlink:focus-visible { outline: none; }
+.ev-grid tr.ev-row:has(a.x-rowlink:focus-visible) { outline: 2px solid var(--focus); outline-offset: -2px; }
+.ev-grid td a:not(.x-rowlink) { position: relative; z-index: 1; }
+.ev-grid td:nth-child(3) { white-space: nowrap; }
+.ev-grid td:nth-child(4) { min-width: 280px; color: var(--fg-2); }
+.ev-grid td:nth-child(5) { min-width: 120px; }

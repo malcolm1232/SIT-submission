@@ -134,15 +134,24 @@ def _open(pg: Any, base: str, run_id: str, tab: str) -> None:
     pg.wait_for_selector("#review > *")
 
 
-def test_the_page_shows_a_disabled_delta_tab_without_a_previous_version(page) -> None:
+def test_without_a_previous_version_the_delta_tab_opens_and_says_what_delta_is_and_how_to_get_one(page) -> None:
+    """Malcolm, 6 Oct 2026: "what is delta on the tab? they show 'cant click'". The tab is a plain tab that opens (no
+    not-allowed cursor, no aria-disabled), its tooltip says what Delta is, and the tab says it and how to get one."""
     pg, base, errors = page
     _open(pg, base, "full", "review")
     tab = pg.locator("#top-tabs .tab", has_text="Delta")
-    assert tab.count() == 1 and tab.get_attribute("aria-disabled") == "true"
-    assert tab.get_attribute("title") == "No previous version was given for this run"
-    tab.click(force=True)            # aria-disabled keeps it focusable and openable, so the reason can be read
+    assert tab.count() == 1 and tab.get_attribute("aria-disabled") is None
+    assert tab.evaluate("t => getComputedStyle(t).cursor") != "not-allowed"
+    assert tab.get_attribute("title").startswith("Delta is the re-assessment of this document against an earlier")
+    tab.click()                                                     # a real click: nothing covers or disables it
     pg.wait_for_selector("#review .delta-off")
-    assert pg.locator("#review .delta-off").inner_text() == "No previous version was given for this run."
+    text = " ".join(pg.locator("#review .delta-off").inner_text().split())
+    assert text.startswith("Delta: this version against an earlier one Delta is the re-assessment of this document")
+    assert "resolved, partially addressed, still open, or new" in text
+    assert "No previous version was given for this run, so there is nothing to compare." in text
+    assert "with the earlier version in Previous version (optional)." in text
+    pg.locator("#review .delta-off a", has_text="Review page").click()   # the way to get one: the start form
+    pg.wait_for_selector("#prev-input", state="attached")
     assert errors == []
 
 

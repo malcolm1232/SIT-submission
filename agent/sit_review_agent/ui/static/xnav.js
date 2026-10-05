@@ -270,7 +270,8 @@
     }
     function hide() { clearTimeout(timer); pop.hidden = true; shown = null; }
     function place(a) {
-      var r = a.getBoundingClientRect(), w = Math.min(460, window.innerWidth - 32), vh = window.innerHeight;
+      var row = a.classList.contains("x-rowlink") ? a.closest("tr") : null;   // a whole-row link: clear of its row
+      var r = (row || a).getBoundingClientRect(), w = Math.min(460, window.innerWidth - 32), vh = window.innerHeight;
       pop.style.width = w + "px";
       pop.style.left = Math.max(16, Math.min(r.left, window.innerWidth - w - 16)) + "px";
       pop.style.maxHeight = "";
@@ -384,6 +385,7 @@
     function label(id, t, b) {
       var m = /^(?:reg-)?((?:FND|EV|DEG|AD|SA|RQ)-\d+)$/.exec(id);
       if (m) return m[1];
+      if (b.hasAttribute("data-kicker")) return b.getAttribute("data-kicker");     // an entry that names its kind
       if (b.classList.contains("doc-page")) {
         if (t.classList.contains("doc-sec")) return t.getAttribute("data-label").split(" ")[0];
         return "p." + (/-p(\d+)$/.exec(b.id) || ["", "?"])[1];

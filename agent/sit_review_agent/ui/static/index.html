@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SIT review</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="stylesheet" href="/static/tokens.css">
 <link rel="stylesheet" href="/static/app.css">
 <link rel="stylesheet" href="/static/architecture.css">
@@ -186,16 +188,25 @@
 
 <!-- The finished review: verdict first, the three outputs as quiet pills in the head, the tabs, and the ask composer at the foot as a reading aid kept apart from the review. -->
 <template id="tpl-review">
-  <div class="surface-head">
+  <div class="surface-head" id="review-head">
     <div><div class="surface-title" id="top-doc"></div><div class="surface-sub num" id="top-sub"></div></div>
     <section class="head-actions" id="outputs" aria-label="Take the review with you" hidden>
-      <div class="out"><h3 class="sr-only">Download</h3><a class="btn quiet" id="out-download" download><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg><span id="out-download-label">Download review (zip)</span></a></div>
+      <!-- Download: the zip, and beside it what the zip holds and the files one by one, in a popover that opens on
+           hover or keyboard focus of the control and stays open from the chevron (app.js setupDownload) -->
+      <div class="out dl" id="dl"><h3 class="sr-only">Download</h3>
+        <div class="dl-pair"><a class="btn quiet dl-main" id="out-download" download aria-describedby="out-download-help"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v8M5 7.5l3 3 3-3"/><path d="M3 13.5h10"/></svg><span id="out-download-label">Download review (zip)</span></a><button class="btn quiet dl-more" type="button" id="dl-more" aria-expanded="false" aria-controls="dl-pop" aria-label="What the download holds, and its files one by one"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5"/></svg></button></div>
+        <div class="dl-pop" id="dl-pop" hidden>
+          <p class="dl-help" id="out-download-help"></p>
+          <div class="dl-links"><a id="out-open" target="_blank" rel="noopener">Open it in a new tab</a><a id="out-md" download>report.md</a><a id="out-json" download>report.json</a></div>
+        </div>
+      </div>
       <div class="out"><h3 class="sr-only">Email</h3><button class="btn quiet" type="button" id="email-btn" aria-expanded="false" aria-controls="email-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11v8h-11z"/><path d="m2.5 4.5 5.5 4 5.5-4"/></svg>Email the review</button></div>
       <div class="out"><h3 class="sr-only">Share</h3><button class="btn quiet" type="button" id="share-btn" aria-expanded="false" aria-controls="share-box"><svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5"/><path d="M7 4.5 8.5 3a2.5 2.5 0 0 1 3.5 3.5L10.5 8"/><path d="M9 11.5 7.5 13A2.5 2.5 0 0 1 4 9.5L5.5 8"/></svg>Share link</button></div>
     </section>
   </div>
-  <div class="tabrow"><span class="tabs" id="top-tabs"></span><span class="micro muted" id="tab-note"></span></div>
-  <div class="out-line" id="out-line" hidden><span id="out-download-help"></span><a id="out-open" target="_blank" rel="noopener">Open it in a new tab</a><a id="out-md" download>report.md</a><a id="out-json" download>report.json</a></div>
+  <!-- the counts on top: the review fragment's own strip (ui/reviewtabs.py counts_strip), moved here by app.js -->
+  <div class="run-counts" id="run-counts" hidden></div>
+  <div class="tabrow"><span class="tabs" id="top-tabs"></span></div>
   <div class="outline" id="email-box" hidden>
     <form class="row" id="email-form" novalidate>
       <input class="input" id="email-to" type="email" autocomplete="email" spellcheck="false" placeholder="name@example.org" aria-label="Recipient address">
@@ -216,6 +227,7 @@
       <textarea id="chat-input" rows="1" placeholder="Ask about a finding, an objective, a page or an evidence ID" aria-label="Question"></textarea>
       <span class="ready" id="chat-ready">Grounded in this review</span>
       <button class="ask-btn" type="submit" id="chat-send">Ask</button>
+      <button class="ask-btn ask-stop" type="button" id="chat-stop" hidden>Stop</button>
     </form>
     <div class="composer-hint"><span>Enter to ask · Shift + Enter for a new line</span><span class="trust" id="chat-hint"></span></div>
     <div class="error" id="chat-error" hidden></div>
