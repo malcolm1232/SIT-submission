@@ -38,7 +38,7 @@ from markdown_it import MarkdownIt
 
 from sit_review_agent.paths import repo_root
 from sit_review_agent.report.render import APPENDIX_HEADING, SECTION_ORDER
-from sit_review_agent.ui import chat
+from sit_review_agent.ui import chat, reviewtabs
 from sit_review_agent.ui.rundata import read_json
 from sit_review_agent.ui.xref import Doc, Index
 
@@ -82,10 +82,9 @@ def _turn(t: dict[str, Any]) -> str:
     at = str(t.get("at") or "")
     who = f"You · {at[:10]} {at[11:16]} UTC" if at else "You"
     out = [f'<div class="turn"><p class="who">{escape(who)}</p><p class="q">{escape(str(t.get("question") or ""))}</p>']
-    cost = t.get("cost_usd")
     dur = t.get("duration_s")
-    meta = "Review assistant · 1 model call" + (f", {dur:.1f} s" if isinstance(dur, int | float) else "") \
-        + (f", ${cost:.2f}" if isinstance(cost, int | float) else ", cost unknown")
+    # the call and its seconds, as the page's chat says them; no money (the cap is the server's, ui/chat.py)
+    meta = "Review assistant · 1 model call" + (f", {dur:.1f} s" if isinstance(dur, int | float) else "")
     out.append(f'<p class="who">{escape(meta)}</p>')
     shown = t.get("rendered_as")
     if shown == "answer":
@@ -103,6 +102,8 @@ def _turn(t: dict[str, Any]) -> str:
                                     if t.get("dropped") else "") if x)
         if why:
             out.append(f'<p class="foot">{escape(why[0].upper() + why[1:])}.</p>')
+    elif t.get("error") == chat.STOPPED_ERROR:
+        out.append(f'<p class="a">{escape(chat.STOPPED_TEXT)}</p>')
     else:
         out.append(f'<p class="a">The call failed: {escape(str(t.get("error") or "unknown error"))}.</p>')
     out.append("</div>")
@@ -365,6 +366,13 @@ def _ids(html: str, heading: str, idx: Index | None = None) -> str:
     return html
 
 
+def _sublabels(html: str) -> str:
+    """A paragraph that is only a label ("Objectives:", "Conditions:", ...) right before the list or table it
+    introduces is marked as that list's label, so the page can set it as one; its words stay as rendered."""
+    return re.sub(r'<p>([A-Z][A-Za-z/()-]*(?: [A-Za-z/()-]+){0,3}:)</p>\n(?=<(?:ul|ol)>|<div class="x-table">)',
+                  r'<p class="x-sub">\1</p>\n', html)
+
+
 def _preamble(html: str, idx: Index) -> str:
     """The title and the run table on top: the verdict as a chip, the vocabulary rows linked to the glossary."""
     def row(m: re.Match[str]) -> str:
@@ -400,9 +408,12 @@ def _verdict_para(html: str, idx: Index) -> str:
 # ------------------------------------------------------------------ the reference part (reference material)
 
 
-def _entry(eid: str, title: str, body: str, src: str | None = None, cls: str = "") -> str:
+def _entry(eid: str, title: str, body: str, src: str | None = None, cls: str = "", kicker: str | None = None) -> str:
+    """One entry of the reference part; ``kicker`` is what the side pane says above its title (the script's own
+    label otherwise: the entry's id, or its heading)."""
     s = f'<p class="x-src">From <code>{escape(src)}</code></p>' if src else ""
-    return f'<div class="x-entry{" " + cls if cls else ""}" id="{eid}"><h3>{title}</h3>{body}{s}</div>'
+    k = f' data-kicker="{escape(kicker)}"' if kicker else ""
+    return f'<div class="x-entry{" " + cls if cls else ""}" id="{eid}"{k}><h3>{title}</h3>{body}{s}</div>'
 
 
 def _ref_head(sid: str, title: str, note: str) -> str:
@@ -413,13 +424,14 @@ def _ref_head(sid: str, title: str, note: str) -> str:
 def _howto(idx: Index) -> str:
     t = idx.terms
     groups = [
-        ("Confidence and rank", ["confidence", "rank"]),
+        ("How findings are scored", ["scoring", "confidence", "rank"]),
         ("Verdict", [k for k in t if k.startswith("verdict-")]),
         ("Finding kinds", [k for k in t if k.startswith("kind-")]),
         ("Severity", [k for k in t if k.startswith("sev-")]),
         ("Disposition", [k for k in t if k.startswith("disp-")]),
         ("Defect categories", [k for k in t if k.startswith("cat-")]),
         ("The run table on top", ["threshold", "tools-used", "tools-disabled"]),
+        ("The counts on top", [k for k in t if k.startswith("count-")]),
         ("Review coverage criteria (this run's configuration)", [k for k in t if k.startswith("crit-")]),
         ("Identifiers", [k for k in t if k.startswith("id-")]),
     ]
@@ -436,7 +448,7 @@ def _howto(idx: Index) -> str:
             term = t[k]
             body = term.html if term.html.startswith("<p>") else f"<p>{term.html}</p>"
             out.append(_entry(f"g-{k}", escape(term.label), body, term.src,
-                              "x-term-entry x-wide" if k == "confidence" else "x-term-entry"))
+                              "x-term-entry x-wide" if k in ("scoring", "confidence") else "x-term-entry"))
         out.append("</div>")
     if idx.abbrs:
         out.append('<h3 class="x-group">Abbreviations the document defines</h3><div class="x-grid">')
@@ -465,8 +477,10 @@ def _cited_by(idx: Index, ident: str, field: str) -> str:
     refs: list[str] = []
     for fid, f in idx.findings.items():
         if field == "evidence":
-            if any(str(e.get("evidence_id")) == ident for e in f.get("evidence") or [] if isinstance(e, dict)):
-                refs.append(fid)
+            ev = next((e for e in f.get("evidence") or []
+                       if isinstance(e, dict) and str(e.get("evidence_id")) == ident), None)
+            if ev is not None:
+                refs.append(fid + {True: " (supports)", False: " (contrary)"}.get(ev.get("supports_claim"), ""))
         else:
             for d in f.get("affected_decisions") or []:
                 if isinstance(d, dict) and str(d.get("registry_id")) == ident:
@@ -607,7 +621,7 @@ class _Run:
     """The export of one run: the header, the cut and linked report, the chat and the reference part."""
 
     def __init__(self, run_dir: Path, *, replayed: bool, exported_at: str | None, pdf_href: str | None,
-                 with_chat: bool = True) -> None:
+                 with_chat: bool = True, view: str = "review") -> None:
         report_md = (run_dir / "report.md").read_text(encoding="utf-8")
         report = read_json(run_dir / "report.json") or {}
         report = report if isinstance(report, dict) else {}
@@ -626,7 +640,7 @@ class _Run:
         pre = _preamble(preamble, idx)
         for s in self.sections:
             h = _cards(s.html, idx)
-            h = _ids(_tables(h, idx), s.heading, idx)
+            h = _sublabels(_ids(_tables(h, idx), s.heading, idx))
             if s.heading == HEADINGS.get("verdict"):
                 h = _verdict_para(h, idx)
             s.html = h
@@ -643,7 +657,11 @@ class _Run:
         for rid in idx.registry:
             idx.declare(rid)
         # 3. the reference entries, then the review's text linked, then the document text with every mark
-        self.ref = [_howto(idx), _registry(idx), _ledger(idx)]
+        self.ref = [_howto(idx), reviewtabs.counts_section(idx, _ref_head, _entry), _registry(idx), _ledger(idx)]
+        self.strip = reviewtabs.counts_strip(idx)
+        self.view = view
+        self.view_html = {"coverage": lambda: reviewtabs.coverage_view(idx, run_dir),
+                          "evidence": lambda: reviewtabs.evidence_view(idx)}.get(view, lambda: "")()
         self.preamble = idx.link_html(pre)
         self.chat = idx.link_html(self.chat)          # the chat's citations too; its words stay as they are
         for s in self.sections:
@@ -653,6 +671,7 @@ class _Run:
         for s in self.sections:
             s.html = idx.resolve(s.html)
         self.ref = [idx.resolve(r) for r in self.ref if r]
+        self.view_html = idx.resolve(self.view_html)
         self.pdf_href = pdf_href
 
     def head(self) -> str:
@@ -665,7 +684,8 @@ class _Run:
 
     def header(self, note: str) -> str:
         return (f'<header class="exp-head"><div class="brand">SIT design review</div>'
-                f'<div class="meta">{escape(self.meta)}</div>{self.stamp}<p class="note">{note}</p></header>')
+                f'<div class="meta">{escape(self.meta)}</div>{self.stamp}{self.strip}'
+                f'<p class="note">{note}</p></header>')
 
     def report(self, tag: str = "main") -> str:
         """The preamble and every section: the review's own words, linked."""
@@ -683,13 +703,21 @@ class _Run:
         return self.report() + chat_part + self.reference()
 
     def fragment(self) -> str:
-        """The review as the run's Review tab in ``dra ui`` shows it: the same report and reference part as
-        :meth:`body` (the chat has its own panel there), a slim table of contents of the same parts, the way back
-        and the side pane; no script (the tab runs ``static/xnav.js``, this page's own) and no header (the app
-        has its own)."""
-        return (f'<div class="rv" id="rv"><div class="rv-grid"><div class="rv-doc">{self.report("div")}'
-                f"{self.reference()}</div>{self.nav(slim=True)}</div>"
-                f'<a class="x-back" href="#" hidden>Back to where I was</a>{PANE_HTML}</div>')
+        """The review as the run's Review tab in ``dra ui`` shows it: the counts strip (the app moves it into its run
+        head), the same report and reference part as :meth:`body` (the chat has its own panel there), a slim table
+        of contents of the same parts, the way back and the side pane; no script (the tab runs ``static/xnav.js``,
+        this page's own) and no header (the app has its own).
+
+        Another tab of the run (``view`` coverage, evidence or delta) gets its own body from :mod:`.reviewtabs`
+        (empty for delta, which the app draws) and the same document kept hidden, so its links, hover card and pane
+        are the Review tab's and reach the same targets."""
+        tail = f'<a class="x-back" href="#" hidden>Back to where I was</a>{PANE_HTML}</div>'
+        if self.view == "review":
+            return (f'<div class="rv" id="rv">{self.strip}<div class="rv-grid"><div class="rv-doc">'
+                    f'{self.report("div")}{self.reference()}</div>{self.nav(slim=True)}</div>{tail}')
+        return (f'<div class="rv rv-tab" id="rv" data-view="{escape(self.view)}">{self.strip}<div class="rv-grid">'
+                f'<div class="rv-doc"><div class="rv-view">{self.view_html}</div><div class="rv-store" hidden>'
+                f'{self.report("div")}{self.reference()}</div></div></div>{tail}')
 
     def nav(self, *, slim: bool = False) -> str:
         """The sidebar of the parts, each with its headings. ``slim``: the app's in-tab table of contents, every
@@ -744,12 +772,17 @@ def export_html(run_dir: Path, *, replayed: bool, exported_at: str | None = None
     return _Run(run_dir, replayed=replayed, exported_at=exported_at, pdf_href=pdf_href).index_page()
 
 
-def review_fragment(run_dir: Path, *, pdf_href: str | None) -> str:
+#: The views of :func:`review_fragment`: the Review tab, and the other tabs of a finished run in ``dra ui``.
+VIEWS = ("review", "coverage", "evidence", "delta")
+
+
+def review_fragment(run_dir: Path, *, pdf_href: str | None, view: str = "review") -> str:
     """The run's Review tab in ``dra ui`` (:meth:`_Run.fragment`): the same renderer and linker as
     :func:`export_html`, so the tab and the export say the same words with the same links. ``pdf_href`` is the
-    app's own ``/runs/<id>/doc.pdf`` (or ``None`` when the run cannot vouch for its PDF). Raises
-    ``FileNotFoundError`` when the run has no ``report.md``."""
-    return _Run(run_dir, replayed=False, exported_at=None, pdf_href=pdf_href, with_chat=False).fragment()
+    app's own ``/runs/<id>/doc.pdf`` (or ``None`` when the run cannot vouch for its PDF). ``view`` is one of
+    :data:`VIEWS`: the Review tab, or another tab's body with the review kept hidden beside it
+    (:meth:`_Run.fragment`). Raises ``FileNotFoundError`` when the run has no ``report.md``."""
+    return _Run(run_dir, replayed=False, exported_at=None, pdf_href=pdf_href, with_chat=False, view=view).fragment()
 
 
 def link_counts(run_dir: Path, *, pdf_href: str | None = None) -> dict[str, list[int]]:
