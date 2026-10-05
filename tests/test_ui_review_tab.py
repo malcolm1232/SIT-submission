@@ -150,10 +150,19 @@ def app_page(runs: Path):
     th.join(timeout=5)
 
 
-def open_review(pg, base: str, run: str = RUN) -> None:
-    pg.goto(f"{base}/?run={run}")
-    pg.wait_for_selector("#rv .report")
+def open_review(pg, base: str, run: str = RUN, tab: str | None = None) -> None:
+    """The run's review (or another of its tabs), once the review's script is wired: the page wires it last, after
+    the head, the outputs and the chat, and its hover card is the mark (a click before it would go nowhere)."""
+    pg.goto(f"{base}/?run={run}" + (f"&tab={tab}" if tab else ""))
+    wired(pg, tab)
     pg.wait_for_selector("#chat-turns")
+
+
+def wired(pg, tab: str | None = None) -> None:
+    """The review's script is running on the document of ``tab`` (None: the Review tab): its hover card is there.
+    Named by the tab, so a document the router is about to replace (after Back, say) does not count."""
+    sel = f'#rv.rv-tab[data-view="{tab}"]' if tab else "#rv:not(.rv-tab)"
+    pg.wait_for_selector(f"{sel} > .x-pop", state="attached")
 
 
 def _y(pg) -> float:
@@ -375,10 +384,10 @@ def test_a_coverage_criterion_offers_the_coverage_tab_and_a_chat_citation_opens_
     assert more.is_visible() and more.inner_text() == "Open in the Coverage tab"
     more.click()
     pg.wait_for_function("location.search.includes('tab=coverage')")
-    pg.wait_for_selector("#review h2:text-is('Coverage: criteria by section')")
-    assert pg.locator("#rv").count() == 0
+    pg.wait_for_selector("#review h2:text-is(\"Coverage: the review criteria against the document's sections\")")
+    assert pg.locator("#rv.rv-tab .rv-store[hidden]").count() == 1     # the tab's own body, the review kept hidden
     pg.go_back()                                                    # the app's router: back to the Review tab
-    pg.wait_for_selector("#rv .report")
+    wired(pg)
     link = pg.locator("#rv .report a.x-ev").first
     centre(pg, link)
     link.click()                                                    # the new document's script is the live one

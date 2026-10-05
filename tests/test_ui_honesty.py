@@ -277,11 +277,12 @@ def test_the_page_in_a_browser(served) -> None:
             (d for d in report["metadata"]["documents"] if d.get("role") == "under_review"),
             report["metadata"]["documents"][0])["title"]
         assert page.locator("#chat-label").inner_text() == "reading aid, not the review"
-        assert page.locator("#chat-budget").inner_text().startswith("0 of 20 calls used")
-        delta = page.locator(".tab", has_text="Delta")                 # no previous version: Delta is drawn disabled
-        assert delta.count() == 1 and delta.get_attribute("aria-disabled") == "true"
-        assert delta.get_attribute("title") == "No previous version was given for this run"
-        assert page.locator("#tab-note").inner_text() == "Delta is off: no previous version was given for this run."
+        assert page.locator("#chat-budget").inner_text().startswith("0 of 20 asks used")
+        assert "$" not in page.locator("#chat").inner_text()           # the chat shows no money (6 Oct 2026)
+        delta = page.locator(".tab", has_text="Delta")                 # no previous version: Delta says what it is
+        assert delta.count() == 1 and delta.get_attribute("aria-disabled") is None
+        assert delta.get_attribute("title").startswith("Delta is the re-assessment of this document")
+        assert page.locator("#tab-note").count() == 0
         assert page.evaluate(MOTION) == 0
         browser.close()
     assert all(u.startswith(base) for u in requests), [u for u in requests if not u.startswith(base)]
