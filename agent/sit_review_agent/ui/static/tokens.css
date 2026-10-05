@@ -3,8 +3,9 @@
    two products read as one family (same paper ramp, same ink action pill, same signal green, same rail).
    Section 2 maps the SIT page's own role names onto that palette, so app.css and export.css keep
    their names and only this file changes. Section 3 is SIT content colour: severity and run state.
-   Light theme only; dark is authored separately later, never inverted (craft 3.3). No hex outside this
-   file (craft 8.1). */
+   The app is light only. The HTML export (html.export-doc) also has a dark theme, authored here as its own
+   palette, never inverted (craft 3.3), and only under that class, so the app does not change. No hex outside
+   this file (craft 8.1). */
 :root {
   /* 1. DBSearch paper palette, reused verbatim */
   --paper:#FAF9F7; --paper-2:#F2F0EC; --white:#FFFFFF;
@@ -52,6 +53,31 @@
   --live-bg:var(--green-soft); --live-fg:var(--green); --live-border:var(--green-border);
   --done-bg:var(--paper-2); --done-fg:var(--ink-700);
   --waiting-fg:var(--ink-300);
+}
+
+/* 4. The HTML export only (ui/export.py): the passage marks and the landing highlight, then its dark theme. */
+:root {
+  --mark-bg:#FCEFC7; --mark-fg:var(--ink-900); --hit-bg:#FFF7DD; --hit-ring:#E9C46A;
+}
+@media (prefers-color-scheme: dark) {
+  :root.export-doc {
+    --paper:#141416; --paper-2:#1E1E21; --white:#19191C;
+    --ink-900:#ECEBE7; --ink-700:#C8C7C2; --ink-500:#9B9AA1; --ink-300:#6E6D74;
+    --rule:#2A2A2E; --rule-strong:#38383D;
+    --accent:#4ADE80; --accent-soft:#12291C; --accent-ring:rgba(74,222,128,.28);
+    --action:#ECEBE7; --action-hover:#FFFFFF; --action-fg:#141416;
+    --green:#4ADE80; --green-soft:#12291C; --green-border:#1F5135;
+    --amber:#F2B355; --amber-soft:#2B2113;
+    --red:#F38B8B; --red-soft:#2E1717; --red-border:#5C2A2A;
+    --navrail-bg:#0D0D0F; --navrail-fg:#9B9AA1; --navrail-fg-strong:#ECEBE7; --navrail-muted:#6E6D74;
+    --navrail-active-bg:#ECEBE7; --navrail-active-fg:#141416;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 1px 3px rgba(0,0,0,.35);
+    --shadow-lg:0 16px 40px -12px rgba(0,0,0,.7), 0 4px 12px -4px rgba(0,0,0,.5);
+    --bg-hover:#26262A; --bg-active:#2E2E33; --border-hover:#4A4A50;
+    --sev-critical-bg:#C53030; --sev-critical-fg:#FFFFFF;
+    --mark-bg:#3B3012; --mark-fg:#F4E7C3; --hit-bg:#2A2410; --hit-ring:#8A6D22;
+  }
 }
 
 @font-face {
