@@ -239,6 +239,11 @@ It made other things harder: research needs to wait for understand and plan but 
 On one pair the quality is the same within noise, and I say plainly that one pair cannot show a difference either way.
 I kept the custom loop because every retry, cut and disclosure is code I can show you and test, and I kept the variant so anyone can run both with one flag."
 
+The agent against a single call, plan D, eight synthetic documents, one run each, tools off, exploratory (`docs/COMPARISON_PLAN_D.md`):
+- Strict recall: the agent 98 of 112 planted flaws, the single call 88 of 112; paired difference +0.089, bootstrap interval +0.036 to +0.152, document-level sign-flip p = 0.0625 (five documents favour the agent, three tie).
+- Precision goes the other way: 0.594 against 0.755 strict, 0.883 against 0.973 adjudicated; run cost $50.39 (lower bound) against $6.74 for the eight runs.
+- The key-blind grader gave all eight agent reviews B and PASS, mean S 82.15, no material hallucination; the agent's own repeats on two documents moved by one flaw.
+
 ## 7. Twenty likely questions
 
 1. How do you stop hallucinated citations?

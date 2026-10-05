@@ -105,3 +105,4 @@ Agent wall time fell from 3,372 s to 780 s, while the recorded agent cost rose f
 - Load may have slowed the agent's wall time; it does not change the scores.
 - All judge and grader costs are the CLI's reported figures, not billed amounts.
 - The medium column is copied from `rehearsal_concurrent_1/QUALITY.md` and its `scores.md` and `grade.md`; it was not re-scored here.
+- Plan D (5 Oct 2026, eight synthetic documents, the agent against a single call, one run each, exploratory) is reported in `docs/COMPARISON_PLAN_D.md`.
