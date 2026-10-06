@@ -188,8 +188,8 @@ function archImportant(root) {
   const cards = ARCH.data.important || [];
   if (!cards.length) return;
   const last = cards.length - 1;
-  const step = (i, label, cls) => h("button", { class: "btn " + cls, type: "button", onclick: () => archImpOpen(i, true) },
-    label + ": " + cards[i].title);
+  const step = (i, label, cls) => h("button", { class: "btn " + cls, type: "button", title: label + ": " + cards[i].title,
+    onclick: () => archImpOpen(i, true) }, label + ": " + cards[i].title);
   root.append(h("section", { class: "arch-important", "aria-labelledby": "ai-title" },
     h("h2", { class: "ai-title", id: "ai-title", text: "Important points" }),
     cards.map((c, i) => h("article", { class: "ai-card" },

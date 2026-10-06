@@ -77,6 +77,25 @@
        "**PolicyToolGateway** checks every call: the __allowed server__, the __allowed tool__, the URL policy, the argument sanitiser, the server's circuit breaker and the tool-call budget.",
        "Because every call runs through this choke point, __any call can be denied__: a refused call comes back as blocked and never reaches the server."
      ]},
+    {"title": "How security is done: what stops it going rogue",
+     "lead": "Security is **least privilege plus one choke point plus kill switches**: __the model holds no tools and no keys__; it can only propose, and the platform decides what runs and when it stops.",
+     "points": [
+       {"text": "**It can only reach what it is allowed to**:",
+        "sub": ["The model has __no shell, no file access and no network of its own__: the Claude Code CLI runs with no tools of its own and every MCP tool disallowed, so a tool call exists only as JSON the platform reads, and the API key is stripped from its environment.",
+                "The only outside systems are __the {servers_enabled_count} enabled MCP servers__ of {server_count}; the browser server stays off because it shares one session across callers and has no domain allowlist.",
+                "Every call passes **the PolicyToolGateway**: the server and tool allowlist, the URL policy, the argument sanitiser, the breaker and the budget. A refused call comes back as blocked and __never reaches the server__."]},
+       {"text": "**It cannot be talked into more**:",
+        "sub": ["Tool output reaches the model labelled __untrusted data, not instructions__, and tool content can never add a new kind of action, only fill in the fixed ones.",
+                "A fetched URL must have appeared in a search result or in the document, and __a query string added to a seen URL is refused__, so a page cannot steer it to send data out.",
+                "No model-written code is ever run: the model returns structured JSON that code validates, never a script."]},
+       {"text": "**Secrets never leave the process**: the MCP key comes from an environment variable and is never logged, the sanitiser blocks secrets and canary values in tool arguments, the logs are redacted, and invariant INV-08 __scans every file of the run for a canary__ before the report is written."},
+       {"text": "**Kill switches**, from a person and from the platform:",
+        "sub": ["**Stop**: the Stop button on the run page, or Ctrl-C, sends SIGINT; the run ends at once and __keeps its last checkpoint__, so it can be resumed.",
+                "**Hard limits**: a deadline of {deadline_s} s ({demo_deadline_s} s on the demo profile) that __cuts any model call still open__, at most {max_tool_calls} tool calls, {max_research_iterations} research iterations and {max_input_tokens} input tokens.",
+                "**Circuit breakers**: a failing server is cut off after repeated failures, and a revoked key turns the run __document-only__, disclosed in the report.",
+                "**Tools off entirely**: --no-tools runs a review with no outside access at all, and the URL policy can be switched to allow-only for a list of trusted domains."]}
+     ],
+     "foot": "Still open: the search tool's own server-side page fetches happen __where the URL policy cannot see them__."},
     {"title": "The research loop is deliberately handwritten",
      "lead": "**Why?** Because the __platform needs to control__:",
      "points": [
@@ -95,6 +114,18 @@
      "points": [
        "The model then __references EV-002__ rather than inventing a URL.",
        "This gives **provenance**: don't trust the generated answer; __establish a chain back to the source__."
+     ]},
+    {"title": "Top 3 advantages and top 3 disadvantages",
+     "lead": "What this design __buys__, and what it __costs__.",
+     "points": [
+       {"text": "**Advantages**",
+        "sub": ["**Every decision is visible and controllable**: an explicit state machine and two choke points, so budgets, stop rules, retries and policy are code an evaluator can read and change on the spot.",
+                "**Every claim is traceable and checked**: each finding is anchored to a quoted passage, each citation is an EV-(n) ledger entry, and {invariant_count} invariant checks run before report.json is written.",
+                "**Robust and reproducible**: fault injection, checkpoints and resume, recorded replay, and every degradation __disclosed in the report__ rather than hidden."]},
+       {"text": "**Disadvantages**",
+        "sub": ["**More code to own**: the custom loop rebuilds what a framework ships, retries, breakers, checkpointing and replay, so __its robustness is only as good as our own tests__.",
+                "**External evidence arrives late**: the assess shards start before research, so no shard sees outside sources; research evidence reaches a finding __only through refine__.",
+                "**Thinly measured so far**: one document and one run per arm, the answer key not yet signed off, the agent, judge and grader in __one model family__, {robust_blocked} of {robust_total} robustness scenarios not run offline, and images in a PDF unseen."]}
      ]}
   ],
   "topics": {

@@ -200,6 +200,8 @@
 .ai-body { padding: 0 18px 14px 35px; }
 .ai-body[hidden] { display: none; }
 .ai-nav { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+.ai-nav .btn { display: block; min-width: 0; max-width: calc(50% - 6px); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ai-nav .ai-next { margin-left: auto; }
 .ai-lead { margin: 0 0 8px; font-size: 14px; line-height: 1.55; color: var(--fg); }
 .ai-points { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; color: var(--fg-2); }
 .ai-points > li + li { margin-top: 4px; }
