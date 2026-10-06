@@ -1286,7 +1286,7 @@ function findingRecord(it) {
 // An outside source's address as the review's renderer draws it (ui/outlinks.py): only an absolute http(s) address with
 // a host is a link, opened in a new tab with no referrer; its host is the text and the whole address the tooltip.
 function webUrl(s) {
-  if (typeof s !== "string" || !/^https?:\/\//i.test(s) || /[\s\x00-\x1f\x7f]/.test(s)) return null;
+  if (typeof s !== "string" || /[\s\x00-\x1f\x7f]/.test(s)) return null;
   try { const u = new URL(s); return (u.protocol === "http:" || u.protocol === "https:") && u.hostname ? s : null; } catch (e) { return null; }
 }
 function outLink(url) {

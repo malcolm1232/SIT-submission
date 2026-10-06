@@ -439,9 +439,10 @@ def open_panel(pg: Any, key: str) -> dict[str, Any]:
 
 def test_the_research_row_says_what_its_panel_lists_and_an_outside_source_opens_in_a_new_tab(page) -> None:
     """On the page: the research row of the Run log and its panel give the same count of recorded calls with the
-    blocked one ("3 tool call(s), 1 blocked"; research_stopped's budget count is 2), the blocked call shows its
-    reason, and the panel's ledger entries link an outside source's address (new tab, no referrer) and nothing
-    else: not a tool call's citation, not a javascript: value."""
+    blocked one ("3 tool call(s), 1 blocked"; research_stopped's budget count is 2, and the stream has no blocked
+    tool_status record, as for a call refused as not allowed, so only the recorded calls can say it), the blocked
+    call shows its reason, and the panel's ledger entries link an outside source's address (new tab, no referrer)
+    and nothing else: not a tool call's citation, not a javascript: value."""
     pg, base, runs, _ = page
     rd = runs / RUN
     _blocked_research(rd)
@@ -450,7 +451,6 @@ def test_the_research_row_says_what_its_panel_lists_and_an_outside_source_opens_
         ("research_started", {"questions": 1, "tools": 2}),
         ("tool_round", {"calls": 3, "tools": ["s__search_web", "s__fetch_url", "s__fetch_url"], "not_executed": 0,
                         "iteration": 1}),
-        ("tool_status", {"tool": "s__fetch_url", "blocked": True}),
         ("research_stopped", {"code": "no_marginal_gain", "detail": "model_stop_vote", "answered": 0, "questions": 1,
                               "tool_calls": 2, "ledger_entries": 3}))]
     evs = [evs[0], *research, *evs[1:]]

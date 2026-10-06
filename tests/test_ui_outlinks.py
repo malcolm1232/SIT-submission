@@ -25,7 +25,8 @@ LONG = ("https://oneuptime.com/blog/post/2026-02-16-how-to-set-up-microsoft-entr
         "access-and-refresh-tokens/view")
 HOSTILE = ("javascript:alert(document.cookie)", "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
            "JaVaScRiPt:alert(1)", "file:///etc/passwd", "//evil.example/x", "https://", "https://exa mple.org/x",
-           "vbscript:msgbox(1)", "https://example.org/\njavascript:alert(1)")
+           "vbscript:msgbox(1)", "https://example.org/\njavascript:alert(1)", "javascript://example.org/%0aalert(1)",
+           "ftp://example.org/x")
 
 
 @pytest.mark.parametrize("value", ["https://learn.microsoft.com/a", "http://example.org", "HTTPS://Example.org/x?a=1&b=2"])
@@ -172,11 +173,11 @@ def test_the_outside_link_opens_a_new_tab_and_the_register_stays_in_its_column(t
                           [box["x"] + 4, box["y"] + box["height"] / 2])
         assert hit == "x-out"                                                    # the link, not the row's own
         m = pg.evaluate("""() => { const g = document.querySelector('.rv-view .ev-grid');
-          const cells = [...document.querySelectorAll('.rv-view .x-ev-where')]
-            .map(e => e.getBoundingClientRect().width);
+          const cells = [...document.querySelectorAll('.rv-view .x-ev-where')];
           return { box: g.getBoundingClientRect().width, table: g.querySelector('table').getBoundingClientRect().width,
-                   where: Math.max(...cells) }; }""")
-        assert m["table"] <= m["box"] + 1 and m["where"] <= 300.5, m
+                   where: Math.max(...cells.map(e => e.getBoundingClientRect().width)),
+                   spill: cells.filter(e => e.scrollWidth > e.clientWidth + 1).length }; }""")
+        assert m["table"] <= m["box"] + 1 and m["where"] <= 300.5 and m["spill"] == 0, m   # wraps, never spills
         assert [u for u in requests if not u.startswith(("about:", "data:"))] == []     # nothing fetched
         browser.close()
 
