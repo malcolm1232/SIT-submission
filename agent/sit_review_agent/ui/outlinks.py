@@ -49,8 +49,7 @@ def web_url(value: Any) -> str | None:
         host = parts.hostname
     except ValueError:
         return None
-    if parts.scheme.lower() not in ("http", "https") or not host or not value.lower().startswith(("http://",
-                                                                                                    "https://")):
+    if parts.scheme.lower() not in ("http", "https") or not host:     # a host needs "//": no "https:x"
         return None
     return value
 

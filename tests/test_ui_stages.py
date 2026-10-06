@@ -437,6 +437,46 @@ def open_panel(pg: Any, key: str) -> dict[str, Any]:
     return pg.evaluate("window.SIT.state.panel.data")
 
 
+def test_the_research_row_says_what_its_panel_lists_and_an_outside_source_opens_in_a_new_tab(page) -> None:
+    """On the page: the research row of the Run log and its panel give the same count of recorded calls with the
+    blocked one ("3 tool call(s), 1 blocked"; research_stopped's budget count is 2), the blocked call shows its
+    reason, and the panel's ledger entries link an outside source's address (new tab, no referrer) and nothing
+    else: not a tool call's citation, not a javascript: value."""
+    pg, base, runs, _ = page
+    rd = runs / RUN
+    _blocked_research(rd)
+    evs = [json.loads(ln) for ln in (rd / "progress.jsonl").read_text().splitlines()]
+    research = [json.loads(_ev(0, t, "research", f)) for t, f in (
+        ("research_started", {"questions": 1, "tools": 2}),
+        ("tool_round", {"calls": 3, "tools": ["s__search_web", "s__fetch_url", "s__fetch_url"], "not_executed": 0,
+                        "iteration": 1}),
+        ("tool_status", {"tool": "s__fetch_url", "blocked": True}),
+        ("research_stopped", {"code": "no_marginal_gain", "detail": "model_stop_vote", "answered": 0, "questions": 1,
+                              "tool_calls": 2, "ledger_entries": 3}))]
+    evs = [evs[0], *research, *evs[1:]]
+    (rd / "progress.jsonl").write_text("".join(json.dumps({**e, "seq": i + 1}) + "\n" for i, e in enumerate(evs)))
+    (rd / "ledger.json").write_text(json.dumps([
+        {"evidence_id": "EV-001", "source_type": "external", "url_or_citation": "https://www.example.org/limits",
+         "title": "Limits", "excerpt": "x", "derived_from": []},
+        {"evidence_id": "EV-002", "source_type": "external", "title": "s search_web result", "excerpt": "x",
+         "url_or_citation": 'mcp:s/search_web?{"query":"limits"}', "derived_from": []},
+        {"evidence_id": "EV-003", "source_type": "external", "url_or_citation": "javascript:alert(1)", "title": "J",
+         "excerpt": "x", "derived_from": []}]))
+    open_log(pg, base, RUN)
+    row = pg.locator('[data-track="research"] .status').inner_text()
+    assert row.endswith("0 of 1 question(s) answered, 3 tool call(s), 1 blocked"), row
+    data = open_panel(pg, "research")
+    assert next(f["value"] for f in data["facts"] if f["label"] == "tool calls") == "3, 1 blocked"
+    panel = pg.locator("#stage-panel")
+    assert "URL policy: URL did not appear in an earlier tool result" in panel.inner_text()
+    links = panel.locator("a.x-out")
+    assert links.count() == 1
+    assert [links.first.get_attribute(k) for k in ("href", "target", "rel", "referrerpolicy")] == [
+        "https://www.example.org/limits", "_blank", "noopener noreferrer", "no-referrer"]
+    assert links.first.inner_text() == "example.org \u2197"
+    assert panel.locator('a[href^="javascript"], a[href^="mcp"]').count() == 0
+
+
 NO_CLIP = """() => [...document.querySelectorAll('#stage-panel .sp-tx, #stage-panel .sp-after, #stage-panel dd')]
   .filter((el) => { const cs = getComputedStyle(el); return cs.textOverflow === 'ellipsis' || cs.whiteSpace === 'nowrap'
     || el.scrollWidth > el.clientWidth + 1; }).map((el) => el.textContent.slice(0, 60))"""
