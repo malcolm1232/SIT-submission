@@ -1,3 +1,5 @@
+SUPERSEDED by docs/HANDOVER_261007_SUBMISSION.md on 07 Oct 2026
+
 # SIT Architectural design page (panel text and Important points) - handover, written 06 Oct 2026 17:37 local by the "archpage-important" session
 
 START HERE. This file is self-contained for the Architectural design page work of 06 Oct 2026.
