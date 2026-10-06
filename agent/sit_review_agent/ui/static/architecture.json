@@ -442,12 +442,11 @@
       "title": "Output: what a run writes",
       "kind": "files",
       "simple": {
-        "lead": "A run directory holds everything about the run: the review, the evidence, and every log needed to explain or replay it.",
+        "lead": "A **run directory holds everything** about the run: the __review__, the __evidence__, and every log needed to explain or replay it.",
         "points": [
-          "report.md and report.json: the verified findings and the verdict.",
+          "**report.md** and **report.json**: the __verified findings__ and __the verdict.__",
           "ledger.json: the evidence ledger. anchors.json: every quote and how it resolved.",
-          "manifest.json, checkpoints/, shards/, the call logs and progress.log.",
-          "Evaluation results are not part of a run: the harness scores a finished run from outside."
+          "manifest.json, checkpoints/, shards/, the call logs and progress.log."
         ]
       },
       "advanced": [
