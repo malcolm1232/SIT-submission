@@ -1,3 +1,5 @@
+SUPERSEDED by docs/HANDOVER_261006_ARCHPAGE_IMPORTANT.md on 06 Oct 2026.
+
 # SIT Architectural design page text - handover, written 06 Oct 2026 13:30 local by the "meetbot-e5" session
 
 START HERE. This file is self-contained for the architecture page work of 06 Oct 2026.
