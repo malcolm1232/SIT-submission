@@ -309,6 +309,40 @@ def test_research_with_no_tool_gateway_is_skipped_never_a_tool_failure(page, no_
     assert "asks the SIT MCP servers the plan's outside questions in rounds" in out[2]   # the general text, no count
 
 
+def test_the_research_row_counts_every_recorded_call_and_names_the_blocked_one(page) -> None:
+    """ui-261005-170012-2648: research_stopped said "9 tool call(s)" (the budget's count, which leaves out the call the
+    URL policy blocked) while the stage panel listed 10. The row now says "10 tool call(s), 1 blocked": from the
+    calls research recorded when the server could read them (GET /runs/<id> research_calls), else, while research is
+    in progress, from the stream's tool_round and blocked tool_status records; the Why uses the same count."""
+    pg, base, _runs = page
+    pg.goto(base + "/")
+    pg.wait_for_function("window.SIT !== undefined")
+
+    def ev(seq: int, type_: str, phase: str, fields: dict, kind: str = "step") -> dict:
+        return {"v": 1, "seq": seq, "t": float(seq), "run_s": float(seq), "type": type_, "phase": phase,
+                "kind": kind, "console": True, "message": type_, "fields": fields}
+    evs = [ev(1, "research_started", "research", {"questions": 8, "tools": 3}),
+           ev(2, "tool_round", "research", {"calls": 6, "tools": ["s__search_web"] * 6, "not_executed": 0,
+                                            "iteration": 1}),
+           ev(3, "tool_round", "research", {"calls": 4, "tools": ["s__fetch_url"] * 4, "not_executed": 0,
+                                            "iteration": 2}),
+           ev(4, "tool_status", "research", {"tool": "s__fetch_url", "blocked": True}, "warn"),
+           ev(5, "research_stopped", "research", {"code": "no_marginal_gain", "detail": "model_stop_vote",
+                                                  "answered": 0, "questions": 8, "tool_calls": 9,
+                                                  "ledger_entries": 21}, "done")]
+    out = pg.evaluate("""(evs) => [{ recorded: 10, blocked: 1 }, null].map((rc) => {
+        const m = SIT.newRunModel(); m.researchCalls = rc;
+        for (const ev of evs) SIT.applyEvent(m, ev);
+        return [m.tracks.get("research").text, SIT.factText ? SIT.explainText(m, "research") : ""];
+    })""", evs)
+    for text, why in out:
+        assert text.endswith("0 of 8 question(s) answered, 10 tool call(s), 1 blocked"), text
+        assert "9 tool call" not in text and "9 tool calls" not in why, why
+    one = pg.evaluate("""(evs) => { const m = SIT.newRunModel(); m.researchCalls = { recorded: 9, blocked: 0 };
+        for (const ev of evs) SIT.applyEvent(m, ev); return m.tracks.get("research").text; }""", evs)
+    assert one.endswith("answered, 9 tool call(s)"), one
+
+
 def test_a_real_tool_failure_keeps_its_failure_wording_and_reason(page) -> None:
     pg, base, _runs = page
     pg.goto(base + "/")
@@ -323,7 +357,9 @@ def test_a_real_tool_failure_keeps_its_failure_wording_and_reason(page) -> None:
         return [t.status, t.text, SIT.explainText(m, "research")];
     }""", evs)
     assert out[0] == "done"
-    assert out[1] == "tool failure, tools unavailable: 0 of 6 question(s) answered, 0 tool call(s)", out[1]
+    # the calls the stream recorded (its tool_round records), whatever research_stopped's budget count says
+    made = sum(e["fields"]["calls"] for e in evs[:i] if e["type"] == "tool_round")
+    assert out[1] == f"tool failure, tools unavailable: 0 of 6 question(s) answered, {made} tool call(s)", out[1]
     assert "Research stopped (tool failure, tools unavailable) with 0 of " in out[2]
 
 

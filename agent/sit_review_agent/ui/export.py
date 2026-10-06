@@ -38,7 +38,7 @@ from markdown_it import MarkdownIt
 
 from sit_review_agent.paths import repo_root
 from sit_review_agent.report.render import APPENDIX_HEADING, SECTION_ORDER
-from sit_review_agent.ui import chat, reviewtabs, rundata, tablerows
+from sit_review_agent.ui import chat, outlinks, reviewtabs, rundata, tablerows
 from sit_review_agent.ui.rundata import read_json
 from sit_review_agent.ui.xref import Doc, Index
 
@@ -326,6 +326,13 @@ def _cards(html: str, idx: Index) -> str:
     return "".join(out)
 
 
+def _cited_addresses(html: str) -> str:
+    """A finding's evidence line that cites an outside address (``[https://...]``): the address a link, its words
+    kept (:func:`.outlinks.link_cited_addresses`)."""
+    return re.sub(r'(<li class="x-ev">)(.*?)(</li>)', lambda m: m.group(1) + outlinks.link_cited_addresses(m.group(2))
+                  + m.group(3), html, flags=re.S)
+
+
 def _tables(html: str, idx: Index) -> str:
     """Tables scroll sideways on a narrow screen; a verdict word or a coverage criterion in a cell is a chip."""
     html = html.replace("<table>", '<div class="x-table"><table>').replace("</table>", "</table></div>")
@@ -590,9 +597,11 @@ def _ledger(idx: Index) -> str:
             body += ('<p class="x-place"><span class="x-lbl">In the document:</span> '
                      + (idx.a(href, loc, "x-loc", "page/section", idx._loc_title(m.group(2), m.group(3)))
                         if href else loc) + f' <span class="x-muted">({escape(cite)})</span></p>')
-        elif re.match(r"https?://", cite):
-            body += (f'<p class="x-place"><span class="x-lbl">Source:</span> {escape(str(e.get("title") or cite))} '
-                     f'<span class="x-muted">{escape(cite)}</span></p>')
+        elif (url := outlinks.web_url(cite)) is not None:
+            body += ('<p class="x-place x-source"><span class="x-lbl">Source:</span> '
+                     f'{outlinks.source_link(url, e.get("title"))}</p>')
+        elif (tool := outlinks.tool_citation(cite)) is not None:
+            body += f'<p class="x-place x-source"><span class="x-lbl">Tool call:</span> {tool}</p>'
         if e.get("derived_from"):
             body += ('<p class="x-place"><span class="x-lbl">Derived from:</span> '
                      + idx.link_ids(escape(", ".join(str(x) for x in e["derived_from"]))) + "</p>")
@@ -693,10 +702,10 @@ class _Run:
             pdf = rundata.reviewed_pdf(run_dir, repo_root())
         self.index = idx = Index(run_dir, report, root=repo_root(), pdf_href=pdf_href,
                                  pdf=pdf if isinstance(pdf, Path) else None)
-        # 1. structure: cards, chips, ids (no text changes)
-        pre = _preamble(preamble, idx)
+        # 1. structure: cards, chips, ids, outside links (no text changes)
+        pre = _preamble(outlinks.safe_outside_links(preamble), idx)
         for s in self.sections:
-            h = _cards(s.html, idx)
+            h = _cited_addresses(_cards(outlinks.safe_outside_links(s.html), idx))
             h = _sublabels(_ids(_tables(h, idx), s.heading, idx))
             if s.heading == HEADINGS.get("verdict"):
                 h = _verdict_para(h, idx)

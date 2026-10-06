@@ -510,11 +510,13 @@ function newRunModel() {
     refineCut: null,
     // Whether the run was launched with --no-tools (ui/launch.json, set by showRun); null for a run started elsewhere.
     noTools: null,
+    // Research's recorded tool calls, { recorded, blocked }, when the server could read them (GET /runs/<id>); null else.
+    researchCalls: null,
     // A limit that fired, in plain words, with the run clock it fired at; drafted finding count per call (for "n of m kept").
     limitNotes: [], draftedByCall: new Map(),
     // The counts the "What is happening" panel fills in (recordFacts), each the fields of one record type; and the rows
     // (track keys, or "limits" for the axis) whose Why is open.
-    x: { ended: false, criteria: null, intent: null, plan: null, research: null, servers: [], toolCalls: null, researchStop: null, merged: null,
+    x: { ended: false, criteria: null, intent: null, plan: null, research: null, servers: [], toolCalls: null, blocked: 0, researchStop: null, merged: null,
       refineFindings: null, retry: null, refined: null, anchors: null },
     why: new Set() };
 }
@@ -603,7 +605,7 @@ function applyEvent(m, ev) {
         // Its disclosure ID stays on the stage's disclosure line (t.disclose, from research_doc_only).
         t.status = "skipped"; t.skippedAt = now; t.docOnly = true; t.strong = null;
         t.text = "document only (" + (m.noTools ? "--no-tools" : "no tool server in use") + "): " + intl(f.questions) + " question(s) left to the document";
-      } else { t.strong = null; t.text = researchStopWords(f) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + intl(f.tool_calls) + " tool call(s)"; }
+      } else { t.strong = null; t.text = researchStopWords(f) + ": " + intl(f.answered) + " of " + intl(f.questions) + " question(s) answered, " + callStoryText(callStory(m)); }
       break;
     }
     case "phase_skipped": { const t = track(m, ev.phase); t.status = "skipped"; t.skippedAt = now; t.strong = null; t.text = words(f.reason); break; }
@@ -754,6 +756,7 @@ function recordFacts(m, ev, f) {
       x.toolCalls = (x.toolCalls || 0) + (typeof f.calls === "number" ? f.calls : 0);
       for (const name of f.tools || []) { const server = String(name).split(QUALIFIER)[0]; if (server && !x.servers.includes(server)) x.servers.push(server); }
       break;
+    case "tool_status": if (f.blocked === true && ev.phase === "research") x.blocked = (x.blocked || 0) + 1; break;
     case "research_stopped": x.researchStop = f; break;
     case "shards_merged": x.merged = f; break;
     case "refine_started": x.refineFindings = f.findings ?? null; break;
@@ -767,6 +770,21 @@ function recordFacts(m, ev, f) {
 // research_stopped with detail "no_tools": the run had no tool gateway (--no-tools, or every server off), which the
 // record files under the tool_failure code; every other stop keeps its code and its reason.
 function researchWasOff(f) { return !!f && f.code === "tool_failure" && f.detail === "no_tools"; }
+// Research's tool calls as the run recorded them: every call it made, and how many the tool policy blocked (a blocked
+// call never reaches a server and is not counted against the budget, so research_stopped's tool_calls leaves it
+// out). From the run directory: the server reads the calls research recorded (GET /runs/<id> research_calls, from
+// its checkpoint, ui/stages.py research_calls); while research is still in progress, from the stream's tool_round
+// and blocked tool_status records. The Run log's research row and its stage panel then say the same numbers.
+function callStory(m) {
+  if (m.researchCalls) return m.researchCalls;
+  if (m.x.toolCalls === null && !m.x.researchStop) return null;
+  const recorded = m.x.toolCalls ?? field(m.x.researchStop, "tool_calls");
+  return recorded === null || recorded === undefined ? null : { recorded, blocked: m.x.blocked || 0 };
+}
+function callStoryText(c) {
+  if (!c) return "tool calls not recorded";
+  return intl(c.recorded) + " tool call(s)" + (c.blocked ? ", " + intl(c.blocked) + " blocked" : "");
+}
 function researchStopWords(f) { return words(f.code) + (f.detail && f.detail !== f.code ? ", " + words(f.detail) : ""); }
 
 function clk(s) { return typeof s === "number" ? clock(s) : null; }
@@ -797,7 +815,7 @@ const FACTS = {
   research_questions: (m) => (researchWasOff(m.x.researchStop) ? null : field(m.x.research, "questions") ?? field(m.x.researchStop, "questions")),
   tools_offered: (m) => field(m.x.research, "tools"),
   servers: (m) => (m.x.servers.length ? listWords(m.x.servers) : null),
-  tool_calls: (m) => field(m.x.researchStop, "tool_calls") ?? m.x.toolCalls,
+  tool_calls: (m) => field(callStory(m), "recorded"),
   research_stop: (m) => (m.x.researchStop && !researchWasOff(m.x.researchStop) ? researchStopWords(m.x.researchStop) : null),
   research_left: (m) => (researchWasOff(m.x.researchStop) ? field(m.x.researchStop, "questions") : null),
   answered: (m) => field(m.x.researchStop, "answered"),
@@ -1265,6 +1283,17 @@ function findingRecord(it) {
   return box;
 }
 
+// An outside source's address as the review's renderer draws it (ui/outlinks.py): only an absolute http(s) address with
+// a host is a link, opened in a new tab with no referrer; its host is the text and the whole address the tooltip.
+function webUrl(s) {
+  if (typeof s !== "string" || /[\s\x00-\x1f\x7f]/.test(s)) return null;
+  try { const u = new URL(s); return (u.protocol === "http:" || u.protocol === "https:") && u.hostname ? s : null; } catch (e) { return null; }
+}
+function outLink(url) {
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  return h("a", { class: "x-out", href: url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer", title: url, text: host + " \u2197" });
+}
+
 function rawRecord(rec) {
   return kvBlock(Object.entries(rec || {}).map(([k, v]) => [sentence(k), typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)]));
 }
@@ -1286,8 +1315,9 @@ const ITEM = {
       ["Tool (capability)", it.needs_external ? it.capability : null], ["Search queries", (it.queries || []).length ? h("ul", { class: "plain" }, it.queries.map((q) => h("li", { text: q }))) : null],
       ["Status", words(it.status)], ["Answer", it.summary], ["Ledger entries it cites", ids(it.evidence_ids)]])) },
   skip: { meta: () => [], text: (it) => JSON.stringify(it.rec), detail: (it) => rawRecord(it.rec) },
-  tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), it.rec.server || ""], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") },
-  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec) },
+  tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), it.rec.server || ""], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") + (it.rec.reason ? " · " + it.rec.reason : "") },
+  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec),
+    after: (it) => { const u = webUrl(it.rec.url_or_citation); return u ? h("p", { class: "sp-after" }, "Source: ", outLink(u)) : null; } },
   finding: {
     meta: (it, D, L) => [h("b", { class: "mono", text: it.id || it.local_id }),
       it.merged_id ? "numbered " + it.merged_id + " at the merge" : "", it.shard ? "shard " + (it.shard_index || "?") + "'s " + it.local_id : "", sevChip(it.rec || {}), groupedBy(L, "kind") ? null : kindChip((it.rec || {}).kind),
@@ -1676,6 +1706,7 @@ function showRun(info, tabs) {
   if (S.funnel && S.funnel.runId !== info.run_id) S.funnel = null;
   const m = newRunModel();
   m.noTools = typeof info.no_tools === "boolean" ? info.no_tools : null;
+  m.researchCalls = info.research_calls && typeof info.research_calls.recorded === "number" ? info.research_calls : null;
   S.model = m;
   S.stop = null;
   S.lastAt = null;
@@ -2273,7 +2304,7 @@ async function route() {
 }
 
 // The run model and its reducer, reachable by tests that feed a recorded stream through the page.
-window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf };
+window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf, webUrl, outLink };
 window.addEventListener("popstate", route);
 document.addEventListener("click", (e) => {
   const a = e.target.closest ? e.target.closest("a.x-pane-more") : null;
