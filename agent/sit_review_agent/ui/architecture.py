@@ -12,7 +12,8 @@ here from the configuration and the code the agent itself runs with, so the page
 * the stage order, the stage 1 members and their dependencies from ``states.py``;
 * the research, verify and anchor limits from the constants and config the phases read;
 * the demo profile's deadline and stage limits from ``config/profiles/demo.yaml``;
-* the framework scores of the Important points from the weighted decision matrix of ``research/frameworks/README.md``.
+* the framework scores of the Important points from the weighted decision matrix of ``research/frameworks/README.md``,
+  and the first build session's agent count from the subagent index of ``docs/transcripts/README.md``.
 
 A placeholder this module cannot fill is an error (``KeyError``), never a blank.
 """
@@ -66,6 +67,7 @@ def tool_layers(gateway: Any = None) -> list[str]:
 #: The offline robustness results table (``tests/robustness/README.md``): its P0 row gives the scenario counts.
 ROBUSTNESS_SUMMARY = Path("tests/robustness/results/robustness_summary.txt")
 FRAMEWORKS_README = Path("research/frameworks/README.md")
+TRANSCRIPTS_README = Path("docs/transcripts/README.md")
 
 
 def robustness_summary(repo_root: Path | None = None) -> dict[str, Any]:
@@ -106,6 +108,19 @@ def framework_scores(repo_root: Path | None = None) -> dict[str, Any]:
     except (OSError, ValueError):
         pass
     return dict.fromkeys(keys, "not recorded")
+
+
+def build_record(repo_root: Path | None = None) -> dict[str, Any]:
+    """How many agents the first build session ran: the rows of the subagent index of ``docs/transcripts/README.md``,
+    or "not recorded" when the file is not there."""
+    from sit_review_agent.paths import repo_root as _root
+
+    try:
+        text = ((repo_root or _root()) / TRANSCRIPTS_README).read_text(encoding="utf-8")
+    except OSError:
+        return {"build_agents_first_session": "not recorded"}
+    rows = [ln for ln in text.splitlines() if ln.startswith("| agent-")]
+    return {"build_agents_first_session": len(rows) or "not recorded"}
 
 
 def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
@@ -185,6 +200,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "first_call_window_s": f"{cfg.agent.llm.first_call_network_window_s:.0f}",
         **robustness_summary(),
         **framework_scores(),
+        **build_record(),
         **naming.names(),
     }
 

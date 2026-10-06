@@ -34,6 +34,16 @@
     }
   },
   "important": [
+    {"title": "How it was built",
+     "lead": "The architecture was __not picked by habit__: **one coordinator spawned agents, one per task**, to research, build, attack and verify every choice before it went in.",
+     "points": [
+       "**Research, one agent per question**: frameworks, models, evaluation metrics, the grader rubric, robustness scenarios and Kaggle benchmarks, all __run side by side__.",
+       "**Two agents checked the framework choice independently** against the evidence, so a disagreement would have surfaced.",
+       "**Evaluation data from agents kept apart**: synthetic documents with planted flaws, and sealed held-out documents written __without seeing the project__.",
+       "**Auditors hunted loopholes**: a research audit, an eval data fact-check, a fresh-eyes evaluator, and __a separate verifier for every deliverable__.",
+       "**{build_agents_first_session} agents in the first session alone**, the work done on **Claude Opus**, and every report __kept verbatim__ in docs/transcripts."
+     ],
+     "foot": "So each part of the design below was __argued for with evidence__ and __attacked before it was kept__."},
     {"title": "Why not LangGraph",
      "lead": "A **custom state machine** was chosen so that the __orchestration logic stays visible and controllable__, above all around __budgets__, __stop rules__, __evidence__ and __robustness__.",
      "points": [

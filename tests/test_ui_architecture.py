@@ -142,6 +142,9 @@ def test_the_framework_scores_come_from_the_decision_matrix(tmp_path: Path) -> N
     assert list(scores.values()) == [int(c.strip(" *")) for c in row.strip(" |").split("|")[1:]]
     assert len(scores) == len(architecture.FRAMEWORK_KEYS)
     assert architecture.framework_scores(tmp_path)["score_langgraph"] == "not recorded"
+    rows = [ln for ln in (REPO / architecture.TRANSCRIPTS_README).read_text().splitlines() if ln.startswith("| agent-")]
+    assert architecture.build_record(REPO)["build_agents_first_session"] == len(rows) > 0
+    assert architecture.build_record(tmp_path)["build_agents_first_session"] == "not recorded"
 
 
 # ------------------------------------------------------------------ the static files keep the page's rules
@@ -239,10 +242,10 @@ def test_the_important_points_follow_the_diagram_and_the_matrix_opens_in_a_new_t
     link = pg.locator(".ai-card a.arch-out")
     assert link.count() == 1 and link.get_attribute("target") == "_blank" and "noopener" in link.get_attribute("rel")
     assert link.get_attribute("href").endswith("research/frameworks#weighted-decision-matrix")
-    pg.locator(".ai-toggle").nth(2).click()
+    pg.locator(".ai-toggle").nth(3).click()
     layers = pg.locator(".ai-card .ai-layers .ab-title").all_inner_texts()
     assert layers == view["facts"]["tool_layers"]
-    pg.locator(".ai-toggle").nth(1).click()
+    pg.locator(".ai-toggle").nth(2).click()
     pg.locator('.ai-card .arch-box[data-topic="llm-gateway"]').first.click()
     pg.wait_for_selector("#arch-panel:not([hidden])")
     assert pg.locator("#ap-title").inner_text() == view["topics"]["llm-gateway"]["title"]
