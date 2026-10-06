@@ -322,13 +322,14 @@ function archSeeLink(label, stage) {
   a.textContent = label + "\u00a0→";   // the arrow never wraps onto a line of its own
   return a;
 }
-// [words](tip:key): the words show the tip ARCH.data.tips[key] on hover or keyboard focus.
+// [words](tip:key): the words (which may be marked up), then a "?", show the tip ARCH.data.tips[key] on hover or keyboard focus.
 function archTip(label, key) {
   const T = (ARCH.data.tips || {})[key];
   if (!T) return label;
   const id = "arch-tip-" + key;
   return h("span", { class: "arch-tip", tabindex: "0", "aria-describedby": id,
-    onmouseenter: (ev) => archPlaceTip(ev.currentTarget), onfocus: (ev) => archPlaceTip(ev.currentTarget) }, label,
+    onmouseenter: (ev) => archPlaceTip(ev.currentTarget), onfocus: (ev) => archPlaceTip(ev.currentTarget) }, archInline(label),
+    h("span", { class: "arch-tipq", "aria-hidden": "true", text: "?" }),
     h("span", { class: "arch-tipbox", role: "tooltip", id },
       T.head ? h("span", { class: "atb-head", text: T.head }) : null,
       h("span", { class: "atb-items" }, (T.items || []).map((t) => h("span", { class: "atb-item", text: t }))),

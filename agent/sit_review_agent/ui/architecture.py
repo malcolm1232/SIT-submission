@@ -143,6 +143,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "fuzzy_threshold": f"{rules.fuzzy_threshold:.2f}",
         "min_quote_tokens": rules.min_quote_tokens,
         "invariant_count": len(INVARIANTS),
+        "invariants": list(INVARIANTS),
         "deadline_s": sr.deadline_seconds,
         "demo_deadline_s": dr.deadline_seconds,
         "demo_stage_1_end": dr.stage_limits_s.stage_1_end,
@@ -194,11 +195,15 @@ def view(cfg: Any, demo: Any | None = None, *, path: Path = CONTENT) -> dict[str
     values = facts(cfg, demo)
     content = load_content(path)
     out = _fill(content, values)
-    # the stop-rules tip lists the active rules only, in the order they are configured
+    # the stop-rules tip lists the active rules only, in the order they are configured; the invariants tip lists the
+    # checks the report phase runs, in its order
     for tip in out.get("tips", {}).values():
         if "by_rule" in tip:
             by_rule = tip.pop("by_rule")
             tip["items"] = [by_rule[r] for r in values["stop_rules_active"] if r in by_rule]
+        if "by_invariant" in tip:
+            by_inv = tip.pop("by_invariant")
+            tip["items"] = [by_inv[i] for i in values["invariants"]]
     out["facts"] = values
     return out
 

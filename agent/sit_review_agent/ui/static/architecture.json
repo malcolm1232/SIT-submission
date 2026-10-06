@@ -16,6 +16,21 @@
         "deadline": "Deadline: {report_reserve_s} s before the run's deadline, so verify and report still fit."
       },
       "foot": "Research also ends after {max_research_iterations} iterations at most."
+    },
+    "invariants": {
+      "head": "The checks code runs on the review before report.json is written:",
+      "by_invariant": {
+        "03": "INV-03 Schema: the review matches the spec, with unique finding IDs and ranks.",
+        "04": "INV-04 Anchors: every quoted anchor resolves in the canonical text.",
+        "05": "INV-05 Citations: every cited evidence ID is in the ledger, and every URL in the report is allowed.",
+        "06": "INV-06 Recommendations: each has an issue, rationale, benefit, change and supporting evidence.",
+        "07": "INV-07 Degradations: every degradation is disclosed by a limitation, and every limitation cites one.",
+        "08": "INV-08 Secrets: no canary secret appears in any file of the run.",
+        "09": "INV-09 Manifest: the run manifest is complete: git SHA, hashes, models and tools.",
+        "10": "INV-10 Registry: the decision registry hash never changes, and every cited decision exists.",
+        "12": "INV-12 Finding IDs: every finding ID the review cites is one of its findings.",
+        "13": "INV-13 Re-assessment: in a re-assessment, every previous finding has exactly one status."
+      }
     }
   },
   "topics": {
@@ -406,12 +421,12 @@
       "kind": "one model call, then code",
       "stages": ["report"],
       "simple": {
-        "lead": "Report is one model call that returns only the verdict; code assembles the rest of the review.",
+        "lead": "**Report** is __one model__ call that __returns only the verdict__; code assembles the rest of the review.",
         "points": [
-          "The model may say fit, fit with conditions or not fit; only code can say not assessed, with the reason.",
-          "Code runs {invariant_count} invariant checks before report.json is written: anchors resolve, citations are in the ledger, degradations are disclosed.",
-          "The limitations are written by code from the degradations, never by the model.",
-          "report.md is rendered from report.json with a template, so the file and this page cannot disagree."
+          "The model may **say fit**, **fit with conditions** or **not fit**; only code can say not assessed, with the reason.",
+          "[**Code runs** __{invariant_count} invariant checks__](tip:invariants) before __report.json is written__: __anchors resolve__, __citations__ are in the ledger, degradations are disclosed.",
+          "The **limitations** are __written by code__ from the degradations, never by the model.",
+          "**report.md** is __rendered__ from __report.json__ with a template, so the file and this page cannot disagree."
         ]
       },
       "advanced": [
