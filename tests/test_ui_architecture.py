@@ -221,12 +221,28 @@ def test_the_important_points_follow_the_diagram_and_the_matrix_opens_in_a_new_t
     pg, base = page
     pg.goto(base + "/?page=architecture")
     pg.wait_for_selector(".arch-important .ai-card")
-    assert pg.locator(".ai-card h3").all_inner_texts() == [c["title"] for c in view["important"]]
+    titles = [c["title"] for c in view["important"]]
+    assert pg.locator(".ai-card .ai-toggle").all_inner_texts() == titles
+    # an accordion: all closed, a title opens its card, Next opens the next one and closes it, Previous goes back
+    opened = lambda: pg.locator(".ai-card .ai-body").evaluate_all("(els) => els.map((e) => !e.hidden)")  # noqa: E731
+    assert opened() == [False] * len(titles)
+    pg.locator(".ai-toggle").first.click()
+    assert opened() == [True] + [False] * (len(titles) - 1)
+    pg.locator(".ai-card.open .ai-next").click()
+    assert opened() == [False, True] + [False] * (len(titles) - 2)
+    assert pg.evaluate("document.activeElement.id") == "ai-toggle-1"
+    pg.locator(".ai-card.open .ai-prev").click()
+    assert opened()[0] and sum(opened()) == 1
+    pg.locator(".ai-toggle").first.click()
+    assert not any(opened())
+    pg.locator(".ai-toggle").first.click()
     link = pg.locator(".ai-card a.arch-out")
     assert link.count() == 1 and link.get_attribute("target") == "_blank" and "noopener" in link.get_attribute("rel")
     assert link.get_attribute("href").endswith("research/frameworks#weighted-decision-matrix")
+    pg.locator(".ai-toggle").nth(2).click()
     layers = pg.locator(".ai-card .ai-layers .ab-title").all_inner_texts()
     assert layers == view["facts"]["tool_layers"]
+    pg.locator(".ai-toggle").nth(1).click()
     pg.locator('.ai-card .arch-box[data-topic="llm-gateway"]').first.click()
     pg.wait_for_selector("#arch-panel:not([hidden])")
     assert pg.locator("#ap-title").inner_text() == view["topics"]["llm-gateway"]["title"]

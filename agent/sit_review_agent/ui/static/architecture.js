@@ -182,18 +182,44 @@ function archDiagram(root) {
 }
 
 // The Important points under the diagram: one card per point, marked up like a panel, with an optional small
-// diagram drawn from its steps.
+// diagram drawn from its steps. The cards are an accordion: all closed at first, at most one open; its title
+// toggles it, and Previous and Next inside open the card before or after it and close this one.
 function archImportant(root) {
   const cards = ARCH.data.important || [];
   if (!cards.length) return;
+  const last = cards.length - 1;
+  const step = (i, label, cls) => h("button", { class: "btn " + cls, type: "button", onclick: () => archImpOpen(i, true) },
+    label + ": " + cards[i].title);
   root.append(h("section", { class: "arch-important", "aria-labelledby": "ai-title" },
     h("h2", { class: "ai-title", id: "ai-title", text: "Important points" }),
-    cards.map((c) => h("article", { class: "ai-card" },
-      h("h3", { text: c.title }),
-      h("p", { class: "ai-lead" }, archInline(c.lead)),
-      c.diagram ? h("div", { class: "ai-diagram" }, archSteps(c.diagram)) : null,
-      c.points ? h("ul", { class: "ai-points" + (c.columns ? " cols" : "") }, c.points.map(archPoint)) : null,
-      c.foot ? h("p", { class: "ai-foot" }, archInline(c.foot)) : null))));
+    cards.map((c, i) => h("article", { class: "ai-card" },
+      h("h3", { class: "ai-head" },
+        h("button", { class: "ai-toggle", type: "button", id: "ai-toggle-" + i, "aria-expanded": "false", "aria-controls": "ai-body-" + i,
+          onclick: (ev) => archImpOpen(ev.currentTarget.getAttribute("aria-expanded") === "true" ? null : i, false) },
+          h("span", { class: "ai-chev", "aria-hidden": "true" }), h("span", { text: c.title }))),
+      h("div", { class: "ai-body", id: "ai-body-" + i, role: "region", "aria-labelledby": "ai-toggle-" + i, hidden: true },
+        h("p", { class: "ai-lead" }, archInline(c.lead)),
+        c.diagram ? h("div", { class: "ai-diagram" }, archSteps(c.diagram)) : null,
+        c.points ? h("ul", { class: "ai-points" + (c.columns ? " cols" : "") }, c.points.map(archPoint)) : null,
+        c.foot ? h("p", { class: "ai-foot" }, archInline(c.foot)) : null,
+        h("div", { class: "ai-nav" },
+          i > 0 ? step(i - 1, "Previous", "quiet ai-prev") : h("span"),
+          i < last ? step(i + 1, "Next", "ai-next") : null))))));
+}
+// Open card i (null closes them all) and close every other; from Previous or Next, the opened card's title takes the
+// focus and is scrolled into view, so the reader stays at the top of what they asked for.
+function archImpOpen(i, moved) {
+  document.querySelectorAll(".ai-card").forEach((card, k) => {
+    const open = k === i;
+    card.classList.toggle("open", open);
+    card.querySelector(".ai-toggle").setAttribute("aria-expanded", String(open));
+    card.querySelector(".ai-body").hidden = !open;
+  });
+  if (moved && i !== null) {
+    const t = document.getElementById("ai-toggle-" + i);
+    t.focus({ preventScroll: true });
+    t.scrollIntoView({ block: "nearest" });
+  }
 }
 // A column of steps with an arrow between each two. A step is a box (a button when it names a topic), two lanes
 // side by side ({split}), the layers a fact lists ({layers}, e.g. the tool gateway's, outermost first) or chips.
