@@ -125,6 +125,101 @@ def test_inv05_quote_urls_must_match_their_excerpt_in_exact_case(
         f"URL/DOI in report text not in the ledger: {bad}"]
 
 
+def test_inv05_quote_that_ends_inside_a_document_url_is_backed_by_the_document(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """E1: an anchor quote, or a doc quote whose ledger excerpt is that same cut text (the model's
+    anchor quote), that ends partway through a URL of the document is a contiguous run of the
+    document text, so INV-05 does not scan it; the same quote fails when the document lacks the URL."""
+    passage = f"Weekly counts are published at {DOC_URL} for planning."
+    cut = passage[: passage.index("/stats") + 4]                         # ends inside DOC_URL
+    pages = booking_pages + f"\n{passage}\n"
+    anchor = copy.deepcopy(review_dict)
+    anchor["findings"][0]["doc_anchors"][0]["quote"] = cut
+    assert inv.check_INV_05(anchor, texts={"DOC-booking-v1": pages}).problems == []
+    cited = copy.deepcopy(review_dict)
+    ledger = next(e for e in cited["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] = cut
+    cite = next(e for f in cited["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004")
+    cite["quote"] = cut
+    assert inv.check_INV_05(cited, texts={"DOC-booking-v1": pages}).problems == []
+    for r in (anchor, cited):
+        assert inv.check_INV_05(r, texts={"DOC-booking-v1": booking_pages}).problems == [
+            f"URL/DOI in report text not in the ledger: {cut[cut.index('https'):]}"]
+    moved = copy.deepcopy(anchor)                                       # not a run of the document text
+    moved["findings"][0]["doc_anchors"][0]["quote"] = cut.replace("Weekly", "Monthly")
+    assert inv.check_INV_05(moved, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {cut[cut.index('https'):]}"]
+
+
+#: DOC_URL as a PDF extraction can break it across two lines: at a slash, inside a hyphen of the
+#: URL, and with a break hyphen the extraction added inside a word.
+BROKEN_DOC_URLS = ["https://rooms.campus.example/stats/\npeak-weeks", "https://rooms.campus.example/stats/peak-\nweeks",
+                   "https://rooms.campus.example/sta-\nts/peak-weeks"]
+
+
+@pytest.mark.parametrize("broken", BROKEN_DOC_URLS, ids=["slash", "url-hyphen", "break-hyphen"])
+def test_inv05_url_the_document_breaks_across_lines_is_backed(review_dict: dict[str, Any], booking_pages: str,
+                                                               broken: str) -> None:
+    """E2: a URL of the document broken across two lines (a line break, with or without a break
+    hyphen) is ledger-backed in its joined form, so a finding that cites the whole URL passes; a URL
+    the document does not hold, joined or not, still fails."""
+    pages = booking_pages + f"\nWeekly counts are published at {broken} for planning.\n"
+    assert DOC_URL in inv.allowed_urls([], [pages])
+    r = copy.deepcopy(review_dict)
+    r["findings"][0]["statement"] += f" The usage page is {DOC_URL}."
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == []
+    other = copy.deepcopy(review_dict)
+    other["findings"][0]["statement"] += " The usage page is https://rooms.campus.example/stats/peak-days."
+    assert inv.check_INV_05(other, texts={"DOC-booking-v1": pages}).problems == [
+        "URL/DOI in report text not in the ledger: https://rooms.campus.example/stats/peak-days."]
+
+
+@pytest.mark.parametrize("second", ["https://b.example/y", "HTTP://b.example/y", "10.1234/abcd"])
+def test_inv05_two_document_urls_on_adjacent_lines_never_join_into_a_third(
+        review_dict: dict[str, Any], booking_pages: str, second: str) -> None:
+    """E2 guard: a URL at a line end followed by a line that starts with another URL or DOI is two
+    links, never one broken link; their concatenation is a URL the document does not hold, so a
+    finding that cites it fails INV-05 (and the report redacts it), while each URL stays backed."""
+    first = "https://a.example/x"
+    pages = booking_pages + f"\nSources: {first}\n{second} for planning.\n"
+    allowed = inv.allowed_urls([], [pages])
+    assert {first, second} <= allowed and f"{first}{second}" not in allowed
+    r = copy.deepcopy(review_dict)
+    r["findings"][0]["statement"] += f" Counts are at {first}{second} weekly."
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {first}{second}"]
+
+
+def test_report_redaction_covers_a_url_inside_a_quote_inv05_does_not_exempt(
+        review_dict: dict[str, Any], booking_pages: str) -> None:
+    """E3: a doc quote that occurs in its excerpt only after case folding carries a URL the document
+    does not have (path case changed); INV-05 does not exempt it, so the report's redaction rewrites
+    that URL as it would outside a quote, and INV-05 passes on the redacted review. A quote INV-05
+    has verified (cut inside a backed document URL) stays exactly as it was."""
+    from sit_review_agent.phases.report import LINK_REMOVED, _redact
+
+    pages = booking_pages + f"\nUsage figures: {DOC_URL}\n"
+    r = copy.deepcopy(review_dict)
+    ledger = next(e for e in r["evidence_ledger"] if e["evidence_id"] == "EV-004")
+    ledger["excerpt"] += f" Weekly counts are published at {DOC_URL} for planning."
+    cites = [e for f in r["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004"]
+    bad = DOC_URL.replace("/stats/", "/Stats/")
+    cites[0]["quote"] = f"Weekly counts are published at {bad} for planning."
+    cut = f"Weekly counts are published at {DOC_URL[: DOC_URL.index('/stats') + 4]}"
+    r["findings"][0]["evidence"].append({**cites[0], "quote": cut})
+    assert inv.check_INV_05(r, texts={"DOC-booking-v1": pages}).problems == [
+        f"URL/DOI in report text not in the ledger: {bad}"]
+    allowed = inv.allowed_urls(r["evidence_ledger"], [pages])
+    excerpts = {e["evidence_id"]: e["excerpt"] or "" for e in r["evidence_ledger"]}
+    counter = [0]
+    out = {k: (v if k in ("evidence_ledger", "metadata") else _redact(v, allowed, counter, excerpts, (pages,)))
+           for k, v in r.items()}
+    quotes = [e["quote"] for f in out["findings"] for e in f["evidence"] if e["evidence_id"] == "EV-004"]
+    assert f"Weekly counts are published at {LINK_REMOVED} for planning." in quotes and counter == [1]
+    assert cut in quotes                                                # verified: untouched
+    assert inv.check_INV_05(out, texts={"DOC-booking-v1": pages}).problems == []
+
+
 @pytest.mark.parametrize("scheme", ["HTTPS", "Http", "hTtP"])
 def test_inv05_finds_a_url_whose_scheme_is_not_lowercase(review_dict: dict[str, Any], booking_pages: str,
                                                         scheme: str) -> None:
