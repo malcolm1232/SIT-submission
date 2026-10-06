@@ -217,8 +217,9 @@ def test_a_document_excerpt_links_its_references_and_an_outside_one_keeps_its_ow
 
 def test_an_outside_sources_row_gives_its_title_and_its_address(tmp_path: Path) -> None:
     """A run with tools on (6 Oct 2026, the first one): an outside source's row in the Evidence tab gave only its
-    title, so the reader could not see where it came from. It gives the title, then the address as text, as the
-    source's entry does; a tool call's citation is shown whole in the same wrapping column."""
+    title, so the reader could not see where it came from. It gives the title and the host, a link to the address
+    (Malcolm, 6 Oct 2026: "outside links in evidence should be clickable"; tests/test_ui_outlinks.py); a tool call's
+    citation is the tool and its query in words, in the same wrapping column."""
     from test_ui_export_links import PAGES, _run
     call = 'mcp:mcp-internet-search/search_web?{"mode":"answer","query":"' + "pgvector hnsw filtering " * 6 + '"}'
     report = {"metadata": {"documents": [{"doc_id": "DOC-x", "role": "under_review", "title": "X",
@@ -235,10 +236,13 @@ def test_an_outside_sources_row_gives_its_title_and_its_address(tmp_path: Path) 
     frag = export.review_fragment(rd, pdf_href=None, view="evidence")
     rows = dict(re.findall(r'<tr class="ev-row"><td><a [^>]*href="#(EV-\d+)"[^>]*>.*?</a></td>(.*?)</tr>', frag))
     where = [re.findall(r"<td>(.*?)</td>", r)[1] for r in (rows["EV-001"], rows["EV-002"])]
-    assert text_of(where[0]) == "Token lifetimes https://learn.example.org/token-lifetimes"
-    assert 'class="x-muted x-url">https://learn.example.org/token-lifetimes<' in where[0]
-    assert "<a " not in where[0]                                     # an address a tool returned is not a link
-    assert text_of(where[1]) == call and 'class="x-ev-where x-muted"' in where[1]
+    assert text_of(where[0]) == "Token lifetimes \u00b7 learn.example.org"
+    assert 'href="https://learn.example.org/token-lifetimes" target="_blank"' in where[0]
+    assert 'title="https://learn.example.org/token-lifetimes"' in where[0]          # the whole address on hover
+    assert text_of(where[1]) == ("search_web on mcp-internet-search: \u201c" + ("pgvector hnsw filtering " * 6).strip()
+                                 + " \u201d (mode answer)")
+    assert 'class="x-ev-where"' in where[1] and "<a " not in where[1]
+
 
 def test_the_coverage_tab_says_what_the_grid_and_each_code_mean_from_their_sources(runs: Path) -> None:  # noqa: F811
     frag = export.review_fragment(runs / RUN, pdf_href=None, view="coverage")

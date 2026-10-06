@@ -1265,6 +1265,17 @@ function findingRecord(it) {
   return box;
 }
 
+// An outside source's address as the review's renderer draws it (ui/outlinks.py): only an absolute http(s) address with
+// a host is a link, opened in a new tab with no referrer; its host is the text and the whole address the tooltip.
+function webUrl(s) {
+  if (typeof s !== "string" || !/^https?:\/\//i.test(s) || /[\s\x00-\x1f\x7f]/.test(s)) return null;
+  try { const u = new URL(s); return (u.protocol === "http:" || u.protocol === "https:") && u.hostname ? s : null; } catch (e) { return null; }
+}
+function outLink(url) {
+  const host = new URL(url).hostname.replace(/^www\./, "");
+  return h("a", { class: "x-out", href: url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer", title: url, text: host + " \u2197" });
+}
+
 function rawRecord(rec) {
   return kvBlock(Object.entries(rec || {}).map(([k, v]) => [sentence(k), typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)]));
 }
@@ -1287,7 +1298,8 @@ const ITEM = {
       ["Status", words(it.status)], ["Answer", it.summary], ["Ledger entries it cites", ids(it.evidence_ids)]])) },
   skip: { meta: () => [], text: (it) => JSON.stringify(it.rec), detail: (it) => rawRecord(it.rec) },
   tool_call: { meta: (it) => [h("b", { class: "mono", text: it.rec.call_id }), it.rec.server || ""], text: (it) => (it.rec.tool_name || "") + " · " + words(it.rec.status) + " · " + (it.rec.started_at || "") },
-  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec) },
+  ledger: { meta: (it) => [h("b", { class: "mono", text: it.rec.evidence_id }), words(it.rec.source_type)], text: (it) => it.rec.title || it.rec.url_or_citation || "", detail: (it) => rawRecord(it.rec),
+    after: (it) => { const u = webUrl(it.rec.url_or_citation); return u ? h("p", { class: "sp-after" }, "Source: ", outLink(u)) : null; } },
   finding: {
     meta: (it, D, L) => [h("b", { class: "mono", text: it.id || it.local_id }),
       it.merged_id ? "numbered " + it.merged_id + " at the merge" : "", it.shard ? "shard " + (it.shard_index || "?") + "'s " + it.local_id : "", sevChip(it.rec || {}), groupedBy(L, "kind") ? null : kindChip((it.rec || {}).kind),
@@ -2273,7 +2285,7 @@ async function route() {
 }
 
 // The run model and its reducer, reachable by tests that feed a recorded stream through the page.
-window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf };
+window.SIT = { applyEvent, newRunModel, state: S, explainKeys, explainText, facts: Object.keys(FACTS), factText, explain: EXPLAIN, stageOf, webUrl, outLink };
 window.addEventListener("popstate", route);
 document.addEventListener("click", (e) => {
   const a = e.target.closest ? e.target.closest("a.x-pane-more") : null;

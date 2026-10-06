@@ -23,6 +23,7 @@ from html import escape
 from pathlib import Path
 from typing import Any
 
+from sit_review_agent.ui import outlinks
 from sit_review_agent.ui.rundata import SEVERITIES, count_lists
 from sit_review_agent.ui.xref import Index, term_text
 
@@ -303,12 +304,12 @@ def _ev_where(idx: Index, e: dict[str, Any], cite: str) -> str:
         href = idx.location(m.group(2), m.group(3), str(e.get("excerpt") or ""), d)
         loc = f"p.{m.group(2)} §{m.group(3)}"
         return idx.a(href, loc, "x-loc", "page/section", idx._loc_title(m.group(2), m.group(3))) if href else loc
-    # an outside source: its title, then its address as text (as its entry in the reference part says it; an address
-    # a tool returned is not made a link here); a tool call's citation, its ids linked. Both wrap in their column.
-    if re.match(r"https?://", cite):
-        title = str(e.get("title") or "")
-        return (f'<span class="x-ev-where">{f"{escape(title)} " if title else ""}'
-                f'<span class="x-muted x-url">{escape(cite)}</span></span>')
+    # an outside source: its title and host, a link to its address in a new tab (outlinks.source_link); a tool call's
+    # citation, the tool and its query in words; anything else as text, its ids linked. All wrap in their column.
+    if (url := outlinks.web_url(cite)) is not None:
+        return f'<span class="x-ev-where">{outlinks.source_link(url, e.get("title"))}</span>'
+    if (tool := outlinks.tool_citation(cite)) is not None:
+        return f'<span class="x-ev-where">{tool}</span>'
     return f'<span class="x-ev-where x-muted">{idx.link_ids(escape(cite))}</span>' if cite else ""
 
 

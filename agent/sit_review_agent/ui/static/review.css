@@ -367,6 +367,19 @@ pre.doc-text mark.x-hit { box-shadow: 0 0 0 2px var(--hit-ring); background: var
    so a long address never widens the register past its column */
 .ev-grid td:nth-child(3) .x-ev-where { display: block; min-width: 180px; max-width: 300px; white-space: normal;
   overflow-wrap: anywhere; }
-.ev-grid .x-ev-where .x-url { display: block; margin-top: 2px; font-size: 12px; line-height: 17px; }
 .ev-grid td:nth-child(4) { min-width: 280px; color: var(--fg-2); }
 .ev-grid td:nth-child(5) { min-width: 120px; }
+/* an outside source (ui/outlinks.py): its title and host, a link that opens in a new tab (the arrow says so); the
+   whole address is its tooltip, and a long title or address wraps where it must */
+:where(.rv) a.x-out { overflow-wrap: anywhere; }
+:where(.rv) a.x-out::after { content: "\2197"; font-size: 0.85em; margin-left: 2px; color: var(--fg-muted);
+  text-decoration: none; display: inline-block; }
+:where(.rv) a.x-out[data-host]::after { content: " \00b7 " attr(data-host) " \2197"; white-space: pre-wrap; }
+:where(.rv) .x-out-host { color: var(--fg-muted); display: inline-block; }   /* "· host" kept together, no underline */
+:where(.rv) .x-out-addr { font-family: var(--mono); font-size: 12px; }
+/* a tool call's citation: the tool, its server and its query in words, not an address */
+:where(.rv) .x-tool { overflow-wrap: anywhere; }
+:where(.rv) .x-tool-name { font-family: var(--mono); font-size: 12px; color: var(--fg); }
+:where(.rv) .x-tool-srv, :where(.rv) .x-tool-args { color: var(--fg-muted); }
+:where(.rv) .x-tool-args { font-size: 12px; }
+.ev-grid .x-ev-where .x-out, .ev-grid .x-ev-where .x-tool { font-size: 13px; line-height: 19px; }
