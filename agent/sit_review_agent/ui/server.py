@@ -371,6 +371,8 @@ def build_app(state: UIState) -> Starlette:
             redact = Redactor.from_env((state.auth_env, "ANTHROPIC_API_KEY"))
             info["console"]["lines"] = [redact.text(ln) for ln in info["console"]["lines"]]
         info["chat"] = chat.budget(rd)
+        # research's tool calls as recorded (the Run log's research row says what its stage panel lists)
+        info["research_calls"] = stages.research_calls(rd)
         return _json(info)
 
     async def run_events(request: Request) -> Response:

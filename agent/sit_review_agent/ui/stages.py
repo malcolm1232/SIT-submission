@@ -24,6 +24,7 @@ against the manifest's ``finding_ids.final`` and the run's own ``refined`` and `
 from __future__ import annotations
 
 import inspect
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -308,6 +309,67 @@ def view_plan(r: Reader) -> dict[str, Any]:
                  extra={"criteria": crit})
 
 
+#: The fields of a ``tools.jsonl`` record the panel reads: why a call did not run (never its result).
+_CALL_FIELDS = ("call_id", "status", "error_class", "error_message")
+#: A recorded call's status, in the order the panel groups them.
+CALL_STATUSES = ("ok", "error", "timeout", "blocked")
+CALL_GROUPS = {"ok": "ran", "error": "failed", "timeout": "timed out", "blocked": "blocked by the tool policy"}
+
+
+def _call_group(status: str) -> str:
+    return CALL_GROUPS.get(status, status.replace("_", " "))
+
+
+def _tool_log(rd: Path) -> dict[str, dict[str, Any]]:
+    """``tools.jsonl`` by call ID, each record cut to :data:`_CALL_FIELDS`."""
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        lines = (rd / "tools.jsonl").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return out
+    for line in lines:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict) and rec.get("call_id"):
+            out[str(rec["call_id"])] = {k: rec.get(k) for k in _CALL_FIELDS}
+    return out
+
+
+def recorded_calls(r: Reader, st: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The tool calls research recorded (``state.tool_calls`` of its checkpoint), each with ``reason``: why it did
+    not run or failed, from ``tools.jsonl`` (``error_message``), for a call that is not ``ok``."""
+    calls = [dict(c) for c in (st or {}).get("tool_calls") or [] if isinstance(c, dict)]
+    if any(c.get("status") != "ok" for c in calls):
+        log = _tool_log(r.rd)
+        if log and "tools.jsonl" not in r.files:
+            r.files.append("tools.jsonl")
+        for c in calls:
+            if c.get("status") != "ok":
+                c["reason"] = (log.get(str(c.get("call_id"))) or {}).get("error_message")
+    return calls
+
+
+def call_story(calls: list[dict[str, Any]]) -> dict[str, int]:
+    """How many calls research recorded and how many of them the tool policy blocked (status ``blocked``: never sent
+    to a server, so not counted against the tool-call budget, which is the ``tool_calls`` of research_stopped)."""
+    return {"recorded": len(calls), "blocked": sum(1 for c in calls if c.get("status") == "blocked")}
+
+
+def call_story_text(story: dict[str, int]) -> str:
+    """The calls in words, as the Run log's research row says them: "10 tool call(s), 1 blocked"."""
+    return f"{story['recorded']} tool call(s)" + (f", {story['blocked']} blocked" if story["blocked"] else "")
+
+
+def research_calls(run_dir: Path) -> dict[str, int] | None:
+    """:func:`call_story` of a run whose research has ended (its checkpoint, or ``state.json`` past research), for
+    the Run log's research row; ``None`` before then."""
+    r = Reader(run_dir)
+    st, _ = r.state_for("research", "")
+    return call_story(recorded_calls(r, st)) if st is not None else None
+
+
 def view_research(r: Reader) -> dict[str, Any]:
     st, src = r.state_for("research", "each research question's status, the tool calls and the stop reason")
     st = st or {}
@@ -325,7 +387,8 @@ def view_research(r: Reader) -> dict[str, Any]:
         if isinstance(ledger, list) else []
     if not isinstance(ledger, list):
         r.lack("ledger.json", "the evidence ledger, with the entries research created")
-    calls = [c for c in st.get("tool_calls") or [] if isinstance(c, dict)]
+    calls = recorded_calls(r, st)
+    story = call_story(calls)
     if off:
         status = ("skipped: no tool gateway in this run (--no-tools, or every server disabled), so no outside "
                   "question was researched")
@@ -341,22 +404,28 @@ def view_research(r: Reader) -> dict[str, Any]:
              _fact("stop reason recorded", f"{stop.get('code')} ({stop.get('detail')})" if stop else None, src),
              _fact("questions for an outside source", len(qs) if plan else stopped.get("questions"), src),
              _fact("answered", stopped.get("answered"), "progress.jsonl research_stopped"),
-             _fact("tool calls", len(calls) if st else stopped.get("tool_calls"), src),
+             _fact("tool calls", (f"{len(calls)}, {story['blocked']} blocked" if story["blocked"] else len(calls))
+                   if st else stopped.get("tool_calls"), src),
              _fact("ledger entries from outside sources", len(external) if isinstance(ledger, list) else None,
                    "ledger.json"),
              _fact("queries issued", st.get("queries_issued"), src)]
     order = ["left to the document", "answered", "partial", "conflicting", "unanswered", "open"]
+    call_items = [{"type": "tool_call", "key": str(c.get("call_id")), "group": str(c.get("status") or ""), "rec": c}
+                  for c in calls]
+    call_src = (f"{src} state.tool_calls" + (", tools.jsonl error_message" if any("reason" in c for c in calls)
+                                             else "")) if src else None
     lists = [
         _list("questions", "Questions for an outside source, by status" if not off else
               "Questions for an outside source, left to the document", qs,
               src=f"{src} state.plan.questions (needs_external)" if src else None, groups=_groups(qs, order),
               terms=["id-RQ", "q-external"], empty="The plan has no question for an outside source."),
-        _list("tool_calls", "Tool calls", [
-            {"type": "tool_call", "key": str(c.get("call_id")), "group": str(c.get("server") or ""), "rec": c}
-            for c in calls], src=f"{src} state.tool_calls" if src else None,
+        _list("tool_calls", "Tool calls", call_items, src=call_src, groups=_groups(call_items, list(CALL_STATUSES),
+                                                                                  label=_call_group),
             empty="None: no tool was called in this run." if st else "Not recorded.",
-            note="The run records each tool call with its server and status; it does not record which question a "
-                 "call served (research_log.tool_calls has no question ID)." if calls else None),
+            note=("The run records each tool call with its server and status; it does not record which question a "
+                  "call served (research_log.tool_calls has no question ID)."
+                  + (" A blocked call was refused by the tool policy before it reached a server; it does not count "
+                     "against the tool-call budget." if story["blocked"] else "")) if calls else None),
         _list("ledger", "Ledger entries from outside sources", [
             {"type": "ledger", "key": str(e.get("evidence_id")), "group": "", "rec": e} for e in external],
             src="ledger.json (source_type external)", terms=["id-EV"],

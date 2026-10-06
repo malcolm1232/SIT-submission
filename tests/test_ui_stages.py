@@ -304,6 +304,53 @@ def test_the_routes_serve_the_views_and_never_error(client: TestClient, run: Pat
         assert r.status_code == 200 and r.json()["unreadable"].startswith("AttributeError"), (path, r.text)
 
 
+def _blocked_research(run: Path) -> None:
+    """Research's checkpoint with three recorded calls, one blocked by the URL policy, as ui-261005-170012-2648 had
+    (its research_stopped said 9 tool calls, the budget's count, while the panel listed 10)."""
+    cp = run / "checkpoints" / "04-research.json"
+    doc = json.loads(cp.read_text())
+    doc["state"]["tool_calls"] = [
+        {"call_id": "call-0001", "server": "mcp-internet-search", "tool_name": "search_web", "status": "ok",
+         "started_at": "2026-10-05T17:02:25Z"},
+        {"call_id": "call-0002", "server": "mcp-internet-search", "tool_name": "fetch_url", "status": "blocked",
+         "started_at": "2026-10-05T17:02:47Z"},
+        {"call_id": "call-0003", "server": "mcp-internet-search", "tool_name": "fetch_url", "status": "ok",
+         "started_at": "2026-10-05T17:02:47Z"}]
+    cp.write_text(json.dumps(doc))
+    (run / "tools.jsonl").write_text("".join(json.dumps(r) + "\n" for r in (
+        {"call_id": "call-0001", "status": "ok", "error_class": None, "error_message": None, "text": "result text"},
+        {"call_id": "call-0002", "status": "blocked", "error_class": "blocked",
+         "error_message": "URL policy: URL did not appear in an earlier tool result or in the document", "text": ""},
+        {"call_id": "call-0003", "status": "ok", "error_class": None, "error_message": None, "text": "page text"})))
+
+
+def test_the_research_row_and_its_panel_count_the_same_recorded_calls(client: TestClient, run: Path) -> None:
+    """The panel lists every call research recorded, the blocked one with the policy's reason from tools.jsonl, and
+    says the count the run's info gives the Run log's research row ("3 tool call(s), 1 blocked")."""
+    _blocked_research(run)
+    view = client.get(f"/runs/{RUN}/stage/research").json()
+    calls = _list(view, "tool_calls")
+    assert calls["count"] == 3
+    assert [(g["key"], g["label"], g["count"]) for g in calls["groups"]] == [
+        ("ok", "ran", 2), ("blocked", "blocked by the tool policy", 1)]
+    blocked = next(i["rec"] for i in calls["items"] if i["group"] == "blocked")
+    assert blocked["reason"] == "URL policy: URL did not appear in an earlier tool result or in the document"
+    assert all("reason" not in i["rec"] for i in calls["items"] if i["group"] == "ok")
+    assert "text" not in json.dumps(calls["items"])                       # a call's result is never read here
+    assert next(f["value"] for f in view["facts"] if f["label"] == "tool calls") == "3, 1 blocked"
+    assert "tools.jsonl" in view["files"]
+    info = client.get(f"/runs/{RUN}").json()
+    assert info["research_calls"] == {"recorded": 3, "blocked": 1}
+    assert stages.call_story_text(info["research_calls"]) == "3 tool call(s), 1 blocked"
+    assert stages.call_story_text({"recorded": 4, "blocked": 0}) == "4 tool call(s)"
+
+
+def test_a_run_before_its_research_ended_has_no_recorded_calls(tmp_path: Path) -> None:
+    rd = tmp_path / "r"
+    rd.mkdir()
+    assert stages.research_calls(rd) is None
+
+
 def test_the_glossary_is_the_export_vocabulary_with_the_run_log_words(client: TestClient, run: Path) -> None:
     terms = client.get(f"/runs/{RUN}/glossary").json()["terms"]
     for key in ("kind-strength", "kind-risk", "kind-gap", "kind-ambiguity", "kind-validation_need", "sev-critical",
