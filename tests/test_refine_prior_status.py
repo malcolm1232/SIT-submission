@@ -58,14 +58,16 @@ def previous_run(tmp_path: Path) -> Path:
 
 
 async def delta_many(tmp_path: Path, cfg: EffectiveConfig, refine: list[FakeResponse], *,
-                     reassessment: Callable[[int], dict[str, Any] | None] = lambda i: None) -> RunContext:
-    """55 merged findings of a re-review (first 20 high, the rest medium) and the scripted refine calls."""
+                     reassessment: Callable[[int], dict[str, Any] | None] = lambda i: None,
+                     criterion: Callable[[int], int] = lambda i: 0) -> RunContext:
+    """55 merged findings of a re-review (first 20 high, the rest medium) and the scripted refine calls;
+    finding ``i`` cites the configured criterion at index ``criterion(i)``."""
     c1 = one_shard(cfg)
-    crit = c1.criteria.ids()[0]
+    crits = c1.criteria.ids()
     findings = []
     for i in range(1, N + 1):
         f = shard_finding(f"F-{i}", i, Q_LOAD if i % 2 else Q_NOTIFY, 6 if i % 2 else 11, "4.1" if i % 2 else "6.2",
-                          crit, n=i, title=f"Issue {i}", severity="high" if i <= 20 else "medium")
+                          crits[criterion(i)], n=i, title=f"Issue {i}", severity="high" if i <= 20 else "medium")
         r = reassessment(i)
         if r is not None:
             f["reassessment"] = r
@@ -180,3 +182,75 @@ async def test_a_set_that_breaks_a_rule_with_statuses_missing_is_asked_again_who
     [retry] = [e for e in ctx.progress.records if e.event == "call_retry"]
     assert "kept" not in retry.fields and "statuses" not in retry.fields
     assert sorted(p.prior_finding_id for p in ctx.state.prior_statuses) == PRIOR
+
+
+#: Fallback fixture: FND-001 (resolved) and FND-003 (still_open) carry PRIOR[0]; FND-005 carries
+#: PRIOR[1]; FND-007 names PRIOR[0] but is new_in_update (carries nothing). FND-001 cites the second
+#: configured criterion, every other finding the first.
+CARRY = {1: (PRIOR[0], "resolved"), 3: (PRIOR[0], "still_open"), 5: (PRIOR[1], "partially_addressed"),
+         7: (PRIOR[0], "new_in_update")}
+
+
+def carry(i: int) -> dict[str, Any] | None:
+    return {"prior_finding_id": CARRY[i][0], "status": CARRY[i][1], "note": f"note {i}"} if i in CARRY else None
+
+
+async def fallback_with_same_prior(tmp_path: Path, cfg: EffectiveConfig) -> tuple[RunContext, list[Any]]:
+    """A refine answer that fails every attempt (no revision at all, twice): the fallback branch."""
+    unusable = {"revisions": [], "prior_statuses": []}
+    ctx = await delta_many(tmp_path, cfg, [FakeResponse(parsed=unusable), FakeResponse(parsed=unusable)],
+                           reassessment=carry, criterion=lambda i: 1 if i == 1 else 0)
+    before = [d.model_copy(deep=True) for d in ctx.state.finding_drafts]
+    assert len({c for d in before for c in d.criterion_ids}) == 2                  # two distinct criteria in play
+    await RefinePhase().run(ctx)
+    [fb] = [r for r in ctx.progress.records if r.event == "refine_fallback"]
+    assert fb.fields["invalid"] is True and fb.fields["merged_same_prior"] == 1
+    return ctx, before
+
+
+async def test_the_fallback_merges_drafts_that_carry_the_same_prior_id(tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ctx, before = await fallback_with_same_prior(tmp_path, cfg)
+    s = ctx.state
+    got = {f.id: f for f in s.finding_drafts}
+    # one carrier per prior ID; the least fixed one (still_open over resolved) is kept
+    carriers: dict[str, list[str]] = {}
+    for f in s.finding_drafts:
+        r = f.reassessment
+        if r is not None and r.prior_finding_id and r.status.value != "new_in_update":
+            carriers.setdefault(r.prior_finding_id, []).append(f.id)
+    assert carriers == {PRIOR[0]: [fid(3)], PRIOR[1]: [fid(5)]}
+    assert fid(1) not in got and got[fid(3)].reassessment.status.value == "still_open"   # type: ignore[union-attr]
+    # the removed draft's criterion moved to the keeper, without duplicates
+    removed = next(d for d in before if d.id == fid(1))
+    keeper_before = next(d for d in before if d.id == fid(3))
+    assert got[fid(3)].criterion_ids == [*keeper_before.criterion_ids, *removed.criterion_ids]
+    assert len(set(got[fid(3)].criterion_ids)) == len(got[fid(3)].criterion_ids) == 2
+    assert s.finding_meta[fid(3)].criterion_ids == got[fid(3)].criterion_ids
+    # ranks 1..k without a gap, in the merged order
+    assert [f.rank for f in s.finding_drafts] == list(range(1, N))
+    assert [f.id for f in s.finding_drafts] == [d.id for d in before if d.id != fid(1)]
+    # the ID map and the history
+    assert s.finding_ids.refine == {fid(1): fid(3)}
+    assert "merged into FND-003 by code" in s.finding_meta[fid(1)].history[-1].note
+    assert s.finding_meta[fid(3)].history[-1].note.startswith("FND-001 merged into this finding by code")
+    # coverage credits the moved criterion to the keeper and names no removed finding
+    rows = {r.criterion_id: r for r in s.coverage}
+    assert fid(3) in rows[removed.criterion_ids[0]].finding_ids
+    assert not [r for r in s.coverage if fid(1) in r.finding_ids]
+    # the delta table: one row for the prior, one successor, its reading unchanged (still_open)
+    table, _ = build_prior_table(prior_findings_of(s.previous_run_dir), s.finding_drafts,  # type: ignore[arg-type]
+                                 s.prior_statuses)
+    rows_for = [e for e in table if e.prior_id == PRIOR[0]]
+    assert len(rows_for) == 1 and rows_for[0].finding_ids == [fid(3)] and rows_for[0].status.value == "still_open"
+    assert [e.finding_ids for e in table if e.prior_id == PRIOR[1]] == [[fid(5)]]
+
+
+async def test_the_fallback_merge_leaves_drafts_without_a_carried_prior_untouched(
+        tmp_path: Path, cfg: EffectiveConfig) -> None:
+    ctx, before = await fallback_with_same_prior(tmp_path, cfg)
+    got = {f.id: f for f in ctx.state.finding_drafts}
+    untouched = [d for d in before if d.id not in (fid(1), fid(3))]
+    assert fid(7) in got and got[fid(7)].reassessment.status.value == "new_in_update"   # type: ignore[union-attr]
+    for d in untouched:                                     # every field but the re-derived rank is as merged
+        assert got[d.id].model_dump(exclude={"rank"}) == d.model_dump(exclude={"rank"}), d.id
+        assert not [h for h in ctx.state.finding_meta[d.id].history if "by code in the refine fallback" in h.note]

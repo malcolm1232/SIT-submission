@@ -434,22 +434,26 @@ async def test_report_writes_valid_review_and_passes_invariants(tmp_path: Path) 
 
 
 def test_redact_never_rewrites_a_verbatim_quote() -> None:
-    """Belt and braces for INV-04/05: even a URL outside ``allowed`` stays in an anchor quote and in a
-    doc or external quote that occurs in its ledger excerpt (they are checked against those texts);
-    a model-written quote (inference, or one not in its excerpt) and free text are redacted."""
+    """Belt and braces for INV-04/05: a URL outside ``allowed`` stays in an anchor quote, and a doc
+    quote INV-05 exempts (in its excerpt, every excerpt URL allowed; here one cut partway through
+    the URL) is never rewritten. A quote INV-05 does not exempt is redacted like free text (E3): one
+    in its excerpt whose excerpt URL is not allowed, a model-written one (inference, or one not in
+    its excerpt), and free text."""
     url = "https://rooms.campus.example/stats"
-    excerpts = {"EV-001": f"Counts at {url} weekly.", "EV-002": "Derived."}
+    excerpts = {"EV-001": f"Counts at {url} weekly.", "EV-002": "Derived.", "EV-003": f"Rooms at {url}/rooms."}
     body = {"doc_anchors": [{"doc_id": "DOC-a", "section_ref": "4.1", "quote": f"Counts at {url} weekly."}],
-            "evidence": [{"evidence_id": "EV-001", "source_type": "doc", "quote": f"counts at {url}"},
+            "evidence": [{"evidence_id": "EV-003", "source_type": "doc", "quote": f"rooms at {url}/roo"},
+                         {"evidence_id": "EV-001", "source_type": "doc", "quote": f"counts at {url}"},
                          {"evidence_id": "EV-001", "source_type": "external", "quote": f"Totals at {url}"},
                          {"evidence_id": "EV-002", "source_type": "inference", "quote": f"See {url}"}],
             "excerpt": f"x {url}", "statement": f"See {url}."}
     counter = [0]
-    out = _redact(body, set(), counter, excerpts)
+    out = _redact(body, {f"{url}/rooms"}, counter, excerpts)
     assert out["doc_anchors"][0]["quote"] == body["doc_anchors"][0]["quote"]
-    assert out["evidence"][0]["quote"] == f"counts at {url}" and out["excerpt"] == body["excerpt"]
-    assert [e["quote"] for e in out["evidence"][1:]] == [f"Totals at {LINK_REMOVED}", f"See {LINK_REMOVED}"]
-    assert out["statement"] == f"See {LINK_REMOVED}" and counter == [3]
+    assert out["evidence"][0]["quote"] == f"rooms at {url}/roo" and out["excerpt"] == body["excerpt"]
+    assert [e["quote"] for e in out["evidence"][1:]] == [
+        f"counts at {LINK_REMOVED}", f"Totals at {LINK_REMOVED}", f"See {LINK_REMOVED}"]
+    assert out["statement"] == f"See {LINK_REMOVED}" and counter == [4]
 
 
 async def test_report_falls_back_to_rule_verdict_after_two_refusals(tmp_path: Path) -> None:
