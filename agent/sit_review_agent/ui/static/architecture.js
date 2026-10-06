@@ -81,13 +81,16 @@ function archBtn(key, label, sub, cls) {
 }
 function archChip(key, label, extra) { return archBtn(key, label, null, "arch-chip" + (extra ? " " + extra : "")); }
 function down(label) { return h("div", { class: "arch-down", "aria-hidden": "true" }, label ? h("span", { text: label }) : null); }
+// An arrow that fills the rest of its lane, down to the box under the lanes.
+function feed(label) { return h("div", { class: "arch-down arch-feed", "aria-hidden": "true" }, h("span", { text: label })); }
 function right() { return h("span", { class: "arch-right", "aria-hidden": "true" }); }
 function group(cls, label, ...kids) { return h("div", { class: "arch-group " + cls }, label ? h("div", { class: "ag-label", text: label }) : null, ...kids); }
 
 function archDiagram(root) {
   const F = ARCH.data.facts;
   clear(root);
-  const shards = F.shards.map((s) => archChip("assess", s.name.split("_").join(" "), "shard"));
+  // The shards are plain labels under the Assess box, which is the one that opens their panel.
+  const shards = F.shards.map((s) => h("div", { class: "arch-chip shard" }, h("span", { class: "ab-title", text: s.name.split("_").join(" ") })));
   const layerTopic = { LoggingToolGateway: "tool-gateway", PolicyToolGateway: "policy", SelfReplayGateway: "checkpoints",
     FaultInjectingGateway: "faults", RecordingGateway: "tool-gateway" };
   // LoggingToolGateway -> "Logging", SelfReplayGateway -> "Self replay"; the class name stays in the chip's title
@@ -107,8 +110,8 @@ function archDiagram(root) {
       archBtn("user", "User", "the design document: PDF, text or Markdown", "arch-box tone-plain"), right(),
       archBtn("cli", "CLI", "dra review <pdf>, one command; this page runs the same", "arch-box tone-plain")),
     down(),
-    h("section", { class: "arch-agent", "aria-label": "The SIT agent" },
-      h("div", { class: "aa-label", text: "SIT agent" }),
+    h("section", { class: "arch-agent", "aria-label": "The " + F.agent_label },
+      h("div", { class: "aa-label", text: F.agent_label }),
       h("div", { class: "arch-row arch-control" },
         archBtn("orchestrator", "Orchestrator", "sets up the run, drives the stages, checkpoints, caps, exit codes", "arch-box tone-ink"), right(),
         archBtn("state-machine", "State machine", F.stage_order, "arch-box tone-ink")),
@@ -125,17 +128,25 @@ function archDiagram(root) {
             h("div", { class: "al-head", text: "Waits for " + F.research_waits_for }),
             group("tone-green arch-loop", null,
               archBtn("research", "Research", "reason, act, observe", "arch-box tone-green head"),
-              archBtn("research-reason", "Reason", "LLMGateway: what to look up, which tool, which query", "arch-box tone-green"),
-              h("div", { class: "arch-down small", "aria-hidden": "true" }),
-              archBtn("research-act", "Act", "ToolGateway: policy, then the MCP servers", "arch-box tone-green"),
-              h("div", { class: "arch-down small", "aria-hidden": "true" }),
-              archBtn("research-observe", "Observe", "results become EV-nnn ledger entries", "arch-box tone-green"),
+              // reason, act and observe, with the arrow from observe back up to reason drawn beside them
+              h("div", { class: "arch-cycle" },
+                archBtn("research-reason", "Reason", "LLMGateway: what to look up, which tool, which query", "arch-box tone-green"),
+                h("div", { class: "arch-down small", "aria-hidden": "true" }),
+                archBtn("research-act", "Act", "ToolGateway: policy, then the MCP servers", "arch-box tone-green"),
+                h("div", { class: "arch-down small", "aria-hidden": "true" }),
+                archBtn("research-observe", "Observe", "results become EV-(n) ledger entries", "arch-box tone-green")),
               h("div", { class: "arch-chips" }, archChip("state", "State"), archChip("evidence", "Evidence ledger")),
-              h("div", { class: "arch-loopnote", text: "repeat until done, or a limit hits" }))),
+              h("div", { class: "arch-loopnote", text: "repeat until done, or a limit hits" })),
+            feed("answers, evidence")),
           h("div", { class: "arch-lane" },
             h("div", { class: "al-head", text: "Start at once" }),
             archBtn("assess", "Assess", F.shard_count + " shards, one model call each", "arch-box tone-blue head"),
-            h("div", { class: "arch-shards" }, shards))),
+            h("div", { class: "arch-shards" }, shards),
+            // each shard reads its inputs from its own copy of the run state and writes its draft findings back
+            h("div", { class: "arch-twoway" }, h("span", { class: "arch-updown", "aria-hidden": "true" }),
+              h("span", { text: "reads the document and its criteria, writes draft findings" })),
+            archChip("state", "Isolated copy of the run state", "wide"),
+            feed("draft findings"))),
         archBtn("merge", "Merge", "code, when stage 1 closes: findings renumbered FND-nnn in shard order, ranked by severity", "arch-box tone-blue merge")),
       down("findings, registry, research answers, ledger"),
       h("div", { class: "arch-row arch-post" },
@@ -270,13 +281,74 @@ function archPaint() {
 
 function archSimple(c, T) {
   const S1 = T.simple;
-  c.append(h("p", { class: "arch-lead", text: S1.lead }));
-  if (S1.points && S1.points.length) c.append(h("ul", { class: "arch-points" }, S1.points.map((p) => h("li", { text: p }))));
+  c.append(h("p", { class: "arch-lead" }, archInline(S1.lead)));
+  if (S1.table) {
+    c.append(h("table", { class: "arch-table arch-simple-table" },
+      h("thead", {}, h("tr", {}, S1.table.cols.map((t) => h("th", { text: t })))),
+      h("tbody", {}, S1.table.rows.map((r) => h("tr", {}, r.map((cell) => h("td", {}, archInline(cell))))))));
+  }
+  if (S1.points && S1.points.length) c.append(h("ul", { class: "arch-points" }, S1.points.map(archPoint)));
+  if (S1.flow) c.append(h("div", { class: "arch-flow" }, h("span", { class: "ac-label", text: "Flow" }), h("span", {}, archInline(S1.flow))));
   if (S1.contrast) {
     c.append(h("div", { class: "arch-contrast" },
-      h("div", { class: "ac-row bad" }, h("span", { class: "ac-label", text: S1.contrast.bad_label || "Bad" }), h("span", { text: S1.contrast.bad })),
-      h("div", { class: "ac-row better" }, h("span", { class: "ac-label", text: S1.contrast.better_label || "Much better" }), h("span", { text: S1.contrast.better }))));
+      h("div", { class: "ac-row bad" }, h("span", { class: "ac-label", text: S1.contrast.bad_label || "Bad" }), h("span", {}, archInline(S1.contrast.bad))),
+      h("div", { class: "ac-row better" }, h("span", { class: "ac-label", text: S1.contrast.better_label || "Much better" }), h("span", {}, archInline(S1.contrast.better)))));
   }
+}
+
+// A point is a sentence, or { text, sub } with its examples as a nested list under it.
+function archPoint(p) {
+  if (typeof p === "string") return h("li", {}, archInline(p));
+  return h("li", {}, archInline(p.text), h("ul", { class: "arch-sub" }, (p.sub || []).map((q) => h("li", {}, archInline(q)))));
+}
+
+// The lead, a point, the flow or a contrast line may mark words **bold** or __underlined__, nested either way; the rest stays plain text.
+function archInline(text) {
+  return String(text).split(/(\*\*.+?\*\*|__.+?__|\[[^\]]+\]\((?:tip|run):\w+\))/).filter(Boolean).flatMap((part) => {
+    const tip = /^\[(?<label>[^\]]+)\]\(tip:(?<key>\w+)\)$/.exec(part);
+    if (tip) return [archTip(tip.groups.label, tip.groups.key)];
+    const run = /^\[(?<label>[^\]]+)\]\(run:(?<stage>\w+)\)$/.exec(part);
+    if (run) return [archSeeLink(run.groups.label, run.groups.stage)];
+    const m = /^(?<mark>\*\*|__)(?<body>.+)\k<mark>$/.exec(part);
+    return m ? [h(m.groups.mark === "**" ? "strong" : "u", {}, archInline(m.groups.body))] : archNoBreak(part);
+  });
+}
+// [words](run:stage): the words open that stage's panel on the Run log of the run the page reads its values from
+// (ARCH.run, the same link as "Open this stage in the run log"); with no finished run they stay plain words.
+function archSeeLink(label, stage) {
+  if (!ARCH.run) return label;
+  const a = archRunLink(stage);
+  a.className = "arch-see";
+  a.textContent = label + "\u00a0→";   // the arrow never wraps onto a line of its own
+  return a;
+}
+// [words](tip:key): the words show the tip ARCH.data.tips[key] on hover or keyboard focus.
+function archTip(label, key) {
+  const T = (ARCH.data.tips || {})[key];
+  if (!T) return label;
+  const id = "arch-tip-" + key;
+  return h("span", { class: "arch-tip", tabindex: "0", "aria-describedby": id,
+    onmouseenter: (ev) => archPlaceTip(ev.currentTarget), onfocus: (ev) => archPlaceTip(ev.currentTarget) }, label,
+    h("span", { class: "arch-tipbox", role: "tooltip", id },
+      T.head ? h("span", { class: "atb-head", text: T.head }) : null,
+      h("span", { class: "atb-items" }, (T.items || []).map((t) => h("span", { class: "atb-item", text: t }))),
+      T.foot ? h("span", { class: "atb-foot", text: T.foot }) : null));
+}
+// The tip is fixed to the viewport (the panel's scroll box would clip it): under the term's line, as wide as its
+// point, or above the line when the space below is too small.
+function archPlaceTip(term) {
+  const box = term.querySelector(".arch-tipbox");
+  const line = term.closest("li") || term;
+  const r = line.getBoundingClientRect(), t = term.getBoundingClientRect();
+  box.style.left = r.left + "px";
+  box.style.width = r.width + "px";
+  box.classList.remove("up");
+  box.style.top = t.bottom + "px";
+  if (t.bottom + box.offsetHeight > window.innerHeight) { box.classList.add("up"); box.style.top = t.top - box.offsetHeight + "px"; }
+}
+// A hyphenated name (mcp-internet-search, EV-(n)) never breaks across lines at its hyphens.
+function archNoBreak(text) {
+  return text.split(/(\w+(?:-[\w()]+)+)/).filter(Boolean).map((t) => (/-/.test(t) && /^\w/.test(t) ? h("span", { class: "nobr", text: t }) : t));
 }
 
 // A snake_case name may wrap after an underscore (a zero-width space), never inside a word.

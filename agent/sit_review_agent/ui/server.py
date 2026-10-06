@@ -76,7 +76,7 @@ from starlette.staticfiles import StaticFiles
 from sit_review_agent import __version__
 from sit_review_agent.config import UrlPolicy
 from sit_review_agent.errors import ExitCode
-from sit_review_agent.ui import chat, events, export, fetch, mail, rundata, share, stages
+from sit_review_agent.ui import chat, events, export, fetch, mail, naming, rundata, share, stages
 from sit_review_agent.ui.launcher import DOC_SUFFIXES, Launcher, LaunchSpec, new_run_id, safe_name
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -216,7 +216,7 @@ def build_app(state: UIState) -> Starlette:
         return _json(state.architecture)
 
     async def meta(request: Request) -> Response:
-        return _json({"profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
+        return _json({"names": naming.names(), "profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
                       "launch_note": state.launch_note, "commit": state.commit, "version": state.version,
                       "backend": state.backend, "model": state.model, "config_files": list(state.config_files),
                       "auth_env": state.auth_env, "bind_host": state.bind_host, "port": state.port,

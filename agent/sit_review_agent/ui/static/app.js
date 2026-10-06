@@ -131,6 +131,10 @@ function renderRailTools() {
 
 function renderTopbar() {
   const meta = S.meta;
+  if (meta.names) {   // the agent's display name (ui/naming.py): the tab title and the rail brand
+    document.title = meta.names.brand;
+    document.querySelector(".navrail-brand .word").textContent = meta.names.brand;
+  }
   const pill = $("top-edition");
   pill.classList.toggle("off", meta.backend !== "claude_code");
   $("top-edition-text").textContent = meta.backend === "claude_code" ? "local · your subscription · no API key" : (meta.backend ? "local · " + words(meta.backend) : "local");

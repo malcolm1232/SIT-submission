@@ -95,6 +95,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
     from sit_review_agent.states import PHASE_ORDER, STAGE_1_DEPENDS, STAGE_MEMBERS, STAGE_ORDER, Stage
     from sit_review_agent.tools.gateway import PolicyToolGateway
     from sit_review_agent.ui.stages import INVARIANTS
+    from sit_review_agent.ui import naming
 
     demo = demo or cfg
     criteria = [c.id for c in cfg.criteria.criteria]
@@ -118,6 +119,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "research_waits_for": _join(waits["research"]),
         "backends": backends,
         "backend_list": _join(backends, "or"),
+        "backend_list_marked": _join([f"__{b}__" for b in backends], "or"),  # each name underlined in a panel
         "backend_default": cfg.agent.llm.backend,
         "transports": " | ".join(t.value for t in Transport),
         "tool_layers": layers,
@@ -131,6 +133,10 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "max_research_iterations": sr.max_research_iterations,
         "min_independent_sources": sr.min_independent_sources,
         "active_stop_rules": _join(list(sr.active)),
+        "stop_rules_active": list(sr.active),
+        "no_marginal_gain_window": sr.no_marginal_gain_window,
+        "max_input_tokens": f"{sr.max_input_tokens:,}",
+        "report_reserve_s": f"{sr.report_reserve_seconds:.0f}",
         "max_rounds_per_iteration": research.MAX_ROUNDS_PER_ITERATION,
         "max_tool_text_chars": f"{research.MAX_TOOL_TEXT_CHARS:,}",
         "repair_min_slack_s": f"{verify.REPAIR_MIN_SLACK_S:.0f}",
@@ -153,6 +159,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "context_margin_pct": f"{CONTEXT_MARGIN * 100:.0f}",
         "first_call_window_s": f"{cfg.agent.llm.first_call_network_window_s:.0f}",
         **robustness_summary(),
+        **naming.names(),
     }
 
 
@@ -187,6 +194,11 @@ def view(cfg: Any, demo: Any | None = None, *, path: Path = CONTENT) -> dict[str
     values = facts(cfg, demo)
     content = load_content(path)
     out = _fill(content, values)
+    # the stop-rules tip lists the active rules only, in the order they are configured
+    for tip in out.get("tips", {}).values():
+        if "by_rule" in tip:
+            by_rule = tip.pop("by_rule")
+            tip["items"] = [by_rule[r] for r in values["stop_rules_active"] if r in by_rule]
     out["facts"] = values
     return out
 

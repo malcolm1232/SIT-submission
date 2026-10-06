@@ -1,19 +1,32 @@
 {
   "title": "Architectural design",
-  "tagline": "SIT is a controlled agent runtime, not just an LLM with tools: the LLM proposes, the platform controls.",
+  "tagline": "{agent_The} is a controlled agent runtime, not just an LLM with tools: the LLM proposes, the platform controls.",
   "order": ["user", "cli", "ingest", "orchestrator", "state-machine", "understand", "plan", "assess", "research",
             "research-reason", "research-act", "research-observe", "merge", "refine", "verify", "report", "outputs",
             "llm-gateway", "tool-gateway", "policy", "state", "evidence", "checkpoints", "budgets", "faults",
             "evaluation", "philosophy"],
+  "tips": {
+    "stop_rules": {
+      "head": "Research stops at the first rule that fires; the limits are checked before the others.",
+      "by_rule": {
+        "sufficient_evidence": "Enough evidence: every question that needs outside research has an answer backed by a ledger source.",
+        "no_marginal_gain": "Nothing new: the last {no_marginal_gain_window} iterations added no new source.",
+        "budget_tool_calls": "Tool-call budget: {max_tool_calls} tool calls used.",
+        "budget_tokens": "Token budget: {max_input_tokens} input tokens used.",
+        "deadline": "Deadline: {report_reserve_s} s before the run's deadline, so verify and report still fit."
+      },
+      "foot": "Research also ends after {max_research_iterations} iterations at most."
+    }
+  },
   "topics": {
     "user": {
       "title": "User: the design document",
       "kind": "input",
       "simple": {
-        "lead": "The user gives SIT one technical design document and gets back a review of it.",
+        "lead": "The user gives {agent_the} one technical design document and gets back a review of it.",
         "points": [
           "Every finding is anchored to a quoted passage of that document.",
-          "A change is recommended only when SIT can say what is wrong, why, what evidence supports it and what the change would gain; otherwise it says no change, with a reason.",
+          "A change is recommended only when {agent_the} can say what is wrong, why, what evidence supports it and what the change would gain; otherwise it says no change, with a reason.",
           "An earlier version can be given too, and the run becomes a re-assessment against it."
         ]
       },
@@ -99,7 +112,7 @@
       "title": "State machine",
       "kind": "code",
       "simple": {
-        "lead": "At the highest level, SIT is an explicit state-machine orchestrator: each phase has a defined responsibility, and the orchestrator controls transitions, budgets, deadlines and checkpoints.",
+        "lead": "At the highest level, {agent_the} is an explicit state-machine orchestrator: each phase has a defined responsibility, and the orchestrator controls transitions, budgets, deadlines and checkpoints.",
         "points": [
           "The state machine answers: what stage are we in, and what may run next? The orchestrator answers: given that, what do I execute and how do I coordinate it?",
           "A run is {stage_count} stages in a fixed order: {stage_order}.",
@@ -128,10 +141,10 @@
       "simple": {
         "lead": "Understand builds a structured understanding of the document for the phases after it, and that becomes part of the run state.",
         "points": [
-          "The intent summary: what the design is for, its objectives, constraints and key assumptions, each with a quoted anchor.",
-          "The decision registry: the approved decisions, pending decisions, constraints and requirements the document states, numbered AD-nnn.",
-          "The registry is then frozen and hashed, so no later call can rewrite what the document decided.",
-          "The important thing is that UNDERSTAND produces structured state, rather than just returning a paragraph."
+          "The **intent summary**: __what__ the __design is for__, its __objectives__, __constraints__ and __key assumptions__.",
+          "The **decision registry**: the __approved decisions__, __pending decisions__, __constraints__ and __requirements__ the __document states__, numbered AD-(n).",
+          "The registry is then frozen and hashed.",
+          "The **__important thing__** is that UNDERSTAND **__produces structured state__**, rather than just returning a paragraph."
         ],
         "contrast": {"bad": "UNDERSTAND: \"Here's what I think this document means...\" Then RESEARCH: \"Let me figure out what that paragraph means...\"",
                      "better": "UNDERSTAND -> structured output -> STATE -> RESEARCH and REFINE."}
@@ -158,12 +171,15 @@
       "simple": {
         "lead": "Plan converts the review criteria into concrete research questions, decides which need external research, and which research capability should be used.",
         "points": [
-          "Job 1: turn each of the {criteria_count} criteria into questions, usually one to three.",
-          "Job 2: decide whether a question needs external research; consistency, completeness and verifiability are answered from the document.",
-          "Job 3: pick one capability whose server is enabled ({capabilities}) and give research up to three search queries.",
-          "Job 4: size the plan to the research budget of {max_tool_calls} tool calls.",
-          "Job 5: name any criterion that does not apply, with a reason; code adds a document-only question for any criterion left out.",
-          "Plan runs at the same time as understand; research starts when both have ended."
+          {"text": "**Job 1**: turn each of the **{criteria_count} criteria** (provided by {agent_the}) into __questions__, usually one to three.",
+           "sub": ["Eg. a criterion: Does the design handle failure and recovery appropriately?",
+                   "RQ-001: How does the payment service recover after a downstream timeout?",
+                   "RQ-002: Does the retry strategy risk duplicate transactions?",
+                   "RQ-003 ..."]},
+          "**Job 2**: decide whether a **question** __needs external research__; consistency, completeness and verifiability are answered from the document.",
+          "**Job 3**: decide WHICH research capability to use.",
+          "**Job 4**: give Research search queries.",
+          "**Job 5**: budget the research."
         ]
       },
       "advanced": [
@@ -185,14 +201,13 @@
       "simple": {
         "lead": "Instead of one huge assess call, the criteria are divided into {shard_count} groups, or shards, that run side by side.",
         "points": [
-          "Each shard receives the document and its own criteria, works against an isolated copy of the run state, and produces draft findings, sound areas and coverage rows.",
-          "Those are concurrent phase executions, not {shard_count} independent agents: asyncio tasks in one process, each waiting on its own model call.",
-          "A shard sees no plan and no research, which is why it never waits: it starts with understand and plan.",
-          "Each finished shard is stored as a serialisable result, so resume re-runs only the shards that had not finished.",
-          "It's not merely \"let's run {shard_count} LLMs\". It's \"let's parallelize independent work while preserving deterministic state ownership and making each shard resumable.\""
+          "**Each shard** __receives the document__ and its __own criteria__, works against an __isolated copy__ of the __run state__, and __produces draft findings__.",
+          "Those are **concurrent phase executions**, not {shard_count} independent agents: asyncio tasks in one process, each waiting on its own model call.",
+                  "**Each finished shard** is __stored__ as a __serialisable result__, so resume re-runs only the shards that had not finished.",
+          "It's not merely \"let's run {shard_count} LLMs\". It's \"let's __parallelize independent work__ while __preserving deterministic state ownership__ and making each shard resumable.\""
         ],
-        "contrast": {"bad": "One huge assess call over every criterion: the slowest step of the run, and one failure costs the whole assessment.",
-                     "better": "{shard_count} shards side by side: the stage takes as long as its slowest shard, and a failed shard costs only its own criteria."}
+        "contrast": {"bad": "**One huge assess** call over every criterion: the slowest step of the run, and __one failure costs__ the __whole assessment__.",
+                     "better": "**{shard_count} shards side by side**: the __stage takes as long as its slowest shard__, and a __failed shard costs__ only its __own criteria__."}
       },
       "advanced": [
         {"h": "The shards, from config/agent.yaml",
@@ -218,16 +233,14 @@
       "kind": "model + tools",
       "stages": ["research"],
       "simple": {
-        "lead": "Research is the agentic loop: reason, act, observe, then reason again, until the stop rules say enough.",
+        "lead": "Research is the agentic loop: reason → act → observe → then reason again.",
         "points": [
-          "It runs inside stage 1: it starts once understand and plan have both ended, beside the assess shards.",
-          "It works on the plan's external questions. The model chooses the tool calls; the platform runs them and records every result as evidence before the model sees it.",
-          "It is built from the LLMGateway when it needs to reason, the ToolGateway when it needs the outside world, and the run state.",
-          "Its evidence meets the findings in refine, after the shards are merged.",
-          "With no tool server the run stays document-only, and the report says so."
+          "It runs **after understand and plan**: it __starts once__ both have __ended__, beside the assess shards.",
+          "It **works** on the **plan's external questions**. The model __chooses the tool calls__; the __platform runs them__ and __records__ every result as **__evidence__** before the model sees it.",
+          "It is built from the **LLMGateway** when it __needs to reason__, the **ToolGateway** when it __needs the outside world__, and the __run state__.",
+          "Its evidence meets the findings in refine, after the shards are merged."
         ],
-        "contrast": {"bad_label": "Too simple", "bad": "\"The agent maintains state between the LLM and tool calls.\"",
-                     "better_label": "Better", "better": "\"The runtime maintains structured state that is read and updated by the phases, the LLM gateway and the tool execution flow.\""}
+        "flow": "\"LLM, what should I investigate?\" → LLMGateway → Claude → \"Search for X\" → ToolGateway → MCP → search result → back to state → LLM again"
       },
       "advanced": [
         {"h": "Limits",
@@ -254,10 +267,9 @@
       "simple": {
         "lead": "Reason is the model's turn: what to investigate, which tool, which search query, what next.",
         "points": [
-          "\"LLM, what should I investigate?\" goes through the LLMGateway to Claude, which answers \"search for X\".",
-          "The model reads the open external questions with the plan's suggested queries, the registry and what the ledger already holds.",
-          "It answers with tool calls, or, when a round is done, with an answer per question.",
-          "The backend is swappable: {backend_list}, default {backend_default}."
+          "**\"LLM, what should I investigate?\"** goes through the **LLMGateway to Claude**, which answers \"search for X\".",
+          "The **model reads** the __open external questions__ with the __plan's suggested queries__, the __registry__ and __decides what is still missing__.",
+          "The **backend is swappable**: {backend_list_marked}, default {backend_default}."
         ]
       },
       "advanced": [
@@ -274,11 +286,11 @@
       "kind": "platform, through the ToolGateway",
       "stages": ["research"],
       "simple": {
-        "lead": "Act is the platform's turn: every tool call the model asked for runs through the ToolGateway, never straight from the model to a server.",
+        "lead": "**ACT** is the **platform's turn**: __every tool call__ the __model asked for__ runs through the __ToolGateway, never straight from the model to a server__.",
         "points": [
-          "The calls of one round run concurrently, and every result goes back in one message, failures marked as errors.",
-          "Policy checks each call before it leaves the process.",
-          "The live servers are MCP over streamable HTTP: {servers_enabled} are enabled."
+          "The **calls** of one round __run concurrently__, and every result goes back in one message, failures marked as errors.",
+          "**Policy checks** each call before it leaves the process.",
+          "The **live servers** are __MCP over streamable HTTP__: {servers_enabled} are enabled."
         ]
       },
       "advanced": [
@@ -295,11 +307,11 @@
       "kind": "code, into state",
       "stages": ["research"],
       "simple": {
-        "lead": "Observe turns each result into evidence the platform owns: sources become EV-nnn ledger entries, and the model sees the result text prefixed with those IDs.",
+        "lead": "**Observe** __turns__ each __result into evidence__ the platform owns: __sources become **EV-(n) ledger**__ entries.",
         "points": [
-          "So the model can cite only what it has read, by ID.",
-          "Question statuses, tool calls and the budget counters go into the run state.",
-          "The stop rules are checked after every tool round and every iteration; then the model reasons again, or the loop ends.",
+          "So the __model__ can **cite only** what it has read, in **Evidence Ledger** by ID.",
+          "**Question statuses**, __tool calls__ and the budget counters __go into__ the **run state**.",
+          "**The [stop rules](tip:stop_rules)** are __checked after every tool round__ and __every iteration__; then the __model reasons again__, or the __loop ends__.",
           "Repeat until done, or until a limit is hit."
         ]
       },
@@ -317,12 +329,12 @@
       "kind": "code",
       "stages": ["merge"],
       "simple": {
-        "lead": "Merge is code: when stage 1 closes, the shards' findings become one list in the run state.",
+        "lead": "Merge: when stage 1 closes, the **shards' findings** become __one list__ in the __run state.__",
         "points": [
-          "Findings are renumbered FND-nnn in shard order, never in the order the shards finished, so the IDs are deterministic.",
-          "The list is ranked by severity, then confidence.",
-          "The shards' document and inference evidence goes into the ledger, also in shard order, after research has stopped writing to it.",
-          "A map from each shard's own IDs to the merged IDs is kept, so every finding can be traced back to its shard."
+          "**Findings** are r__enumbered FND-(n)__ in __shard order__.",
+          "The list is **ranked** by __severity__, then __confidence__.",
+          "The **shards**' __document__ and __inference evidence goes into__ the __ledger__.",
+          "A **map** from **each shard's own IDs** to the merged IDs is kept, so __every finding__ can be __traced back to its shard.__"
         ]
       },
       "advanced": [
@@ -339,15 +351,15 @@
       "kind": "one model call",
       "stages": ["refine"],
       "simple": {
-        "lead": "Refine is one model call over every merged finding: it sees all the shards' findings together with the registry, the research answers and the ledger, and returns one revision per finding.",
+        "lead": "**Refine** is __one model call__ over __every merged finding__: it sees all the shards' findings together with the registry, the **research answers** and the __ledger__, and __returns one revision per finding__.",
         "points": [
-          "Keep: with the final rank, severity and disposition, the registry links, and any research evidence to add.",
-          "Merge: fold a duplicate into a kept finding, typically the same issue found by two shards.",
-          "Withdraw: unsupported, generic or covered elsewhere.",
-          "This is where research evidence meets the findings."
+          "**Keep**: with the __final rank__, __severity__ and disposition, the registry links, and any research evidence to add.",
+          "**Merge**: fold a __duplicate into a kept finding__, typically the same issue found by two shards.",
+          "**Withdraw**: __unsupported__ evidence.",
+          "This is where **research evidence** __meets__ the __findings__."
         ],
-        "contrast": {"bad": "Ask the model to write every finding out again.",
-                     "better": "Ask for one revision per finding, a patch that code applies exactly."}
+        "contrast": {"bad": "Ask the model to __write every finding out again.__",
+                     "better": "Ask for **one revision per finding**, a __patch__ that code applies __exactly__."}
       },
       "advanced": [
         {"h": "Output schema",
@@ -366,15 +378,13 @@
       "kind": "code, plus one repair call",
       "stages": ["verify"],
       "simple": {
-        "lead": "Verify is where the platform, not the model, decides what counts: code checks every quoted anchor against the canonical text.",
+        "lead": "**Verify** is where the **platform**, __not the model__, __checks code__ against every quoted anchor __against the canonical text.__",
         "points": [
-          "The quote is searched for verbatim first, then fuzzily at {fuzzy_threshold} or better, near the cited page and section.",
-          "A finding with no anchor that resolves is moved to the unresolved list as Unverified, with no recommendation, and the report says so.",
+          "The **quote is searched** for __verbatim first__, __then fuzzily__ at {fuzzy_threshold} or better, near the cited page and section.",
+          "A **finding with no anchor** that resolves is __moved__ to the __unresolved list as Unverified__, with __no recommendation__, and the report says so.",
           "Evidence is hydrated from the ledger: the model never writes a URL, and a URL that is not in the ledger is removed.",
           "One repair call may re-quote the failing anchors, only when more than {repair_min_slack_s} s remain. It never sends the run back to research: the next stage is report."
-        ],
-        "contrast": {"bad": "A second model judges the first model's work inside the run.",
-                     "better": "Deterministic checks against the document and the ledger; an independent judge belongs in the evaluation harness."}
+        ]
       },
       "advanced": [
         {"h": "Anchor rules",
@@ -508,12 +518,12 @@
       "title": "State",
       "kind": "platform",
       "simple": {
-        "lead": "The runtime maintains structured state that is read and updated by the phases, the LLM gateway and the tool execution flow.",
+        "lead": "The runtime **maintains structured** state that is __read__ and __updated__ by the phases, the LLM gateway and the tool execution flow.",
         "points": [
-          "It holds the documents, the intent and the registry, the plan, the tool calls, the draft and verified findings, the degradations, the stop reason and the budget.",
-          "The evidence ledger is kept beside it as its own append-only journal.",
-          "Stage 1 members each work on a copy of it and are merged back when they end.",
-          "So the LLM is only one subsystem: the platform owns what state the run is in."
+          "It **holds the documents**, the __intent summary__ and the __registry__, the __plan__, the __tool calls__, __draft__, __verified findings__, the __unresolved__, the __stop reason__ and the __budget__ (tool calls, tokens, iterations and time; see Advanced).",
+          "The **evidence ledger** is kept beside it as its own __append-only__ journal.",
+          "**Stage 1** members __each work on a copy of it__ and are __merged back when they end__.",
+          "So the **LLM** is only one __subsystem__: the **platform owns what state** the __run is in__."
         ]
       },
       "advanced": [
@@ -532,10 +542,12 @@
       "simple": {
         "lead": "Evidence is not just dumped into the prompt: the platform owns it in a ledger, and the model cites it by ID, like EV-002.",
         "points": [
-          "An external entry is created only from a successful tool call of this run, and carries that call's ID.",
-          "Research writes the external entries; the shards' document and inference entries are added at merge.",
-          "Verify fills each finding's URL and retrieval time from the ledger; nothing in it is ever updated or deleted."
+          "[See Advanced: Merge: the shards' findings in one list](run:merge)"
         ],
+        "table": {"cols": ["Entry", "What it is", "Added by"],
+                  "rows": [["EV-(n) **external**", "A source from a __successful tool call__ of this run; carries that call's ID.", "Research"],
+                           ["EV-(n) **document**", "A __quoted passage__ of the design document.", "Assess, at merge"],
+                           ["EV-(n) **inference**", "A conclusion __drawn from other entries__, which it names.", "Assess, at merge"]]},
         "contrast": {"bad": "The model says: \"I found this website...\"",
                      "better": "The platform recorded the source, and the model cites EV-002."}
       },
@@ -600,7 +612,7 @@
       "title": "Fault injection and robustness",
       "kind": "platform",
       "simple": {
-        "lead": "Fault injection lets SIT show it fails honestly: a schedule makes a tool hang, a model refuse or truncate, the network drop or a phase crash, on purpose.",
+        "lead": "Fault injection lets {agent_the} show it fails honestly: a schedule makes a tool hang, a model refuse or truncate, the network drop or a phase crash, on purpose.",
         "points": [
           "The same schedule file drives a test and a live run, with --faults.",
           "The injectors sit below the policy and retry layers, so the test exercises the real handling.",
@@ -645,7 +657,7 @@
       "title": "LLM proposes, the platform controls",
       "kind": "principle",
       "simple": {
-        "lead": "SIT is a controlled agent runtime, not just an LLM with tools: the LLM proposes, and the platform controls state, policy, tools, evidence, checkpoints, verification and budgets.",
+        "lead": "{agent_The} is a controlled agent runtime, not just an LLM with tools: the LLM proposes, and the platform controls state, policy, tools, evidence, checkpoints, verification and budgets.",
         "points": [
           "The platform controls what state the run is in, what the model can see, which tools it may call, what evidence is recorded, what can be replayed, which failures can be injected, which checkpoints exist, when the workflow moves on, and when verification passes.",
           "\"I built an agent runtime where the LLM is not allowed to directly control the entire application. The platform owns the lifecycle, state transitions, tool access, checkpoints, reproducibility and evaluation.\""
