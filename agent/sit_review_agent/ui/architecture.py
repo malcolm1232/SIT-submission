@@ -11,7 +11,8 @@ here from the configuration and the code the agent itself runs with, so the page
   of that module);
 * the stage order, the stage 1 members and their dependencies from ``states.py``;
 * the research, verify and anchor limits from the constants and config the phases read;
-* the demo profile's deadline and stage limits from ``config/profiles/demo.yaml``.
+* the demo profile's deadline and stage limits from ``config/profiles/demo.yaml``;
+* the framework scores of the Important points from the weighted decision matrix of ``research/frameworks/README.md``.
 
 A placeholder this module cannot fill is an error (``KeyError``), never a blank.
 """
@@ -64,6 +65,7 @@ def tool_layers(gateway: Any = None) -> list[str]:
 
 #: The offline robustness results table (``tests/robustness/README.md``): its P0 row gives the scenario counts.
 ROBUSTNESS_SUMMARY = Path("tests/robustness/results/robustness_summary.txt")
+FRAMEWORKS_README = Path("research/frameworks/README.md")
 
 
 def robustness_summary(repo_root: Path | None = None) -> dict[str, Any]:
@@ -79,6 +81,28 @@ def robustness_summary(repo_root: Path | None = None) -> dict[str, Any]:
             if cells[:1] == ["P0"]:
                 total, ok, fail, _flaky, blocked = (int(c) for c in cells[1:6])
                 return dict(zip(keys, (total, ok, fail, blocked), strict=True))
+    except (OSError, ValueError):
+        pass
+    return dict.fromkeys(keys, "not recorded")
+
+
+#: The weighted decision matrix's columns, in the README's order, as the placeholder names the content uses.
+FRAMEWORK_KEYS = ("custom", "langgraph", "pydanticai", "openai_agents", "langchain", "claude_agent_sdk", "crewai",
+                  "smolagents")
+
+
+def framework_scores(repo_root: Path | None = None) -> dict[str, Any]:
+    """``score_<framework>`` for each column of the weighted score row of the README's decision matrix, or "not
+    recorded" for all of them when the file or the row is not there (an installed package without the research)."""
+    from sit_review_agent.paths import repo_root as _root
+
+    path = (repo_root or _root()) / FRAMEWORKS_README
+    keys = [f"score_{k}" for k in FRAMEWORK_KEYS]
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            cells = [c.strip().strip("*").strip() for c in line.strip().strip("|").split("|")]
+            if cells[0].lower().startswith("weighted score") and len(cells) == len(keys) + 1:
+                return dict(zip(keys, (int(c) for c in cells[1:]), strict=True))
     except (OSError, ValueError):
         pass
     return dict.fromkeys(keys, "not recorded")
@@ -160,6 +184,7 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
         "context_margin_pct": f"{CONTEXT_MARGIN * 100:.0f}",
         "first_call_window_s": f"{cfg.agent.llm.first_call_network_window_s:.0f}",
         **robustness_summary(),
+        **framework_scores(),
         **naming.names(),
     }
 

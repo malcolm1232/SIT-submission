@@ -45,6 +45,7 @@ async function showArchitecture() {
   $("arch-sub").append(ARCH.data.tagline, h("br"), h("span", { class: "arch-subnote", text: "Every name, count and limit in the diagram is read from the config and the code this server runs." }));
   archRunNote();
   archDiagram($("arch-diagram"));
+  archImportant($("arch-diagram"));
   archGuide();
   $("ap-close").addEventListener("click", () => archClose());
   $("arch-panel").addEventListener("keydown", archKeys);
@@ -86,19 +87,21 @@ function feed(label) { return h("div", { class: "arch-down arch-feed", "aria-hid
 function right() { return h("span", { class: "arch-right", "aria-hidden": "true" }); }
 function group(cls, label, ...kids) { return h("div", { class: "arch-group " + cls }, label ? h("div", { class: "ag-label", text: label }) : null, ...kids); }
 
+// The topic each tool gateway layer opens.
+const ARCH_LAYER_TOPIC = { LoggingToolGateway: "tool-gateway", PolicyToolGateway: "policy", SelfReplayGateway: "checkpoints",
+  FaultInjectingGateway: "faults", RecordingGateway: "tool-gateway" };
+
 function archDiagram(root) {
   const F = ARCH.data.facts;
   clear(root);
   // The shards are plain labels under the Assess box, which is the one that opens their panel.
   const shards = F.shards.map((s) => h("div", { class: "arch-chip shard" }, h("span", { class: "ab-title", text: s.name.split("_").join(" ") })));
-  const layerTopic = { LoggingToolGateway: "tool-gateway", PolicyToolGateway: "policy", SelfReplayGateway: "checkpoints",
-    FaultInjectingGateway: "faults", RecordingGateway: "tool-gateway" };
   // LoggingToolGateway -> "Logging", SelfReplayGateway -> "Self replay"; the class name stays in the chip's title
   const layerName = (n) => n.replace(/(Tool)?Gateway$/, "").replace(/([a-z])([A-Z])/g, (_, a, b) => a + " " + b.toLowerCase());
   const layers = [];
   F.tool_layers.forEach((l, i) => {
     if (i) layers.push(h("span", { class: "arch-sep", "aria-hidden": "true" }));
-    const chip = archChip(layerTopic[l] || "research-act", l.split(" | ").map(layerName).join(" | "));
+    const chip = archChip(ARCH_LAYER_TOPIC[l] || "research-act", l.split(" | ").map(layerName).join(" | "));
     chip.title = l + ": open " + archTitle(chip.dataset.topic);
     layers.push(chip);
   });
@@ -147,7 +150,7 @@ function archDiagram(root) {
               h("span", { text: "reads the document and its criteria, writes draft findings" })),
             archChip("state", "Isolated copy of the run state", "wide"),
             feed("draft findings"))),
-        archBtn("merge", "Merge", "code, when stage 1 closes: findings renumbered FND-nnn in shard order, ranked by severity", "arch-box tone-blue merge")),
+        archBtn("merge", "Merge", "code, when stage 1 closes: findings renumbered FND-(n) in shard order, ranked by severity", "arch-box tone-blue merge")),
       down("findings, registry, research answers, ledger"),
       h("div", { class: "arch-row arch-post" },
         archBtn("refine", "Refine", "one call: keep, merge or withdraw each finding; research evidence joins here", "arch-box tone-red"), right(),
@@ -176,6 +179,40 @@ function archDiagram(root) {
       archBtn("philosophy", "LLM proposes, the platform controls", null, "arch-box tone-ink head"),
       h("div", { class: "arch-chips" }, archChip("state", "State"), archChip("policy", "Policy"), archChip("tool-gateway", "Tools"),
         archChip("evidence", "Evidence"), archChip("checkpoints", "Checkpoints"), archChip("verify", "Verification"), archChip("budgets", "Budgets"))));
+}
+
+// The Important points under the diagram: one card per point, marked up like a panel, with an optional small
+// diagram drawn from its steps.
+function archImportant(root) {
+  const cards = ARCH.data.important || [];
+  if (!cards.length) return;
+  root.append(h("section", { class: "arch-important", "aria-labelledby": "ai-title" },
+    h("h2", { class: "ai-title", id: "ai-title", text: "Important points" }),
+    cards.map((c) => h("article", { class: "ai-card" },
+      h("h3", { text: c.title }),
+      h("p", { class: "ai-lead" }, archInline(c.lead)),
+      c.diagram ? h("div", { class: "ai-diagram" }, archSteps(c.diagram)) : null,
+      c.points ? h("ul", { class: "ai-points" + (c.columns ? " cols" : "") }, c.points.map(archPoint)) : null,
+      c.foot ? h("p", { class: "ai-foot" }, archInline(c.foot)) : null))));
+}
+// A column of steps with an arrow between each two. A step is a box (a button when it names a topic), two lanes
+// side by side ({split}), the layers a fact lists ({layers}, e.g. the tool gateway's, outermost first) or chips.
+function archSteps(steps) {
+  const out = [];
+  steps.forEach((s, i) => { if (i) out.push(down()); out.push(archCardStep(s)); });
+  return h("div", { class: "ai-steps" }, out);
+}
+function archCardStep(s) {
+  if (s.split) return h("div", { class: "ai-split" }, s.split.map(archSteps));
+  if (s.layers) {
+    const col = archSteps(ARCH.data.facts[s.layers].map((l) => ({ box: l, topic: ARCH_LAYER_TOPIC[l] || "tool-gateway" })));
+    col.classList.add("ai-layers");
+    return col;
+  }
+  if (s.chips) return h("div", { class: "arch-chips ai-chips" }, s.chips.map((t) => h("span", { class: "ai-chip", text: t })));
+  const cls = "arch-box " + (s.tone ? "tone-" + s.tone + " head" : "tone-plain");
+  if (s.topic) return archBtn(s.topic, s.box, s.sub || null, cls);
+  return h("div", { class: cls + " static" }, h("span", { class: "ab-title", text: s.box }), s.sub ? h("span", { class: "ab-sub", text: s.sub }) : null);
 }
 
 // The column beside the diagram while no topic is open (wide screens): how to read it and where to start.
@@ -302,9 +339,12 @@ function archPoint(p) {
   return h("li", {}, archInline(p.text), h("ul", { class: "arch-sub" }, (p.sub || []).map((q) => h("li", {}, archInline(q)))));
 }
 
-// The lead, a point, the flow or a contrast line may mark words **bold** or __underlined__, nested either way; the rest stays plain text.
+// The lead, a point, the flow or a contrast line may mark words **bold** or __underlined__, nested either way, and link
+// [words](tip:key), [words](run:stage) or [words](https link); the rest stays plain text.
 function archInline(text) {
-  return String(text).split(/(\*\*.+?\*\*|__.+?__|\[[^\]]+\]\((?:tip|run):\w+\))/).filter(Boolean).flatMap((part) => {
+  return String(text).split(/(\[[^\]]+\]\(https:\/\/[^)\s]+\)|\*\*.+?\*\*|__.+?__|\[[^\]]+\]\((?:tip|run):\w+\))/).filter(Boolean).flatMap((part) => {
+    const out = /^\[(?<label>[^\]]+)\]\((?<href>https:\/\/[^)\s]+)\)$/.exec(part);
+    if (out) return [archOutLink(out.groups.label, out.groups.href)];
     const tip = /^\[(?<label>[^\]]+)\]\(tip:(?<key>\w+)\)$/.exec(part);
     if (tip) return [archTip(tip.groups.label, tip.groups.key)];
     const run = /^\[(?<label>[^\]]+)\]\(run:(?<stage>\w+)\)$/.exec(part);
@@ -312,6 +352,10 @@ function archInline(text) {
     const m = /^(?<mark>\*\*|__)(?<body>.+)\k<mark>$/.exec(part);
     return m ? [h(m.groups.mark === "**" ? "strong" : "u", {}, archInline(m.groups.body))] : archNoBreak(part);
   });
+}
+// [words](https link): the words open that page in a new tab.
+function archOutLink(label, href) {
+  return h("a", { class: "arch-out", href, target: "_blank", rel: "noopener noreferrer", text: label + "\u00a0↗" });
 }
 // [words](run:stage): the words open that stage's panel on the Run log of the run the page reads its values from
 // (ARCH.run, the same link as "Open this stage in the run log"); with no finished run they stay plain words.

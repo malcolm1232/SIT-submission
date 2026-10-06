@@ -33,6 +33,60 @@
       }
     }
   },
+  "important": [
+    {"title": "Why not LangGraph",
+     "lead": "A **custom state machine** was chosen so that the __orchestration logic stays visible and controllable__, above all around __budgets__, __stop rules__, __evidence__ and __robustness__.",
+     "points": [
+       {"text": "This project needed very specific behaviour around:",
+        "sub": ["MCP 2.x", "Anthropic's Claude Opus", "exact conversation replay", "the evidence ledger", "custom retry policies",
+                "deadline handling", "tool circuit breakers", "deterministic replay", "evaluation", "custom state isolation"]},
+       "**LangGraph** came closest, at {score_langgraph} of 100 against {score_custom} for the custom loop. Its checkpointing and replay are built in, but its MCP adapter is __pinned to MCP 1.x__, tool transport failures __need wrapper code__, and its channels, reducers and ToolNode __take a walkthrough of their own__.",
+       {"text": "**The other frameworks**, scored on the same weighted matrix:",
+        "sub": ["**PydanticAI**, {score_pydanticai}: the best for swapping vendors, but it __hides the loop__ inside Agent.run and adds retries of its own.",
+                "**OpenAI Agents SDK**, {score_openai_agents}: good retry primitives, but __still 0.x__, with a default tool timeout too short for a cold MCP server.",
+                "**LangChain create_agent**, {score_langchain}: __all of LangGraph's dependencies__ without its explicit control flow.",
+                "**Claude Agent SDK**, {score_claude_agent_sdk}: a __bundled CLI__ with its own system prompt, tools and compaction, the hardest to explain.",
+                "**CrewAI**, {score_crewai}: a __dependency conflict__ with the current Anthropic SDK, and many hidden prompts.",
+                "**smolagents**, {score_smolagents}: __MCP broken on 2.x__, and it executes model-written code."]},
+       "[See the weighted decision matrix](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/frameworks#weighted-decision-matrix)"
+     ]},
+    {"title": "Two choke points",
+     "lead": "The single most important architectural idea in the repo: __everything external goes through two choke points__, the **LLMGateway** and the **ToolGateway**.",
+     "diagram": [{"box": "Agent", "sub": "every phase", "tone": "ink"},
+                 {"split": [[{"box": "LLMGateway", "sub": "every model call", "topic": "llm-gateway", "tone": "violet"},
+                             {"box": "Anthropic API | Claude Code CLI", "sub": "or replay, fake, fault injection", "topic": "llm-gateway"}],
+                            [{"box": "ToolGateway", "sub": "every tool call", "topic": "tool-gateway", "tone": "violet"},
+                             {"box": "MCP servers", "sub": "or replay, fake, fault injection", "topic": "tool-gateway"}]]}],
+     "points": [
+       "A phase never touches an SDK or a server, so __a backend can be replaced__ behind the same interface: Codex or OpenAI would be __one more LLMGateway class__. None is built yet, and it is not free, because the tool schemas and structured outputs are Anthropic-shaped."
+     ]},
+    {"title": "Choke point 2: the ToolGateway",
+     "lead": "Every tool call passes through __the same layers, outermost first__:",
+     "diagram": [{"layers": "tool_layers"}],
+     "points": [
+       "**PolicyToolGateway** checks every call: the __allowed server__, the __allowed tool__, the URL policy, the argument sanitiser, the server's circuit breaker and the tool-call budget.",
+       "Because every call runs through this choke point, __any call can be denied__: a refused call comes back as blocked and never reaches the server."
+     ]},
+    {"title": "The research loop is deliberately handwritten",
+     "lead": "**Why?** Because the __platform needs to control__:",
+     "points": [
+       "the number of tool calls", "research iterations", "deadlines", "evidence collection", "source independence",
+       "stop conditions", "tool failures", "tool budgets", "ledger writes"
+     ],
+     "columns": true,
+     "foot": "A generic agentic framework __would hide some of those decisions__."},
+    {"title": "The evidence ledger",
+     "lead": "Instead of letting the model write __\"According to https://somewebsite.com...\"__, the agent __creates an evidence record__ for every source: **EV-(n)**.",
+     "diagram": [{"box": "External source", "sub": "a search result or a fetched page"},
+                 {"box": "Evidence ledger", "topic": "evidence", "tone": "amber"},
+                 {"chips": ["EV-001", "EV-002", "EV-003"]},
+                 {"box": "Finding", "sub": "cites EV-002", "topic": "verify"},
+                 {"box": "Report", "topic": "report"}],
+     "points": [
+       "The model then __references EV-002__ rather than inventing a URL.",
+       "This gives **provenance**: don't trust the generated answer; __establish a chain back to the source__."
+     ]}
+  ],
   "topics": {
     "user": {
       "title": "User: the design document",

@@ -136,6 +136,14 @@ def test_the_robustness_numbers_come_from_the_results_table(tmp_path: Path) -> N
     assert architecture.robustness_summary(tmp_path)["robust_total"] == "not recorded"
 
 
+def test_the_framework_scores_come_from_the_decision_matrix(tmp_path: Path) -> None:
+    scores = architecture.framework_scores(REPO)
+    row = next(ln for ln in (REPO / architecture.FRAMEWORKS_README).read_text().splitlines() if "Weighted score" in ln)
+    assert list(scores.values()) == [int(c.strip(" *")) for c in row.strip(" |").split("|")[1:]]
+    assert len(scores) == len(architecture.FRAMEWORK_KEYS)
+    assert architecture.framework_scores(tmp_path)["score_langgraph"] == "not recorded"
+
+
 # ------------------------------------------------------------------ the static files keep the page's rules
 
 
@@ -207,6 +215,21 @@ def test_the_rail_item_follows_replay_and_opens_the_view(page) -> None:
     pg.wait_for_selector("#arch-diagram .arch-box")
     assert "page=architecture" in pg.url
     assert pg.locator('.navrail-item[data-page="architecture"]').get_attribute("class").split().count("active") == 1
+
+
+def test_the_important_points_follow_the_diagram_and_the_matrix_opens_in_a_new_tab(page, view) -> None:
+    pg, base = page
+    pg.goto(base + "/?page=architecture")
+    pg.wait_for_selector(".arch-important .ai-card")
+    assert pg.locator(".ai-card h3").all_inner_texts() == [c["title"] for c in view["important"]]
+    link = pg.locator(".ai-card a.arch-out")
+    assert link.count() == 1 and link.get_attribute("target") == "_blank" and "noopener" in link.get_attribute("rel")
+    assert link.get_attribute("href").endswith("research/frameworks#weighted-decision-matrix")
+    layers = pg.locator(".ai-card .ai-layers .ab-title").all_inner_texts()
+    assert layers == view["facts"]["tool_layers"]
+    pg.locator('.ai-card .arch-box[data-topic="llm-gateway"]').first.click()
+    pg.wait_for_selector("#arch-panel:not([hidden])")
+    assert pg.locator("#ap-title").inner_text() == view["topics"]["llm-gateway"]["title"]
 
 
 def test_every_topic_opens_both_tabs_with_words_and_its_box_stays_marked(page) -> None:
