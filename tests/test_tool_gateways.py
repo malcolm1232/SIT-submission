@@ -127,6 +127,25 @@ async def test_mcp_cold_start_retry_then_ok() -> None:
     await gw.aclose()
 
 
+async def test_mcp_in_band_failure_becomes_a_tool_error_naming_the_server() -> None:
+    import json
+
+    failed = {"results": [], "provider_used": None,
+              "attempts": [{"provider": "tavily", "outcome": "skipped", "reason": "TAVILY_API_KEY not configured"}]}
+    ok = {"results": [{"link": "https://a.example/x", "title": "T", "snippet": "S"}], "provider_used": "duckduckgo"}
+    clock = FakeClock()
+    scripts = {"mcp-internet-search": {"calls": [json.dumps(failed), json.dumps(ok)]}}
+    gw, _, _ = mcp_gateway(scripts, clock)
+    bad = await gw.call(SEARCH, {"query": "q"})
+    assert not bad.ok and bad.is_error and bad.status is ToolCallStatus.ERROR
+    assert bad.error_class is ToolErrorClass.TOOL_ERROR
+    assert bad.error_message is not None and bad.error_message.startswith("mcp-internet-search: ")
+    assert "empty result list" in bad.error_message and extract_sources(bad) == []
+    good = await gw.call(SEARCH, {"query": "q2"})
+    assert good.ok and good.error_message is None
+    await gw.aclose()
+
+
 async def test_mcp_auth_header_is_bearer_built_from_the_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     """The shipped tools.yaml sends ``Authorization: Bearer <SIT_MCP_API_KEY>`` and nothing else
     (probe 2026-10-03: Bearer answered HTTP 200 on all four servers, no auth got HTTP 401)."""

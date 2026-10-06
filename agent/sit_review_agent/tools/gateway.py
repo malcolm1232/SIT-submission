@@ -44,6 +44,7 @@ from sit_review_agent.tools.cassette import (
     tools_list_path,
 )
 from sit_review_agent.tools.faults import FaultSchedule
+from sit_review_agent.tools.inband import inband_failure, payload_of
 
 QUALIFIER = "__"
 _TOOL_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -196,6 +197,13 @@ class CallIds:
         """Continue after ``call-<n>`` (resume, ADR-009): never goes backwards. Advancing the shared
         object in place keeps every layer that holds it (policy, fault injector, base) in step."""
         self._n = max(self._n, int(n))
+
+
+def _inband_error(server: str, tool: str, text: str, structured_content: Any) -> str | None:
+    """The error message for a delivered call whose payload reports a failure (``inband``), else
+    ``None``. The gateway then builds the result as a tool error, so it never becomes evidence."""
+    reason = inband_failure(tool, payload_of(text, structured_content))
+    return f"{server}: {reason}" if reason is not None else None
 
 
 def _result(call_id: str, server: str, tool: str, args: dict[str, Any], *, status: ToolCallStatus, started_at: str,
@@ -589,11 +597,13 @@ class MCPToolGateway:
             content.append(dump(mode="json", by_alias=True, exclude_none=True) if dump else dict(b))
         text = "\n".join(str(b.get("text", "")) for b in content if b.get("type") == "text")
         is_error = bool(getattr(raw, "is_error", False))
+        structured = getattr(raw, "structured_content", None)
+        message = text[:500] if is_error else _inband_error(server, tool, text, structured)
+        is_error = is_error or message is not None
         res = _result(call_id, server, tool, args, status=ToolCallStatus.ERROR if is_error else ToolCallStatus.OK,
                       started_at=started, text=text, content=content, is_error=is_error,
                       error_class=ToolErrorClass.TOOL_ERROR if is_error else None,
-                      error_message=text[:500] if is_error else None,
-                      structured_content=getattr(raw, "structured_content", None),
+                      error_message=message, structured_content=structured,
                       elapsed_s=round(self.clock.monotonic() - t0, 3))
         return dataclasses.replace(res, attempts=list(attempts))
 
@@ -695,10 +705,13 @@ class ReplayGateway:
         content = res.get("content") or []
         text = "\n".join(b.get("text", "") for b in content if b.get("type") == "text")
         is_error = bool(res.get("isError"))
+        structured = res.get("structuredContent")
+        message = None if is_error else _inband_error(server, tool, text, structured)
+        is_error = is_error or message is not None
         return _result(call_id, server, tool, args, status=ToolCallStatus.ERROR if is_error else ToolCallStatus.OK,
                        started_at=started, text=text, content=content, is_error=is_error,
-                       error_class=ToolErrorClass.TOOL_ERROR if is_error else None,
-                       structured_content=res.get("structuredContent"), replayed=True,
+                       error_class=ToolErrorClass.TOOL_ERROR if is_error else None, error_message=message,
+                       structured_content=structured, replayed=True,
                        elapsed_s=float(rec.get("latency_ms", 0)) / 1000)
 
     async def aclose(self) -> None:

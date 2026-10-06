@@ -26,6 +26,7 @@ from urllib.parse import urlsplit
 from sit_review_agent.config import AuthorityHosts
 from sit_review_agent.models import SourceAuthority
 from sit_review_agent.tools.gateway import ToolResult
+from sit_review_agent.tools.inband import TEXT_KEYS, inband_failure
 
 #: Excerpt kept in the ledger and shown next to the ID (the full payload stays in tools.jsonl).
 EXCERPT_CHARS = 600
@@ -74,8 +75,11 @@ def extract_sources(result: ToolResult, hosts: AuthorityHosts | None = None) -> 
       (``read_in_full=False``): the agent must fetch the page before citing it (ADR-007
       ``read_before_cite``).
     * Plain text -> one source per URL found, titled by the preceding line or Markdown link text.
-    * Anything else non-empty -> one pseudo-citation ``mcp:<server>/<tool>?<args>`` holding the
-      text (``informal``), so whatever the model saw is still citable only by ID.
+    * Anything else non-empty plain text -> one pseudo-citation ``mcp:<server>/<tool>?<args>``
+      holding the text (``informal``), so whatever the model saw is still citable only by ID.
+    * Excerpts are readable text, never a JSON dump: a search hit's excerpt is its title plus
+      snippet; a fetched page's is a passage of its extracted text (:func:`_passage`). A JSON
+      payload with no readable text, or one that reports a failure (``inband``), gives ``[]``.
     """
     if not result.ok:
         return []
@@ -89,15 +93,18 @@ def extract_sources(result: ToolResult, hosts: AuthorityHosts | None = None) -> 
         data = _json_or_none(text)
     if not text.strip() and data is None:
         return []
+    if data is not None and inband_failure(result.tool_name, data) is not None:
+        return []
 
     fetch_url = _fetch_target(result.args)
     if fetch_url is None and any(w in result.tool_name.lower() for w in _FETCH_TOOL_WORDS):
         m = _URL_RE.search(text)
         fetch_url = m.group(0).rstrip(".,;:") if m else None
     if fetch_url is not None:
-        body = text if text.strip() else json.dumps(data, ensure_ascii=False, sort_keys=True)
-        return [ExternalSource(url_or_citation=fetch_url, title=_page_title(body, data), excerpt=_clip(body),
-                               content=body, authority=classify_authority(fetch_url, hosts), read_in_full=True)]
+        if data is not None:
+            return _from_pages(result.tool_name, data, fetch_url, hosts)[:MAX_SOURCES_PER_RESULT]
+        return [ExternalSource(url_or_citation=fetch_url, title=_page_title(text, None), excerpt=_passage(text),
+                               content=text, authority=classify_authority(fetch_url, hosts), read_in_full=True)]
 
     out: list[ExternalSource] = []
     if data is not None:
@@ -107,11 +114,10 @@ def extract_sources(result: ToolResult, hosts: AuthorityHosts | None = None) -> 
                 out.append(src)
     if not out and text.strip():
         out = _from_text(text, hosts)
-    if not out:
-        body = text if text.strip() else json.dumps(data, ensure_ascii=False, sort_keys=True)
+    if not out and data is None:
         args = json.dumps(result.args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         out = [ExternalSource(url_or_citation=f"mcp:{result.server}/{result.tool_name}?{args}",
-                              title=f"{result.server} {result.tool_name} result", excerpt=_clip(body), content=body,
+                              title=f"{result.server} {result.tool_name} result", excerpt=_clip(text), content=text,
                               authority=SourceAuthority.INFORMAL, read_in_full=True)]
     seen: set[str] = set()
     unique: list[ExternalSource] = []
@@ -136,6 +142,44 @@ def _json_or_none(text: str) -> Any:
 def _clip(text: str, n: int = EXCERPT_CHARS) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     return t if len(t) <= n else t[: n - 1].rstrip() + "…"
+
+
+def _passage(text: str, n: int = EXCERPT_CHARS) -> str:
+    """The first ``n`` characters of ``text`` (whitespace collapsed), cut back to the last sentence
+    end when one falls in the second half; else clipped like :func:`_clip`."""
+    t = re.sub(r"\s+", " ", text).strip()
+    if len(t) <= n:
+        return t
+    head = t[:n]
+    ends = [m.end() for m in re.finditer(r"[.!?][\"')\]]?(?=\s)", head)]
+    if ends and ends[-1] >= n // 2:
+        return head[: ends[-1]]
+    return _clip(t, n)
+
+
+def _page_text(d: dict[str, Any]) -> str | None:
+    return _first_str(d, TEXT_KEYS)
+
+
+def _from_pages(tool_name: str, data: Any, fetch_url: str, hosts: AuthorityHosts | None) -> list[ExternalSource]:
+    """A fetched page given as JSON (one record, or a list of records with ``title``,
+    ``final_url``, ``extracted_text``, ``status``): one source per record that carries readable
+    text and does not report a failure. A record's own URL wins over the call's argument."""
+    pages = [data] if isinstance(data, dict) and _page_text(data) else _records(data)
+    if not pages and isinstance(data, list):
+        pages = [d for d in data if isinstance(d, dict)]
+    out: list[ExternalSource] = []
+    for p in pages:
+        body = _page_text(p)
+        if body is None or inband_failure(tool_name, p) is not None:
+            continue
+        url = _first_str(p, ("final_url", *_URL_KEYS))
+        url = url if url is not None and _URL_RE.fullmatch(url) else fetch_url
+        title = _first_str(p, _TITLE_KEYS)
+        out.append(ExternalSource(url_or_citation=url, title=title[:300] if title else _page_title(body, None),
+                                  excerpt=_passage(body), content=body, authority=classify_authority(url, hosts),
+                                  read_in_full=True))
+    return out
 
 
 def _fetch_target(args: dict[str, Any]) -> str | None:
@@ -264,7 +308,9 @@ def _from_record(d: dict[str, Any], hosts: AuthorityHosts | None = None) -> Exte
         authority = classify_authority(cite, hosts)
         content = snippet or (title or "")
         read = False
-    excerpt = _clip(snippet or title or cite)
+    if not scholarly and not (title or snippet):
+        return None                                             # a bare link: nothing readable to cite
+    excerpt = _clip(snippet or title or cite) if scholarly else _clip(" - ".join(p for p in (title, snippet) if p))
     return ExternalSource(url_or_citation=cite, title=title, excerpt=excerpt, content=content or excerpt,
                           authority=authority, read_in_full=read)
 
