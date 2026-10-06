@@ -133,6 +133,22 @@ def test_score_without_the_flag_refuses_disagreeing_recorded_conditions(tmp_path
     assert not out.exists() and built == []
 
 
+def test_score_without_the_flag_refuses_a_disagreement_either_way_round(tmp_path: Path, built: list[Any]):
+    out = tmp_path / "out"
+    res = score(run_with(tmp_path, "FULL", file_condition="B0"), signed_key(tmp_path), out)
+    assert res.exit_code == 2, res.output
+    assert "manifest.json condition B0" in res.output and "run_manifest condition FULL" in res.output
+    assert len(res.output.strip().splitlines()) == 1   # one line naming both files and values
+    assert not out.exists() and built == []
+
+
+def test_dry_run_without_the_flag_refuses_disagreeing_recorded_conditions(tmp_path: Path, built: list[Any]):
+    res = runner.invoke(app, ["score", str(run_with(tmp_path, "B0", file_condition="FULL")), "--key",
+                              str(signed_key(tmp_path)), "--doc", str(PDF), "--dry-run"])
+    assert res.exit_code == 2 and "manifest.json condition FULL" in res.output
+    assert "{" not in res.stdout   # no call plan printed
+
+
 # ----------------------------------------------------------------------------- acceptance
 
 
@@ -170,4 +186,16 @@ def test_score_without_the_flag_accepts_one_recorded_condition_null(tmp_path: Pa
     res = score(run_with(tmp_path, report_cond, file_condition=file_cond), signed_key(tmp_path), out)
     assert res.exit_code == 0, res.output
     assert validate_scores(json.loads((out / "scores.json").read_text(encoding="utf-8"))) == []
+    assert len(built) == 1
+
+
+@pytest.mark.parametrize(("manifest_file", "drop_field"), [(False, False), (True, True)],
+                         ids=["no-manifest-json", "manifest-json-without-the-field"])
+def test_score_without_the_flag_reads_the_report_when_manifest_json_records_nothing(
+        tmp_path: Path, built: list[Any], manifest_file: bool, drop_field: bool):
+    out = tmp_path / "out"
+    res = score(run_with(tmp_path, "B0", manifest_file=manifest_file, drop_field=drop_field),
+                signed_key(tmp_path), out)
+    assert res.exit_code == 0, res.output
+    assert json.loads((out / "scores.json").read_text(encoding="utf-8"))["inputs"]["condition"] == "B0"
     assert len(built) == 1

@@ -105,6 +105,15 @@ A confirmatory run reuses only cache rows marked `"exploratory": false`, so answ
 `--dry-run` still plans the calls and adds an `lc12` note saying that a real run would refuse.
 `score_review` and `grade_review` apply the same rule when called as a library.
 
+## Condition: a score is filed under the condition the run recorded (`check_condition` in `sit_eval/scoring.py`)
+
+`sit-eval aggregate` pairs runs by the `condition` in `scores.json` `inputs`, so a score filed under the wrong condition lands in the wrong arm of the comparison.
+A run records its condition twice: in `manifest.json` beside `report.json`, and in the report's own `run_manifest`.
+`sit-eval score --condition X` refuses with exit 2 when either copy records a non-null condition other than X.
+`sit-eval score` without `--condition` takes the report's `run_manifest` condition, and refuses with exit 2 when `manifest.json` and the report's `run_manifest` both record a non-null condition and the two differ; the one error line names both files and both values.
+When one copy is null, or `manifest.json` is absent or predates the field, scoring proceeds as before: the flag is taken as given, and without the flag the report's condition is used (null files the run as `unlabelled`).
+Both refusals happen before `--out` is created and before any judge is built, so no call is made and nothing is spent; `--dry-run` refuses the same way.
+
 ## Cost and tokens of the run under test: unknown usage is not zero (`sit_eval/usage.py`)
 
 The `efficiency` metric (MM §10) reads the agent run's `usage.cost_usd` and token counts from its manifest.
