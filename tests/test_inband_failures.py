@@ -85,3 +85,23 @@ def test_fetched_page_excerpt_is_a_passage_of_its_text() -> None:
 def test_failed_search_gives_no_source() -> None:
     assert extract_sources(_res("mcp-internet-search", "search_web", json.dumps(FAILED_SEARCH))) == []
     assert extract_sources(_res("mcp-internet-search", "search_web", "", structured=FAILED_SEARCH)) == []
+
+
+# A fetched page as plain text, short, that mentions a quota (the selftest fixture's page shape).
+SHORT_PAGE = ("Plans and sending limits\nEvery plan sends transactional e-mail through the same API. The Starter "
+              "plan allows up to 2,000 messages per day. Messages over the daily limit are rejected with a quota "
+              "error and are not queued for later delivery.")
+
+
+def test_short_plain_text_page_mentioning_a_quota_is_not_a_failure() -> None:
+    assert len(SHORT_PAGE) <= 300
+    assert inband_failure("fetch", SHORT_PAGE) is None
+    url = "https://docs.example-mail.invalid/plans"
+    srcs = extract_sources(_res("mcp-internet-search", "fetch", SHORT_PAGE, args={"url": url}))
+    assert len(srcs) == 1 and srcs[0].url_or_citation == url and srcs[0].read_in_full
+    assert srcs[0].excerpt.startswith("Plans and sending limits Every plan")
+
+
+def test_one_line_provider_message_is_still_a_failure() -> None:
+    assert inband_failure("fetch", "TAVILY_API_KEY not configured") == "TAVILY_API_KEY not configured"
+    assert inband_failure("search", "429 Too Many Requests: rate limit exceeded") is not None

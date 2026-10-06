@@ -37,7 +37,8 @@ _SEARCH_WORDS = ("search", "query", "lookup", "find")
 PROVIDER_RE = re.compile(r"not configured|no[ _]api[ _]key|api[ _]key (?:is )?(?:missing|invalid|not set)"
                          r"|missing api[ _]key|quota|rate[ _-]?limit|too many requests|\b429\b", re.IGNORECASE)
 _TEXT_ERROR_RE = re.compile(r"^\s*(?:error|exception|traceback|failed|failure)\b", re.IGNORECASE)
-#: A plain-text payload is judged by a provider message only while it is this short.
+#: A plain-text payload is judged by a provider message only while it is one line this short: a
+#: fetched page (a title line, then its text) that mentions a quota or a rate limit is content.
 _SHORT_TEXT = 300
 _REASON_CHARS = 300
 
@@ -71,7 +72,8 @@ def inband_failure(tool_name: str, payload: Any) -> str | None:
       ``status`` string, an error or provider message (not configured, no API key, quota, rate
       limit), or a failed provider attempt saying so; and, for a search tool, an empty result list.
     * A list of page records fails only when every record fails; an empty list fails for a search tool.
-    * Plain text fails when it starts with an error word, or is short and is a provider message.
+    * Plain text fails when it starts with an error word, or is one short line that is a provider
+      message (a page that mentions a quota is not).
     """
     if isinstance(payload, dict) and set(payload) == {"result"}:
         payload = payload["result"]
@@ -104,7 +106,7 @@ def _text_failure(text: str) -> str | None:
     first = t.splitlines()[0]
     if _TEXT_ERROR_RE.match(first):
         return _clip(first)
-    if len(t) <= _SHORT_TEXT and PROVIDER_RE.search(t):
+    if len(t) <= _SHORT_TEXT and len(t.splitlines()) == 1 and PROVIDER_RE.search(t):
         return _clip(t)
     return None
 
