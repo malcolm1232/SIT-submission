@@ -1216,6 +1216,10 @@ async function showTerm(btn) {
   if (!box.isConnected) return;
   box.append(G && G.terms ? termBody(term, G.terms[term]) : h("p", { class: "sp-empty", text: "The glossary could not be read" + (G && G.error ? ": " + G.error : ".") }));
 }
+// Esc closes the open stage panel wherever the focus is, unless something nearer (a popover) took the key first.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.defaultPrevented && S.panel && S.model) { e.preventDefault(); closePanel(S.model); }
+});
 document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest(".chip[data-term]"); if (b) { e.preventDefault(); e.stopPropagation(); showTerm(b); } });
 
 // ---------- the items: one renderer per type of record (ui/stages.py), each a meta line, its text and its full record
@@ -1718,7 +1722,6 @@ function showRun(info, tabs) {
   runTop(info, m, tabs);
   renderRailTools();
   $("sp-close").addEventListener("click", () => closePanel(m));
-  $("stage-panel").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closePanel(m); } });
   if (info.argv) $("legend").after(h("div", { class: "cmd", id: "run-cmd", text: info.argv }));
   // A run just started has no progress.jsonl until the child's first event: the stream is opened anyway and
   // the server follows the file from the moment it appears. Only a run that ended without one has no timeline.

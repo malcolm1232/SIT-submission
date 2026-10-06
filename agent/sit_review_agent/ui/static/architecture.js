@@ -49,6 +49,10 @@ async function showArchitecture() {
   archGuide();
   $("ap-close").addEventListener("click", () => archClose());
   $("arch-panel").addEventListener("keydown", archKeys);
+  // Esc closes the open panel wherever the focus is (a click on the diagram or the page moves it out of the panel).
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !e.defaultPrevented && ARCH.topic) { e.preventDefault(); archClose(); }
+  });
   const t = q.get("topic");
   ARCH.topic = null;
   if (t && ARCH.data.topics[t]) archOpen(t, null, false);
@@ -88,8 +92,8 @@ function right() { return h("span", { class: "arch-right", "aria-hidden": "true"
 function group(cls, label, ...kids) { return h("div", { class: "arch-group " + cls }, label ? h("div", { class: "ag-label", text: label }) : null, ...kids); }
 
 // The topic each tool gateway layer opens.
-const ARCH_LAYER_TOPIC = { LoggingToolGateway: "tool-gateway", PolicyToolGateway: "policy", SelfReplayGateway: "checkpoints",
-  FaultInjectingGateway: "faults", RecordingGateway: "tool-gateway" };
+const ARCH_LAYER_TOPIC = { LoggingToolGateway: "tool-logging", PolicyToolGateway: "policy", SelfReplayGateway: "checkpoints",
+  FaultInjectingGateway: "faults", RecordingGateway: "tool-recording", "MCPToolGateway | ReplayGateway | FakeToolGateway": "tool-base" };
 
 function archDiagram(root) {
   const F = ARCH.data.facts;
@@ -198,7 +202,7 @@ function archImportant(root) {
           onclick: (ev) => archImpOpen(ev.currentTarget.getAttribute("aria-expanded") === "true" ? null : i, false) },
           h("span", { class: "ai-chev", "aria-hidden": "true" }), h("span", { text: c.title }))),
       h("div", { class: "ai-body", id: "ai-body-" + i, role: "region", "aria-labelledby": "ai-toggle-" + i, hidden: true },
-        h("p", { class: "ai-lead" }, archInline(c.lead)),
+        c.lead ? h("p", { class: "ai-lead" }, archInline(c.lead)) : null,
         c.diagram ? h("div", { class: "ai-diagram" }, archSteps(c.diagram)) : null,
         c.points ? h("ul", { class: "ai-points" + (c.columns ? " cols" : "") }, c.points.map(archPoint)) : null,
         c.foot ? h("p", { class: "ai-foot" }, archInline(c.foot)) : null,
@@ -299,7 +303,6 @@ function archStep(delta) {
 
 function archKeys(e) {
   const tag = (e.target && e.target.tagName) || "";
-  if (e.key === "Escape") { e.preventDefault(); archClose(); return; }
   if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
   if (e.key === "ArrowRight" && !e.target.closest('[role="tablist"]')) { e.preventDefault(); archStep(1); }
   else if (e.key === "ArrowLeft" && !e.target.closest('[role="tablist"]')) { e.preventDefault(); archStep(-1); }
@@ -419,7 +422,8 @@ function archPlaceTip(term) {
 }
 // A hyphenated name (mcp-internet-search, EV-(n)) never breaks across lines at its hyphens.
 function archNoBreak(text) {
-  return text.split(/(\w+(?:-[\w()]+)+)/).filter(Boolean).map((t) => (/-/.test(t) && /^\w/.test(t) ? h("span", { class: "nobr", text: t }) : t));
+  // split() puts the matched names at the odd indices; only those are kept whole.
+  return text.split(/(\w+(?:-[\w()]+)+)/).map((t, i) => (i & 1 ? h("span", { class: "nobr", text: t }) : t)).filter(Boolean);
 }
 
 // A snake_case name may wrap after an underscore (a zero-width space), never inside a word.

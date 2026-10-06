@@ -316,7 +316,7 @@
     });
     on(document, "keydown", function (e) {
       if (e.key !== "Escape") return;
-      if (!pop.hidden) { hide(); return; }
+      if (!pop.hidden) { e.preventDefault(); hide(); return; }
       if (paneOpen()) { e.preventDefault(); closePane(); }
     });
     // ---- the side pane: the target's own content, copied from the page with its ids stripped

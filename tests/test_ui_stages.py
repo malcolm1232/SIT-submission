@@ -611,6 +611,17 @@ def test_the_panel_is_reachable_by_keyboard(page) -> None:
     assert pg.evaluate("document.activeElement.dataset.panel") == "merge"
 
 
+def test_escape_closes_the_panel_after_a_click_elsewhere(page) -> None:
+    pg, base, _runs, _replay = page
+    open_log(pg, base, RUN)
+    pg.locator('[data-panel="merge"]').click()
+    pg.wait_for_function("window.SIT.state.panel && window.SIT.state.panel.data !== null")
+    pg.locator("body").click(position={"x": 5, "y": 5})                # the focus leaves the panel
+    assert not pg.evaluate("document.getElementById('stage-panel').contains(document.activeElement)")
+    pg.keyboard.press("Escape")
+    assert pg.locator("#stage-panel").is_hidden()
+
+
 def test_on_the_replayed_rehearsal_every_panel_lists_its_count(page) -> None:
     """Real data: the replayed run's every stage panel lists as many items as the server read, and the funnel's rows
     add up to the merged drafts and agree with the run's own records."""

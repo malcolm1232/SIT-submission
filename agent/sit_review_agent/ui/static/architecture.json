@@ -3,7 +3,7 @@
   "tagline": "{agent_The} is a controlled agent runtime, not just an LLM with tools: the LLM proposes, the platform controls.",
   "order": ["user", "cli", "ingest", "orchestrator", "state-machine", "understand", "plan", "assess", "research",
             "research-reason", "research-act", "research-observe", "merge", "refine", "verify", "report", "outputs",
-            "llm-gateway", "tool-gateway", "policy", "state", "evidence", "checkpoints", "budgets", "faults",
+            "llm-gateway", "tool-gateway", "tool-logging", "policy", "tool-recording", "tool-base", "state", "evidence", "checkpoints", "budgets", "faults",
             "evaluation", "philosophy"],
   "tips": {
     "stop_rules": {
@@ -35,22 +35,16 @@
   },
   "important": [
     {"title": "How it was built",
-     "lead": "The architecture was __not picked by habit__: **one coordinator spawned agents, one per task**, to research, build, attack and verify every choice before it went in.",
+     "lead": "The architecture: **one Orchestrator agent spawned multiple sub-agents, one per task**. Agents are:",
      "points": [
-       "**Research, one agent per question**: frameworks, models, evaluation metrics, the grader rubric, robustness scenarios and Kaggle benchmarks, all __run side by side__.",
-       "**Two agents checked the framework choice independently** against the evidence, so a disagreement would have surfaced.",
-       "**Evaluation data from agents kept apart**: synthetic documents with planted flaws, and sealed held-out documents written __without seeing the project__.",
-       "**Auditors hunted loopholes**: a research audit, an eval data fact-check, a fresh-eyes evaluator, and __a separate verifier for every deliverable__.",
-       "**{build_agents_first_session} agents in the first session alone**, the work done on **Claude Opus**, and every report __kept verbatim__ in docs/transcripts."
+       "**Research, one agent per question**: frameworks ([1](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/frameworks)), models ([2](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/models)), evaluation metrics ([3](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/methodology)), the grader rubric ([4](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/grading)), robustness scenarios ([5](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/robustness)) and Kaggle benchmarks ([6](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/kaggle)), all __run side by side__.",
+       "**Two agents checked the framework choice independently** ([1](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/frameworks), [7](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/research_audit.md)) against the evidence, so a disagreement would have surfaced.",
+       "**Evaluation data from agents kept apart**: synthetic documents with planted flaws ([8](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/eval/synthetic)), and sealed held-out documents written __without seeing the project__ ([9](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/eval/blind)).",
+       "**Auditors hunted loopholes**: a research audit ([7](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/research_audit.md)), an eval data fact-check ([10](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/eval_data_audit.md)), a fresh-eyes evaluator ([11](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/fresh_eyes.md)), and __a separate verifier for every deliverable__ ([12](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/verify_spec.md), [13](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/verify_eval.md), [14](https://github.com/malcolm1232/SIT/blob/claude/eloquent-sagan-ah5ttk/research/audit/verify_docs.md))."
      ],
-     "foot": "So each part of the design below was __argued for with evidence__ and __attacked before it was kept__."},
-    {"title": "Why not LangGraph",
-     "lead": "A **custom state machine** was chosen so that the __orchestration logic stays visible and controllable__, above all around __budgets__, __stop rules__, __evidence__ and __robustness__.",
+     "foot": "So each part of the design below was __argued for with evidence__."},
+    {"title": "Why a custom framework over the popular ones",
      "points": [
-       {"text": "This project needed very specific behaviour around:",
-        "sub": ["MCP 2.x", "Anthropic's Claude Opus", "exact conversation replay", "the evidence ledger", "custom retry policies",
-                "deadline handling", "tool circuit breakers", "deterministic replay", "evaluation", "custom state isolation"]},
-       "**LangGraph** came closest, at {score_langgraph} of 100 against {score_custom} for the custom loop. Its checkpointing and replay are built in, but its MCP adapter is __pinned to MCP 1.x__, tool transport failures __need wrapper code__, and its channels, reducers and ToolNode __take a walkthrough of their own__.",
        {"text": "**The other frameworks**, scored on the same weighted matrix:",
         "sub": ["**PydanticAI**, {score_pydanticai}: the best for swapping vendors, but it __hides the loop__ inside Agent.run and adds retries of its own.",
                 "**OpenAI Agents SDK**, {score_openai_agents}: good retry primitives, but __still 0.x__, with a default tool timeout too short for a cold MCP server.",
@@ -58,24 +52,12 @@
                 "**Claude Agent SDK**, {score_claude_agent_sdk}: a __bundled CLI__ with its own system prompt, tools and compaction, the hardest to explain.",
                 "**CrewAI**, {score_crewai}: a __dependency conflict__ with the current Anthropic SDK, and many hidden prompts.",
                 "**smolagents**, {score_smolagents}: __MCP broken on 2.x__, and it executes model-written code."]},
-       "[See the weighted decision matrix](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/frameworks#weighted-decision-matrix)"
-     ]},
-    {"title": "Two choke points",
-     "lead": "The single most important architectural idea in the repo: __everything external goes through two choke points__, the **LLMGateway** and the **ToolGateway**.",
-     "diagram": [{"box": "Agent", "sub": "every phase", "tone": "ink"},
-                 {"split": [[{"box": "LLMGateway", "sub": "every model call", "topic": "llm-gateway", "tone": "violet"},
-                             {"box": "Anthropic API | Claude Code CLI", "sub": "or replay, fake, fault injection", "topic": "llm-gateway"}],
-                            [{"box": "ToolGateway", "sub": "every tool call", "topic": "tool-gateway", "tone": "violet"},
-                             {"box": "MCP servers", "sub": "or replay, fake, fault injection", "topic": "tool-gateway"}]]}],
-     "points": [
-       "A phase never touches an SDK or a server, so __a backend can be replaced__ behind the same interface: Codex or OpenAI would be __one more LLMGateway class__. None is built yet, and it is not free, because the tool schemas and structured outputs are Anthropic-shaped."
-     ]},
-    {"title": "Choke point 2: the ToolGateway",
-     "lead": "Every tool call passes through __the same layers, outermost first__:",
-     "diagram": [{"layers": "tool_layers"}],
-     "points": [
-       "**PolicyToolGateway** checks every call: the __allowed server__, the __allowed tool__, the URL policy, the argument sanitiser, the server's circuit breaker and the tool-call budget.",
-       "Because every call runs through this choke point, __any call can be denied__: a refused call comes back as blocked and never reaches the server."
+       "[See the weighted decision matrix](https://github.com/malcolm1232/SIT/tree/claude/eloquent-sagan-ah5ttk/research/frameworks#weighted-decision-matrix)",
+       "A **custom state machine** was chosen so that the __orchestration logic stays controllable__, around __stop rules__, __evidence__ and __robustness__.",
+       {"text": "This project needed very specific behaviour around:",
+        "sub": ["MCP 2.x", "exact conversation replay", "the evidence ledger", "custom retry policies",
+                "deadline handling", "deterministic replay", "evaluation"]},
+       "**LangGraph** came closest, at {score_langgraph} of 100 against {score_custom} for the custom loop. Its checkpointing and replay are built in, but its MCP adapter is __pinned to MCP 1.x__."
      ]},
     {"title": "How security is done: what stops it going rogue",
      "lead": "Security is **least privilege plus one choke point plus kill switches**: __the model holds no tools and no keys__; it can only propose, and the platform decides what runs and when it stops.",
@@ -104,6 +86,23 @@
      ],
      "columns": true,
      "foot": "A generic agentic framework __would hide some of those decisions__."},
+    {"title": "Two choke points",
+     "lead": "The single most important architectural idea in the repo: __everything external goes through two choke points__, the **LLMGateway** and the **ToolGateway**.",
+     "diagram": [{"box": "Agent", "sub": "every phase", "tone": "ink"},
+                 {"split": [[{"box": "LLMGateway", "sub": "every model call", "topic": "llm-gateway", "tone": "violet"},
+                             {"box": "Anthropic API | Claude Code CLI", "sub": "or replay, fake, fault injection", "topic": "llm-gateway"}],
+                            [{"box": "ToolGateway", "sub": "every tool call", "topic": "tool-gateway", "tone": "violet"},
+                             {"box": "MCP servers", "sub": "or replay, fake, fault injection", "topic": "tool-gateway"}]]}],
+     "points": [
+       "A phase never touches an SDK or a server, so __a backend can be replaced__ behind the same interface: Codex or OpenAI would be __one more LLMGateway class__. None is built yet, and it is not free, because the tool schemas and structured outputs are Anthropic-shaped."
+     ]},
+    {"title": "Choke point 2: the ToolGateway",
+     "lead": "Every tool call passes through __the same layers, outermost first__:",
+     "diagram": [{"layers": "tool_layers"}],
+     "points": [
+       "**PolicyToolGateway** checks every call: the __allowed server__, the __allowed tool__, the URL policy, the argument sanitiser, the server's circuit breaker and the tool-call budget.",
+       "Because **every call runs through this choke point**, any __call can be denied__: a refused call comes back as blocked and never reaches the server."
+     ]},
     {"title": "The evidence ledger",
      "lead": "Instead of letting the model write __\"According to https://somewebsite.com...\"__, the agent __creates an evidence record__ for every source: **EV-(n)**.",
      "diagram": [{"box": "External source", "sub": "a search result or a fetched page"},
@@ -119,13 +118,13 @@
      "lead": "What this design __buys__, and what it __costs__.",
      "points": [
        {"text": "**Advantages**",
-        "sub": ["**Every decision is visible and controllable**: an explicit state machine and two choke points, so budgets, stop rules, retries and policy are code an evaluator can read and change on the spot.",
-                "**Every claim is traceable and checked**: each finding is anchored to a quoted passage, each citation is an EV-(n) ledger entry, and {invariant_count} invariant checks run before report.json is written.",
-                "**Robust and reproducible**: fault injection, checkpoints and resume, recorded replay, and every degradation __disclosed in the report__ rather than hidden."]},
+        "sub": ["**Every claim is traceable and checked**: each finding is anchored to a quoted passage, each citation is an EV-(n) ledger entry, and {invariant_count} invariant checks run before report.json is written.",
+                "**Robust and reproducible**: fault injection, checkpoints and resume, recorded replay, and every degradation __disclosed in the report__ rather than hidden.",
+                "**Concurrent where it is safe**: understand, plan and the {shard_count} assess shards start together, and research starts as soon as understand and plan end, so wall-clock time falls by running calls __side by side__, not only by making each call faster."]},
        {"text": "**Disadvantages**",
         "sub": ["**More code to own**: the custom loop rebuilds what a framework ships, retries, breakers, checkpointing and replay, so __its robustness is only as good as our own tests__.",
                 "**External evidence arrives late**: the assess shards start before research, so no shard sees outside sources; research evidence reaches a finding __only through refine__.",
-                "**Thinly measured so far**: one document and one run per arm, the answer key not yet signed off, the agent, judge and grader in __one model family__, {robust_blocked} of {robust_total} robustness scenarios not run offline, and images in a PDF unseen."]}
+                "**Concurrency needs its own machinery**: members writing one shared run state at once would __race__, so each works on __its own copy of the run state__ and is merged back when it ends, and a finished assess shard is kept as a serialisable StateDelta that survives a resume. That is more code to get right, and merging changes the order of shared lists: degradation IDs follow the order members are merged."]}
      ]}
   ],
   "topics": {
@@ -605,6 +604,25 @@
          "src": "agent/sit_review_agent/tools/mcp_client.py ServerConnection; config/tools.yaml connect_timeout_s; agent/sit_review_agent/orchestrator.py _run_check_tool_key"}
       ]
     },
+    "tool-logging": {
+      "title": "Logging",
+      "kind": "tool gateway layer",
+      "simple": {
+        "lead": "Logging is the outermost layer: every tool call and every tool listing is written to the run directory, with secrets redacted.",
+        "points": [
+          "One line per call in tools.jsonl: the server, tool, arguments, status, result and timing.",
+          "It sits outside the policy, so a call the policy blocks is written down too.",
+          "The tools the model was offered go to tools_list.jsonl, so a research turn can be replayed with exactly that catalogue.",
+          "On resume, Self replay reads tools.jsonl back to serve the calls already made."
+        ]
+      },
+      "advanced": [
+        {"h": "What it writes",
+         "items": ["tools.jsonl: call ID, server, tool, arguments, status, content, start time, elapsed seconds, cassette key, error class, whether it was replayed, and every attempt.",
+                   "tools_list.jsonl: when the tools were listed, and each tool's server, name, description, input schema and capability."],
+         "src": "agent/sit_review_agent/tools/gateway.py LoggingToolGateway; agent/sit_review_agent/tools/gateway.py log_entry"}
+      ]
+    },
     "policy": {
       "title": "Policy",
       "kind": "tool gateway layer",
@@ -621,6 +639,44 @@
         {"h": "Checks",
          "items": ["The allowlist, the URL policy (a query string added to a seen URL is refused), the argument sanitiser, the per-server breaker (a tool disabled after {tool_error_limit} genuine failures in a row), the budget."],
          "src": "agent/sit_review_agent/tools/policy.py check_urls; agent/sit_review_agent/tools/policy.py sanitise_args; agent/sit_review_agent/tools/gateway.py PolicyToolGateway; config/url_policy.yaml"}
+      ]
+    },
+    "tool-recording": {
+      "title": "Recording",
+      "kind": "tool gateway layer",
+      "simple": {
+        "lead": "Recording runs only with --record: it saves each live tool call as a redacted cassette, so a later run can replay it with no network.",
+        "points": [
+          "One cassette per call, keyed by a hash of the server, the tool and the arguments.",
+          "Successful calls and tool errors are saved; transport failures are not.",
+          "Secrets are redacted before anything reaches disk.",
+          "The cassettes are what the replay base below serves from."
+        ]
+      },
+      "advanced": [
+        {"h": "Where cassettes go",
+         "items": ["tools/<server>/<tool>/<key>.json under the cassette directory, and each server's tool list in tools_list/<server>.json.",
+                   "--record and --replay cannot be used together."],
+         "src": "agent/sit_review_agent/tools/gateway.py RecordingGateway; agent/sit_review_agent/tools/cassette.py cassette_path; config/agent.yaml cassette_dir; agent/sit_review_agent/cli.py record"}
+      ]
+    },
+    "tool-base": {
+      "title": "Base: MCP, replay, fake",
+      "kind": "tool gateway base",
+      "simple": {
+        "lead": "The base is where a tool call finally lands; which one is used is set by transport in config/agent.yaml.",
+        "points": [
+          "Live, MCPToolGateway: the real MCP servers, one long-lived session each.",
+          "Replay, ReplayGateway: answers from saved cassettes with no network; a strict replay fails on a call it has never seen.",
+          "Fake, FakeToolGateway: an in-process stand-in for fast tests.",
+          "Every layer above works the same whichever base is underneath."
+        ]
+      },
+      "advanced": [
+        {"h": "Choosing the base",
+         "items": ["transport: live | record | replay | fake, or --transport, --replay <dir> and --record on the command line.",
+                   "record keeps the live base and adds the Recording layer above it."],
+         "src": "agent/sit_review_agent/tools/gateway.py build_tool_gateway; agent/sit_review_agent/tools/gateway.py ReplayGateway; agent/sit_review_agent/tools/gateway.py FakeToolGateway; config/agent.yaml transport"}
       ]
     },
     "state": {

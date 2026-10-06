@@ -220,6 +220,36 @@ def test_the_rail_item_follows_replay_and_opens_the_view(page) -> None:
     assert pg.locator('.navrail-item[data-page="architecture"]').get_attribute("class").split().count("active") == 1
 
 
+def test_only_hyphenated_names_are_kept_on_one_line(page) -> None:
+    pg, base = page
+    pg.goto(base + "/?page=architecture")
+    pg.wait_for_selector(".arch-important .ai-card")
+    kept = pg.evaluate("archNoBreak('Recording runs only with --record, then mcp-internet-search and EV-(n).')"
+                       ".filter((n) => n.nodeType === 1).map((n) => n.textContent)")
+    assert kept == ["mcp-internet-search", "EV-(n)"]
+    # every layer opens its own panel, and every panel lead wraps inside the panel
+    toggles = pg.locator(".ai-toggle")
+    toggles.nth(toggles.all_inner_texts().index("Choke point 2: the ToolGateway")).click()
+    for name, title in (("LoggingToolGateway", "Logging"), ("RecordingGateway", "Recording"),
+                        ("MCPToolGateway", "Base: MCP, replay, fake")):
+        pg.locator(".ai-card.open .ai-layers .arch-box", has_text=name).click()
+        pg.wait_for_selector("#arch-panel:not([hidden])")
+        assert pg.locator("#ap-title").inner_text() == title
+        assert pg.evaluate("(() => { const p = document.querySelector('#ap-content p');"
+                           " return p.scrollWidth <= p.clientWidth; })()"), name
+
+
+def test_escape_closes_the_panel_after_a_click_elsewhere(page) -> None:
+    pg, base = page
+    pg.goto(base + "/?page=architecture")
+    pg.locator('.arch-box[data-topic="ingest"]').first.click()
+    pg.wait_for_selector("#arch-panel:not([hidden])")
+    pg.locator("body").click(position={"x": 5, "y": 5})                # the focus leaves the panel
+    assert not pg.evaluate("document.getElementById('arch-panel').contains(document.activeElement)")
+    pg.keyboard.press("Escape")
+    assert pg.locator("#arch-panel").is_hidden()
+
+
 def test_the_important_points_follow_the_diagram_and_the_matrix_opens_in_a_new_tab(page, view) -> None:
     pg, base = page
     pg.goto(base + "/?page=architecture")
@@ -239,13 +269,15 @@ def test_the_important_points_follow_the_diagram_and_the_matrix_opens_in_a_new_t
     pg.locator(".ai-toggle").first.click()
     assert not any(opened())
     pg.locator(".ai-toggle").first.click()
-    link = pg.locator(".ai-card a.arch-out")
-    assert link.count() == 1 and link.get_attribute("target") == "_blank" and "noopener" in link.get_attribute("rel")
-    assert link.get_attribute("href").endswith("research/frameworks#weighted-decision-matrix")
-    pg.locator(".ai-toggle").nth(3).click()
+    links = pg.locator(".ai-card a.arch-out")
+    assert links.count() > 1 and all(
+        a.get_attribute("target") == "_blank" and "noopener" in a.get_attribute("rel") for a in links.all())
+    hrefs = links.evaluate_all("(els) => els.map((e) => e.getAttribute('href'))")
+    assert sum(h.endswith("research/frameworks#weighted-decision-matrix") for h in hrefs) == 1
+    pg.locator(".ai-toggle").nth(titles.index("Choke point 2: the ToolGateway")).click()
     layers = pg.locator(".ai-card .ai-layers .ab-title").all_inner_texts()
     assert layers == view["facts"]["tool_layers"]
-    pg.locator(".ai-toggle").nth(2).click()
+    pg.locator(".ai-toggle").nth(titles.index("Two choke points")).click()
     pg.locator('.ai-card .arch-box[data-topic="llm-gateway"]').first.click()
     pg.wait_for_selector("#arch-panel:not([hidden])")
     assert pg.locator("#ap-title").inner_text() == view["topics"]["llm-gateway"]["title"]
