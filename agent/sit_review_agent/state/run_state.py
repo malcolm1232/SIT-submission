@@ -145,6 +145,9 @@ class FindingIdMap(_State):
     unverified: list[str] = Field(default_factory=list,
                                   description="draft IDs of verify's unverified items, in state.unresolved order")
     prior: list[str] = Field(default_factory=list, description="delta mode: the finding IDs of the prior review")
+    report: dict[str, str] = Field(default_factory=dict,
+                                   description="final ID -> why the report moved it out of the findings (delta mode: "
+                                               "a resolved prior finding is a prior-table row only, card A3)")
     rewrites: dict[str, int] = Field(default_factory=dict,
                                      description="report text: references remapped, removed and marked as drafts")
 

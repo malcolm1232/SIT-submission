@@ -53,12 +53,17 @@ class Recorder:
     """Wraps the fixture gateway: scripted delta answers for assess and refine, and the refine
     requests seen (conversation ID and brief text)."""
 
-    def __init__(self, prior: dict[str, str], refine_answers: list[list[dict[str, Any]] | None]) -> None:
+    def __init__(self, prior: dict[str, str], refine_answers: list[list[dict[str, Any]] | None],
+                 reassessments: dict[str, dict[str, Any]] | None = None) -> None:
         self.prior = prior
         self.refine_answers = list(refine_answers)
         self.refine_requests: list[tuple[str, str]] = []
+        self.reassessments = reassessments or {}
+        self.verdict_briefs: list[str] = []
 
     def reassessment(self, title: str) -> dict[str, Any]:
+        if title in self.reassessments:
+            return self.reassessments[title]
         if title == MAIL:
             return {"prior_finding_id": self.prior[MAIL], "status": "still_open", "note": "Quota still unaddressed."}
         if title == INVENTED:
@@ -91,7 +96,15 @@ class Recorder:
                 resp.parsed["prior_statuses"] = statuses
             return resp
 
-        for phase, fn in (("assess", delta_assess), ("refine", delta_refine)):
+        verdict = gw.script["report"][0]
+
+        def delta_verdict(ledger: list[dict[str, Any]], req: Any) -> Any:
+            from sit_review_agent.selftest import _brief_text
+
+            rec.verdict_briefs.append(_brief_text(req))
+            return verdict(ledger, req)
+
+        for phase, fn in (("assess", delta_assess), ("refine", delta_refine), ("report", delta_verdict)):
             queue = gw.script[phase]
             n = len(queue)
             queue.clear()
@@ -99,10 +112,10 @@ class Recorder:
         return gw
 
 
-async def _run(cfg: Any, run_id: str, pdf: Path, llm_factory: Any = None, **kw: Any) -> Any:
+async def _run(cfg: Any, run_id: str, pdf: Path, llm_factory: Any = None, progress: Any = None, **kw: Any) -> Any:
     factory = llm_factory or (lambda rd, clock, progress: fixture_gateway(rd, clock=clock))
     out = await run_review(RunRequest(pdf=pdf, config=cfg, run_id=run_id, **kw), llm_factory=factory,
-                           tools_factory=tools_factory, clock=FakeClock(), progress=NullProgress())
+                           tools_factory=tools_factory, clock=FakeClock(), progress=progress or NullProgress())
     assert out.exit_code == 0, (out.run_dir / "failure.json").read_text() if (out.run_dir / "failure.json").exists() \
         else out
     return out
@@ -119,12 +132,14 @@ def prior_run(tmp_path: Path) -> tuple[Any, Any, dict[str, str]]:
 
 
 def _delta(tmp_path: Path, prior_run: tuple[Any, Any, dict[str, str]],
-           refine_answers: list[list[dict[str, Any]] | None]) -> tuple[dict[str, Any], str, Recorder, Path]:
+           refine_answers: list[list[dict[str, Any]] | None],
+           reassessments: dict[str, dict[str, Any]] | None = None,
+           progress: Any = None) -> tuple[dict[str, Any], str, Recorder, Path]:
     import asyncio
 
     cfg, v1, prior = prior_run
-    rec = Recorder(prior, refine_answers)
-    out = asyncio.run(_run(cfg, "v2", _v2(tmp_path), rec, previous_run=v1.run_dir))
+    rec = Recorder(prior, refine_answers, reassessments)
+    out = asyncio.run(_run(cfg, "v2", _v2(tmp_path), rec, progress, previous_run=v1.run_dir))
     report = json.loads((out.run_dir / "report.json").read_text(encoding="utf-8"))
     return report, (out.run_dir / "report.md").read_text(encoding="utf-8"), rec, out.run_dir
 
@@ -232,3 +247,112 @@ def test_the_review_model_rejects_a_broken_delta_table(tmp_path: Path, prior_run
         Review.model_validate(report)
     if message in ("needs a one-line reason", "not re-examined is still_open"):
         assert list(spec_validator("Review").iter_errors(report))       # the schema says the same
+
+
+# ------------------------------------------------- card A3: a resolved prior is a delta-table row only
+
+RESOLVED_NOTE = "Hourly batching and a load test now cover peak-day reminders."
+
+
+def _ids_in_lists(node: Any) -> set[str]:
+    """Every ID in a ``finding_ids`` or ``related_finding_ids`` list of a JSON tree."""
+    out: set[str] = set()
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in ("finding_ids", "related_finding_ids") and isinstance(v, list):
+                out |= set(v)
+            else:
+                out |= _ids_in_lists(v)
+    elif isinstance(node, list):
+        for v in node:
+            out |= _ids_in_lists(v)
+    return out
+
+
+def test_a_resolved_prior_is_a_table_row_not_a_finding(tmp_path: Path, prior_run: Any) -> None:
+    """One finding reassessed resolved (prior TESTING), one still open (prior MAIL): the resolved one
+    leaves the findings, the verdict input and the counts, and its prior row is resolved with no
+    successor, re-examined, with the carrier's note."""
+    from sit_review_agent.models import Review
+    from sit_review_agent.phases.report import _severity_counts
+
+    _, _, prior = prior_run
+    withdrawn = [{"prior_finding_id": prior[STRENGTH], "status": "withdrawn_on_reassessment", "note": WITHDRAW_NOTE}]
+    progress = NullProgress()
+    report, _, rec, run_dir = _delta(tmp_path, prior_run, [withdrawn], {
+        TESTING: {"prior_finding_id": prior[TESTING], "status": "resolved", "note": RESOLVED_NOTE},
+        INVENTED: {"prior_finding_id": None, "status": "new_in_update", "note": None}}, progress)
+    titles = [f["title"] for f in report["findings"]]
+    assert TESTING not in titles and MAIL in titles
+    moved_map = report["run_manifest"]["extra"]["finding_ids"]["report"]
+    assert list(moved_map.values()) == ["resolved, moved to the prior table"]
+    moved = next(iter(moved_map))
+    assert moved not in {f["id"] for f in report["findings"]}
+
+    table = _table(report)
+    assert sorted(table) == sorted(prior.values())
+    done = table[prior[TESTING]]
+    assert (done["status"], done["finding_ids"], done["re_examined"], done["note"]) == \
+        ("resolved", [], True, RESOLVED_NOTE)
+    mail = table[prior[MAIL]]
+    mail_id = next(f["id"] for f in report["findings"] if f["title"] == MAIL)
+    assert (mail["status"], mail["finding_ids"], mail["re_examined"]) == ("still_open", [mail_id], True)
+
+    # the verdict call saw only the open findings; the counts the verdict event gives exclude the moved one
+    assert TESTING not in rec.verdict_briefs[-1] and MAIL in rec.verdict_briefs[-1]
+    verdict_event = next(e for e in progress.records if e.event == "verdict")
+    assert verdict_event.fields["findings"] == len(report["findings"])
+    assert verdict_event.fields["by_severity"] == _severity_counts(Review.model_validate(report).findings)
+    assert f"; {len(report['findings'])} findings," in verdict_event.message
+    assert any(e.event == "resolved_to_prior_table" and e.fields["finding_ids"] == [moved]
+               for e in progress.records)
+
+    # no dangling reference to the moved finding
+    for section in ("unresolved", "sound_areas", "verdict"):
+        assert moved not in _ids_in_lists(report[section]), section
+    assert [r.inv_id for r in check_all(report, run_dir) if not r.passed] == []
+    assert check_INV_13(report, run_dir).passed
+
+
+def test_a_still_open_carrier_keeps_the_row_open_when_another_is_resolved(tmp_path: Path, prior_run: Any) -> None:
+    """Two carriers of the prior MAIL finding, one resolved and one still open: the still-open
+    carrier stays and gives the row; the resolved one leaves the findings."""
+    _, _, prior = prior_run
+    statuses = [{"prior_finding_id": prior[STRENGTH], "status": "withdrawn_on_reassessment", "note": WITHDRAW_NOTE},
+                {"prior_finding_id": prior[TESTING], "status": "still_open", "note": "Not tested yet."}]
+    report, _, _, run_dir = _delta(tmp_path, prior_run, [statuses], {
+        TESTING: {"prior_finding_id": prior[MAIL], "status": "resolved", "note": RESOLVED_NOTE},
+        INVENTED: {"prior_finding_id": None, "status": "new_in_update", "note": None}})
+    titles = [f["title"] for f in report["findings"]]
+    assert TESTING not in titles and MAIL in titles
+    mail_id = next(f["id"] for f in report["findings"] if f["title"] == MAIL)
+    mail = _table(report)[prior[MAIL]]
+    assert (mail["status"], mail["finding_ids"], mail["re_examined"]) == ("still_open", [mail_id], True)
+    assert [r.inv_id for r in check_all(report, run_dir) if not r.passed] == []
+    assert check_INV_13(report, run_dir).passed
+
+
+def test_split_resolved_keeps_a_less_fixed_entry_and_replaces_a_withdrawal() -> None:
+    """``split_resolved`` alone (refine never gives a status for a prior a kept draft carries, so the
+    pipeline cannot reach this): an existing still_open entry for the resolved carrier's prior finding
+    stands; a withdrawal gives way to ``resolved`` with the carrier's note; the carrier leaves either way."""
+    from types import SimpleNamespace
+
+    from sit_review_agent.delta import split_resolved
+    from sit_review_agent.llm.outputs import PriorStatusDraft
+    from sit_review_agent.models import PriorFindingStatus, Reassessment, ReassessmentStatus
+
+    def carrier(fid: str, pid: str) -> Any:
+        r = Reassessment(prior_finding_id=pid, status=ReassessmentStatus.RESOLVED, note=RESOLVED_NOTE)
+        return SimpleNamespace(id=fid, reassessment=r)
+
+    kept_open = PriorStatusDraft(prior_finding_id="FND-001", status=PriorFindingStatus.STILL_OPEN,
+                                 note="Not tested yet.")
+    withdrawn = PriorStatusDraft(prior_finding_id="FND-002", status=PriorFindingStatus.WITHDRAWN_ON_REASSESSMENT,
+                                 note=WITHDRAW_NOTE)
+    kept, statuses, moved = split_resolved([carrier("FND-005", "FND-001"), carrier("FND-006", "FND-002")],
+                                           ["FND-001", "FND-002"], [kept_open, withdrawn])
+    assert kept == [] and moved == ["FND-005", "FND-006"]
+    by_prior = {s.prior_finding_id: s for s in statuses}
+    assert len(statuses) == 2 and by_prior["FND-001"] == kept_open
+    assert (by_prior["FND-002"].status, by_prior["FND-002"].note) == (PriorFindingStatus.RESOLVED, RESOLVED_NOTE)

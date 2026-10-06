@@ -250,7 +250,7 @@ The agent against a single call, plan D, eight synthetic documents, one run each
 ## 7. Twenty likely questions
 
 1. How do you stop hallucinated citations?
-The model never writes a URL: it cites ledger IDs, code hydrates the URL from the ledger, and a free-text URL not in the ledger is replaced by a visible "link removed" marker; INV-05 fails the run on a cited evidence ID that is not in the ledger (`state/evidence_ledger.py` `hydrate`, `phases/report.py` `LINK_REMOVED`, `invariants.py` `check_INV_05`).
+The model never writes a URL: it cites ledger IDs, code hydrates the URL from the ledger, and a free-text URL not in the ledger is replaced by a visible "link removed" marker; INV-05 fails the run on a cited evidence ID that is not in the ledger (`state/evidence_ledger.py` `hydrate`, `phases/report.py` `_redact`, `invariants.py` `LINK_REMOVED`, `check_INV_05`).
 
 2. How do you stop invented quotes?
 Every finding carries one to three anchors of at least 8 tokens, and verify searches the canonical text for each; a finding with no resolvable anchor becomes an "Unverified" unresolved item with no recommendation (`ingest/anchor.py`, `phases/verify.py`).

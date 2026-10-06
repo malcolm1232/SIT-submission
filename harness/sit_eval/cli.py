@@ -123,7 +123,8 @@ def score(
         key_data = load_key(key)
     except LoadError as exc:
         _fail(str(exc))
-    # the condition aggregate pairs on: a flag that contradicts the run's manifest is refused before any call
+    # the condition aggregate pairs on: a flag that contradicts the run's manifest, or (without the flag) two
+    # recorded conditions that disagree, is refused before any call
     try:
         check_condition(condition, rin.manifest, rin.data.get("run_manifest"))
     except ConditionMismatch as exc:
