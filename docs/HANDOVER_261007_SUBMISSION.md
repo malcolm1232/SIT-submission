@@ -51,10 +51,10 @@ No deploy exists: the page is served locally by `~/Desktop/SIT-wt/start_sit_ui.s
 
 | Command (run in `~/Desktop/SIT-wt/ui-integration`) | Expected on 07 Oct 2026 00:40 | If different |
 |---|---|---|
-| `git branch --show-current; git rev-parse --short HEAD` | `s4/ui-integration`, `f7a5259` | Read the new commits (`git log f7a5259..HEAD --stat`) before editing |
+| `git branch --show-current; git log --oneline f7a5259..HEAD` | `s4/ui-integration`, then only commits whose subject starts with `Handover of 07 Oct 2026` (this file) | Read the other new commits (`git log f7a5259..HEAD --stat`) before editing |
 | `gh auth status` | logged in as `malcolm1232` | Stop; ask him to log in (`! gh auth login`) |
 | `git status --short` | only `?? ui_screens/` | Someone has uncommitted work; ask him before touching those files |
-| `gh api repos/malcolm1232/SIT-submission/commits/main -q '.sha[0:7]'` | `f7a5259` | Local ahead: run the secret counts, then push `HEAD:main`. Remote ahead or diverged: `git fetch submission && git log HEAD..submission/main`, merge it (`git merge --no-edit submission/main`), never force-push |
+| `gh api repos/malcolm1232/SIT-submission/commits/main -q '.sha[0:7]'` | the same hash as `git rev-parse --short HEAD` | Local ahead: run the secret counts, then push `HEAD:main`. Remote ahead or diverged: `git fetch submission && git log HEAD..submission/main`, merge it (`git merge --no-edit submission/main`), never force-push |
 | `gh api repos/malcolm1232/SIT-submission/collaborators -q '.[].login'` | `malcolm1232` only | If the two IDs are there, item 2 is already done |
 | `gh repo view malcolm1232/SIT-submission --json visibility -q .visibility` | `PRIVATE` | Never change it without his word |
 | `lsof -ti tcp:8765 -sTCP:LISTEN` | one PID while the page server runs (nothing after a reboot is normal) | Start it: `~/Desktop/SIT-wt/start_sit_ui.sh` (run in background) |
