@@ -94,6 +94,8 @@ Tools are offered to the model by capability, under the name `<server>__<tool>`,
 The policy layer enforces the allowlist, the URL policy and an argument sanitiser: a fetched URL must have appeared in an earlier result or in the document, a query string added to a seen URL is refused, and no secret, canary, key-shaped token or bulk document text may leave the process in a tool argument (`agent/sit_review_agent/tools/policy.py` `check_urls`, `sanitise_args`; `config/url_policy.yaml`).
 A missing key fails the run fast, before any model call, unless `--no-tools` asks for a document-only review; a key revoked mid-run degrades the run to document-only and the report says so (`agent/sit_review_agent/orchestrator.py` `_run_check_tool_key`, `docs/USER_DECISIONS.md` #13).
 Each result is parsed into sources, each source becomes a ledger entry with an authority class and an independence key, and the model sees the result text prefixed with the new `EV-nnn` IDs so it can cite only what it has read (`agent/sit_review_agent/tools/sources.py` `extract_sources`, `classify_authority`, `independence_key`).
+A tool result that reports its own failure, such as a search that returns no results with a provider error or a fetch whose record says it failed, is a failed call and never evidence, so it never becomes a ledger entry and can never be cited (`docs/USER_DECISIONS.md` #49).
+An external excerpt is readable text, a search hit's title and snippet or a fetched page's passage, never the raw tool payload.
 
 ## 6. Honesty and traceability
 

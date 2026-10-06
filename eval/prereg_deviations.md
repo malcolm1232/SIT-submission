@@ -428,3 +428,19 @@ already happened (none had for entries made before the freeze).
 - **Decided by:** the owner (#48).
 - **Scored runs before the change:** none confirmatory (`frozen: false`). Every evaluation run so far used its
   profile's own deadline, as far as their recorded `cli_args` show; such runs are not affected.
+
+## 17. 2026-10-06: a tool result that reports its own failure is a failed call, and an external excerpt is readable text
+
+- **Fields:** none of `eval/prereg.yaml` is edited.
+- **Old behaviour:** the tool gateways marked a call failed only when the transport or the server raised an error.
+  A web search that returned no results with a provider error in its body (such as "TAVILY_API_KEY not configured"), or a page fetch whose record said it failed, counted as a successful call, so its result became evidence ledger entries that the model could cite.
+  An external ledger entry's excerpt could be the raw JSON of the tool payload.
+- **New behaviour:** the gateways classify such an in-band failure as a failed call (`ok=False`), so a failed search or fetch is never recorded in the evidence ledger and can never be cited.
+  An external excerpt is readable text: a search hit's title and snippet, or a fetched page's passage, never the raw tool payload.
+  Verify still rejects a cited evidence ID that is not in the ledger (unchanged).
+- **Reason:** the owner's first tools-on run of 2026-10-05 (`ui-261005-170012-2648`) recorded four failed searches as ledger entries, and one of them (EV-001) was cited by finding FND-044 as contrary evidence.
+  Two fetched pages of that run were stored as raw JSON.
+  The owner's ruling, 6 Oct 2026, verbatim: "yes: fix the research defects, before any demo" (`docs/USER_DECISIONS.md` #49).
+- **Decided by:** the owner (#49).
+- **Scored runs before the change:** none confirmatory (`frozen: false`; no key is `scored_run_ready`).
+  Runs made after this change may hold fewer external ledger entries than runs before it, and never cite a failed call, so external-evidence counts are not comparable across the change.
