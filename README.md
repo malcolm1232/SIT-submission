@@ -61,10 +61,11 @@ A run writes everything under `runs/`, which git ignores; a run worth keeping is
 | `config/stop_rules.yaml` | The active stop rules, deadline, stage limits, tool-call and research-iteration budgets, reserves |
 | `config/tools.yaml` | The four SIT MCP servers (two enabled), the auth header, timeouts and the idle-session rule |
 | `config/criteria.yaml`, `config/url_policy.yaml`, `config/persona.yaml`, `config/endpoints.yaml` | The eleven review criteria, the URL policy, the reviewer persona and the server endpoints |
-| `config/ui.yaml` | The SMTP server for the Email action of `dra ui`; the agent never reads it |
+| `config/ui.yaml` | The SMTP server for the Email action of `dra ui` (host, username and sender can come from the environment instead); the agent never reads it |
 | `config/eval.yaml` | Judge model and settings of the evaluation harness |
 | `SIT_MCP_API_KEY` | The shared SIT MCP key; a review with tools on fails fast without it |
 | `SIT_UI_SMTP_PASSWORD` | Optional; the SMTP password for the Email action of `dra ui` |
+| `SIT_UI_SMTP_HOST`, `SIT_UI_SMTP_USERNAME`, `SIT_UI_SMTP_FROM` | Optional; when not blank they win over the same fields of `config/ui.yaml`, so a personal address need not be committed |
 
 The agent reads the shell environment, not a file: copy `.env.example` to `.env`, fill it in, and load it with `set -a; . ./.env; set +a` before running.
 
@@ -145,5 +146,5 @@ Every score so far is exploratory (`docs/LIMITATIONS.md`).
 ## Secrets
 
 No key, password or token is committed, and `.gitignore` excludes `.env`.
-The two environment variables are `SIT_MCP_API_KEY` (the MCP servers) and `SIT_UI_SMTP_PASSWORD` (optional email); `.env.example` names them with empty values.
+The secret environment variables are `SIT_MCP_API_KEY` (the MCP servers) and `SIT_UI_SMTP_PASSWORD` (optional email); `.env.example` names them, and the optional `SIT_UI_SMTP_*` address variables, with empty values.
 The agent's logs redact secrets, and the held-out answer keys are handled as `docs/SEALING.md` describes.

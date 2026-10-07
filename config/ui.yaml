@@ -5,7 +5,8 @@
 # this computer, through the SMTP server below. The password is never written here or anywhere else: the server
 # reads it from the environment variable SIT_UI_SMTP_PASSWORD at the moment it sends. With host, username or
 # from left empty, or SIT_UI_SMTP_PASSWORD unset, the page shows the Email button disabled with the reason
-# "Email is not configured: see config/ui.yaml". Each send is logged to runs/<id>/ui/outbox.jsonl (recipient,
+# "Email is not configured: see config/ui.yaml". SIT_UI_SMTP_HOST, SIT_UI_SMTP_USERNAME and SIT_UI_SMTP_FROM, when
+# set and not blank, win over host, username and from below, so a personal address need not be committed. Each send is logged to runs/<id>/ui/outbox.jsonl (recipient,
 # time, sizes, result; never the content).
 #
 # Example (an app password of a mail account, kept in the shell that starts dra ui):

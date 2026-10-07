@@ -2,7 +2,8 @@
 
 Sends the HTML export (``ui.export``) and ``report.md`` as two attachments to one typed address, from
 this computer, through the SMTP server in ``config/ui.yaml`` (``email``: ``host``, ``port``,
-``starttls``, ``username``, ``from``). The password is read from :data:`PASSWORD_ENV` at the moment
+``starttls``, ``username``, ``from``); a non-empty :data:`FIELD_ENV` variable wins over the file, so a
+personal address need not be committed. The password is read from :data:`PASSWORD_ENV` at the moment
 of sending and is never written anywhere. Without the config or the variable the page shows the
 button disabled with :data:`NOT_CONFIGURED`; the server refuses the same way, never a silent no-op.
 With ``starttls: true`` a server that does not offer STARTTLS is a failed send, not a clear-text one.
@@ -29,6 +30,8 @@ import yaml
 from sit_review_agent.ui.rundata import UI_DIR
 
 PASSWORD_ENV = "SIT_UI_SMTP_PASSWORD"
+#: Environment variables that win over the same ``email`` field of ``config/ui.yaml`` when set and not blank.
+FIELD_ENV = {"host": "SIT_UI_SMTP_HOST", "username": "SIT_UI_SMTP_USERNAME", "from": "SIT_UI_SMTP_FROM"}
 NOT_CONFIGURED = "Email is not configured: see config/ui.yaml"
 OUTBOX = "outbox.jsonl"
 TIMEOUT_S = 30.0
@@ -58,7 +61,8 @@ def valid_address(addr: str) -> bool:
 
 
 def load_smtp(path: Path) -> tuple[SmtpConfig | None, str]:
-    """The SMTP settings in ``path`` (``config/ui.yaml``), or ``None`` and what is missing."""
+    """The SMTP settings in ``path`` (``config/ui.yaml``) and :data:`FIELD_ENV`, or ``None`` and what is missing."""
+    from_env = {k: os.environ.get(v, "").strip() for k, v in FIELD_ENV.items()}
     if not path.is_file():
         return None, "the file does not exist"
     try:
@@ -67,8 +71,10 @@ def load_smtp(path: Path) -> tuple[SmtpConfig | None, str]:
         return None, f"the file does not parse ({type(exc).__name__})"
     email = doc.get("email") if isinstance(doc, dict) else None
     if not isinstance(email, dict):
-        return None, "the file has no email section"
-    host, user, sender = (str(email.get(k) or "").strip() for k in ("host", "username", "from"))
+        if not all(from_env.values()):
+            return None, "the file has no email section"
+        email = {}
+    host, user, sender = (from_env[k] or str(email.get(k) or "").strip() for k in ("host", "username", "from"))
     missing = [k for k, v in (("host", host), ("username", user), ("from", sender)) if not v]
     if missing:
         names = missing[0] if len(missing) == 1 else ", ".join(missing[:-1]) + " and " + missing[-1]
@@ -117,6 +123,17 @@ def _log(run_dir: Path, row: dict[str, Any]) -> None:
         fh.write(json.dumps(row) + "\n")
 
 
+def _login(smtp: smtplib.SMTP, username: str, password: str) -> None:
+    """AUTH LOGIN, as a dialog, when the server offers it, else smtplib's own choice. smtp.gmail.com cut the
+    connection on smtplib's default AUTH PLAIN from this laptop on 2026-10-07, wrong and right passwords
+    alike, and answered the LOGIN dialog normally."""
+    if "LOGIN" not in smtp.esmtp_features.get("auth", "").upper().split():
+        smtp.login(username, password)
+        return
+    smtp.user, smtp.password = username, password
+    smtp.auth("LOGIN", smtp.auth_login, initial_response_ok=False)
+
+
 def send(run_dir: Path, to: str, cfg: SmtpConfig | None, *, title: str,
          attachments: list[tuple[str, bytes, str, str]],
          smtp_factory: Callable[..., smtplib.SMTP] = smtplib.SMTP) -> dict[str, Any]:
@@ -142,7 +159,7 @@ def send(run_dir: Path, to: str, cfg: SmtpConfig | None, *, title: str,
             if cfg.starttls:
                 smtp.starttls(context=ssl.create_default_context())
                 smtp.ehlo()
-            smtp.login(cfg.username, password)
+            _login(smtp, cfg.username, password)
             smtp.send_message(msg, from_addr=cfg.sender, to_addrs=[to])
     except (OSError, smtplib.SMTPException) as exc:
         error = f"{type(exc).__name__}: {exc}"

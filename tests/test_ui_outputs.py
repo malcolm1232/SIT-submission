@@ -230,9 +230,10 @@ def test_export_and_raw_downloads_are_served(flow_runs: Path) -> None:
 
 class FakeSMTP:
     """A local SMTP server for one test: EHLO, AUTH PLAIN, MAIL, RCPT, DATA, QUIT, and nothing else (no
-    STARTTLS). ``refuse_auth`` answers 535 to AUTH."""
+    STARTTLS). ``refuse_auth`` answers 535 to AUTH. ``gmail_like`` offers ``AUTH LOGIN PLAIN``, runs the
+    LOGIN dialog and hangs up on AUTH PLAIN, as smtp.gmail.com did from this laptop on 2026-10-07."""
 
-    def __init__(self, *, refuse_auth: bool = False) -> None:
+    def __init__(self, *, refuse_auth: bool = False, gmail_like: bool = False) -> None:
         import socketserver
         import threading
 
@@ -255,7 +256,17 @@ class FakeSMTP:
                     cmd = line.split(" ", 1)[0].upper()
                     if cmd in ("EHLO", "HELO"):
                         send("250-fake")
-                        send("250 AUTH PLAIN")
+                        send("250 AUTH LOGIN PLAIN" if gmail_like else "250 AUTH PLAIN")
+                    elif cmd == "AUTH" and gmail_like and line.split()[1].upper() == "LOGIN":
+                        import base64
+
+                        send("334 VXNlcm5hbWU6")
+                        user = base64.b64decode(self.rfile.readline().strip())
+                        send("334 UGFzc3dvcmQ6")
+                        outer.auth.append(b"LOGIN " + user + b" " + base64.b64decode(self.rfile.readline().strip()))
+                        send("535 authentication refused" if refuse_auth else "235 ok")
+                    elif cmd == "AUTH" and gmail_like:
+                        return
                     elif cmd == "AUTH":
                         import base64
 
@@ -317,6 +328,8 @@ def test_the_shipped_config_leaves_email_off_with_the_reason(tmp_path: Path, mon
     from sit_review_agent.ui import mail
 
     monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    for name in mail.FIELD_ENV.values():
+        monkeypatch.delenv(name, raising=False)
     cfg, detail = mail.load_smtp(REPO / "config" / "ui.yaml")
     assert cfg is None and detail == "host, username and from are empty"
     assert mail.NOT_CONFIGURED == "Email is not configured: see config/ui.yaml"
@@ -328,6 +341,27 @@ def test_the_shipped_config_leaves_email_off_with_the_reason(tmp_path: Path, mon
     cfg, detail = mail.load_smtp(full)
     assert cfg == mail.SmtpConfig(host="smtp.example.org", port=587, starttls=True, username="me",
                                   sender="me@example.org") and detail == ""
+
+
+def test_environment_fills_the_smtp_fields_so_no_address_is_committed(tmp_path: Path, monkeypatch) -> None:
+    """SIT_UI_SMTP_HOST, _USERNAME and _FROM win over config/ui.yaml, so a personal address stays out of the repo."""
+    from sit_review_agent.ui import mail
+
+    assert mail.FIELD_ENV == {"host": "SIT_UI_SMTP_HOST", "username": "SIT_UI_SMTP_USERNAME",
+                              "from": "SIT_UI_SMTP_FROM"}
+    monkeypatch.setenv("SIT_UI_SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("SIT_UI_SMTP_USERNAME", "me@example.org")
+    monkeypatch.setenv("SIT_UI_SMTP_FROM", "me@example.org")
+    cfg, detail = mail.load_smtp(REPO / "config" / "ui.yaml")
+    assert cfg == mail.SmtpConfig(host="smtp.example.org", port=587, starttls=True, username="me@example.org",
+                                  sender="me@example.org") and detail == ""
+    no_section = tmp_path / "ui.yaml"
+    no_section.write_text("documents: []\n", encoding="utf-8")
+    assert mail.load_smtp(no_section)[0] == cfg
+    monkeypatch.setenv("SIT_UI_SMTP_FROM", "  ")
+    assert mail.load_smtp(REPO / "config" / "ui.yaml") == (None, "from is empty")
+    monkeypatch.setenv("SIT_UI_SMTP_FROM", "Me <me@example.org>")
+    assert mail.load_smtp(REPO / "config" / "ui.yaml") == (None, "email.from is not one plain address")
 
 
 def test_outputs_reports_the_bundle_the_download_saves(flow_runs: Path) -> None:
@@ -360,6 +394,22 @@ def test_email_is_shown_disabled_with_the_reason_without_config_or_password(flow
         assert res.status_code == 409 and res.json()["error"].startswith(mail.NOT_CONFIGURED)
     assert smtp.connections == 0
     assert not (flow_runs / "ui_flow_1" / "ui" / mail.OUTBOX).exists()
+
+
+def test_email_logs_in_with_auth_login_where_auth_plain_is_cut_off(flow_runs: Path, monkeypatch) -> None:
+    """A server that offers LOGIN gets the LOGIN dialog, not smtplib's default AUTH PLAIN, which smtp.gmail.com
+    cut off from this laptop on 2026-10-07 (wrong and right passwords alike, before any 535)."""
+    from sit_review_agent.ui import mail
+
+    monkeypatch.setenv(mail.PASSWORD_ENV, PASSWORD)
+    gmail = FakeSMTP(gmail_like=True)
+    try:
+        client = TestClient(build_app(make_state(flow_runs, smtp=smtp_cfg(gmail.port))))
+        res = client.post("/runs/ui_flow_1/email", json={"to": "reader@example.org"})
+        assert res.status_code == 200, res.text
+        assert gmail.auth == [b"LOGIN reviewer " + PASSWORD.encode()] and len(gmail.messages) == 1
+    finally:
+        gmail.close()
 
 
 def test_email_sends_the_export_and_report_md_and_logs_no_content(flow_runs: Path, smtp: FakeSMTP,
