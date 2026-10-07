@@ -133,8 +133,8 @@ def facts(cfg: Any, demo: Any | None = None) -> dict[str, Any]:
     from sit_review_agent.phases import research, verify
     from sit_review_agent.states import PHASE_ORDER, STAGE_1_DEPENDS, STAGE_MEMBERS, STAGE_ORDER, Stage
     from sit_review_agent.tools.gateway import PolicyToolGateway
-    from sit_review_agent.ui.stages import INVARIANTS
     from sit_review_agent.ui import naming
+    from sit_review_agent.ui.stages import INVARIANTS
 
     demo = demo or cfg
     criteria = [c.id for c in cfg.criteria.criteria]

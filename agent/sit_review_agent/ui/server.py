@@ -216,9 +216,10 @@ def build_app(state: UIState) -> Starlette:
         return _json(state.architecture)
 
     async def meta(request: Request) -> Response:
-        return _json({"names": naming.names(), "profiles": state.profiles, "tools": state.tools, "can_launch": state.can_launch,
-                      "launch_note": state.launch_note, "commit": state.commit, "version": state.version,
-                      "backend": state.backend, "model": state.model, "config_files": list(state.config_files),
+        return _json({"names": naming.names(), "profiles": state.profiles, "tools": state.tools,
+                      "can_launch": state.can_launch, "launch_note": state.launch_note, "commit": state.commit,
+                      "version": state.version, "backend": state.backend, "model": state.model,
+                      "config_files": list(state.config_files),
                       "auth_env": state.auth_env, "bind_host": state.bind_host, "port": state.port,
                       "ui_args": list(state.ui_args),
                       "runs_dir": str(state.runs_dir), "runs_dir_name": state.runs_dir.name,
