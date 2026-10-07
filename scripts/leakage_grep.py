@@ -72,6 +72,9 @@ DEFAULT_RESOLVED = {
     "regulations": "generic word (criteria and prompts ask about laws and regulations)",
     "terminated": "MCP session state constant",
     "request_hash": "generic code identifier",
+    # Reviewed 2026-10-07: the Architectural design page's framework comparison names LangChain beside LangGraph
+    # and CrewAI; research_lakehouse lists "LangChain-style pipelines" among RAG frameworks. A public name.
+    "langchain": "agent framework name (Architectural design page, framework comparison)",
 }
 
 DEFAULT_KEYS = ("eval/synthetic/*/answer_key*.json",)
