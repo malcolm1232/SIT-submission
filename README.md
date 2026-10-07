@@ -120,15 +120,22 @@ The answer keys are not signed off by the owner, so `sit-eval score` refuses the
 
 `docs/DOCUMENTATION_MAP.md` maps every requirement of lab §5.1 to §5.3 to its file.
 
-## Status (3 October 2026)
+## Status (7 October 2026)
+
+What the repository holds:
+- The review agent, `sit-review` (alias `dra`), with a demo profile whose run deadline is 900 s (`config/profiles/demo.yaml`); assess runs as 6 criterion shards side by side (`config/agent.yaml`).
+- `dra ui`, the local review page: start a run from a dropped PDF or link, follow each stage live, read the review in its Review, Coverage and Evidence tabs, ask follow-up questions in chat, and download the review as a zip (one cross-linked HTML page, the reviewed PDF, `report.md`, `report.json`).
+- The "Architectural design" page inside `dra ui`, which explains the agent's design with links to the code in this repository.
+- A research fix of 6 October 2026: a tool failure reported inside a tool's answer is marked as failed and never enters the evidence ledger (`agent/sit_review_agent/tools/inband.py`).
+- Sample review outputs with their measurements in `docs/live_runs/`, each folder holding the run's `report.md`, `report.json`, evidence ledger and `MEASUREMENT.md` where one was written.
 
 Measured, each on one document and one run:
 - Document-only on the synthetic payments design at the demo profile: 382 s and $5.74, strict recall 13 of 14 planted flaws, lenient recall 14 of 14, adjudicated precision 0.944, grader 83.0 (B); the earlier sequential design took 3,372 s (`docs/live_runs/QUALITY_COMPARISON.md`).
-- With tools on the lab's own sample document: 428.0 s and $5.54, verdict `fit_with_conditions` at 0.72, 112.0 s inside the 540 s slot; every web search failed on a closed MCP session (`docs/live_runs/sit_sample_tools_1/MEASUREMENT.md`).
+- With tools, from `dra ui`, on the lab's own sample document with 6 assess shards: 508.5 s, verdict `fit_with_conditions` at 0.60; all 10 web tool calls succeeded, 8 of them after reopening a closed MCP session (`docs/live_runs/sit_sample_ui_2/MEASUREMENT.md`).
 - Re-assessment of the updated payments design (v2) against the v1 review, document-only: 422.8 s, verdict `not_fit` at 0.75, 2 prior findings resolved, 4 partially addressed, 10 still open and 3 new, unscored (`docs/live_runs/reassess_payments_v2_1/MEASUREMENT.md`).
 - Robustness: 88 P0 scenarios, 56 passing offline, 32 blocked as laptop-only or static, none failing (`tests/robustness/results/robustness_summary.txt`).
 
-Not measured: the MCP session fix against the live servers, any run repeated k times, the held-out items, and the 132-run Tier A study, which awaits budget approval (`docs/BUDGET.md` §6).
+Not measured: the research fix of 6 October against the live servers, any run repeated k times, the held-out items, and the 132-run Tier A study, which awaits budget approval (`docs/BUDGET.md` §6).
 Every score so far is exploratory (`docs/LIMITATIONS.md`).
 
 ## Limitations
